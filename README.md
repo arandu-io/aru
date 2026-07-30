@@ -29,3 +29,7 @@ Phase 1 implements `key:generate`, `serve`, `migrate` and `routes`. `new`,
 ```
 go build -ldflags "-X main.version=$(git describe --tags --always)" -o bin/aru .
 ```
+
+## License
+
+MIT, the same license Laravel uses. See `LICENSE.md`.

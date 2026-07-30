@@ -44,6 +44,12 @@ var commands = []command{
 		run:   delegate("routes"),
 	},
 	{
+		name:  "seed:admin",
+		usage: "aru seed:admin",
+		desc:  "create the first administrator, from ARANDU_ADMIN_EMAIL and ARANDU_ADMIN_PASSWORD",
+		run:   delegate("seed:admin"),
+	},
+	{
 		name:  "new",
 		usage: "aru new <name>",
 		desc:  "create a new project from the skeleton",

@@ -83,7 +83,7 @@ var commands = []command{
 		name:  "make:policy",
 		usage: "aru make:policy <entity>",
 		desc:  "generate a policy for an existing entity",
-		run:   notYet("make:policy", 2),
+		run:   makePolicy,
 	},
 	{
 		name:  "doctor",

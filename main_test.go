@@ -112,16 +112,15 @@ func TestKeyGenerateRejectsArguments(t *testing.T) {
 	}
 }
 
-// TestPhaseTwoCommandsSaySo: refusing with the phase number is more useful than
-// a command that appears to work and changes nothing.
-func TestPhaseTwoCommandsSaySo(t *testing.T) {
-	for _, name := range []string{"make:policy"} {
-		code, _, stderr := exercise(t, name)
-		if code == 0 {
-			t.Errorf("%s exited 0 without doing anything", name)
-		}
-		if !strings.Contains(stderr, "phase 2") {
-			t.Errorf("%s does not state its phase: %q", name, stderr)
+// TestEveryCommandIsImplemented: the phase 2 commands are all in. What is left
+// of the phase lives in other repositories -- porang, oka, the adapters -- and
+// this test is what will notice if one of these ever regresses to a stub.
+func TestEveryCommandIsImplemented(t *testing.T) {
+	for _, c := range commands {
+		out := &bytes.Buffer{}
+		_ = run([]string{c.name}, out, out)
+		if strings.Contains(out.String(), "not implemented") {
+			t.Errorf("%s still refuses with a phase number", c.name)
 		}
 	}
 }

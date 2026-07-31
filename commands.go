@@ -33,9 +33,27 @@ var commands = []command{
 	},
 	{
 		name:  "migrate",
-		usage: "aru migrate [--pending]",
+		usage: "aru migrate",
 		desc:  "apply the migrations collected from the registered modules",
 		run:   delegate("migrate"),
+	},
+	{
+		name:  "migrate:rollback",
+		usage: "aru migrate:rollback",
+		desc:  "undo the last batch of migrations",
+		run:   delegate("migrate:rollback"),
+	},
+	{
+		name:  "migrate:status",
+		usage: "aru migrate:status",
+		desc:  "show which migrations ran, and in which batch",
+		run:   delegate("migrate:status"),
+	},
+	{
+		name:  "migrate:fresh",
+		usage: "aru migrate:fresh",
+		desc:  "roll everything back and migrate again (development only)",
+		run:   delegate("migrate:fresh"),
 	},
 	{
 		name:  "routes",
@@ -44,10 +62,10 @@ var commands = []command{
 		run:   delegate("routes"),
 	},
 	{
-		name:  "seed:admin",
-		usage: "aru seed:admin",
-		desc:  "create the first administrator, from ARANDU_ADMIN_EMAIL and ARANDU_ADMIN_PASSWORD",
-		run:   delegate("seed:admin"),
+		name:  "db:seed",
+		usage: "aru db:seed [--class=<name>]",
+		desc:  "run the seeders in database/seeders (DatabaseSeeder by default)",
+		run:   delegate("db:seed"),
 	},
 	{
 		name:  "new",

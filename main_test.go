@@ -131,7 +131,7 @@ func TestPhaseTwoCommandsSaySo(t *testing.T) {
 func TestDelegationRequiresAProject(t *testing.T) {
 	t.Chdir(t.TempDir())
 
-	for _, name := range []string{"serve", "migrate", "routes", "seed:admin"} {
+	for _, name := range []string{"serve", "migrate", "migrate:rollback", "migrate:status", "migrate:fresh", "routes", "db:seed"} {
 		code, _, stderr := exercise(t, name)
 		if code == 0 {
 			t.Errorf("%s exited 0 outside a project", name)

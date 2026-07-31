@@ -68,6 +68,18 @@ var commands = []command{
 		run:   delegate("db:seed"),
 	},
 	{
+		name:  "dev",
+		usage: "aru dev [-- flags for the application]",
+		desc:  "build the views, run the application, and restart it on every change",
+		run:   dev,
+	},
+	{
+		name:  "view:build",
+		usage: "aru view:build [--watch]",
+		desc:  "compile the templates and the stylesheet, with no Node involved",
+		run:   viewBuild,
+	},
+	{
 		name:  "new",
 		usage: "aru new <name> [--module github.com/you/name]",
 		desc:  "create a new project from the skeleton",
@@ -78,6 +90,12 @@ var commands = []command{
 		usage: `aru make:module <name> --fields "title:string!,amount:money" [--tenant] [--force]`,
 		desc:  "generate a full module: entity, policy, repository, service, request, routes, tests",
 		run:   makeModule,
+	},
+	{
+		name:  "make:auth",
+		usage: "aru make:auth [--force]",
+		desc:  "publish the sign-in screens into the project, yours to edit",
+		run:   makeAuth,
 	},
 	{
 		name:  "make:policy",

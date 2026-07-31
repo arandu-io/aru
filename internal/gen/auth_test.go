@@ -24,8 +24,8 @@ func TestAuthGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateAuth: %v", err)
 	}
-	if len(files) != 3 {
-		t.Fatalf("generated %d files, want 3", len(files))
+	if len(files) != 4 {
+		t.Fatalf("generated %d files, want 4", len(files))
 	}
 
 	for _, f := range files {
@@ -171,6 +171,22 @@ func TestTheTenantDoesNotComeFromTheRequestBody(t *testing.T) {
 func TestTheStarterKitDoesNotMigrate(t *testing.T) {
 	if strings.Contains(authFile(t, "module.go"), "Migrations()") {
 		t.Error("the starter kit declares migrations: the users table already has an owner")
+	}
+	if !strings.Contains(authFile(t, "arandu.mod.toml"), "migrations = false") {
+		t.Error("the manifest claims tables the module does not own")
+	}
+}
+
+// TestTheStarterKitDeclaresItself: without the manifest, the first thing anyone
+// sees after running make:auth is a doctor warning about the files they just
+// generated.
+func TestTheStarterKitDeclaresItself(t *testing.T) {
+	toml := authFile(t, "arandu.mod.toml")
+
+	for _, want := range []string{"name = ", "[permissions]", "network = false", "exec = false"} {
+		if !strings.Contains(toml, want) {
+			t.Errorf("the manifest has no %q", want)
+		}
 	}
 }
 

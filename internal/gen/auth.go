@@ -30,6 +30,7 @@ func GenerateAuth(m Module) ([]File, error) {
 		{"module.go", authModuleTemplate},
 		{"handlers.go", authHandlersTemplate},
 		{"views.templ", authViewsTemplate},
+		{"arandu.mod.toml", authManifestTemplate},
 	} {
 		content, err := renderRaw(t.name, t.tmpl, m)
 		if err != nil {
@@ -39,6 +40,24 @@ func GenerateAuth(m Module) ([]File, error) {
 	}
 	return out, nil
 }
+
+const authManifestTemplate = `# What this module declares about itself.
+#
+# ` + "`aru doctor`" + ` checks these against the code. The sign-in screens talk to
+# the auth service and to the session store, and nothing else: no outbound call,
+# no file, no subprocess, and no table of their own -- the users table belongs to
+# the framework's auth module.
+
+name = "your-org/authui"
+framework = ">= 0.3"
+profiles = ["conventional"]
+
+[permissions]
+network = false
+filesystem = false
+exec = false
+migrations = false
+`
 
 const authModuleTemplate = `// Package authui holds the sign-in screens.
 //

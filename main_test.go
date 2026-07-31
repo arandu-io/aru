@@ -115,7 +115,7 @@ func TestKeyGenerateRejectsArguments(t *testing.T) {
 // TestPhaseTwoCommandsSaySo: refusing with the phase number is more useful than
 // a command that appears to work and changes nothing.
 func TestPhaseTwoCommandsSaySo(t *testing.T) {
-	for _, name := range []string{"new", "make:module", "make:policy", "doctor"} {
+	for _, name := range []string{"new", "make:policy", "doctor"} {
 		code, _, stderr := exercise(t, name)
 		if code == 0 {
 			t.Errorf("%s exited 0 without doing anything", name)
@@ -123,6 +123,28 @@ func TestPhaseTwoCommandsSaySo(t *testing.T) {
 		if !strings.Contains(stderr, "phase 2") {
 			t.Errorf("%s does not state its phase: %q", name, stderr)
 		}
+	}
+}
+
+// TestMakeModuleRequiresFieldsAndAProject covers the two ways to get the command
+// wrong: running it outside a project, and forgetting what the module holds.
+func TestMakeModuleRequiresFieldsAndAProject(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	code, _, stderr := exercise(t, "make:module", "invoice")
+	if code == 0 {
+		t.Error("make:module ran outside a project")
+	}
+	if !strings.Contains(stderr, "cmd/app") {
+		t.Errorf("the error does not say what is missing: %q", stderr)
+	}
+
+	code, _, stderr = exercise(t, "make:module")
+	if code == 0 {
+		t.Error("make:module ran with no name")
+	}
+	if !strings.Contains(stderr, "usage:") && !strings.Contains(stderr, "cmd/app") {
+		t.Errorf("the error is not actionable: %q", stderr)
 	}
 }
 

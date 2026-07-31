@@ -75,9 +75,9 @@ var commands = []command{
 	},
 	{
 		name:  "make:module",
-		usage: `aru make:module <name> --fields "..."`,
+		usage: `aru make:module <name> --fields "title:string!,amount:money" [--tenant] [--force]`,
 		desc:  "generate a full module: entity, policy, repository, service, request, routes, tests",
-		run:   notYet("make:module", 2),
+		run:   makeModule,
 	},
 	{
 		name:  "make:policy",

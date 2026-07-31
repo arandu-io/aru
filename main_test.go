@@ -115,7 +115,7 @@ func TestKeyGenerateRejectsArguments(t *testing.T) {
 // TestPhaseTwoCommandsSaySo: refusing with the phase number is more useful than
 // a command that appears to work and changes nothing.
 func TestPhaseTwoCommandsSaySo(t *testing.T) {
-	for _, name := range []string{"new", "make:policy", "doctor"} {
+	for _, name := range []string{"make:policy", "doctor"} {
 		code, _, stderr := exercise(t, name)
 		if code == 0 {
 			t.Errorf("%s exited 0 without doing anything", name)
@@ -145,6 +145,33 @@ func TestMakeModuleRequiresFieldsAndAProject(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "usage:") && !strings.Contains(stderr, "cmd/app") {
 		t.Errorf("the error is not actionable: %q", stderr)
+	}
+}
+
+// TestNewRefusesWhatItCannotDo covers the two failures that happen before any
+// network call, which are the ones worth failing fast on.
+func TestNewRefusesWhatItCannotDo(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	if code, _, stderr := exercise(t, "new"); code == 0 {
+		t.Error("new ran with no name")
+	} else if !strings.Contains(stderr, "usage: aru new") {
+		t.Errorf("the error is not actionable: %q", stderr)
+	}
+
+	if code, _, stderr := exercise(t, "new", "some/path"); code == 0 {
+		t.Error("new accepted a name with a path separator")
+	} else if !strings.Contains(stderr, "path separator") {
+		t.Errorf("the error does not say what is wrong: %q", stderr)
+	}
+
+	if err := os.Mkdir("taken", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, stderr := exercise(t, "new", "taken"); code == 0 {
+		t.Error("new overwrote an existing directory")
+	} else if !strings.Contains(stderr, "already exists") {
+		t.Errorf("stderr = %q", stderr)
 	}
 }
 

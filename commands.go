@@ -69,9 +69,9 @@ var commands = []command{
 	},
 	{
 		name:  "new",
-		usage: "aru new <name>",
+		usage: "aru new <name> [--module github.com/you/name]",
 		desc:  "create a new project from the skeleton",
-		run:   notYet("new", 2),
+		run:   newProject,
 	},
 	{
 		name:  "make:module",

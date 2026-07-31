@@ -32,7 +32,7 @@ go 1.25
 
 require (
 	github.com/arandu-io/framework v0.2.1
-	github.com/arandu-io/porang v0.1.0
+	github.com/arandu-io/porang v0.2.1
 )
 
 replace github.com/arandu-io/framework => `+framework+`

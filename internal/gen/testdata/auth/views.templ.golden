@@ -13,12 +13,14 @@ type LoginForm struct {
 }
 
 // LoginPage is the whole screen.
+//
+// It writes no classes of its own: the shell and the heading come from porang,
+// whose stylesheet is already embedded in the binary. That is what makes this
+// screen look right before anyone has run a CSS build.
 templ LoginPage(p layout.Props, form LoginForm) {
-	@layout.Page(p) {
-		<div class="mx-auto max-w-sm">
-			<h1 class="mb-6 text-xl font-medium">Sign in</h1>
-			@Form(form)
-		</div>
+	@layout.Centered(p) {
+		@components.Heading("Sign in")
+		@Form(form)
 	}
 }
 

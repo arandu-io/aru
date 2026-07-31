@@ -1,0 +1,69 @@
+package authui
+
+import "github.com/arandu-io/framework/validation"
+import "github.com/arandu-io/porang/components"
+import "github.com/arandu-io/porang/layout"
+
+// LoginForm is everything the form needs to render itself, including after a
+// rejection. The password is deliberately absent: it is never sent back.
+type LoginForm struct {
+	Email     string
+	CSRFToken string
+	Errors    validation.Errors
+}
+
+// LoginPage is the whole screen.
+templ LoginPage(p layout.Props, form LoginForm) {
+	@layout.Page(p) {
+		<div class="mx-auto max-w-sm">
+			<h1 class="mb-6 text-xl font-medium">Sign in</h1>
+			@Form(form)
+		</div>
+	}
+}
+
+// Form is the fragment HTMX swaps: the whole form, including its errors.
+//
+// It swaps itself -- hx-target="this" with outerHTML -- so the replacement
+// carries a fresh CSRF token and the typed email. Swapping only a message would
+// leave the stale token in place, and the second attempt would fail the CSRF
+// check for reasons nobody can see.
+templ Form(form LoginForm) {
+	<form
+		id="login-form"
+		method="post"
+		action="/auth/login"
+		hx-post="/auth/login"
+		hx-target="this"
+		hx-swap="outerHTML"
+	>
+		<input type="hidden" name="_csrf" value={ form.CSRFToken }/>
+		if len(form.Errors["email"]) > 0 {
+			@components.Alert(components.AlertProps{
+				Message: form.Errors["email"][0],
+				Variant: components.Danger,
+			})
+		}
+		@components.Field(components.FieldProps{
+			Name:         "email",
+			Label:        "Email",
+			Type:         "email",
+			Value:        form.Email,
+			Required:     true,
+			Autocomplete: "username",
+		})
+		@components.Field(components.FieldProps{
+			Name:         "password",
+			Label:        "Password",
+			Type:         "password",
+			Required:     true,
+			Autocomplete: "current-password",
+			Errors:       form.Errors["password"],
+		})
+		@components.Button(components.ButtonProps{
+			Label:   "Sign in",
+			Variant: components.Primary,
+			Type:    "submit",
+		})
+	</form>
+}

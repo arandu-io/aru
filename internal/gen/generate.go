@@ -53,6 +53,31 @@ func Generate(m Module) ([]File, error) {
 	return out, nil
 }
 
+// errModulePath is returned when the project module path is missing, which is
+// the one input the generator cannot infer.
+var errModulePath = fmt.Errorf("the project module path is required")
+
+// renderRaw renders without gofmt, for files that are not Go: a .templ has to
+// reach templ as written.
+func renderRaw(name, tmpl string, m Module) ([]byte, error) {
+	t, err := template.New(name).Parse(tmpl)
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, m); err != nil {
+		return nil, err
+	}
+	if !strings.HasSuffix(name, ".go") {
+		return buf.Bytes(), nil
+	}
+	formatted, err := format.Source(buf.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("%s does not parse -- bug in the template: %w", name, err)
+	}
+	return formatted, nil
+}
+
 func render(name, tmpl string, m Module) ([]byte, error) {
 	t, err := template.New(name).Funcs(template.FuncMap{
 		"lower": strings.ToLower,

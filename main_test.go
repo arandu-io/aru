@@ -115,7 +115,7 @@ func TestKeyGenerateRejectsArguments(t *testing.T) {
 // TestPhaseTwoCommandsSaySo: refusing with the phase number is more useful than
 // a command that appears to work and changes nothing.
 func TestPhaseTwoCommandsSaySo(t *testing.T) {
-	for _, name := range []string{"make:policy", "doctor"} {
+	for _, name := range []string{"make:policy"} {
 		code, _, stderr := exercise(t, name)
 		if code == 0 {
 			t.Errorf("%s exited 0 without doing anything", name)

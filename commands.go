@@ -89,7 +89,7 @@ var commands = []command{
 		name:  "doctor",
 		usage: "aru doctor [--strict]",
 		desc:  "check that the project honors the framework contracts",
-		run:   notYet("doctor", 2),
+		run:   runDoctor,
 	},
 }
 

@@ -19,6 +19,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/arandu-io/aru/internal/manifest"
 )
 
 // Severity says whether a finding blocks CI.
@@ -56,6 +58,30 @@ func (f Finding) String() string {
 	return fmt.Sprintf("%s:%d: [%s] %s\n    %s", f.File, f.Line, f.Rule, f.Message, f.Why)
 }
 
+// project is everything a rule can look at: the parsed Go, and the manifest each
+// module declares about itself.
+type project struct {
+	root      string
+	files     []*file
+	manifests map[string]*manifest.Module
+}
+
+// modules returns the module directory names that have Go in them, in a stable
+// order, so two runs report the same findings in the same sequence.
+func (p *project) modules() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, f := range p.files {
+		if f.module == "" || seen[f.module] {
+			continue
+		}
+		seen[f.module] = true
+		out = append(out, f.module)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // file is one parsed Go file, with what the rules need.
 type file struct {
 	path    string
@@ -79,9 +105,15 @@ func Run(dir string) ([]Finding, error) {
 		return nil, err
 	}
 
+	manifests, err := manifest.ReadAll(dir)
+	if err != nil {
+		return nil, err
+	}
+	p := &project{root: dir, files: files, manifests: manifests}
+
 	var findings []Finding
 	for _, rule := range rules {
-		findings = append(findings, rule(files)...)
+		findings = append(findings, rule(p)...)
 	}
 
 	sort.SliceStable(findings, func(i, j int) bool {

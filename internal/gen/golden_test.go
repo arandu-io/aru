@@ -51,8 +51,8 @@ func TestGolden(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Generate: %v", err)
 			}
-			if len(files) != 8 {
-				t.Fatalf("generated %d files, want 8", len(files))
+			if len(files) != 9 {
+				t.Fatalf("generated %d files, want 9", len(files))
 			}
 
 			for _, f := range files {

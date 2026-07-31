@@ -2,7 +2,10 @@ package doctor
 
 import (
 	"go/ast"
+	"path/filepath"
 	"strings"
+
+	"github.com/arandu-io/aru/internal/manifest"
 )
 
 // rules is the whole check surface. Each one exists because something real can
@@ -11,7 +14,7 @@ import (
 //
 // Adding a rule that rejects existing code is a breaking change (doc 23): it
 // enters as a warning in a minor and becomes an error in the next major.
-var rules = []func([]*file) []Finding{
+var rules = []func(*project) []Finding{
 	repositoryNeedsPolicy,
 	repositoryMethodNeedsGrant,
 	policyMustBeOpened,
@@ -22,11 +25,13 @@ var rules = []func([]*file) []Finding{
 	sensitiveFieldNeedsRedaction,
 	moduleMustNotImportModule,
 	sessionMustRotateOnLogin,
+	declaredPermissionsMatchTheCode,
 }
 
 // 1. A repository without a policy in the same module means the entity is
 // reachable and nobody decided who may reach it.
-func repositoryNeedsPolicy(files []*file) []Finding {
+func repositoryNeedsPolicy(p *project) []Finding {
+	files := p.files
 	hasPolicy := map[string]bool{}
 	for _, f := range files {
 		if f.module == "" || f.isTest {
@@ -66,7 +71,8 @@ func repositoryNeedsPolicy(files []*file) []Finding {
 
 // 2. Every repository method must call g.Check before touching the handle. The
 // signature forces the Grant to be passed; only this checks it was verified.
-func repositoryMethodNeedsGrant(files []*file) []Finding {
+func repositoryMethodNeedsGrant(p *project) []Finding {
+	files := p.files
 	var out []Finding
 	for _, f := range files {
 		if f.isTest {
@@ -112,7 +118,8 @@ func takesGrant(fn *ast.FuncDecl) bool {
 
 // 3. A generated policy denies everything. Left that way, the module is dead
 // code -- and worse, it looks finished.
-func policyMustBeOpened(files []*file) []Finding {
+func policyMustBeOpened(p *project) []Finding {
+	files := p.files
 	var out []Finding
 	for _, f := range files {
 		if f.isTest || f.module == "" {
@@ -159,7 +166,8 @@ func returnsNil(fn *ast.FuncDecl) bool {
 
 // 4. A handler that reaches the data package is a handler that skipped the
 // service, and therefore the policy.
-func handlerMustNotReachData(files []*file) []Finding {
+func handlerMustNotReachData(p *project) []Finding {
+	files := p.files
 	var out []Finding
 	for _, f := range files {
 		if f.isTest || !strings.HasSuffix(f.rel, "handlers.go") {
@@ -199,7 +207,8 @@ func handlerMustNotReachData(files []*file) []Finding {
 }
 
 // 5. A tenant taken from the request is the client choosing which data to read.
-func tenantMustComeFromTheGrant(files []*file) []Finding {
+func tenantMustComeFromTheGrant(p *project) []Finding {
+	files := p.files
 	var out []Finding
 	for _, f := range files {
 		if f.isTest {
@@ -250,7 +259,8 @@ func tenantMustComeFromTheGrant(files []*file) []Finding {
 }
 
 // 6. SystemGrant is the one way past the policy. Its call sites are the audit.
-func systemGrantIsAudited(files []*file) []Finding {
+func systemGrantIsAudited(p *project) []Finding {
+	files := p.files
 	var out []Finding
 	for _, f := range files {
 		if f.isTest {
@@ -332,7 +342,8 @@ func enclosingFuncs(f *file) map[int]string {
 
 // 7. SQL built with Sprintf or concatenation of a variable is injection, whatever
 // the intent was.
-func noBuiltSQL(files []*file) []Finding {
+func noBuiltSQL(p *project) []Finding {
+	files := p.files
 	var out []Finding
 	for _, f := range files {
 		if f.isTest {
@@ -370,7 +381,8 @@ func looksLikeSQL(s string) bool {
 
 // 8. An entity with a secret in it needs to refuse to serialize itself, or the
 // first Dump publishes it on the debug page.
-func sensitiveFieldNeedsRedaction(files []*file) []Finding {
+func sensitiveFieldNeedsRedaction(p *project) []Finding {
+	files := p.files
 	sensitive := []string{"password", "secret", "token", "document", "apikey", "api_key", "creditcard", "cpf", "cnpj"}
 
 	var out []Finding
@@ -440,7 +452,8 @@ func hasRedaction(files []*file, module, typeName string) bool {
 
 // 9. A module importing another module directly is the coupling that makes a
 // module stop being publishable.
-func moduleMustNotImportModule(files []*file) []Finding {
+func moduleMustNotImportModule(p *project) []Finding {
+	files := p.files
 	var out []Finding
 	for _, f := range files {
 		if f.module == "" || f.isTest {
@@ -474,7 +487,8 @@ func moduleMustNotImportModule(files []*file) []Finding {
 
 // 10. Login without rotating the session id is session fixation: an attacker
 // plants a known id and inherits the session after the victim signs in.
-func sessionMustRotateOnLogin(files []*file) []Finding {
+func sessionMustRotateOnLogin(p *project) []Finding {
+	files := p.files
 	var out []Finding
 	for _, f := range files {
 		if f.isTest {
@@ -505,4 +519,130 @@ func sessionMustRotateOnLogin(files []*file) []Finding {
 		}
 	}
 	return out
+}
+
+// 11. What a module declares in arandu.mod.toml has to match what it does.
+//
+// The declaration is the only thing anyone reads before installing a module from
+// the registry, and a declaration nobody verifies is worse than none: it is a
+// promise with the weight of a check and the reliability of a comment.
+//
+// Used and not declared is an error -- that is the module doing something its
+// installer did not agree to. Declared and not used is a warning, because asking
+// for more than you need is how a permission model erodes into everyone
+// declaring everything.
+func declaredPermissionsMatchTheCode(p *project) []Finding {
+	var out []Finding
+
+	for _, module := range p.modules() {
+		declared, hasManifest := p.manifests[module]
+		if !hasManifest {
+			out = append(out, Finding{
+				Rule: "module-without-manifest", Severity: Warning,
+				File: filepath.Join("modules", module, manifest.Name), Line: 1,
+				Message: "module " + module + " declares no metadata",
+				Why:     "a module published without " + manifest.Name + " cannot gain it later without breaking whoever already installed it. `aru make:module` writes one; copy it from another module.",
+			})
+			continue
+		}
+
+		used := usedPermissions(p, module)
+		for _, c := range []struct {
+			name        string
+			declared    bool
+			used        bool
+			consequence string
+		}{
+			{"network", declared.Permissions.Network, used.Network,
+				"the module makes calls that leave the process, and whoever installed it agreed to a module that does not"},
+			{"filesystem", declared.Permissions.Filesystem, used.Filesystem,
+				"the module reads or writes files outside the database, which is not visible from its API"},
+			{"exec", declared.Permissions.Exec, used.Exec,
+				"the module runs another program, which is the widest capability there is"},
+			{"migrations", declared.Permissions.Migrations, used.Migrations,
+				"the module owns tables, and an installer who did not expect that will not know to run aru migrate"},
+		} {
+			switch {
+			case c.used && !c.declared:
+				out = append(out, Finding{
+					Rule: "permission-not-declared", Severity: Error,
+					File: relativeTo(p.root, declared.Path), Line: 1,
+					Message: module + " uses " + c.name + " and declares " + c.name + " = false",
+					Why:     c.consequence + ". Set " + c.name + " = true under [permissions], or remove the code that needs it.",
+				})
+			case c.declared && !c.used:
+				out = append(out, Finding{
+					Rule: "permission-not-used", Severity: Warning,
+					File: relativeTo(p.root, declared.Path), Line: 1,
+					Message: module + " declares " + c.name + " = true and does not use it",
+					Why:     "asking for more than you need is how a permission model erodes into everyone declaring everything. Set " + c.name + " = false.",
+				})
+			}
+		}
+	}
+	return out
+}
+
+// usedPermissions is the capability audit, by AST.
+//
+// It looks at what the code calls rather than at what it imports, because
+// net/http is imported by every module that has a handler and says nothing about
+// whether the module calls out.
+func usedPermissions(p *project, module string) manifest.Permissions {
+	var used manifest.Permissions
+
+	for _, f := range p.files {
+		if f.module != module || f.isTest {
+			continue
+		}
+
+		for path := range f.imports {
+			switch path {
+			case "os/exec":
+				used.Exec = true
+			case "net/smtp", "net/rpc":
+				used.Network = true
+			case "io/ioutil":
+				used.Filesystem = true
+			}
+		}
+
+		f.calls(func(_ *ast.CallExpr, name string) {
+			switch {
+			// The client half of net/http. The server half -- Handler,
+			// ResponseWriter, StatusOK -- is every module with a route.
+			case name == "http.Get", name == "http.Post", name == "http.Head",
+				name == "http.PostForm", name == "http.NewRequest",
+				name == "http.NewRequestWithContext",
+				strings.HasSuffix(name, ".Do"),
+				name == "net.Dial", name == "net.DialTimeout":
+				used.Network = true
+
+			case name == "os.Open", name == "os.OpenFile", name == "os.Create",
+				name == "os.ReadFile", name == "os.WriteFile", name == "os.Remove",
+				name == "os.RemoveAll", name == "os.Mkdir", name == "os.MkdirAll",
+				name == "os.Rename", name == "os.ReadDir",
+				name == "filepath.Walk", name == "filepath.WalkDir":
+				used.Filesystem = true
+
+			case name == "exec.Command", name == "exec.CommandContext", name == "syscall.Exec":
+				used.Exec = true
+			}
+		})
+
+		for _, decl := range f.ast.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if ok && fn.Recv != nil && fn.Name.Name == "Migrations" {
+				used.Migrations = true
+			}
+		}
+	}
+	return used
+}
+
+func relativeTo(root, path string) string {
+	if rel, err := filepath.Rel(root, path); err == nil {
+		return rel
+	}
+	return path
 }

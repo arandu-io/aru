@@ -1,6 +1,7 @@
 package billing
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/arandu-io/framework/data"
@@ -21,4 +22,15 @@ func (m *Module) doLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// The module declares network = false and calls out anyway. Whoever installed it
+// agreed to a module that stays inside the process.
+func notifyBillingProvider(ctx context.Context, id string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://provider.example/charge", nil)
+	if err != nil {
+		return err
+	}
+	_, err = http.DefaultClient.Do(req)
+	return err
 }

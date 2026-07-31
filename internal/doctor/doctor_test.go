@@ -133,3 +133,45 @@ func TestCleanCodeProducesNothing(t *testing.T) {
 		}
 	}
 }
+
+// TestAnUndeclaredPermissionIsCaught: the declaration in arandu.mod.toml is the
+// only thing anyone reads before installing a module, and a declaration nobody
+// verifies is a promise with the weight of a check and the reliability of a
+// comment.
+func TestAnUndeclaredPermissionIsCaught(t *testing.T) {
+	findings, err := doctor.Run("testdata/violations")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var caught *doctor.Finding
+	for i, f := range findings {
+		if f.Rule == "permission-not-declared" {
+			caught = &findings[i]
+			break
+		}
+	}
+	if caught == nil {
+		t.Fatal("a module that declares network = false and calls out was not caught")
+	}
+	if caught.Severity != doctor.Error {
+		t.Error("using an undeclared permission is a warning: the module does something its installer did not agree to")
+	}
+	if !strings.Contains(caught.Message, "network") {
+		t.Errorf("the message does not name the permission: %q", caught.Message)
+	}
+}
+
+// TestADeclaredPermissionThatIsUsedIsSilent: the clean fixture owns tables and
+// says so. Firing there would train people to ignore the rule.
+func TestADeclaredPermissionThatIsUsedIsSilent(t *testing.T) {
+	findings, err := doctor.Run("testdata/clean")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, f := range findings {
+		if strings.HasPrefix(f.Rule, "permission-") || f.Rule == "module-without-manifest" {
+			t.Errorf("a correctly declared module produced %s: %s", f.Rule, f.Message)
+		}
+	}
+}

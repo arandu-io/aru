@@ -863,3 +863,32 @@ func TestListRejectsSortOutsideTheAllowlist(t *testing.T) {
 // Tests for the rules you wrote go here, and survive regeneration.
 // arandu:end custom
 `
+
+// manifestTemplate is what the module declares about itself.
+//
+// It is generated from the start rather than added when the registry exists,
+// because a module published without it cannot gain it later without breaking
+// whoever already installed it. `aru doctor` checks every line of it against the
+// code, which is what makes the declaration worth reading.
+const manifestTemplate = `# What this module declares about itself.
+#
+# ` + "`aru doctor`" + ` checks these against the code: a module that says
+# network = false and calls out is rejected. Declaring a permission you do not
+# use is a warning -- asking for more than you need is how a permission model
+# erodes into everyone declaring everything.
+
+name = "your-org/{{.Package}}"
+framework = ">= 0.3"
+profiles = ["conventional"]
+
+[permissions]
+# Outbound calls: an HTTP client, a mail server, anything that leaves the
+# process. Serving a route is not this.
+network = false
+# Reading or writing files outside the database.
+filesystem = false
+# Running another program.
+exec = false
+# Owning tables. This module has migrations, so it does.
+migrations = true
+`

@@ -43,8 +43,9 @@ func Generate(m Module) ([]File, error) {
 		{m.Name + ".request.go", requestTemplate},
 		{"handlers.go", handlersTemplate},
 		{m.Name + "_test.go", testTemplate},
+		{"arandu.mod.toml", manifestTemplate},
 	} {
-		content, err := render(t.name, t.tmpl, m)
+		content, err := renderRaw(t.name, t.tmpl, m)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", t.name, err)
 		}

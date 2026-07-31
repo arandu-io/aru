@@ -104,6 +104,12 @@ var commands = []command{
 		run:   makePolicy,
 	},
 	{
+		name:  "trace",
+		usage: "aru trace [<request_id>] [--host http://127.0.0.1:8080]",
+		desc:  "reconstruct a request in the terminal, from the running application",
+		run:   trace,
+	},
+	{
 		name:  "doctor",
 		usage: "aru doctor [--strict]",
 		desc:  "check that the project honors the framework contracts",

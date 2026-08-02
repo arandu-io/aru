@@ -6,7 +6,7 @@
 # erodes into everyone declaring everything.
 
 name = "your-org/purchaseorder"
-framework = ">= 0.3"
+framework = ">= 0.6"
 profiles = ["conventional"]
 
 [permissions]

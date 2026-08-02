@@ -6,7 +6,7 @@
 # the framework's auth module.
 
 name = "your-org/authui"
-framework = ">= 0.3"
+framework = ">= 0.6"
 profiles = ["conventional"]
 
 [permissions]

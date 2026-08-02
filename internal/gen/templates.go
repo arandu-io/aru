@@ -878,7 +878,7 @@ const manifestTemplate = `# What this module declares about itself.
 # erodes into everyone declaring everything.
 
 name = "your-org/{{.Package}}"
-framework = ">= 0.3"
+framework = ">= 0.6"
 profiles = ["conventional"]
 
 [permissions]

@@ -49,7 +49,7 @@ const authManifestTemplate = `# What this module declares about itself.
 # the framework's auth module.
 
 name = "your-org/authui"
-framework = ">= 0.3"
+framework = ">= 0.6"
 profiles = ["conventional"]
 
 [permissions]
@@ -131,6 +131,7 @@ import (
 	"github.com/arandu-io/framework/modules/auth"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/validation"
+	"github.com/arandu-io/porang"
 	"github.com/arandu-io/porang/layout"
 )
 
@@ -147,12 +148,15 @@ func (m *Module) showLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// porang.RenderPage rather than page.Render: it sets the content type and
+	// puts the render on the request timeline. Calling Render directly leaves
+	// the template column at zero, which says the view is free when nobody
+	// measured it.
 	page := LoginPage(
 		layout.Props{Title: "Sign in", CSRFToken: token},
 		LoginForm{CSRFToken: token},
 	)
-	if err := page.Render(r.Context(), w); err != nil {
+	if err := porang.RenderPage(r.Context(), w, "authui/login", page); err != nil {
 		observability.Log(r.Context()).Error("rendering the sign-in page", "error", err)
 	}
 }
@@ -225,10 +229,11 @@ func (m *Module) rejected(w http.ResponseWriter, r *http.Request, email string, 
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
+	// The status is explicit: HTMX swaps the body of a 422 and of a 200 alike,
+	// so answering 200 for a rejection would make the browser, the logs and
+	// every metric agree that it worked.
 	form := Form(LoginForm{Email: email, CSRFToken: token, Errors: errs})
-	if err := form.Render(r.Context(), w); err != nil {
+	if err := porang.RenderFragment(r.Context(), w, status, "authui/form", form); err != nil {
 		observability.Log(r.Context()).Error("rendering the form", "error", err)
 	}
 }

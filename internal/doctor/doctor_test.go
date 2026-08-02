@@ -175,3 +175,47 @@ func TestADeclaredPermissionThatIsUsedIsSilent(t *testing.T) {
 		}
 	}
 }
+
+// TestAlpineReachingTheServerIsCaught: without this check, RULE 9's "Alpine only
+// where HTMX cannot reach" is opinion, and opinion does not survive a code
+// review at 6pm.
+func TestAlpineReachingTheServerIsCaught(t *testing.T) {
+	findings, err := doctor.Run("testdata/violations")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var caught *doctor.Finding
+	for i, f := range findings {
+		if f.Rule == "alpine-reaches-the-server" {
+			caught = &findings[i]
+			break
+		}
+	}
+	if caught == nil {
+		t.Fatal("an x-data with a fetch call was not caught")
+	}
+	if caught.Severity != doctor.Error {
+		t.Error("Alpine fetching from the server is a warning: it is a second data path")
+	}
+	if !strings.Contains(caught.File, ".templ") {
+		t.Errorf("the finding does not point at the template: %s", caught.File)
+	}
+	if caught.Line <= 1 {
+		t.Errorf("the finding has no useful line: %d", caught.Line)
+	}
+}
+
+// TestAlpineWithinItsLimitIsSilent: a dropdown is exactly what doc 14 permits,
+// and firing on it would teach people to ignore the rule.
+func TestAlpineWithinItsLimitIsSilent(t *testing.T) {
+	findings, err := doctor.Run("testdata/clean")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, f := range findings {
+		if f.Rule == "alpine-reaches-the-server" {
+			t.Errorf("client-only state was reported: %s", f.Message)
+		}
+	}
+}

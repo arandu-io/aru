@@ -16,6 +16,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -64,6 +65,16 @@ type project struct {
 	root      string
 	files     []*file
 	manifests map[string]*manifest.Module
+	// templates are the .templ sources. They are not Go, so they are kept as
+	// text -- the rules that look at them are looking for markup, not for
+	// syntax.
+	templates []template
+}
+
+// template is one .templ source.
+type template struct {
+	rel  string
+	body string
 }
 
 // modules returns the module directory names that have Go in them, in a stable
@@ -109,7 +120,11 @@ func Run(dir string) ([]Finding, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &project{root: dir, files: files, manifests: manifests}
+	templates, err := parseTemplates(dir)
+	if err != nil {
+		return nil, err
+	}
+	p := &project{root: dir, files: files, manifests: manifests, templates: templates}
 
 	var findings []Finding
 	for _, rule := range rules {
@@ -123,6 +138,46 @@ func Run(dir string) ([]Finding, error) {
 		return findings[i].Line < findings[j].Line
 	})
 	return findings, nil
+}
+
+// parseTemplates collects the .templ sources.
+func parseTemplates(dir string) ([]template, error) {
+	var out []template
+
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "vendor", "node_modules", "testdata", "bin":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".templ") {
+			return nil
+		}
+
+		body, readErr := os.ReadFile(path)
+		if readErr != nil {
+			// A template that cannot be read is not a finding: it is a
+			// permission problem, and the build reports it better.
+			return nil
+		}
+		rel, relErr := filepath.Rel(dir, path)
+		if relErr != nil {
+			rel = path
+		}
+		out = append(out, template{rel: rel, body: string(body)})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i].rel < out[j].rel })
+	return out, nil
 }
 
 func parseProject(dir string) ([]*file, error) {

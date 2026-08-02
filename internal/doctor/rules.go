@@ -3,6 +3,7 @@ package doctor
 import (
 	"go/ast"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/arandu-io/aru/internal/manifest"
@@ -26,6 +27,7 @@ var rules = []func(*project) []Finding{
 	moduleMustNotImportModule,
 	sessionMustRotateOnLogin,
 	declaredPermissionsMatchTheCode,
+	alpineHoldsClientStateOnly,
 }
 
 // 1. A repository without a policy in the same module means the entity is
@@ -645,4 +647,72 @@ func relativeTo(root, path string) string {
 		return rel
 	}
 	return path
+}
+
+// alpineAttribute captures what an Alpine directive contains.
+//
+// Alpine is written in HTML attributes, so this is text matching rather than
+// parsing. That is a real limitation: a directive split across lines by a
+// formatter still matches, and one built by string concatenation in Go does not.
+// It catches the shape people actually write.
+var alpineAttribute = regexp.MustCompile(`(?s)(x-data|x-init|x-effect)\s*=\s*"([^"]*)"`)
+
+// networkInAlpine is the set that means this state is not client-only.
+var networkInAlpine = []struct {
+	token string
+	what  string
+}{
+	{"fetch(", "a fetch call"},
+	{"axios", "an axios call"},
+	{"XMLHttpRequest", "an XMLHttpRequest"},
+	{"$store", "a global Alpine store"},
+	{"navigator.sendBeacon", "a beacon"},
+	{"EventSource(", "a server-sent events subscription"},
+	{"new WebSocket", "a WebSocket"},
+}
+
+// 12. Alpine holds client state, and nothing else.
+//
+// Doc 14 draws the line: Alpine is allowed when the state is client-only,
+// ephemeral, and invisible to the server -- a dropdown, a tab, an input mask.
+// The moment a directive talks to the server, the component should have been an
+// HTMX fragment, and the application now has two ways to fetch data with two
+// sets of error handling, two loading states and two places CSRF can be
+// forgotten.
+//
+// Without this check, RULE 9 is opinion, and opinion does not survive a code
+// review at 6pm.
+func alpineHoldsClientStateOnly(p *project) []Finding {
+	var out []Finding
+
+	for _, t := range p.templates {
+		for _, match := range alpineAttribute.FindAllStringSubmatchIndex(t.body, -1) {
+			directive := t.body[match[2]:match[3]]
+			content := t.body[match[4]:match[5]]
+
+			for _, forbidden := range networkInAlpine {
+				if !strings.Contains(content, forbidden.token) {
+					continue
+				}
+				out = append(out, Finding{
+					Rule: "alpine-reaches-the-server", Severity: Error,
+					File: t.rel, Line: lineOf(t.body, match[0]),
+					Message: directive + " contains " + forbidden.what,
+					Why: "Alpine holds state that is client-only, ephemeral and invisible to the server. " +
+						"A directive that talks to the server should be an HTMX fragment instead -- otherwise the " +
+						"application has two ways to fetch data, with two loading states and two places to forget the CSRF token.",
+				})
+				break
+			}
+		}
+	}
+	return out
+}
+
+// lineOf returns the 1-indexed line containing the byte offset.
+func lineOf(body string, offset int) int {
+	if offset > len(body) {
+		offset = len(body)
+	}
+	return strings.Count(body[:offset], "\n") + 1
 }

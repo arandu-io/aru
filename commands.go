@@ -138,11 +138,3 @@ func usage(w io.Writer) {
 	fmt.Fprint(tw, "\n  help\tthis list\n  version\tthe aru version\n")
 	_ = tw.Flush()
 }
-
-// notYet reports the phase a command arrives in, and points at the document that
-// says why. A command that silently does nothing costs more than one that refuses.
-func notYet(name string, phase int) func([]string, io.Writer, io.Writer) error {
-	return func([]string, io.Writer, io.Writer) error {
-		return fmt.Errorf("%s: phase %d, not implemented yet (see 03-roadmap-fases.md)", name, phase)
-	}
-}

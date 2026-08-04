@@ -40,14 +40,22 @@ jobs:
       - name: test
         run: go test -race ./...
 
-      # The CLI has no dependencies of its own. bubbletea arrives in phase 2, with
-      # the generator that needs it, and this check is what makes that deliberate.
+      # The CLI may have dependencies; the core may not. That separation is why
+      # ADR 0006 put the CLI in its own module, and ADR 0017 sets the rule:
+      # each one enters with an ADR, not with a go get.
+      #
+      # Checking against the list rather than against zero keeps the same
+      # friction where it still makes sense.
       - name: dependency budget
         run: |
-          deps=$(go list -m all | tail -n +2 || true)
-          if [ -n "$deps" ]; then
-            echo "the CLI is meant to have no dependencies yet:"
-            echo "$deps"
+          allowed="gopkg.in/yaml.v3"
+          extra=""
+          for dep in $(go list -m all | tail -n +2 | awk '{print $1}'); do
+            case " $allowed " in *" $dep "*) ;; *) extra="$extra $dep" ;; esac
+          done
+          if [ -n "$extra" ]; then
+            echo "the CLI carries dependencies with no ADR:$extra"
+            echo "See docs/adr/0017 -- each one enters with a decision, not a go get."
             exit 1
           fi
 

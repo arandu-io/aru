@@ -56,6 +56,30 @@ var commands = []command{
 		run:   delegate("migrate:fresh"),
 	},
 	{
+		name:  "schedule:list",
+		usage: "aru schedule:list",
+		desc:  "list the scheduled tasks, with the next run of each",
+		run:   delegate("schedule:list"),
+	},
+	{
+		name:  "schedule:run",
+		usage: "aru schedule:run <id> [--tenant=<id>]",
+		desc:  "run one scheduled task now, on the same path the scheduler uses",
+		run:   delegate("schedule:run"),
+	},
+	{
+		name:  "work",
+		usage: "aru work [--queue=default] [--workers=4]",
+		desc:  "drain a job queue; the same image with another argument",
+		run:   delegate("work"),
+	},
+	{
+		name:  "build",
+		usage: "aru build [--docker] [--version=v1.2.3] [--output=bin/app]",
+		desc:  "compile one static binary, with its checksum, or a container image",
+		run:   build,
+	},
+	{
 		name:  "routes",
 		usage: "aru routes",
 		desc:  "list the registered routes, by module",

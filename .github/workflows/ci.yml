@@ -50,7 +50,10 @@ jobs:
         run: |
           allowed="gopkg.in/yaml.v3"
           extra=""
-          for dep in $(go list -m all | tail -n +2 | awk '{print $1}'); do
+          # What the binary carries, not what go.sum mentions: `go list -m all`
+          # includes the dependency's test dependency, which is never compiled.
+          linked=$(go list -deps -f '{{if .Module}}{{if not .Standard}}{{.Module.Path}}{{end}}{{end}}' ./... | sort -u | grep -v '^github.com/arandu-io/aru$')
+          for dep in $linked; do
             case " $allowed " in *" $dep "*) ;; *) extra="$extra $dep" ;; esac
           done
           if [ -n "$extra" ]; then

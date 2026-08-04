@@ -6,5 +6,13 @@ go 1.25
 // every project that imports the framework would drag the CLI's dependencies
 // along -- see docs/05-repositorios.md and docs/adr/0005.
 //
-// It has no dependencies of its own: the interactive prompt library (bubbletea)
-// arrives in phase 2, with the code generator that needs it.
+// One dependency, and it is the DSL's: YAML has no parser in the standard
+// library, and writing one would be a subset that a model eventually writes
+// outside of. yaml.v3 has no dependencies of its own, which keeps the graph at
+// exactly one node.
+//
+// The core still has two. That separation is the whole point of ADR 0006: the
+// CLI can afford a dependency, and every project that imports the framework
+// must not pay for it.
+
+require gopkg.in/yaml.v3 v3.0.1 // indirect

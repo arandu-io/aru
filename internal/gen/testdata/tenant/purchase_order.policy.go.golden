@@ -11,6 +11,7 @@ import (
 // in an action name would silently authorize nothing, or worse, everything.
 const (
 	ActionView   security.Action = "purchase_order.view"
+	ActionList   security.Action = "purchase_order.list"
 	ActionCreate security.Action = "purchase_order.create"
 	ActionUpdate security.Action = "purchase_order.update"
 	ActionDelete security.Action = "purchase_order.delete"
@@ -32,17 +33,11 @@ func (Policy) Can(ctx context.Context, s security.Subject, a security.Action, p 
 	}
 
 	// arandu:begin custom
-	// Open the actions this module needs. For example:
+	// Anything the specification cannot express goes here: a rule that depends
+	// on the entity rather than only on the role, a time window, a limit.
 	//
-	//	switch a {
-	//	case ActionView:
-	//		if s.HasRole("admin") || s.HasRole("staff") {
-	//			return nil
-	//		}
-	//	case ActionCreate, ActionUpdate, ActionDelete:
-	//		if s.HasRole("admin") {
-	//			return nil
-	//		}
+	//	if a == ActionDelete && p.Approved {
+	//		return fmt.Errorf("an approved purchase_order cannot be deleted")
 	//	}
 	// arandu:end custom
 

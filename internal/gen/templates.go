@@ -153,16 +153,25 @@ import (
 // in an action name would silently authorize nothing, or worse, everything.
 const (
 	ActionView   security.Action = "{{.Name}}.view"
+	ActionList   security.Action = "{{.Name}}.list"
 	ActionCreate security.Action = "{{.Name}}.create"
 	ActionUpdate security.Action = "{{.Name}}.update"
 	ActionDelete security.Action = "{{.Name}}.delete"
 )
 
+{{if .Rules -}}
+// Policy is the only authority over who does what with {{.Entity}}.
+//
+// The rules below came from the specification, where somebody said them out
+// loud. Everything not listed is denied -- an action with no rule is an action
+// nobody can take.
+{{- else -}}
 // Policy is the only authority over who does what with {{.Entity}}.
 //
 // IT DENIES EVERYTHING. That is deliberate: a generated policy that allowed
 // anything would be a hole shipped by default, in every project that ran the
 // generator. Open what this module actually needs, and nothing else.
+{{- end}}
 type Policy struct{}
 
 // Can decides whether the subject may perform the action.
@@ -175,18 +184,22 @@ func (Policy) Can(ctx context.Context, s security.Subject, a security.Action, {{
 	}
 {{- end}}
 
+{{if .Rules}}
+	switch a {
+{{- range .Rules}}
+	case Action{{.Action}}:
+		if {{range $i, $role := .Roles}}{{if $i}} || {{end}}s.HasRole("{{$role}}"){{end}} {
+			return nil
+		}
+{{- end}}
+	}
+{{end}}
 	// arandu:begin custom
-	// Open the actions this module needs. For example:
+	// Anything the specification cannot express goes here: a rule that depends
+	// on the entity rather than only on the role, a time window, a limit.
 	//
-	//	switch a {
-	//	case ActionView:
-	//		if s.HasRole("admin") || s.HasRole("staff") {
-	//			return nil
-	//		}
-	//	case ActionCreate, ActionUpdate, ActionDelete:
-	//		if s.HasRole("admin") {
-	//			return nil
-	//		}
+	//	if a == ActionDelete && {{.Receiver}}.Approved {
+	//		return fmt.Errorf("an approved {{.Name}} cannot be deleted")
 	//	}
 	// arandu:end custom
 

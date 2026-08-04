@@ -9,6 +9,7 @@ package gen
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -101,6 +102,47 @@ type Module struct {
 	// than time.Now() so the generator stays deterministic and golden files mean
 	// something.
 	Date string
+	// Permissions maps an action to the roles allowed to take it, and is what
+	// opens the generated Policy.
+	//
+	// Empty means the policy denies everything, which is what `make:module`
+	// produces: a generator that guessed at permissions would ship a hole by
+	// default, in every project that ran it. `aru generate` fills this from the
+	// specification, where a person or a model said so out loud.
+	Permissions map[string][]string
+}
+
+// Rules returns the permissions in a fixed order, for the template.
+//
+// Sorted, because a map ranges differently on every run and the golden files
+// would never match twice.
+func (m Module) Rules() []Rule {
+	if len(m.Permissions) == 0 {
+		return nil
+	}
+
+	// The order actions are declared in, not alphabetical: reading view, list,
+	// create, update, delete follows what the module does.
+	order := []string{"view", "list", "create", "update", "delete"}
+	out := make([]Rule, 0, len(m.Permissions))
+
+	for _, action := range order {
+		roles, listed := m.Permissions[action]
+		if !listed || len(roles) == 0 {
+			continue
+		}
+		sorted := append([]string(nil), roles...)
+		sort.Strings(sorted)
+		out = append(out, Rule{Action: exported(action), Roles: sorted})
+	}
+	return out
+}
+
+// Rule is one action and the roles that may take it.
+type Rule struct {
+	// Action is the constant name: "View", "Create".
+	Action string
+	Roles  []string
 }
 
 // Entity is the exported type name: "purchase_order" becomes "PurchaseOrder".

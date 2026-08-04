@@ -1,0 +1,155 @@
+{
+  "$id": "https://raw.githubusercontent.com/arandu-io/aru/main/schema/module.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One module of an Arandu application: an entity, its fields, and who may do what to it. A deterministic generator turns this into Go -- the model never writes Go.",
+  "examples": [
+    {
+      "description": "An invoice issued to a customer.",
+      "fields": [
+        {
+          "name": "reference",
+          "required": true,
+          "type": "string",
+          "unique": true
+        },
+        {
+          "name": "customer_email",
+          "required": true,
+          "type": "email"
+        },
+        {
+          "name": "total",
+          "required": true,
+          "type": "money"
+        },
+        {
+          "name": "due_date",
+          "type": "date"
+        },
+        {
+          "name": "paid",
+          "type": "bool"
+        },
+        {
+          "name": "notes",
+          "type": "text"
+        }
+      ],
+      "name": "invoice",
+      "permissions": {
+        "create": [
+          "admin"
+        ],
+        "delete": [
+          "admin"
+        ],
+        "list": [
+          "admin",
+          "member"
+        ],
+        "update": [
+          "admin"
+        ],
+        "view": [
+          "admin",
+          "member"
+        ]
+      },
+      "tenant": true,
+      "version": "1"
+    }
+  ],
+  "properties": {
+    "description": {
+      "description": "What this module is for, in a sentence. Not used for generation -- it is there so a person can approve the spec instead of the diff.",
+      "type": "string"
+    },
+    "fields": {
+      "description": "The columns. id, tenant_id, created_at and updated_at are generated for every module -- do not declare them.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "The column name, lowercase with underscores.",
+            "pattern": "^[a-z][a-z0-9_]*[a-z0-9]$",
+            "type": "string"
+          },
+          "required": {
+            "description": "NOT NULL in the schema, and validated as present in the request.",
+            "type": "boolean"
+          },
+          "type": {
+            "description": "The type of the column. bool is true or false; date is a day, with no time; decimal is fractional number -- never money; email is an address, validated as one; int is whole number; money is an amount, stored in cents as an integer; string is short text, up to a line; text is long text; timestamp is a moment; uuid is an identifier.",
+            "enum": [
+              "bool",
+              "date",
+              "decimal",
+              "email",
+              "int",
+              "money",
+              "string",
+              "text",
+              "timestamp",
+              "uuid"
+            ],
+            "type": "string"
+          },
+          "unique": {
+            "description": "A unique index, scoped by tenant when the module is.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "name": {
+      "description": "The module name, lowercase with underscores: purchase_order, not PurchaseOrder.",
+      "pattern": "^[a-z][a-z0-9_]*[a-z0-9]$",
+      "type": "string"
+    },
+    "permissions": {
+      "additionalProperties": {
+        "description": "The roles allowed to take this action.",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 1,
+        "type": "array"
+      },
+      "description": "Which roles may take which action. The generated Policy denies everything not listed here -- an action with no entry is an action nobody can take.",
+      "propertyNames": {
+        "enum": [
+          "view",
+          "list",
+          "create",
+          "update",
+          "delete"
+        ]
+      },
+      "type": "object"
+    },
+    "tenant": {
+      "description": "Scope every query by the tenant of the Grant. True for anything that belongs to a customer, which is almost everything in a SaaS.",
+      "type": "boolean"
+    },
+    "version": {
+      "const": "1",
+      "description": "The schema version this document is written against.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "version",
+    "name",
+    "fields"
+  ],
+  "title": "Arandu module",
+  "type": "object"
+}

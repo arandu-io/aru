@@ -122,6 +122,18 @@ var commands = []command{
 		run:   makeAuth,
 	},
 	{
+		name:  "generate",
+		usage: "aru generate <spec.yaml> [--check] [--dry-run] [--force]",
+		desc:  "generate a module from a specification; the model writes the spec, never the Go",
+		run:   generate,
+	},
+	{
+		name:  "schema",
+		usage: "aru schema [--output module.schema.json]",
+		desc:  "print the JSON Schema a specification is written against",
+		run:   schemaCommand,
+	},
+	{
 		name:  "make:policy",
 		usage: "aru make:policy <entity>",
 		desc:  "generate a policy for an existing entity",

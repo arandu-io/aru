@@ -62,7 +62,11 @@
   ],
   "properties": {
     "description": {
-      "description": "What this module is for, in a sentence. Not used for generation -- it is there so a person can approve the spec instead of the diff.",
+      "description": "What this module is for, in one sentence. Not used for generation -- it is here so a person can approve the specification instead of the diff. QUOTE IT if the sentence contains a colon: description: \"Invoices: one per order\".",
+      "examples": [
+        "An invoice issued to a customer.",
+        "A support ticket: what was reported, and by whom."
+      ],
       "type": "string"
     },
     "fields": {

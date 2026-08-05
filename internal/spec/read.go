@@ -40,7 +40,7 @@ func Parse(body []byte, name string) (Module, error) {
 	decoder.KnownFields(true)
 
 	if err := decoder.Decode(&m); err != nil {
-		return Module{}, fmt.Errorf("%s is not a valid specification: %w", name, explain(err))
+		return Module{}, fmt.Errorf("%s is not a valid specification: %w", name, explain(err, body))
 	}
 	if err := m.Validate(); err != nil {
 		return Module{}, fmt.Errorf("%s: %w", name, err)
@@ -83,10 +83,62 @@ func Marshal(m Module) ([]byte, error) {
 //
 // The library says `field requried not found in type spec.Field`, which names
 // the Go type rather than the file. Anyone reading it is looking at YAML.
-func explain(err error) error {
+func explain(err error, body []byte) error {
 	message := err.Error()
 	message = strings.ReplaceAll(message, "yaml: unmarshal errors:\n  ", "")
 	message = strings.ReplaceAll(message, "in type spec.Module", "at the top level")
 	message = strings.ReplaceAll(message, "in type spec.Field", "in a field")
+
+	// The one syntax error people actually hit, and the one whose message says
+	// the least. A description is a sentence, sentences carry colons, and an
+	// unquoted colon ends the value -- so YAML reads the rest as a nested map.
+	//
+	// What the library says is "mapping values are not allowed in this context",
+	// which names a YAML concept and no action. This names the line, the colon,
+	// and the fix.
+	if strings.Contains(message, "mapping values are not allowed") {
+		if line, text := offendingLine(body, message); text != "" {
+			return fmt.Errorf("%s\n\n  line %d: %s\n\nA value containing \": \" has to be quoted, or YAML reads what follows the\ncolon as a nested key. Wrap it:\n\n  description: \"%s\"",
+				message, line, text, strings.TrimSpace(afterKey(text)))
+		}
+	}
 	return fmt.Errorf("%s", message)
+}
+
+// offendingLine pulls the line number out of a yaml error and returns its text.
+func offendingLine(body []byte, message string) (int, string) {
+	// The library formats it as "yaml: line N: ...", one-indexed.
+	marker := "line "
+	i := strings.Index(message, marker)
+	if i < 0 {
+		return 0, ""
+	}
+	rest := message[i+len(marker):]
+	end := strings.IndexByte(rest, ':')
+	if end < 0 {
+		return 0, ""
+	}
+
+	number := 0
+	for _, c := range rest[:end] {
+		if c < '0' || c > '9' {
+			return 0, ""
+		}
+		number = number*10 + int(c-'0')
+	}
+
+	lines := strings.Split(string(body), "\n")
+	if number < 1 || number > len(lines) {
+		return 0, ""
+	}
+	return number, strings.TrimRight(lines[number-1], "\r")
+}
+
+// afterKey returns what follows the first "key: " on a line, which is the value
+// that needed quoting.
+func afterKey(line string) string {
+	if _, value, found := strings.Cut(line, ": "); found {
+		return value
+	}
+	return line
 }

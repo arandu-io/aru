@@ -49,8 +49,17 @@ func Schema() ([]byte, error) {
 				"description": "The module name, lowercase with underscores: purchase_order, not PurchaseOrder.",
 			},
 			"description": map[string]any{
-				"type":        "string",
-				"description": "What this module is for, in a sentence. Not used for generation -- it is there so a person can approve the spec instead of the diff.",
+				"type": "string",
+				// The warning is here because this is the one field that holds
+				// a sentence, and sentences carry colons. An unquoted colon
+				// ends the YAML value, and the parser then reports "mapping
+				// values are not allowed in this context" -- a message that
+				// names a YAML concept and no action.
+				"description": "What this module is for, in one sentence. Not used for generation -- it is here so a person can approve the specification instead of the diff. QUOTE IT if the sentence contains a colon: description: \"Invoices: one per order\".",
+				"examples": []any{
+					"An invoice issued to a customer.",
+					"A support ticket: what was reported, and by whom.",
+				},
 			},
 			"tenant": map[string]any{
 				"type":        "boolean",

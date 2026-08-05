@@ -169,7 +169,38 @@ func (m Module) Table() string {
 func (m Module) Route() string { return "/" + strings.ReplaceAll(m.Table(), "_", "-") }
 
 // Receiver is the short receiver name used in generated methods.
-func (m Module) Receiver() string { return strings.ToLower(m.Entity()[:1]) }
+func (m Module) Receiver() string {
+	initial := strings.ToLower(m.Entity()[:1])
+
+	// The generated Policy signature already binds ctx, s and a:
+	//
+	//	Can(ctx context.Context, s security.Subject, a security.Action, x Entity)
+	//
+	// So an entity whose initial is one of those -- Subscription, Account,
+	// Category -- would shadow the parameter it needs, and the file would not
+	// compile. Two letters is enough to get out of the way, and it reads like
+	// what a person would have written: "su" for Subscription.
+	//
+	// Found by a real measurement: ten specifications written by models, two of
+	// which named an entity starting with S. A generator tested on one module
+	// never sees this.
+	if taken(initial) && len(m.Entity()) > 1 {
+		return strings.ToLower(m.Entity()[:2])
+	}
+	return initial
+}
+
+// taken reports whether an identifier collides with what the generated
+// signatures already bind.
+func taken(name string) bool {
+	switch name {
+	case "s", "a", "c", "w", "r":
+		// s: security.Subject   a: security.Action   c: context, in some templates
+		// w: http.ResponseWriter   r: *http.Request
+		return true
+	}
+	return false
+}
 
 // NeedsTime reports whether the generated entity imports time.
 func (m Module) NeedsTime() bool {

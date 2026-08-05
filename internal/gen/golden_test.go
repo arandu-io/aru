@@ -3,6 +3,8 @@ package gen_test
 import (
 	"bytes"
 	"flag"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -186,5 +188,73 @@ func TestTenantScopesEveryQuery(t *testing.T) {
 				strings.Count(repo, "data.Tenant(g)"))
 		}
 		return
+	}
+}
+
+// TestTheReceiverDoesNotShadowTheSignature is a bug a real measurement found,
+// and one that testing a single module could never find.
+//
+// The generated Policy binds ctx, s and a:
+//
+//	Can(ctx context.Context, s security.Subject, a security.Action, x Entity)
+//
+// An entity whose initial is one of those -- Subscription, Account, Category --
+// shadowed the parameter it needed, and the file did not compile. Every
+// existing golden file used purchase_order, which starts with p.
+func TestTheReceiverDoesNotShadowTheSignature(t *testing.T) {
+	for _, name := range []string{
+		"subscription",   // s, like security.Subject
+		"stock_movement", // s again
+		"account",        // a, like security.Action
+		"category",       // c, like context in some templates
+		"warehouse",      // w, like http.ResponseWriter
+		"reservation",    // r, like *http.Request
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := gen.Module{
+				Name:       name,
+				Fields:     []gen.Field{{Name: "label", Type: gen.TypeString, Required: true}},
+				Tenant:     true,
+				ModulePath: "example.test/project",
+				Date:       "2026_08_05",
+			}
+
+			files, err := gen.Generate(m)
+			if err != nil {
+				t.Fatalf("Generate: %v", err)
+			}
+
+			// Every generated Go file has to parse, and the receiver has to be
+			// something other than what the signature already binds.
+			for _, f := range files {
+				if !strings.HasSuffix(f.Path, ".go") {
+					continue
+				}
+				if _, err := parser.ParseFile(token.NewFileSet(), f.Path, f.Content, parser.AllErrors); err != nil {
+					t.Errorf("%s does not parse: %v", f.Path, err)
+				}
+			}
+
+			if receiver := m.Receiver(); receiver == "s" || receiver == "a" || receiver == "c" {
+				t.Errorf("the receiver is %q, which shadows a parameter of the Can signature", receiver)
+			}
+		})
+	}
+}
+
+// TestTheReceiverStaysShortWhenItCan: two letters only where one collides, or
+// every generated file reads worse for a problem six names have.
+func TestTheReceiverStaysShortWhenItCan(t *testing.T) {
+	for name, want := range map[string]string{
+		"invoice":        "i",
+		"purchase_order": "p",
+		"customer":       "cu", // c collides
+		"subscription":   "su", // s collides
+		"account":        "ac", // a collides
+	} {
+		got := gen.Module{Name: name}.Receiver()
+		if got != want {
+			t.Errorf("%s has receiver %q, want %q", name, got, want)
+		}
 	}
 }

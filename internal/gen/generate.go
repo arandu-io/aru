@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"text/template"
 )
@@ -45,7 +46,7 @@ func Generate(m Module) ([]File, error) {
 		{m.Name + "_test.go", testTemplate},
 		{"arandu.mod.toml", manifestTemplate},
 	} {
-		content, err := renderRaw(t.name, t.tmpl, m)
+		content, err := render(t.name, t.tmpl, m)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", t.name, err)
 		}
@@ -58,31 +59,20 @@ func Generate(m Module) ([]File, error) {
 // the one input the generator cannot infer.
 var errModulePath = fmt.Errorf("the project module path is required")
 
-// renderRaw renders without gofmt, for files that are not Go: a .templ has to
-// reach templ as written.
-func renderRaw(name, tmpl string, m Module) ([]byte, error) {
-	t, err := template.New(name).Parse(tmpl)
-	if err != nil {
-		return nil, err
-	}
-	var buf bytes.Buffer
-	if err := t.Execute(&buf, m); err != nil {
-		return nil, err
-	}
-	if !strings.HasSuffix(name, ".go") {
-		return buf.Bytes(), nil
-	}
-	formatted, err := format.Source(buf.Bytes())
-	if err != nil {
-		return nil, fmt.Errorf("%s does not parse -- bug in the template: %w", name, err)
-	}
-	return formatted, nil
-}
-
+// render turns a template into a file.
+//
+// One function, not two. There used to be a render with the FuncMap and a
+// renderRaw without it, and every caller used renderRaw -- so `quote`, the
+// second lock on anything from a specification that lands inside a Go string
+// literal, was defined on a function nobody called. Found by audit; the first
+// lock in the spec validator was carrying it alone.
 func render(name, tmpl string, m Module) ([]byte, error) {
 	t, err := template.New(name).Funcs(template.FuncMap{
 		"lower": strings.ToLower,
 		"join":  strings.Join,
+		// quote is the second lock. The spec validator is the first, and it
+		// says why; this one holds even if a future field forgets to validate.
+		"quote": strconv.Quote,
 	}).Parse(tmpl)
 	if err != nil {
 		return nil, err
@@ -93,12 +83,17 @@ func render(name, tmpl string, m Module) ([]byte, error) {
 		return nil, err
 	}
 
+	// A .templ file reaches templ as written; only Go is formatted.
+	if !strings.HasSuffix(name, ".go") {
+		return buf.Bytes(), nil
+	}
+
 	// gofmt the output rather than trusting the template's indentation. A
 	// generator that emits unformatted Go makes every project fail its own CI on
 	// the first run.
 	formatted, err := format.Source(buf.Bytes())
 	if err != nil {
-		return nil, fmt.Errorf("the generated code does not parse -- this is a bug in the template: %w\n%s", err, numbered(buf.String()))
+		return nil, fmt.Errorf("%s does not parse -- this is a bug in the template: %w\n%s", name, err, numbered(buf.String()))
 	}
 	return formatted, nil
 }

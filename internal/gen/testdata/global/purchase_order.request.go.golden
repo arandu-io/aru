@@ -22,12 +22,12 @@ type CreateRequest struct {
 func (r CreateRequest) Validate() validation.Errors {
 	e := validation.Errors{}
 	validation.Required(e, "reference", r.Reference)
-	validation.MaxLen(e, "reference", r.Reference, 500)
+	validation.MaxLen(e, "reference", r.Reference, 255)
 	validation.Required(e, "supplier_email", r.SupplierEmail)
 	validation.Email(e, "supplier_email", r.SupplierEmail)
 	validation.MaxLen(e, "supplier_email", r.SupplierEmail, 254)
-	validation.Required(e, "total", "")
-	validation.MaxLen(e, "notes", r.Notes, 500)
+	validation.NotZero(e, "total", r.Total)
+	validation.MaxLen(e, "notes", r.Notes, 5000)
 
 	// arandu:begin custom
 	// Domain rules go here: ranges, formats, cross-field checks.

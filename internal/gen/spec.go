@@ -44,18 +44,28 @@ var types = map[Type]struct {
 	Zero   string
 	Import string
 }{
-	TypeString:  {Go: "string", SQL: "TEXT", Zero: `""`},
-	TypeText:    {Go: "string", SQL: "TEXT", Zero: `""`},
-	TypeInt:     {Go: "int64", SQL: "INTEGER", Zero: "0"},
-	TypeDecimal: {Go: "float64", SQL: "REAL", Zero: "0"},
+	// VARCHAR for the short kinds, TEXT for the long one. That is the
+	// distinction the DSL already draws -- "short text, up to a line" against
+	// "long text" -- and the generator used to collapse both to TEXT, which
+	// MySQL refuses in a UNIQUE or an index without a prefix length. See
+	// data.KeyText. Found by audit.
+	TypeString: {Go: "string", SQL: "VARCHAR(255)", Zero: `""`},
+	TypeText:   {Go: "string", SQL: "TEXT", Zero: `""`},
+	TypeInt:    {Go: "int64", SQL: "INTEGER", Zero: "0"},
+	// DOUBLE PRECISION, not REAL: REAL is four bytes in PostgreSQL, so a
+	// float64 written through it comes back rounded to about seven digits --
+	// silently, on read, with no error anywhere. SQLite gives "DOUB" REAL
+	// affinity and MySQL accepts the spelling, so one word serves all three.
+	// Found by audit.
+	TypeDecimal: {Go: "float64", SQL: "DOUBLE PRECISION", Zero: "0"},
 	// Money is an integer of cents, never a float: 0.1 + 0.2 is not 0.3 in
 	// binary floating point, and an invoice off by a cent is a support ticket.
 	TypeMoney:     {Go: "int64", SQL: "INTEGER", Zero: "0"},
 	TypeBool:      {Go: "bool", SQL: "BOOLEAN", Zero: "false"},
 	TypeDate:      {Go: "time.Time", SQL: "DATE", Zero: "time.Time{}", Import: "time"},
 	TypeTimestamp: {Go: "time.Time", SQL: "TIMESTAMP", Zero: "time.Time{}", Import: "time"},
-	TypeUUID:      {Go: "string", SQL: "TEXT", Zero: `""`},
-	TypeEmail:     {Go: "string", SQL: "TEXT", Zero: `""`},
+	TypeUUID:      {Go: "string", SQL: "VARCHAR(255)", Zero: `""`},
+	TypeEmail:     {Go: "string", SQL: "VARCHAR(255)", Zero: `""`},
 }
 
 // Field is one column of the entity.
@@ -85,6 +95,23 @@ func (f Field) IsEmail() bool { return f.Type == TypeEmail }
 // validation.
 func (f Field) IsString() bool {
 	return f.Type == TypeString || f.Type == TypeText || f.Type == TypeEmail
+}
+
+// MaxLength is the limit the generated validation enforces.
+//
+// It agrees with the column: a value that passes validation has to fit, or the
+// rejection comes from the database driver instead of from the validator, in a
+// message about a column rather than about a field somebody filled in.
+func (f Field) MaxLength() int {
+	switch f.Type {
+	case TypeEmail:
+		// The addr-spec limit, which is smaller than the column.
+		return 254
+	case TypeText:
+		return 5000
+	default:
+		return 255
+	}
 }
 
 // Module is the whole specification.

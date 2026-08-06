@@ -59,7 +59,7 @@ func (s *Service) Get(ctx context.Context, actor security.Subject, id string) (P
 
 // List returns a page of purchase_orders.
 func (s *Service) List(ctx context.Context, actor security.Subject, q data.Query) ([]PurchaseOrder, error) {
-	g, err := security.Authorize(ctx, s.policy, actor, ActionView, PurchaseOrder{})
+	g, err := security.Authorize(ctx, s.policy, actor, ActionList, PurchaseOrder{})
 	if err != nil {
 		return nil, err
 	}

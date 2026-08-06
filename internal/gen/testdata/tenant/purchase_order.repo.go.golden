@@ -76,7 +76,11 @@ var sortable = map[string]string{
 // Pagination is keyset based: OFFSET grows more expensive with every page and
 // skips rows when data changes underneath it.
 func (r *Repo) List(ctx context.Context, g security.Grant, q data.Query) ([]PurchaseOrder, error) {
-	if err := g.Check(ActionView); err != nil {
+	// ActionList, not ActionView. The specification can grant them to different
+	// roles -- "a support agent may open the record it was given, but may not
+	// page through every record there is" -- and checking view here made the
+	// list permission decorative: whoever could read one could read all of them.
+	if err := g.Check(ActionList); err != nil {
 		return nil, err
 	}
 	column, ok := sortable[q.Sort]
@@ -95,8 +99,14 @@ func (r *Repo) List(ctx context.Context, g security.Grant, q data.Query) ([]Purc
 	query := `SELECT ` + columns + ` FROM purchase_orders WHERE tenant_id = ?`
 	args := []any{data.Tenant(g)}
 	if q.Cursor != "" {
-		query += ` AND (created_at > (SELECT created_at FROM purchase_orders WHERE id = ? AND tenant_id = ?)
-		            OR (created_at = (SELECT created_at FROM purchase_orders WHERE id = ? AND tenant_id = ?) AND id > ?))`
+		// The predicate names the column the ORDER BY names. It used to be
+		// hardcoded to created_at while the ordering followed q.Sort, so any
+		// sort other than the default computed the page boundary on one
+		// ordering and returned the rows in another -- pages that skipped rows
+		// and pages that repeated them, silently. The column comes from the
+		// allowlist above, never from the request.
+		query += ` AND (` + column + ` > (SELECT ` + column + ` FROM purchase_orders WHERE id = ? AND tenant_id = ?)
+		            OR (` + column + ` = (SELECT ` + column + ` FROM purchase_orders WHERE id = ? AND tenant_id = ?) AND id > ?))`
 		args = append(args, q.Cursor, args[0], q.Cursor, args[0], q.Cursor)
 	}
 	query += ` ORDER BY ` + column + `, id LIMIT ?`

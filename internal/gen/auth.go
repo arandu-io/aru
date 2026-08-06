@@ -32,7 +32,7 @@ func GenerateAuth(m Module) ([]File, error) {
 		{"views.templ", authViewsTemplate},
 		{"arandu.mod.toml", authManifestTemplate},
 	} {
-		content, err := renderRaw(t.name, t.tmpl, m)
+		content, err := render(t.name, t.tmpl, m)
 		if err != nil {
 			return nil, err
 		}

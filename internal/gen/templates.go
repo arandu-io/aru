@@ -882,7 +882,9 @@ func TestThePolicyDeniesWhatItDoesNotKnow(t *testing.T) {
 
 func TestListRejectsSortOutsideTheAllowlist(t *testing.T) {
 	repo := repoWithoutDB()
-	g := security.SystemGrant({{.Package}}.ActionView, "t1")
+	// ActionList, because listing is its own permission: a role may be allowed
+	// to open the record it was given and not to page through every record.
+	g := security.SystemGrant({{.Package}}.ActionList, "t1")
 
 	_, err := repo.List(context.Background(), g, data.Query{Sort: "1; DROP TABLE {{.Table}}"})
 

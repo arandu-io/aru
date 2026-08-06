@@ -15,4 +15,4 @@ go 1.25
 // CLI can afford a dependency, and every project that imports the framework
 // must not pay for it.
 
-require gopkg.in/yaml.v3 v3.0.1 // indirect
+require gopkg.in/yaml.v3 v3.0.1

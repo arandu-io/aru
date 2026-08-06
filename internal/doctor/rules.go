@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"fmt"
 	"go/ast"
 	"path/filepath"
 	"regexp"
@@ -16,6 +17,7 @@ import (
 // Adding a rule that rejects existing code is a breaking change (doc 23): it
 // enters as a warning in a minor and becomes an error in the next major.
 var rules = []func(*project) []Finding{
+	unreadableFiles,
 	repositoryNeedsPolicy,
 	repositoryMethodNeedsGrant,
 	policyMustBeOpened,
@@ -28,6 +30,30 @@ var rules = []func(*project) []Finding{
 	sessionMustRotateOnLogin,
 	declaredPermissionsMatchTheCode,
 	alpineHoldsClientStateOnly,
+}
+
+// 0. A file doctor could not read makes every other rule unreliable.
+//
+// The parser used to skip an unparsable file silently, on the reasoning that the
+// compiler reports a syntax error better -- which is true, and beside the point.
+// Every rule here reasons over the whole file set, so a module whose policy.go
+// does not parse looks exactly like a module with no policy at all, and doctor
+// reported that: an invented finding, pointing at the wrong file, telling the
+// author to write a policy they had already written. Found by audit.
+//
+// Reporting it first and as an error is the honest answer: what follows is
+// incomplete, and here is why.
+func unreadableFiles(p *project) []Finding {
+	var out []Finding
+	for _, u := range p.unreadable {
+		out = append(out, Finding{
+			Rule: "file-does-not-parse", Severity: Error,
+			File: u.rel, Line: u.line,
+			Message: "this file does not parse: " + u.reason,
+			Why:     "doctor reads the whole project to answer questions about it, so a file it cannot read makes the rest of this report incomplete -- and can make it wrong: a module whose policy does not parse looks like a module with no policy. Fix the syntax and run again.",
+		})
+	}
+	return out
 }
 
 // 1. A repository without a policy in the same module means the entity is
@@ -52,21 +78,32 @@ func repositoryNeedsPolicy(p *project) []Finding {
 		}
 	}
 
+	// One finding per module, and every module -- not the first one and then
+	// stop. It used to break out of the loop after the first, so a project with
+	// three unprotected modules reported one, and the author found the next only
+	// after fixing that one and running again. Found by audit; the spec
+	// validator's own doc comment says why that is the wrong shape.
+	reported := map[string]bool{}
 	var out []Finding
 	for _, f := range files {
-		if f.module == "" || f.isTest || hasPolicy[f.module] {
+		if f.module == "" || f.isTest || hasPolicy[f.module] || reported[f.module] {
+			continue
+		}
+		// This rule concludes from an absence, so it has to know whether the
+		// absence is real. See project.blind.
+		if p.blind(f.module) {
 			continue
 		}
 		if !strings.HasSuffix(f.rel, ".repo.go") && !strings.Contains(f.rel, "repo") {
 			continue
 		}
+		reported[f.module] = true
 		out = append(out, Finding{
 			Rule: "repository-without-policy", Severity: Error,
 			File: f.rel, Line: 1,
 			Message: "module " + f.module + " has a repository and no policy",
 			Why:     "the entity is reachable and nobody decided who may reach it. Run `aru make:policy` or write the Policy type in this module.",
 		})
-		break
 	}
 	return out
 }
@@ -256,8 +293,108 @@ func tenantMustComeFromTheGrant(p *project) []Finding {
 				})
 			}
 		})
+
+		out = append(out, requestValuesReachingAGrant(f)...)
 	}
 	return out
+}
+
+// requestValuesReachingAGrant follows the value instead of reading the name.
+//
+// The two checks above ask whether a header or a parameter is CALLED something
+// with "tenant" in it, and that is the wrong question:
+//
+//	org := r.Header.Get("X-Org")
+//	g := security.SystemGrant(ActionView, org)
+//
+// passes both of them and is exactly the hole RULE 14 exists to close. The name
+// of a header is chosen by whoever wrote the client; what makes it a tenant is
+// where the value ends up. Found by audit.
+//
+// The analysis is deliberately small: within one function, a variable assigned
+// from something the request controls is tainted, and a tainted variable
+// reaching the tenant argument of SystemGrant is the finding. It does not follow
+// values across functions, and it says so -- a doctor that claims more coverage
+// than it has is worse than one that claims less.
+func requestValuesReachingAGrant(f *file) []Finding {
+	var out []Finding
+
+	ast.Inspect(f.ast, func(n ast.Node) bool {
+		fn, ok := n.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			return true
+		}
+
+		// Pass one: every local name assigned from a request-controlled read.
+		tainted := map[string]*ast.CallExpr{}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			var lhs []ast.Expr
+			var rhs []ast.Expr
+			switch a := n.(type) {
+			case *ast.AssignStmt:
+				lhs, rhs = a.Lhs, a.Rhs
+			default:
+				return true
+			}
+			if len(lhs) != len(rhs) {
+				return true
+			}
+			for i, r := range rhs {
+				call, ok := r.(*ast.CallExpr)
+				if !ok || !readsTheRequest(callName(call)) {
+					continue
+				}
+				if id, ok := lhs[i].(*ast.Ident); ok && id.Name != "_" {
+					tainted[id.Name] = call
+				}
+			}
+			return true
+		})
+		if len(tainted) == 0 {
+			return true
+		}
+
+		// Pass two: a tainted name in the tenant argument of SystemGrant.
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || callName(call) != "security.SystemGrant" || len(call.Args) < 2 {
+				return true
+			}
+			id, ok := call.Args[1].(*ast.Ident)
+			if !ok {
+				return true
+			}
+			source, isTainted := tainted[id.Name]
+			if !isTainted {
+				return true
+			}
+			file, line := f.at(call)
+			_, sourceLine := f.at(source)
+			out = append(out, Finding{
+				Rule: "tenant-from-request", Severity: Error,
+				File: file, Line: line,
+				Message: fmt.Sprintf("the tenant of this Grant is %s, which line %d read from the request", id.Name, sourceLine),
+				Why:     "the name of a header or a parameter is chosen by whoever wrote the client, so it proves nothing. What makes a value a tenant is that it scopes SQL -- and a client that picks its own scope reads whichever customer it names. Resolve the tenant from the session, the host name or a constant.",
+			})
+			return true
+		})
+		return true
+	})
+	return out
+}
+
+// readsTheRequest reports whether a call returns something the client controls.
+func readsTheRequest(name string) bool {
+	switch {
+	case strings.HasSuffix(name, "Header.Get"),
+		strings.HasSuffix(name, "Query.Get"),
+		strings.HasSuffix(name, ".PathValue"),
+		strings.HasSuffix(name, ".FormValue"),
+		strings.HasSuffix(name, ".PostFormValue"),
+		strings.HasSuffix(name, ".Cookie"):
+		return true
+	}
+	return false
 }
 
 // 6. SystemGrant is the one way past the policy. Its call sites are the audit.
@@ -572,7 +709,11 @@ func declaredPermissionsMatchTheCode(p *project) []Finding {
 					Message: module + " uses " + c.name + " and declares " + c.name + " = false",
 					Why:     c.consequence + ". Set " + c.name + " = true under [permissions], or remove the code that needs it.",
 				})
-			case c.declared && !c.used:
+			case c.declared && !c.used && !p.blind(module):
+				// Absence, so it needs the guard: a module whose only network
+				// call is in a file that does not parse would be told to declare
+				// network = false, which is the opposite of true. See
+				// project.blind.
 				out = append(out, Finding{
 					Rule: "permission-not-used", Severity: Warning,
 					File: relativeTo(p.root, declared.Path), Line: 1,

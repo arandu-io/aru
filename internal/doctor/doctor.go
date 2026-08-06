@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/parser"
+	"go/scanner"
 	"go/token"
 	"io/fs"
 	"os"
@@ -69,6 +70,40 @@ type project struct {
 	// text -- the rules that look at them are looking for markup, not for
 	// syntax.
 	templates []template
+	// unreadable are the .go files that did not parse, with the reason.
+	//
+	// They are carried rather than dropped because every rule below reasons over
+	// the file set: a module whose policy.go does not parse looks like a module
+	// with no policy, and doctor reported exactly that -- an invented finding
+	// pointing at the wrong file. See unreadableFiles.
+	unreadable []unreadable
+}
+
+// unreadable is one .go file the parser refused, and why.
+type unreadable struct {
+	rel    string
+	line   int
+	reason string
+}
+
+// blind reports whether a module has a file doctor could not read.
+//
+// A rule that concludes something from the ABSENCE of a declaration has to ask
+// this first. "No policy in this module" and "the policy is in the file I could
+// not parse" look identical from here, and only one of them is worth telling
+// somebody about.
+//
+// Rules that conclude from what is PRESENT -- a repository method that does not
+// check its Grant, SQL built with Sprintf -- need no such guard: what they found,
+// they found.
+func (p *project) blind(module string) bool {
+	for _, u := range p.unreadable {
+		parts := strings.Split(filepath.ToSlash(u.rel), "/")
+		if len(parts) > 1 && parts[0] == "modules" && parts[1] == module {
+			return true
+		}
+	}
+	return false
 }
 
 // template is one .templ source.
@@ -111,7 +146,7 @@ type file struct {
 // Findings come back sorted by file and line, so the output is stable and a diff
 // between two runs means something.
 func Run(dir string) ([]Finding, error) {
-	files, err := parseProject(dir)
+	files, unreadable, err := parseProject(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +159,7 @@ func Run(dir string) ([]Finding, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &project{root: dir, files: files, manifests: manifests, templates: templates}
+	p := &project{root: dir, files: files, manifests: manifests, templates: templates, unreadable: unreadable}
 
 	var findings []Finding
 	for _, rule := range rules {
@@ -180,9 +215,10 @@ func parseTemplates(dir string) ([]template, error) {
 	return out, nil
 }
 
-func parseProject(dir string) ([]*file, error) {
+func parseProject(dir string) ([]*file, []unreadable, error) {
 	fset := token.NewFileSet()
 	var out []*file
+	var skipped []unreadable
 
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -199,16 +235,25 @@ func parseProject(dir string) ([]*file, error) {
 			return nil
 		}
 
-		parsed, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
-		if err != nil {
-			// A file that does not parse is a compile error, and the compiler
-			// reports it better than this ever could.
-			return nil
-		}
-
 		rel, relErr := filepath.Rel(dir, path)
 		if relErr != nil {
 			rel = path
+		}
+
+		parsed, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+		if err != nil {
+			// Recorded, not dropped. The compiler reports the syntax error
+			// better than this ever could -- but every rule reasons over the
+			// file set, so a file missing from it makes the rules wrong rather
+			// than merely incomplete. Found by audit.
+			line := 1
+			reason := err.Error()
+			if list, ok := err.(scanner.ErrorList); ok && len(list) > 0 {
+				line = list[0].Pos.Line
+				reason = list[0].Msg
+			}
+			skipped = append(skipped, unreadable{rel: rel, line: line, reason: reason})
+			return nil
 		}
 
 		f := &file{
@@ -234,7 +279,8 @@ func parseProject(dir string) ([]*file, error) {
 		out = append(out, f)
 		return nil
 	})
-	return out, err
+	sort.Slice(skipped, func(i, j int) bool { return skipped[i].rel < skipped[j].rel })
+	return out, skipped, err
 }
 
 // at returns the file and line of a node, for a finding.
@@ -255,16 +301,39 @@ func (f *file) calls(fn func(call *ast.CallExpr, name string)) {
 }
 
 // callName renders the called function as written: "security.SystemGrant",
-// "g.Check", "fmt.Sprintf".
+// "g.Check", "r.Header.Get", "r.URL.Query().Get".
+//
+// The whole chain, not the last two segments. It used to give up at the first
+// selector whose left side was not a plain identifier and return only the final
+// name -- so `r.Header.Get("X-Tenant")` rendered as "Get", and the rule looking
+// for "r.Header.Get" never matched anything. That rule's own comment calls the
+// header "the form that looks harmless"; it had never once fired. Found by
+// audit.
+//
+// A call in the middle of the chain becomes "()", which is what distinguishes
+// r.URL.Query().Get from a field access.
 func callName(call *ast.CallExpr) string {
-	switch fun := call.Fun.(type) {
+	return exprName(call.Fun)
+}
+
+func exprName(e ast.Expr) string {
+	switch x := e.(type) {
 	case *ast.Ident:
-		return fun.Name
+		return x.Name
 	case *ast.SelectorExpr:
-		if x, ok := fun.X.(*ast.Ident); ok {
-			return x.Name + "." + fun.Sel.Name
+		left := exprName(x.X)
+		if left == "" {
+			return x.Sel.Name
 		}
-		return fun.Sel.Name
+		return left + "." + x.Sel.Name
+	case *ast.CallExpr:
+		return exprName(x.Fun) + "()"
+	case *ast.IndexExpr:
+		return exprName(x.X)
+	case *ast.ParenExpr:
+		return exprName(x.X)
+	case *ast.StarExpr:
+		return exprName(x.X)
 	}
 	return ""
 }

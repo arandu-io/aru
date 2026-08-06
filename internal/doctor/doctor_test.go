@@ -26,6 +26,11 @@ func TestPlantedViolationsAreCaught(t *testing.T) {
 		"session-not-rotated":          "session fixation",
 		"repository-without-policy":    "an entity nobody decided who may reach",
 		"sensitive-field-not-redacted": "a password one Dump away from the debug page",
+		// This one had never fired: callName gave up on a nested selector, so
+		// `r.Header.Get` rendered as "Get" and the rule matched nothing. Found
+		// by audit -- and its own comment calls the header "the form that looks
+		// harmless".
+		"tenant-from-header": "any client can send the header",
 	}
 
 	found := map[string]bool{}
@@ -217,5 +222,68 @@ func TestAlpineWithinItsLimitIsSilent(t *testing.T) {
 		if f.Rule == "alpine-reaches-the-server" {
 			t.Errorf("client-only state was reported: %s", f.Message)
 		}
+	}
+}
+
+// TestATenantIsFoundByWhereItGoesNotByItsName is a gap an audit found.
+//
+// The rule asked whether a header was CALLED something with "tenant" in it:
+//
+//	org := r.Header.Get("X-Org")
+//	g := security.SystemGrant(ActionView, org)
+//
+// passed, and it is exactly the hole RULE 14 exists to close. Whoever writes the
+// client picks the header name, so the name proves nothing; what makes a value a
+// tenant is that it scopes SQL.
+func TestATenantIsFoundByWhereItGoesNotByItsName(t *testing.T) {
+	findings, err := doctor.Run("testdata/violations")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, f := range findings {
+		if f.Rule != "tenant-from-request" {
+			continue
+		}
+		// The message has to name the variable and the line it came from, or
+		// the reader has to go find it.
+		if strings.Contains(f.Message, "org") && strings.Contains(f.Message, "read from the request") {
+			return
+		}
+	}
+	t.Fatalf("a header named X-Org reaching the tenant of a Grant was not caught:\n%v", findings)
+}
+
+// TestAFileThatDoesNotParseIsReportedNotSwallowed is a bug an audit found, and
+// the worst kind: doctor did not merely miss something, it invented a finding.
+//
+// An unparsable file was skipped silently. Every rule reasons over the whole
+// file set, so a module whose policy.go does not parse looks exactly like a
+// module with no policy -- and doctor told the author to write one they had
+// already written, pointing at the wrong file.
+func TestAFileThatDoesNotParseIsReportedNotSwallowed(t *testing.T) {
+	findings, err := doctor.Run("testdata/broken")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var reported, invented bool
+	for _, f := range findings {
+		switch f.Rule {
+		case "file-does-not-parse":
+			reported = true
+			if !strings.Contains(f.File, "policy") {
+				t.Errorf("the finding names %q, not the file that does not parse", f.File)
+			}
+		case "repository-without-policy":
+			invented = true
+		}
+	}
+
+	if !reported {
+		t.Error("the unparsable file was swallowed")
+	}
+	if invented {
+		t.Error("doctor invented `repository-without-policy` for a module whose policy it could not read")
 	}
 }

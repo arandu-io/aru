@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/arandu-io/framework/data"
+	"github.com/arandu-io/framework/security"
 )
 
 // Violation: the handler reaches the data package, and reads the tenant from the
@@ -33,4 +34,21 @@ func notifyBillingProvider(ctx context.Context, id string) error {
 	}
 	_, err = http.DefaultClient.Do(req)
 	return err
+}
+
+// ShowByOrg is the shape the name-based rule never caught: the header is called
+// X-Org, so nothing in it contains "tenant", and the value goes straight into
+// the tenant of a Grant. Whoever writes the client picks the header name, so the
+// name proves nothing -- what makes a value a tenant is that it scopes SQL.
+func ShowByOrg(w http.ResponseWriter, r *http.Request) {
+	org := r.Header.Get("X-Org")
+	g := security.SystemGrant("billing.view", org)
+	_ = g
+	_ = w
+}
+
+// ShowByHeader is the form the rule was written for and never caught.
+func ShowByHeader(w http.ResponseWriter, r *http.Request) {
+	_ = r.Header.Get("X-Tenant-Id")
+	_ = w
 }

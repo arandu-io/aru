@@ -71,9 +71,15 @@ They need the view layer, and the templates need their generated Go:
     go get github.com/arandu-io/porang
     aru view:build
 
-Then, in cmd/app/main.go, replace auth.New with authui.New:
+Then, in cmd/app/main.go, register the view layer and replace auth.New with
+authui.New:
 
+    porang.NewModule(),
     authui.New(authService, sessions, csrf, auth.FixedTenant(tenantID)),
+
+The porang module is what serves the stylesheet and the scripts this page asks
+for. Without it the page renders, unstyled, with no HTMX -- and the only sign is
+three 404s in the browser console.
 
 Both answer /auth/login, so register one of them. The framework's has the
 minimum markup that exists so authentication could be tested at all; this one

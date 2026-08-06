@@ -43,7 +43,11 @@ func (s *Service) Create(ctx context.Context, actor security.Subject, in CreateR
 	if err != nil {
 		return PurchaseOrder{}, err
 	}
-	observability.FromContext(ctx).RecordEvent("purchase_order.created", created)
+	// Guarded: the entity is a struct value, and boxing it into `any` allocates
+	// at the call site even though RecordEvent is a no-op on a nil Collector.
+	if col := observability.FromContext(ctx); col != nil {
+		col.RecordEvent("purchase_order.created", created)
+	}
 	return created, nil
 }
 
@@ -115,7 +119,9 @@ func (s *Service) Delete(ctx context.Context, actor security.Subject, id string)
 	if err := s.repo.Delete(ctx, g, id); err != nil {
 		return err
 	}
-	observability.FromContext(ctx).RecordEvent("purchase_order.deleted", stored)
+	if col := observability.FromContext(ctx); col != nil {
+		col.RecordEvent("purchase_order.deleted", stored)
+	}
 	return nil
 }
 

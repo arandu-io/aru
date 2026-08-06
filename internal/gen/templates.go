@@ -375,7 +375,7 @@ func (r *Repo) Create(ctx context.Context, g security.Grant, {{.Receiver}} {{.En
 
 	_, err = r.db.ExecContext(ctx,
 		` + "`" + `INSERT INTO {{.Table}} (` + "`" + `+columns+` + "`" + `) VALUES ({{if .Tenant}}?, {{end}}?{{range .Fields}}, ?{{end}}, ?)` + "`" + `,
-		{{.Receiver}}.ID, {{if .Tenant}}{{.Receiver}}.TenantID, {{end}}{{range .Fields}}{{$.Receiver}}.{{.GoName}}, {{end}}{{.Receiver}}.CreatedAt)
+		{{.Receiver}}.ID, {{if .Tenant}}{{.Receiver}}.TenantID, {{end}}{{range .Fields}}{{.Bind $.Receiver}}, {{end}}{{.Receiver}}.CreatedAt)
 	if err != nil {
 		if isConflict(err) {
 			return {{.Entity}}{}, ErrConflict
@@ -397,7 +397,7 @@ func (r *Repo) Update(ctx context.Context, g security.Grant, {{.Receiver}} {{.En
 
 	res, err := r.db.ExecContext(ctx,
 		` + "`" + `UPDATE {{.Table}} SET {{range $i, $f := .Fields}}{{if $i}}, {{end}}{{$f.Column}} = ?{{end}} WHERE id = ?{{if .Tenant}} AND tenant_id = ?{{end}}` + "`" + `,
-		{{range .Fields}}{{$.Receiver}}.{{.GoName}}, {{end}}{{.Receiver}}.ID{{if .Tenant}}, data.Tenant(g){{end}})
+		{{range .Fields}}{{.Bind $.Receiver}}, {{end}}{{.Receiver}}.ID{{if .Tenant}}, data.Tenant(g){{end}})
 	if err != nil {
 		if isConflict(err) {
 			return {{.Entity}}{}, ErrConflict
@@ -519,7 +519,11 @@ func (s *Service) Create(ctx context.Context, actor security.Subject, in CreateR
 	if err != nil {
 		return {{.Entity}}{}, err
 	}
-	observability.FromContext(ctx).RecordEvent("{{.Name}}.created", created)
+	// Guarded: the entity is a struct value, and boxing it into ` + "`" + `any` + "`" + ` allocates
+	// at the call site even though RecordEvent is a no-op on a nil Collector.
+	if col := observability.FromContext(ctx); col != nil {
+		col.RecordEvent("{{.Name}}.created", created)
+	}
 	return created, nil
 }
 
@@ -589,7 +593,9 @@ func (s *Service) Delete(ctx context.Context, actor security.Subject, id string)
 	if err := s.repo.Delete(ctx, g, id); err != nil {
 		return err
 	}
-	observability.FromContext(ctx).RecordEvent("{{.Name}}.deleted", stored)
+	if col := observability.FromContext(ctx); col != nil {
+		col.RecordEvent("{{.Name}}.deleted", stored)
+	}
 	return nil
 }
 

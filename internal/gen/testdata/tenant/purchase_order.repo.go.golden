@@ -148,7 +148,7 @@ func (r *Repo) Create(ctx context.Context, g security.Grant, p PurchaseOrder) (P
 
 	_, err = r.db.ExecContext(ctx,
 		`INSERT INTO purchase_orders (`+columns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.TenantID, p.Reference, p.SupplierEmail, p.Total, p.Approved, p.Notes, p.DeliveryDate, p.CreatedAt)
+		p.ID, p.TenantID, p.Reference, p.SupplierEmail, p.Total, p.Approved, p.Notes, data.Day(p.DeliveryDate), p.CreatedAt)
 	if err != nil {
 		if isConflict(err) {
 			return PurchaseOrder{}, ErrConflict
@@ -168,7 +168,7 @@ func (r *Repo) Update(ctx context.Context, g security.Grant, p PurchaseOrder) (P
 
 	res, err := r.db.ExecContext(ctx,
 		`UPDATE purchase_orders SET reference = ?, supplier_email = ?, total = ?, approved = ?, notes = ?, delivery_date = ? WHERE id = ? AND tenant_id = ?`,
-		p.Reference, p.SupplierEmail, p.Total, p.Approved, p.Notes, p.DeliveryDate, p.ID, data.Tenant(g))
+		p.Reference, p.SupplierEmail, p.Total, p.Approved, p.Notes, data.Day(p.DeliveryDate), p.ID, data.Tenant(g))
 	if err != nil {
 		if isConflict(err) {
 			return PurchaseOrder{}, ErrConflict

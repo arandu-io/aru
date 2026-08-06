@@ -91,6 +91,19 @@ func (f Field) Column() string { return f.Name }
 // IsEmail reports whether the field gets email validation and normalization.
 func (f Field) IsEmail() bool { return f.Type == TypeEmail }
 
+// Bind renders the field as an argument to a statement.
+//
+// A date goes through data.Day, which truncates to midnight UTC. DATE is the one
+// type in the portable subset the engines do not agree about: PostgreSQL drops
+// the time part on write and SQLite keeps it, so the same code returns different
+// values on different engines. Everything else binds as it is.
+func (f Field) Bind(receiver string) string {
+	if f.Type == TypeDate {
+		return "data.Day(" + receiver + "." + f.GoName() + ")"
+	}
+	return receiver + "." + f.GoName()
+}
+
 // IsString reports whether the field is text-like, and therefore gets length
 // validation.
 func (f Field) IsString() bool {

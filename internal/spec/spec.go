@@ -33,8 +33,10 @@ package spec
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // Version is the schema version a document declares.
@@ -123,6 +125,18 @@ func (m Module) Validate() error {
 	case !isSnakeCase(m.Name):
 		problems = append(problems, fmt.Sprintf(
 			"name %q must be lowercase with underscores: purchase_order, not PurchaseOrder", m.Name))
+	case isGoReserved(m.Name):
+		problems = append(problems, fmt.Sprintf(
+			"name %q is a Go keyword, and the module name becomes the package name -- `package %s` does not compile. Pick another: %s_module, or the plural",
+			m.Name, m.Name, m.Name))
+	case isSQLReserved(m.Name):
+		problems = append(problems, fmt.Sprintf(
+			"name %q is reserved in SQL, and the module name becomes the table name -- `CREATE TABLE %s` is a syntax error on PostgreSQL and MySQL. Use the plural: %ss",
+			m.Name, m.Name, m.Name))
+	case isGeneratedName(m.Name):
+		problems = append(problems, fmt.Sprintf(
+			"name %q collides with an identifier this generator writes into the module's own package (%s). Pick a name from the domain: invoice, purchase_order",
+			m.Name, strings.Join(generatedNames, ", ")))
 	}
 
 	if len(m.Fields) == 0 {
@@ -130,6 +144,9 @@ func (m Module) Validate() error {
 	}
 
 	seen := map[string]bool{}
+	// byExported maps the Go field name back to the first column that produced
+	// it, so a collision can name both sides.
+	byExported := map[string]string{}
 	for i, f := range m.Fields {
 		where := fmt.Sprintf("fields[%d]", i)
 		if f.Name != "" {
@@ -149,17 +166,68 @@ func (m Module) Validate() error {
 			// would come from the Go compiler pointing at generated code.
 			problems = append(problems, fmt.Sprintf(
 				"%s: %s is generated for every module -- remove it", where, f.Name))
+		case isSQLReserved(f.Name):
+			problems = append(problems, fmt.Sprintf(
+				"%s: %s is reserved in SQL, and a field name becomes a column name -- `%s TEXT NOT NULL` is a syntax error on PostgreSQL and MySQL. Rename it: %s_name, or say what it is",
+				where, f.Name, f.Name, f.Name))
+		case isGoReserved(f.Name):
+			problems = append(problems, fmt.Sprintf(
+				"%s: %s is a Go keyword and would become a struct field of that name, which does not compile. Rename it",
+				where, f.Name))
+		case exportedName(f.Name) != "" && byExported[exportedName(f.Name)] != "":
+			// full_name and fullname are different columns and the same Go
+			// field. The compiler reports "FullName redeclared" against a file
+			// the author never opened.
+			problems = append(problems, fmt.Sprintf(
+				"%s: it and %q both become the Go field %s. Two columns cannot share one struct field -- rename one",
+				where, byExported[exportedName(f.Name)], exportedName(f.Name)))
 		}
 		seen[f.Name] = true
+		if e := exportedName(f.Name); e != "" && byExported[e] == "" {
+			byExported[e] = f.Name
+		}
 
 		if f.Type == "" {
 			problems = append(problems, where+": type is required. "+TypeList())
 		} else if _, known := Types[f.Type]; !known {
 			problems = append(problems, fmt.Sprintf("%s: unknown type %q. %s", where, f.Type, TypeList()))
+		} else if f.Unique && f.Type == "text" {
+			// A long text column cannot carry a portable unique index: MySQL
+			// needs a prefix length for TEXT in a key, and a prefix makes the
+			// constraint mean something different from what it says.
+			problems = append(problems, fmt.Sprintf(
+				"%s: a text field cannot be unique -- long text has no portable unique index. Use `type: string` if the value is short enough to be an identifier",
+				where))
+		} else if f.Required && f.Type == "bool" {
+			// There is no way to tell "the user said false" from "the user said
+			// nothing": both decode to false. A required bool would either
+			// reject a legitimate answer or be ignored, and both are worse than
+			// saying so here.
+			problems = append(problems, fmt.Sprintf(
+				"%s: a bool cannot be required -- false is an answer, not an absence, and nothing can tell them apart. Drop `required`, or make the field an int with the meanings written down",
+				where))
 		}
 	}
 
 	for action, roles := range m.Permissions {
+		for _, role := range roles {
+			if isRole(role) {
+				continue
+			}
+			// A role reaches the generated Policy as a Go string literal. One
+			// that closes the quote rewrites the authorization:
+			//
+			//   permissions: {view: ['viewer") || true || s.HasRole("nobody']}
+			//
+			// produced `if s.HasRole("viewer") || true || s.HasRole("nobody")`,
+			// which opens the action to every subject of every tenant. The
+			// template quotes it too -- this is the first of two locks, and the
+			// one that says why.
+			problems = append(problems, fmt.Sprintf(
+				"permissions.%s: %q is not a role name. A role is letters, digits, and _ . : - (admin, team.lead, org:owner) -- anything else would be written into the generated Policy as code",
+				action, role))
+		}
+
 		if !known(Actions, action) {
 			problems = append(problems, fmt.Sprintf(
 				"permissions: unknown action %q. The set is %s -- anything else is a business rule, written in Go inside the custom block",
@@ -200,6 +268,82 @@ var reserved = []string{"id", "tenant_id", "created_at", "updated_at"}
 
 func isReserved(name string) bool { return known(reserved, name) }
 
+// sqlReserved is the union of the reserved words of SQLite, PostgreSQL and
+// MySQL that a person plausibly names a column after.
+//
+// A name from this list reaches the generated DDL unquoted -- `order TEXT NOT
+// NULL` -- and the engine rejects the migration with a syntax error pointing at
+// a character position in a file nobody wrote by hand. Found by audit.
+//
+// Refused rather than quoted. Quoting is spelled differently on each engine
+// ("order" here, `+"`order`"+` there), and one schema that serves all three is the
+// whole point of the portable subset (ADR 0009). Renaming the field costs the
+// author five seconds; carrying a per-engine quoting rule costs forever.
+var sqlReserved = []string{
+	"add", "all", "alter", "and", "as", "asc", "between", "by", "case", "cast",
+	"check", "column", "constraint", "create", "cross", "current_date",
+	"current_time", "current_timestamp", "database", "default", "delete", "desc",
+	"distinct", "drop", "else", "end", "escape", "except", "exists", "explain",
+	"false", "for", "foreign", "from", "full", "group", "having", "in", "index",
+	"inner", "insert", "intersect", "interval", "into", "is", "join", "key",
+	"left", "like", "limit", "lock", "natural", "not", "null", "offset", "on",
+	"or", "order", "outer", "primary", "range", "references", "rename",
+	"replace", "restrict", "returning", "right", "row", "rows", "select", "set",
+	"table", "then", "to", "transaction", "trigger", "true", "union", "unique",
+	"update", "using", "values", "when", "where", "window", "with",
+}
+
+func isSQLReserved(name string) bool { return known(sqlReserved, name) }
+
+// goReserved is the Go keyword set.
+//
+// A module named "range" produces `package range`, and a field named "type"
+// produces a struct member the compiler refuses. The generator used to get as
+// far as writing the file and then report a template bug, which sends the
+// author looking in the wrong place entirely.
+var goReserved = []string{
+	"break", "case", "chan", "const", "continue", "default", "defer", "else",
+	"fallthrough", "for", "func", "go", "goto", "if", "import", "interface",
+	"map", "package", "range", "return", "select", "struct", "switch", "type",
+	"var",
+}
+
+func isGoReserved(name string) bool { return known(goReserved, name) }
+
+// generatedNames are the identifiers the generator writes into the module's own
+// package. A module named after one of them collides with what is generated for
+// it, and the Go compiler reports the redeclaration against a file the author
+// did not write.
+var generatedNames = []string{
+	"policy", "repo", "service", "module", "columns", "scan", "sortable",
+	"entity", "handler", "routes", "validate",
+}
+
+func isGeneratedName(name string) bool { return known(generatedNames, name) }
+
+// exportedName is the Go identifier a column name becomes.
+//
+// It has to agree with gen.exported, and the golden tests hold them together:
+// this one exists so a collision is reported here, in the specification, rather
+// than by the Go compiler against generated code.
+func exportedName(s string) string {
+	var b strings.Builder
+	up := true
+	for _, r := range s {
+		if r == '_' || r == '-' {
+			up = true
+			continue
+		}
+		if up {
+			b.WriteRune(unicode.ToUpper(r))
+			up = false
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 func known(set []string, value string) bool {
 	for _, s := range set {
 		if s == value {
@@ -208,6 +352,15 @@ func known(set []string, value string) bool {
 	}
 	return false
 }
+
+// roleName is what a role may contain.
+//
+// Closed on purpose, and checked before the value ever reaches a template: this
+// string is written into generated Go, and a permissive alphabet here is an
+// authorization bypass there.
+var roleName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$`)
+
+func isRole(s string) bool { return roleName.MatchString(s) }
 
 // isSnakeCase accepts what the generator can turn into both a Go identifier and
 // a column name without guessing.

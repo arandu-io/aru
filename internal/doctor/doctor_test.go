@@ -779,3 +779,46 @@ func TestTheNearMissesAreStillQuiet(t *testing.T) {
 		}
 	}
 }
+
+// TestConcatenatedSQLIsCaught: the rule named sql-built-with-sprintf only ever
+// read fmt.Sprintf, while ADR 0024 stated as fact that it had been widened to
+// concatenation -- in the paragraph that argues the project does not need sqlc.
+//
+// So the one barrier against hand-built SQL had a hole exactly where a decision
+// document leaned on it, and the hole was the easier form to write:
+//
+//	"SELECT id FROM invoices WHERE reference LIKE '%" + term + "%'"
+func TestConcatenatedSQLIsCaught(t *testing.T) {
+	findings, err := doctor.Run("testdata/violations")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, f := range findings {
+		if f.Rule == "sql-built-by-concatenation" && strings.Contains(f.File, "SearchRepository.go") {
+			if f.Severity != doctor.Error {
+				t.Errorf("severity = %v, want Error: it is injection", f.Severity)
+			}
+			return
+		}
+	}
+	t.Error("a statement built by concatenating a parameter was not reported")
+}
+
+// TestTheGeneratorsOwnConcatenationIsQuiet is the other half, and the one that
+// decides whether the rule is usable.
+//
+// The generated repository concatenates on purpose: a package-level const for
+// the column list, and a `column` local chosen from an allowlist. Neither can
+// carry a value from outside, and a rule that fired on them would fire on every
+// project on its first run -- which is how a tool teaches people to ignore it.
+func TestTheGeneratorsOwnConcatenationIsQuiet(t *testing.T) {
+	findings, err := doctor.Run("testdata/clean")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, f := range findings {
+		if f.Rule == "sql-built-by-concatenation" {
+			t.Errorf("a clean project was reported at %s:%d -- %s", f.File, f.Line, f.Message)
+		}
+	}
+}

@@ -799,6 +799,7 @@ func noBuiltSQL(p *project) []Finding {
 		if f.isTest {
 			continue
 		}
+
 		f.calls(func(call *ast.CallExpr, name string) {
 			if name != "fmt.Sprintf" || len(call.Args) == 0 {
 				return
@@ -815,6 +816,112 @@ func noBuiltSQL(p *project) []Finding {
 				Why:     "every value interpolated into SQL is injection waiting for the right input. Use ? placeholders and pass the values as arguments -- the dialect rebinds them.",
 			})
 		})
+
+		out = append(out, concatenatedSQL(f)...)
+	}
+	return out
+}
+
+// concatenatedSQL is the other half, and the half that was missing.
+//
+// The rule only ever read fmt.Sprintf, while its own name promised more and ADR
+// 0024 stated as fact that it had been widened -- in the paragraph that argues
+// the project does not need sqlc. So the one barrier against hand-built SQL had
+// a hole exactly where the decision leaned on it:
+//
+//	"SELECT id FROM invoices WHERE reference LIKE '%" + term + "%'"
+//
+// passed clean, with term coming straight off the request.
+//
+// # What separates it from the concatenation the generator writes on purpose
+//
+// The generated repository concatenates too, and correctly: a package-level
+// const for the column list, and a `column` local that was chosen from an
+// allowlist. Neither can carry a value from outside.
+//
+// The signal that tells them apart, with no type information, is where the
+// operand comes from: a PARAMETER of the enclosing function, or a field of one,
+// is a value the caller supplied. A const or a local is not.
+//
+// # The limit, stated rather than implied
+//
+// Assigning a parameter to a local and concatenating the local is not caught --
+// separating that from the allowlist pattern needs dataflow, and the allowlist
+// pattern is what the generator emits. A rule that flagged it would fire on the
+// code the generator writes, and a rule that fires on correct code is how a tool
+// teaches people to ignore it.
+func concatenatedSQL(f *file) []Finding {
+	var out []Finding
+
+	f.functions(func(fn *ast.FuncDecl) {
+		params := parameterNames(fn)
+		if len(params) == 0 || fn.Body == nil {
+			return
+		}
+
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			bin, ok := n.(*ast.BinaryExpr)
+			if !ok || bin.Op != token.ADD {
+				return true
+			}
+
+			var sawSQL bool
+			var offender string
+			var walk func(ast.Expr)
+			walk = func(e ast.Expr) {
+				switch v := e.(type) {
+				case *ast.BinaryExpr:
+					if v.Op == token.ADD {
+						walk(v.X)
+						walk(v.Y)
+					}
+				case *ast.BasicLit:
+					if v.Kind == token.STRING && looksLikeSQL(v.Value) {
+						sawSQL = true
+					}
+				case *ast.Ident:
+					if params[v.Name] {
+						offender = v.Name
+					}
+				case *ast.SelectorExpr:
+					// q.Sort, in.Term: a field of a parameter is still the
+					// caller's value.
+					if root, ok := v.X.(*ast.Ident); ok && params[root.Name] {
+						offender = root.Name + "." + v.Sel.Name
+					}
+				}
+			}
+			walk(bin)
+
+			if sawSQL && offender != "" {
+				file, line := f.at(bin)
+				out = append(out, Finding{
+					Rule: "sql-built-by-concatenation", Severity: Error,
+					File: file, Line: line,
+					Message: "SQL assembled by concatenating " + offender,
+					Why: "a value the caller supplied reaches the statement as text, which is injection with one more step than fmt.Sprintf. Use a ? placeholder and pass it as an argument. " +
+						"A column or table NAME cannot be a placeholder -- pick it from an allowlist first, and concatenate the allowlisted value, which is what `aru make:module` emits.",
+				})
+				return false
+			}
+			return true
+		})
+	})
+	return out
+}
+
+// parameterNames is the set of names the function's signature binds.
+func parameterNames(fn *ast.FuncDecl) map[string]bool {
+	out := map[string]bool{}
+	if fn.Type == nil || fn.Type.Params == nil {
+		return out
+	}
+	for _, field := range fn.Type.Params.List {
+		for _, name := range field.Names {
+			if name.Name != "_" {
+				out[name.Name] = true
+			}
+		}
 	}
 	return out
 }

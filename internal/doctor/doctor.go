@@ -415,6 +415,18 @@ func (f *file) types(fn func(ts *ast.TypeSpec)) {
 	}
 }
 
+// functions walks every function and method the file declares.
+//
+// It is the shape types() has, for the rules that reason about a signature and
+// its body together -- which is most of the authorization surface.
+func (f *file) functions(visit func(fn *ast.FuncDecl)) {
+	for _, decl := range f.ast.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok {
+			visit(fn)
+		}
+	}
+}
+
 // calls walks every call expression in the file.
 func (f *file) calls(fn func(call *ast.CallExpr, name string)) {
 	ast.Inspect(f.ast, func(n ast.Node) bool {

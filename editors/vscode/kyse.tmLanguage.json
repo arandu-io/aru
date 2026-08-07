@@ -1,0 +1,112 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "kyse",
+  "scopeName": "source.kyse",
+  "patterns": [
+    { "include": "#header" },
+    { "include": "#go-block" },
+    { "include": "#directive" },
+    { "include": "#interpolation" },
+    { "include": "#html" }
+  ],
+  "repository": {
+    "header": {
+      "comment": "A tag de build e a clausula de pacote sao o que fazem o arquivo ser legal para o compilador. Realcadas como Go, porque sao Go.",
+      "patterns": [
+        {
+          "match": "^\\s*(//go:build)\\s+(kyse)\\s*$",
+          "captures": {
+            "1": { "name": "keyword.control.directive.kyse" },
+            "2": { "name": "constant.language.kyse" }
+          }
+        },
+        {
+          "match": "^\\s*(package)\\s+([a-z][a-zA-Z0-9_]*)\\s*$",
+          "captures": {
+            "1": { "name": "keyword.control.package.kyse" },
+            "2": { "name": "entity.name.namespace.kyse" }
+          }
+        },
+        { "match": "^\\s*//.*$", "name": "comment.line.double-slash.kyse" }
+      ]
+    },
+
+    "go-block": {
+      "comment": "@go … @endgo carrega Go de verdade, entao e realcado como Go.",
+      "begin": "^\\s*(@go)\\s*$",
+      "end": "^\\s*(@endgo)\\s*$",
+      "beginCaptures": { "1": { "name": "keyword.control.kyse" } },
+      "endCaptures": { "1": { "name": "keyword.control.kyse" } },
+      "name": "meta.embedded.block.go",
+      "patterns": [{ "include": "source.go" }]
+    },
+
+    "directive": {
+      "patterns": [
+        {
+          "comment": "Diretiva com argumento: @extends('layouts.app')",
+          "match": "(@(?:extends|section|yield|include|if|elseif|foreach|for|while))\\s*(\\()([^)]*)(\\))",
+          "captures": {
+            "1": { "name": "keyword.control.kyse" },
+            "2": { "name": "punctuation.section.parens.begin.kyse" },
+            "3": { "name": "meta.embedded.expression.kyse", "patterns": [{ "include": "#argument" }] },
+            "4": { "name": "punctuation.section.parens.end.kyse" }
+          }
+        },
+        {
+          "comment": "Diretiva sem argumento, e os fechamentos.",
+          "match": "@(?:endsection|endif|endforeach|endfor|endwhile|endgo|else|csrf)\\b",
+          "name": "keyword.control.kyse"
+        },
+        {
+          "comment": "Qualquer outro @nome e erro: o conjunto e fechado (REGRA 15).",
+          "match": "@[a-zA-Z]+",
+          "name": "invalid.illegal.unknown-directive.kyse"
+        }
+      ]
+    },
+
+    "argument": {
+      "patterns": [
+        { "match": "'[^']*'", "name": "string.quoted.single.kyse" },
+        { "match": "\"[^\"]*\"", "name": "string.quoted.double.kyse" },
+        { "match": "\\bas\\b", "name": "keyword.operator.kyse" },
+        { "match": "\\.[A-Za-z_][A-Za-z0-9_.]*", "name": "variable.other.member.kyse" }
+      ]
+    },
+
+    "interpolation": {
+      "patterns": [
+        {
+          "comment": "{!! !!} nao escapa. Realcado diferente de proposito: e onde o XSS entra.",
+          "begin": "\\{!!",
+          "end": "!!\\}",
+          "beginCaptures": { "0": { "name": "punctuation.section.interpolation.raw.begin.kyse" } },
+          "endCaptures": { "0": { "name": "punctuation.section.interpolation.raw.end.kyse" } },
+          "name": "meta.interpolation.raw.kyse",
+          "patterns": [{ "include": "#expression" }]
+        },
+        {
+          "begin": "\\{\\{",
+          "end": "\\}\\}",
+          "beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.kyse" } },
+          "endCaptures": { "0": { "name": "punctuation.section.interpolation.end.kyse" } },
+          "name": "meta.interpolation.kyse",
+          "patterns": [{ "include": "#expression" }]
+        }
+      ]
+    },
+
+    "expression": {
+      "patterns": [
+        { "match": "\\.[A-Za-z_][A-Za-z0-9_.]*", "name": "variable.other.member.kyse" },
+        { "match": "\\b[a-z][A-Za-z0-9_]*\\b(?=\\()", "name": "entity.name.function.kyse" },
+        { "match": "\\b[a-zA-Z_][A-Za-z0-9_]*\\b", "name": "variable.other.kyse" }
+      ]
+    },
+
+    "html": {
+      "patterns": [{ "include": "text.html.basic" }]
+    }
+  }
+}

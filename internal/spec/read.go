@@ -8,12 +8,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// FileName is what a module keeps its specification in.
+// Dir is where a project keeps the specifications it generated from.
 //
-// Beside the code it generated, and committed with it. That is what makes the
-// round trip real: regenerating reads this file, and the bytes it produces are
-// the bytes already there.
-const FileName = "module.arandu.yaml"
+// One file per module, named after it, committed with the code it produced.
+// That is what makes the round trip real: regenerating reads the file, and the
+// bytes it produces are the bytes already there.
+//
+// It is under database/ because a specification is mostly the entity and its
+// columns, and that is where the tree already keeps factories, migrations and
+// seeders. There is no modules/<name>/ to put it beside any more (ADR 0019).
+const Dir = "database/specs"
 
 // Read parses a specification file and validates it.
 //

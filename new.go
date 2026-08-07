@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	_ "embed"
 	"encoding/base64"
 	"flag"
 	"fmt"
@@ -73,6 +74,9 @@ func newProject(args []string, stdout, stderr io.Writer) error {
 	if err := writeEnv(name); err != nil {
 		return err
 	}
+	if err := writeEditorSettings(name); err != nil {
+		return err
+	}
 
 	fmt.Fprintf(stdout, `
 %s created, module %s.
@@ -141,4 +145,35 @@ func writeEnv(dir string) error {
 	env := strings.Replace(string(example), "APP_KEY=",
 		"APP_KEY=base64:"+base64.StdEncoding.EncodeToString(key), 1)
 	return os.WriteFile(filepath.Join(dir, ".env"), []byte(env), 0o600)
+}
+
+// editorSettings is what a project's .vscode/settings.json needs so the editor
+// stops reporting errors in files that are correct.
+//
+// It is embedded rather than copied from a template file, because it has to
+// reach a project created on a machine that has only the `aru` binary.
+//
+//go:embed editors/vscode/settings.json
+var editorSettings []byte
+
+// writeEditorSettings drops the editor configuration into the new project.
+//
+// A `.kyse.go` is not Go. Without the association, gopls parses it, marks every
+// directive as a syntax error, and the file is red while being correct -- which
+// is the first impression somebody gets of the view layer.
+//
+// It is settings, not an extension: settings need no manifest and therefore no
+// package.json, which RULE 13 forbids. The grammar that would make the
+// highlighting fine lives in aru/editors/vscode/ and is not published yet --
+// see the README there for the decision that is open.
+func writeEditorSettings(dir string) error {
+	vscode := filepath.Join(dir, ".vscode")
+	if err := os.MkdirAll(vscode, 0o755); err != nil {
+		return fmt.Errorf("creating %s: %w", vscode, err)
+	}
+	path := filepath.Join(vscode, "settings.json")
+	if err := os.WriteFile(path, editorSettings, 0o644); err != nil {
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	return nil
 }

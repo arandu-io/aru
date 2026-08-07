@@ -1,0 +1,9 @@
+name = "example/billing"
+framework = ">= 0.3"
+profiles = ["conventional"]
+
+[permissions]
+network = false
+filesystem = true
+exec = false
+migrations = false

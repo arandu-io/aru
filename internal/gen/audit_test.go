@@ -19,7 +19,7 @@ import (
 // so pages skipped rows and repeated rows, silently and with no error.
 func TestTheCursorFollowsTheSortColumn(t *testing.T) {
 	for _, tenant := range []bool{true, false} {
-		repo := byName(t, spec(tenant))["purchase_order.repo.go"]
+		repo := byName(t, spec(tenant))["PurchaseOrderRepository.go"]
 
 		if strings.Contains(repo, "SELECT created_at FROM") {
 			t.Errorf("tenant=%v: the cursor still reads created_at instead of the sorted column", tenant)
@@ -42,14 +42,16 @@ func TestTheCursorFollowsTheSortColumn(t *testing.T) {
 func TestListingIsItsOwnPermission(t *testing.T) {
 	files := byName(t, spec(true))
 
-	repo := files["purchase_order.repo.go"]
-	if !strings.Contains(repo, "g.Check(ActionList)") {
-		t.Error("Repo.List does not check ActionList")
+	repo := files["PurchaseOrderRepository.go"]
+	// The action constant carries the entity now: PurchaseOrderList, not
+	// ActionList. app/Policies/ is one package for every entity.
+	if !strings.Contains(repo, "PurchaseOrderList") {
+		t.Error("Repo.List does not check the list permission")
 	}
 
-	service := files["purchase_order.service.go"]
-	if !strings.Contains(service, "actor, ActionList,") {
-		t.Error("Service.List does not authorize ActionList")
+	service := files["PurchaseOrderService.go"]
+	if !strings.Contains(service, "PurchaseOrderList") {
+		t.Error("Service.List does not authorize the list permission")
 	}
 }
 
@@ -58,7 +60,7 @@ func TestListingIsItsOwnPermission(t *testing.T) {
 // amount or decimal failed validation with "is required" no matter what was
 // sent, and the generated create endpoint could not be used at all.
 func TestARequiredNumberCanBeFilledIn(t *testing.T) {
-	request := byName(t, spec(true))["purchase_order.request.go"]
+	request := byName(t, spec(true))["PurchaseOrderRequest.go"]
 
 	if strings.Contains(request, `validation.Required(e, "total", "")`) {
 		t.Fatal("a required amount is still validated against a literal empty string")
@@ -81,7 +83,7 @@ func TestDecimalKeepsItsDigits(t *testing.T) {
 
 	// Collapsed, because the DDL aligns its columns and the alignment is not
 	// what this test is about.
-	migration := collapse(byName(t, m)["module.go"])
+	migration := collapse(migrationOf(t, m))
 	if strings.Contains(migration, "rate REAL") {
 		t.Fatal("decimal is still REAL, which is four bytes in PostgreSQL")
 	}
@@ -117,7 +119,7 @@ func collapse(s string) string { return strings.Join(strings.Fields(s), " ") }
 // MySQL never got past creating the table. Found by audit.
 func TestNothingKeyedIsDeclaredTEXT(t *testing.T) {
 	m := spec(true)
-	migration := collapse(byName(t, m)["module.go"])
+	migration := collapse(migrationOf(t, m))
 
 	for _, forbidden := range []string{
 		"id TEXT PRIMARY KEY",
@@ -150,7 +152,7 @@ func TestNothingKeyedIsDeclaredTEXT(t *testing.T) {
 // the column, or the rejection arrives from the database driver and names a
 // column rather than the field somebody filled in.
 func TestValidationAgreesWithTheColumn(t *testing.T) {
-	request := byName(t, spec(true))["purchase_order.request.go"]
+	request := byName(t, spec(true))["PurchaseOrderRequest.go"]
 
 	// reference is a string: VARCHAR(255), so 255.
 	if !strings.Contains(request, `validation.MaxLen(e, "reference", r.Reference, 255)`) {
@@ -164,4 +166,18 @@ func TestValidationAgreesWithTheColumn(t *testing.T) {
 	if !strings.Contains(request, `validation.MaxLen(e, "notes", r.Notes, 5000)`) {
 		t.Error("a text field is capped as if it were a string")
 	}
+}
+
+// migrationOf devolve a migration gerada, seja qual for o nome do arquivo.
+//
+// O nome carrega a data, e prender o teste a ela o quebra na virada do dia.
+func migrationOf(t *testing.T, m gen.Module) string {
+	t.Helper()
+	for name, body := range byName(t, m) {
+		if strings.Contains(name, "create_") && strings.HasSuffix(name, "_table.go") {
+			return body
+		}
+	}
+	t.Fatal("nenhuma migration foi gerada")
+	return ""
 }

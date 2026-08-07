@@ -1,0 +1,26 @@
+{
+  "//": "Copiado para .vscode/settings.json de todo projeto que o `aru new` cria.",
+
+  "//1": "Um .kyse.go não é Go. Sem esta linha o gopls tenta analisá-lo, mostra erro em toda diretiva, e o editor fica vermelho num arquivo que está certo.",
+  "files.associations": {
+    "*.kyse.go": "kyse"
+  },
+
+  "//2": "O gerado é código, não é fonte. Some do buscador e some do explorador, agrupado sob o .kyse.go que o produziu — mesma coisa que o VS Code faz com .ts e .js.",
+  "search.exclude": {
+    "**/resources/views/*.go": true,
+    "!**/resources/views/*.kyse.go": false
+  },
+
+  "//3": "gofmt não respeita build tag, então formatar um .kyse.go ao salvar o quebraria.",
+  "[kyse]": {
+    "editor.formatOnSave": false,
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true
+  },
+
+  "//4": "O resto do projeto é Go normal.",
+  "[go]": {
+    "editor.formatOnSave": true
+  }
+}

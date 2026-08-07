@@ -1,0 +1,74 @@
+//go:build kyse
+
+package views
+
+@go
+// PurchaseOrdersShowData is what PurchaseOrderController.Show hands this page.
+type PurchaseOrdersShowData struct {
+	// Title is the browser tab and the heading.
+	Title string
+	// CSRF is the token the delete button sends as a header. An hx-delete
+	// carries no form body, so the hidden field a form uses would never arrive
+	// and the request would be refused with 419.
+	CSRF string
+	// PurchaseOrder is the record.
+	PurchaseOrder PurchaseOrderRow
+}
+
+// PageTitle satisfies the layout's contract.
+func (d PurchaseOrdersShowData) PageTitle() string { return d.Title }
+
+// arandu:begin custom
+// Anything else this page needs in Go goes here, and survives regeneration.
+// arandu:end custom
+@endgo
+
+@extends('layouts.app')
+
+@section('header')
+	<span class="text-sm font-semibold tracking-tight">{{ .Title }}</span>
+	<nav class="text-sm text-slate-500 dark:text-slate-400">
+		<a class="hover:text-slate-900 dark:hover:text-slate-100" href="/purchase-orders">Purchase orders</a>
+	</nav>
+@endsection
+
+@section('content')
+	<div class="flex items-center justify-between gap-4">
+		<h1 class="text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
+		<div class="flex items-center gap-3">
+			<a class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" href="/purchase-orders/{{ .PurchaseOrder.ID }}/edit">Edit</a>
+			<button class="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950" type="button" hx-delete="/purchase-orders/{{ .PurchaseOrder.ID }}" hx-headers='{"X-CSRF-Token": "{{ .CSRF }}"}' hx-confirm="Delete this purchase order?">Delete</button>
+		</div>
+	</div>
+
+	<dl class="mt-8 divide-y divide-slate-100 border-t border-slate-200 text-sm dark:divide-slate-900 dark:border-slate-800">
+		<div class="grid grid-cols-3 gap-4 py-3">
+			<dt class="text-slate-500 dark:text-slate-400">Reference</dt>
+			<dd class="col-span-2">{{ d.PurchaseOrder.Reference }}</dd>
+		</div>
+		<div class="grid grid-cols-3 gap-4 py-3">
+			<dt class="text-slate-500 dark:text-slate-400">Supplier email</dt>
+			<dd class="col-span-2">{{ d.PurchaseOrder.SupplierEmail }}</dd>
+		</div>
+		<div class="grid grid-cols-3 gap-4 py-3">
+			<dt class="text-slate-500 dark:text-slate-400">Total</dt>
+			<dd class="col-span-2">{{ d.PurchaseOrder.Total }}</dd>
+		</div>
+		<div class="grid grid-cols-3 gap-4 py-3">
+			<dt class="text-slate-500 dark:text-slate-400">Approved</dt>
+			<dd class="col-span-2">{{ d.PurchaseOrder.Approved }}</dd>
+		</div>
+		<div class="grid grid-cols-3 gap-4 py-3">
+			<dt class="text-slate-500 dark:text-slate-400">Notes</dt>
+			<dd class="col-span-2">{{ d.PurchaseOrder.Notes }}</dd>
+		</div>
+		<div class="grid grid-cols-3 gap-4 py-3">
+			<dt class="text-slate-500 dark:text-slate-400">Delivery date</dt>
+			<dd class="col-span-2">{{ d.PurchaseOrder.DeliveryDate }}</dd>
+		</div>
+		<div class="grid grid-cols-3 gap-4 py-3">
+			<dt class="text-slate-500 dark:text-slate-400">Created</dt>
+			<dd class="col-span-2">{{ .PurchaseOrder.Created }}</dd>
+		</div>
+	</dl>
+@endsection

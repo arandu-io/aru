@@ -46,7 +46,8 @@ func project(t *testing.T, document string) (root, specPath string) {
 
 	root = t.TempDir()
 	writeFile(t, filepath.Join(root, "go.mod"), "module example.test/project\n\ngo 1.25\n")
-	writeFile(t, filepath.Join(root, "cmd", "app", "main.go"), "package main\n\nfunc main() {}\n")
+	writeFile(t, filepath.Join(root, "main.go"), "package main\n\nfunc main() {}\n")
+	writeFile(t, filepath.Join(root, "arandu.toml"), "name = \"test\"\n")
 
 	specPath = filepath.Join(root, "invoice.yaml")
 	writeFile(t, specPath, document)
@@ -63,11 +64,10 @@ func TestGenerateProducesTheModule(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"modules/invoice/module.go",
-		"modules/invoice/invoice.entity.go",
-		"modules/invoice/invoice.policy.go",
-		"modules/invoice/invoice.repo.go",
-		"modules/invoice/" + spec.FileName,
+		"app/Http/Controllers/InvoiceController.go",
+		"app/Models/Invoice.go",
+		"app/Policies/InvoicePolicy.go",
+		"app/Repositories/InvoiceRepository.go",
 	} {
 		if _, err := os.Stat(filepath.Join(root, want)); err != nil {
 			t.Errorf("%s was not generated", want)
@@ -77,7 +77,7 @@ func TestGenerateProducesTheModule(t *testing.T) {
 	// The fields reached the entity with the right Go types. Whitespace is
 	// collapsed first: gofmt aligns a struct's columns, so the gap between a
 	// name and its type depends on the longest field in the block.
-	entity := collapse(read(t, filepath.Join(root, "modules/invoice/invoice.entity.go")))
+	entity := collapse(read(t, filepath.Join(root, "app/Models/Invoice.go")))
 	for _, want := range []string{"Reference string", "CustomerEmail string", "Total int64", "Paid bool", "Notes string"} {
 		if !strings.Contains(entity, want) {
 			t.Errorf("the entity has no %q", want)
@@ -106,19 +106,19 @@ func TestTheRoundTripIsByteForByte(t *testing.T) {
 		t.Fatalf("the first generate: %v\n%s", err, errOut.String())
 	}
 
-	first := filesIn(t, filepath.Join(root, "modules", "invoice"))
+	first := filesIn(t, filepath.Join(root, "app"))
 
 	// Regenerate from the specification the first run saved, not from the one
 	// the person wrote. That is the round trip: the file the generator emitted
 	// has to be able to reproduce the generator's own output.
-	saved := filepath.Join(root, "modules", "invoice", spec.FileName)
+	saved := filepath.Join(root, spec.Dir, "invoice.yaml")
 	out.Reset()
 	errOut.Reset()
 	if err := generate([]string{saved, "--force"}, &out, &errOut); err != nil {
 		t.Fatalf("the second generate: %v\n%s", err, errOut.String())
 	}
 
-	second := filesIn(t, filepath.Join(root, "modules", "invoice"))
+	second := filesIn(t, filepath.Join(root, "app"))
 
 	if len(first) != len(second) {
 		t.Fatalf("the second run produced %d files, the first %d", len(second), len(first))
@@ -148,7 +148,7 @@ func TestRegeneratingKeepsTheCustomBlock(t *testing.T) {
 	}
 
 	// The business rule the DSL deliberately cannot express.
-	policyPath := filepath.Join(root, "modules", "invoice", "invoice.policy.go")
+	policyPath := filepath.Join(root, "app", "Policies", "InvoicePolicy.go")
 	policy := read(t, policyPath)
 	marked := strings.Replace(policy,
 		"// arandu:begin custom\n",
@@ -367,13 +367,17 @@ func TestThePermissionsOpenThePolicy(t *testing.T) {
 		t.Fatalf("generate: %v\n%s", err, errOut.String())
 	}
 
-	policy := collapse(read(t, filepath.Join(root, "modules/invoice/invoice.policy.go")))
+	policy := collapse(read(t, filepath.Join(root, "app/Policies/InvoicePolicy.go")))
 
 	// view and list went to admin and member; create, update and delete to
 	// admin alone.
+	//
+	// The action constant carries the entity — InvoiceView, not ActionView.
+	// app/Policies/ is one package for every entity, and ActionView would
+	// collide the moment a second module is generated.
 	for _, want := range []string{
-		`case ActionView: if s.HasRole("admin") || s.HasRole("member")`,
-		`case ActionCreate: if s.HasRole("admin") { return nil }`,
+		`case InvoiceView: if s.HasRole("admin") || s.HasRole("member")`,
+		`case InvoiceCreate: if s.HasRole("admin") { return nil }`,
 	} {
 		if !strings.Contains(policy, want) {
 			t.Errorf("the policy does not enforce %q", want)
@@ -406,7 +410,7 @@ fields:
 		t.Fatalf("generate: %v\n%s", err, errOut.String())
 	}
 
-	policy := collapse(read(t, filepath.Join(root, "modules/invoice/invoice.policy.go")))
+	policy := collapse(read(t, filepath.Join(root, "app/Policies/InvoicePolicy.go")))
 	if strings.Contains(policy, "HasRole") {
 		t.Error("a specification with no permissions produced a policy that allows something")
 	}

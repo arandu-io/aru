@@ -110,6 +110,160 @@ func (f Field) IsString() bool {
 	return f.Type == TypeString || f.Type == TypeText || f.Type == TypeEmail
 }
 
+// IsTime reports whether the field is a date or a timestamp, which are the two
+// that arrive as text and leave as time.Time.
+func (f Field) IsTime() bool { return f.Type == TypeDate || f.Type == TypeTimestamp }
+
+// IsBool reports whether the field is a checkbox in a form.
+func (f Field) IsBool() bool { return f.Type == TypeBool }
+
+// IsWholeNumber reports whether the field is parsed with ParseInt.
+func (f Field) IsWholeNumber() bool { return f.Type == TypeInt || f.Type == TypeMoney }
+
+// IsFraction reports whether the field is parsed with ParseFloat.
+func (f Field) IsFraction() bool { return f.Type == TypeDecimal }
+
+// IsLongText reports whether the field is rendered as a textarea.
+func (f Field) IsLongText() bool { return f.Type == TypeText }
+
+// Label is the field as a form label: "supplier_email" becomes "Supplier email".
+//
+// Sentence case, not Title Case: it is what a form label looks like in an
+// application somebody designed, and Title Case On Every Word is what a
+// generator looks like.
+func (f Field) Label() string {
+	words := strings.Split(f.Name, "_")
+	label := strings.Join(words, " ")
+	if label == "" {
+		return label
+	}
+	return strings.ToUpper(label[:1]) + label[1:]
+}
+
+// TimeLayout is how a date or a timestamp is written in a form field.
+//
+// They are the layouts the HTML input types produce: "date" submits
+// 2006-01-02 and "datetime-local" submits 2006-01-02T15:04. Parsing anything
+// else would reject what the browser itself sent.
+func (f Field) TimeLayout() string {
+	if f.Type == TypeTimestamp {
+		return "2006-01-02T15:04"
+	}
+	return "2006-01-02"
+}
+
+// InputType is the HTML input type of the field.
+func (f Field) InputType() string {
+	switch f.Type {
+	case TypeEmail:
+		return "email"
+	case TypeInt, TypeMoney, TypeDecimal:
+		return "number"
+	case TypeDate:
+		return "date"
+	case TypeTimestamp:
+		return "datetime-local"
+	case TypeBool:
+		return "checkbox"
+	default:
+		return "text"
+	}
+}
+
+// InputStep is the step attribute of a numeric input: cents for money, any for
+// a decimal, and whole units for an integer.
+func (f Field) InputStep() string {
+	switch f.Type {
+	case TypeDecimal:
+		return "any"
+	default:
+		return "1"
+	}
+}
+
+// ViewType is how the field is declared in the view's row struct.
+//
+// Dates leave as text, already formatted: a view that formats a time.Time would
+// need the time package imported into a generated file whose imports are fixed,
+// and formatting is a decision about presentation that belongs to the
+// controller anyway.
+func (f Field) ViewType() string {
+	switch f.Type {
+	case TypeDate, TypeTimestamp:
+		return "string"
+	default:
+		return types[f.Type].Go
+	}
+}
+
+// Display is the expression that turns the entity's field into the row's.
+func (f Field) Display(receiver string) string {
+	if f.IsTime() {
+		return receiver + "." + f.GoName() + `.Format("` + f.displayLayout() + `")`
+	}
+	return receiver + "." + f.GoName()
+}
+
+func (f Field) displayLayout() string {
+	if f.Type == TypeTimestamp {
+		return "2006-01-02 15:04"
+	}
+	return "2006-01-02"
+}
+
+// FormType is how the field is declared in the view's form struct.
+//
+// Everything is text except a boolean, because a form carries text: the value
+// that comes back after a rejection has to be exactly what the person typed,
+// including the "12,00" that failed to parse. A checkbox is the exception --
+// it is checked or it is not.
+func (f Field) FormType() string {
+	if f.IsBool() {
+		return "bool"
+	}
+	return "string"
+}
+
+// FormValue is the expression that fills the form struct from the entity, for
+// the edit screen.
+func (f Field) FormValue(receiver string) string {
+	name := receiver + "." + f.GoName()
+	switch {
+	case f.IsBool():
+		return name
+	case f.IsTime():
+		return name + `.Format("` + f.TimeLayout() + `")`
+	case f.Type == TypeMoney || f.Type == TypeInt:
+		return "strconv.FormatInt(" + name + ", 10)"
+	case f.Type == TypeDecimal:
+		return "strconv.FormatFloat(" + name + ", 'f', -1, 64)"
+	default:
+		return name
+	}
+}
+
+// Parse is the expression a controller uses to read the field from the request.
+//
+// The helpers it names are methods on the controller rather than package
+// functions: every module generates into the same package now, and two modules
+// declaring parseInt would not compile.
+func (f Field) Parse(receiver string) string {
+	switch {
+	case f.IsBool():
+		// An unchecked box sends nothing at all, which is what makes presence
+		// the whole test.
+		return `ctx.Input("` + f.Column() + `") != ""`
+	case f.IsWholeNumber():
+		return receiver + `.whole(ctx, "` + f.Column() + `", errs)`
+	case f.IsFraction():
+		return receiver + `.fraction(ctx, "` + f.Column() + `", errs)`
+	case f.IsTime():
+		return receiver + `.moment(ctx, "` + f.Column() + `", "` + f.TimeLayout() + `", errs)`
+	default:
+		return `ctx.Input("` + f.Column() + `")`
+	}
+}
+
 // MaxLength is the limit the generated validation enforces.
 //
 // It agrees with the column: a value that passes validation has to fit, or the
@@ -188,9 +342,6 @@ type Rule struct {
 // Entity is the exported type name: "purchase_order" becomes "PurchaseOrder".
 func (m Module) Entity() string { return exported(m.Name) }
 
-// Package is the Go package name: lowercase, no separators.
-func (m Module) Package() string { return strings.ReplaceAll(m.Name, "_", "") }
-
 // Table is the table name, pluralized the simple way. English pluralization has
 // hundreds of exceptions; this handles the common ones and gets out of the way.
 func (m Module) Table() string {
@@ -206,7 +357,165 @@ func (m Module) Table() string {
 }
 
 // Route is the URL prefix of the module.
-func (m Module) Route() string { return "/" + strings.ReplaceAll(m.Table(), "_", "-") }
+func (m Module) Route() string { return "/" + m.Resource() }
+
+// Resource is the resource segment: the table with dashes instead of
+// underscores. It names the URL, the route names and the view directory, so all
+// three agree by construction -- "purchase-orders", /purchase-orders,
+// purchase-orders.index.
+func (m Module) Resource() string { return strings.ReplaceAll(m.Table(), "_", "-") }
+
+// Plural is the exported plural of the entity: "PurchaseOrders". It names the
+// view data types, which are per page and per module.
+func (m Module) Plural() string { return exported(m.Table()) }
+
+// Unexported is the entity with a lowercase initial: "purchaseOrder".
+//
+// Every module now generates into shared packages -- app/Models, app/Policies,
+// app/Repositories -- so an unexported package-level name has to carry the
+// entity or the second module fails to compile.
+func (m Module) Unexported() string {
+	e := m.Entity()
+	return strings.ToLower(e[:1]) + e[1:]
+}
+
+// Controller is the type name of the controller: "PurchaseOrderController".
+func (m Module) Controller() string { return m.Entity() + "Controller" }
+
+// PolicyType is the type name of the policy.
+func (m Module) PolicyType() string { return m.Entity() + "Policy" }
+
+// RepositoryType is the type name of the repository.
+func (m Module) RepositoryType() string { return m.Entity() + "Repository" }
+
+// ServiceType is the type name of the service.
+func (m Module) ServiceType() string { return m.Entity() + "Service" }
+
+// StoreRequest is the type name of the request that creates, in Laravel's
+// naming: StorePurchaseOrder.
+func (m Module) StoreRequest() string { return "Store" + m.Entity() }
+
+// UpdateRequest is the type name of the request that updates.
+func (m Module) UpdateRequest() string { return "Update" + m.Entity() }
+
+// RowStruct is the view struct that carries one record to the markup.
+func (m Module) RowStruct() string { return m.Entity() + "Row" }
+
+// FormStruct is the view struct that carries the form fields.
+//
+// It is not called FormType, so that reading a template is unambiguous: a field
+// has a FormType -- string or bool -- and the module has a FormStruct.
+func (m Module) FormStruct() string { return m.Entity() + "Form" }
+
+// Human is the entity as a person writes it in a sentence: "purchase order".
+func (m Module) Human() string { return strings.ReplaceAll(m.Name, "_", " ") }
+
+// Humans is the plural of Human: "purchase orders".
+func (m Module) Humans() string { return strings.ReplaceAll(m.Table(), "_", " ") }
+
+// HumanTitle is Human with a capital initial, for a heading: "Purchase order".
+func (m Module) HumanTitle() string { return upperFirst(m.Human()) }
+
+// HumansTitle is Humans with a capital initial: "Purchase orders".
+func (m Module) HumansTitle() string { return upperFirst(m.Humans()) }
+
+// ViewData is the data type of one page: PurchaseOrdersIndexData.
+func (m Module) ViewData(page string) string { return m.Plural() + exported(page) + "Data" }
+
+// ViewName is how a page is rendered: purchase-orders.index. It is the path
+// under resources/views with dots, exactly as Laravel names a view.
+func (m Module) ViewName(page string) string { return m.Resource() + "." + page }
+
+// MigrationID is the immutable identifier of the generated migration.
+func (m Module) MigrationID() string {
+	return m.Date + "_000001_create_" + m.Table() + "_table"
+}
+
+// MigrationVar is the name of the migration value, which database/migrations
+// lists in All(). It is unexported: nothing outside that package names it.
+func (m Module) MigrationVar() string { return "create" + m.Plural() + "Table" }
+
+// ModelsImport is the import path of app/Models.
+//
+// The directories of the tree are CamelCase, as PSR-4 spells them, and the
+// packages inside them are lowercase, as Go spells them. Every generated import
+// is therefore written with an explicit alias, so nobody has to guess which
+// identifier a path called ".../app/Models" binds.
+func (m Module) ModelsImport() string { return m.ModulePath + "/app/Models" }
+
+// PoliciesImport is the import path of app/Policies.
+func (m Module) PoliciesImport() string { return m.ModulePath + "/app/Policies" }
+
+// RepositoriesImport is the import path of app/Repositories.
+func (m Module) RepositoriesImport() string { return m.ModulePath + "/app/Repositories" }
+
+// ServicesImport is the import path of app/Services.
+func (m Module) ServicesImport() string { return m.ModulePath + "/app/Services" }
+
+// RequestsImport is the import path of app/Http/Requests.
+func (m Module) RequestsImport() string { return m.ModulePath + "/app/Http/Requests" }
+
+// MigrationsImport is the import path of database/migrations.
+func (m Module) MigrationsImport() string { return m.ModulePath + "/database/migrations" }
+
+// ViewsImport is the import path of resources/views.
+func (m Module) ViewsImport() string { return m.ModulePath + "/resources/views" }
+
+// NeedsWholeParse reports whether the controller parses an integer.
+func (m Module) NeedsWholeParse() bool {
+	for _, f := range m.Fields {
+		if f.IsWholeNumber() {
+			return true
+		}
+	}
+	return false
+}
+
+// NeedsFractionParse reports whether the controller parses a decimal.
+func (m Module) NeedsFractionParse() bool {
+	for _, f := range m.Fields {
+		if f.IsFraction() {
+			return true
+		}
+	}
+	return false
+}
+
+// NeedsTimeParse reports whether the controller parses a date or a timestamp,
+// which is the only reason it imports time.
+func (m Module) NeedsTimeParse() bool {
+	for _, f := range m.Fields {
+		if f.IsTime() {
+			return true
+		}
+	}
+	return false
+}
+
+// BoolFields returns the checkbox fields, which are the ones the form renders
+// with a checked attribute.
+func (m Module) BoolFields() []Field {
+	var out []Field
+	for _, f := range m.Fields {
+		if f.IsBool() {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// FirstField is the column the listing links from. It is the first the
+// specification declared, which is the one a person thinks of as the name of
+// the record.
+func (m Module) FirstField() Field { return m.Fields[0] }
+
+// RestFields is everything after the first, for the remaining table columns.
+func (m Module) RestFields() []Field {
+	if len(m.Fields) < 2 {
+		return nil
+	}
+	return m.Fields[1:]
+}
 
 // Receiver is the short receiver name used in generated methods.
 func (m Module) Receiver() string {
@@ -240,16 +549,6 @@ func taken(name string) bool {
 		return true
 	}
 	return false
-}
-
-// NeedsTime reports whether the generated entity imports time.
-func (m Module) NeedsTime() bool {
-	for _, f := range m.Fields {
-		if types[f.Type].Import == "time" {
-			return true
-		}
-	}
-	return true // CreatedAt is always there
 }
 
 // Sortable returns the fields that may be used for ordering. Only text and
@@ -391,6 +690,15 @@ func isIdentifier(s string) bool {
 		}
 	}
 	return true
+}
+
+// upperFirst capitalizes the first letter and leaves the rest alone. Sentence
+// case, not Title Case: Title Case On Every Word is what a generator looks like.
+func upperFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 func isVowel(b byte) bool { return strings.IndexByte("aeiou", b) >= 0 }

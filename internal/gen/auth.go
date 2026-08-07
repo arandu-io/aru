@@ -21,23 +21,28 @@ func GenerateAuth(m Module) ([]File, error) {
 		return nil, errModulePath
 	}
 
-	dir := filepath.Join("modules", "authui")
+	// The controllers, in the Laravel tree. `php artisan ui bootstrap --auth`
+	// puts them under app/Http/Controllers/Auth, and so do we.
 	var out []File
 	for _, t := range []struct {
-		name string
+		path string
 		tmpl string
 	}{
-		{"module.go", authModuleTemplate},
-		{"handlers.go", authHandlersTemplate},
-		{"views.templ", authViewsTemplate},
-		{"arandu.mod.toml", authManifestTemplate},
+		{filepath.Join("app", "Http", "Controllers", "Auth", "LoginController.go"), authModuleTemplate},
+		{filepath.Join("app", "Http", "Controllers", "Auth", "LoginController_handlers.go"), authHandlersTemplate},
 	} {
-		content, err := render(t.name, t.tmpl, m)
+		content, err := render(filepath.Base(t.path), t.tmpl, m)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, File{Path: filepath.Join(dir, t.name), Content: content})
+		out = append(out, File{Path: t.path, Content: content})
 	}
+
+	// And the nine views, which are the point of the command: the same nine
+	// `laravel/ui` generates, at the same paths, with the same job. What
+	// changes is what is inside them -- kyse instead of Blade, Tailwind instead
+	// of Bootstrap, HTMX instead of jQuery (ADR 0022).
+	out = append(out, AuthViews()...)
 	return out, nil
 }
 
@@ -131,8 +136,9 @@ import (
 	"github.com/arandu-io/framework/modules/auth"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/validation"
-	"github.com/arandu-io/porang"
-	"github.com/arandu-io/porang/layout"
+	"github.com/arandu-io/framework/view"
+
+	"{{.ModulePath}}/resources/views"
 )
 
 // Handlers are thin on purpose: extract the input, delegate to the service,
@@ -148,15 +154,17 @@ func (m *Module) showLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// porang.RenderPage rather than page.Render: it sets the content type and
+	// The renderer sets the content type and records the render on the
 	// puts the render on the request timeline. Calling Render directly leaves
 	// the template column at zero, which says the view is free when nobody
 	// measured it.
-	page := LoginPage(
-		layout.Props{Title: "Sign in", CSRFToken: token},
-		LoginForm{CSRFToken: token},
-	)
-	if err := porang.RenderPage(r.Context(), w, "authui/login", page); err != nil {
+	data := views.AuthPage{
+		AppName:  "{{.ModulePath}}",
+		Title:    "Sign in",
+		Token:    token,
+		LoginURL: "/auth/login",
+	}
+	if err := view.NewRenderer().Render(r.Context(), w, http.StatusOK, "auth.login", data); err != nil {
 		observability.Log(r.Context()).Error("rendering the sign-in page", "error", err)
 	}
 }
@@ -232,8 +240,15 @@ func (m *Module) rejected(w http.ResponseWriter, r *http.Request, email string, 
 	// The status is explicit: HTMX swaps the body of a 422 and of a 200 alike,
 	// so answering 200 for a rejection would make the browser, the logs and
 	// every metric agree that it worked.
-	form := Form(LoginForm{Email: email, CSRFToken: token, Errors: errs})
-	if err := porang.RenderFragment(r.Context(), w, status, "authui/form", form); err != nil {
+	form := views.AuthPage{
+		AppName:    "{{.ModulePath}}",
+		Title:      "Sign in",
+		Token:      token,
+		LoginURL:   "/auth/login",
+		Email:      email,
+		EmailError: errs.First(),
+	}
+	if err := view.NewRenderer().Render(r.Context(), w, status, "auth.login", form); err != nil {
 		observability.Log(r.Context()).Error("rendering the form", "error", err)
 	}
 }
@@ -243,75 +258,5 @@ func (m *Module) rejected(w http.ResponseWriter, r *http.Request, email string, 
 // arandu:end custom
 `
 
-const authViewsTemplate = `package authui
-
-import "github.com/arandu-io/framework/validation"
-import "github.com/arandu-io/porang/components"
-import "github.com/arandu-io/porang/layout"
-
-// LoginForm is everything the form needs to render itself, including after a
-// rejection. The password is deliberately absent: it is never sent back.
-type LoginForm struct {
-	Email     string
-	CSRFToken string
-	Errors    validation.Errors
-}
-
-// LoginPage is the whole screen.
-//
-// It writes no classes of its own: the shell and the heading come from porang,
-// whose stylesheet is already embedded in the binary. That is what makes this
-// screen look right before anyone has run a CSS build.
-templ LoginPage(p layout.Props, form LoginForm) {
-	@layout.Centered(p) {
-		@components.Heading("Sign in")
-		@Form(form)
-	}
-}
-
-// Form is the fragment HTMX swaps: the whole form, including its errors.
-//
-// It swaps itself -- hx-target="this" with outerHTML -- so the replacement
-// carries a fresh CSRF token and the typed email. Swapping only a message would
-// leave the stale token in place, and the second attempt would fail the CSRF
-// check for reasons nobody can see.
-templ Form(form LoginForm) {
-	<form
-		id="login-form"
-		method="post"
-		action="/auth/login"
-		hx-post="/auth/login"
-		hx-target="this"
-		hx-swap="outerHTML"
-	>
-		<input type="hidden" name="_csrf" value={ form.CSRFToken }/>
-		if len(form.Errors["email"]) > 0 {
-			@components.Alert(components.AlertProps{
-				Message: form.Errors["email"][0],
-				Variant: components.Danger,
-			})
-		}
-		@components.Field(components.FieldProps{
-			Name:         "email",
-			Label:        "Email",
-			Type:         "email",
-			Value:        form.Email,
-			Required:     true,
-			Autocomplete: "username",
-		})
-		@components.Field(components.FieldProps{
-			Name:         "password",
-			Label:        "Password",
-			Type:         "password",
-			Required:     true,
-			Autocomplete: "current-password",
-			Errors:       form.Errors["password"],
-		})
-		@components.Button(components.ButtonProps{
-			Label:   "Sign in",
-			Variant: components.Primary,
-			Type:    "submit",
-		})
-	</form>
-}
-`
+// The views are no longer here. `aru make:auth` writes the nine of
+// `laravel/ui` in resources/views, as kyse — see authviews.go and ADR 0022.

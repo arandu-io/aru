@@ -203,8 +203,11 @@ func TestAlpineReachingTheServerIsCaught(t *testing.T) {
 	if caught.Severity != doctor.Error {
 		t.Error("Alpine fetching from the server is a warning: it is a second data path")
 	}
-	if !strings.Contains(caught.File, ".templ") {
-		t.Errorf("the finding does not point at the template: %s", caught.File)
+	// The view file, whatever the engine spells it. It was ".templ"; kyse
+	// spells it ".kyse.go", and hardcoding one of the two makes this test about
+	// the engine rather than about the rule.
+	if !strings.Contains(caught.File, "resources/views/") {
+		t.Errorf("the finding does not point at the view: %s", caught.File)
 	}
 	if caught.Line <= 1 {
 		t.Errorf("the finding has no useful line: %d", caught.Line)
@@ -272,7 +275,7 @@ func TestAFileThatDoesNotParseIsReportedNotSwallowed(t *testing.T) {
 		switch f.Rule {
 		case "file-does-not-parse":
 			reported = true
-			if !strings.Contains(f.File, "policy") {
+			if !strings.Contains(strings.ToLower(f.File), "policy") {
 				t.Errorf("the finding names %q, not the file that does not parse", f.File)
 			}
 		case "repository-without-policy":
@@ -285,5 +288,171 @@ func TestAFileThatDoesNotParseIsReportedNotSwallowed(t *testing.T) {
 	}
 	if invented {
 		t.Error("doctor invented `repository-without-policy` for a module whose policy it could not read")
+	}
+}
+
+// findRule returns the first finding of a rule, for a test that has something to
+// say about one of them.
+func findRule(findings []doctor.Finding, rule string) *doctor.Finding {
+	for i, f := range findings {
+		if f.Rule == rule {
+			return &findings[i]
+		}
+	}
+	return nil
+}
+
+// TestTheTreeIsLaravels is what ADR 0019 asks for by name: a test that fails if
+// the path detection changes again.
+//
+// The doctor was written against modules/<name>/, and file.module was filled
+// only for paths starting with "modules/". With the Laravel tree it was empty
+// for every file, so six rules stopped reporting -- and a rule that concludes
+// from an absence does not fail when it goes blind, it passes. A doctor that is
+// green because it did not look is worse than no doctor.
+func TestTheTreeIsLaravels(t *testing.T) {
+	findings, err := doctor.Run("testdata/violations")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// The rules that reason by entity: each one has to fire on a file under
+	// app/, and name the entity rather than a directory.
+	for _, c := range []struct {
+		rule   string
+		entity string
+		dir    string
+	}{
+		{"repository-without-policy", "Billing", "app/Repositories/"},
+		{"policy-never-opened", "Charge", "app/Policies/"},
+		{"grant-not-checked", "", "app/Repositories/"},
+		{"handler-reaches-data", "", "app/Http/Controllers/"},
+		{"sensitive-field-not-redacted", "", "app/Models/"},
+	} {
+		caught := findRule(findings, c.rule)
+		if caught == nil {
+			t.Errorf("%s did not fire anywhere in the Laravel tree", c.rule)
+			continue
+		}
+		if !strings.HasPrefix(caught.File, c.dir) {
+			t.Errorf("%s fired on %s, not under %s", c.rule, caught.File, c.dir)
+		}
+		if c.entity != "" && !strings.Contains(caught.Message, c.entity) {
+			t.Errorf("%s does not name the entity %s: %q", c.rule, c.entity, caught.Message)
+		}
+	}
+}
+
+// TestAControllerReachingTheRepositoryIsCaught is the boundary ADR 0019 calls
+// the other 20%.
+//
+// In Laravel, Service and Repository are the convention of an organized team. A
+// controller that holds the repository would have to issue the Grant itself,
+// which is the controller authorizing itself -- and the compiler cannot see it,
+// because the signature is satisfied.
+func TestAControllerReachingTheRepositoryIsCaught(t *testing.T) {
+	findings, err := doctor.Run("testdata/violations")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	caught := findRule(findings, "controller-reaches-repository")
+	if caught == nil {
+		t.Fatal("a controller importing app/Repositories was not caught")
+	}
+	if caught.Severity != doctor.Error {
+		t.Error("a controller that issues its own Grant is a warning: nothing below it can refuse")
+	}
+}
+
+// TestAMapAsViewDataIsCaught is what doc 14 asks for: the data of a view is a
+// typed struct, and a map defeats the only thing the view layer buys.
+//
+// With a struct, a renamed field does not compile. With map[string]any, a typo
+// in a key renders as an empty string -- the page comes up, the total is blank,
+// and it is found by a customer.
+func TestAMapAsViewDataIsCaught(t *testing.T) {
+	findings, err := doctor.Run("testdata/violations")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var literal, variable bool
+	for _, f := range findings {
+		if f.Rule != "view-data-is-a-map" {
+			continue
+		}
+		if f.Severity != doctor.Error {
+			t.Error("a map as view data is a warning: the page renders blank instead of failing")
+		}
+		if strings.Contains(f.Message, "this call passes a map") {
+			literal = true
+		}
+		// The map is usually built on the line above the render, so following
+		// the value one step is most of the coverage.
+		if strings.Contains(f.Message, "payload") && strings.Contains(f.Message, "line") {
+			variable = true
+		}
+	}
+
+	if !literal {
+		t.Error("a map literal passed straight to ctx.View was not caught")
+	}
+	if !variable {
+		t.Errorf("a map built on the line above the render was not caught:\n%v", findings)
+	}
+}
+
+// TestAViewThatDoesNotExistIsCaught: the name of a view is a string, so this is
+// the one thing in the view path the compiler cannot check. It builds, it
+// deploys, and the page answers 500 the first time somebody opens it.
+func TestAViewThatDoesNotExistIsCaught(t *testing.T) {
+	findings, err := doctor.Run("testdata/violations")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	caught := findRule(findings, "view-does-not-exist")
+	if caught == nil {
+		t.Fatal("a render of a view with no source was not caught")
+	}
+	if !strings.Contains(caught.Message, "billing.missing") {
+		t.Errorf("the message does not name the view: %q", caught.Message)
+	}
+	// The message has to say where to put the file, or the reader has to work
+	// out how a view name maps to a path.
+	if !strings.Contains(caught.Why, "resources/views/billing/missing.kyse.go") {
+		t.Errorf("the explanation does not say where the view goes: %q", caught.Why)
+	}
+}
+
+// TestTheViewRulesAreSilentOnCorrectCode guards the failure mode that kills a
+// linter. The clean fixture renders two views that exist, with the struct each
+// one declared in its @go block.
+func TestTheViewRulesAreSilentOnCorrectCode(t *testing.T) {
+	findings, err := doctor.Run("testdata/clean")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, f := range findings {
+		if f.Rule == "view-data-is-a-map" || f.Rule == "view-does-not-exist" {
+			t.Errorf("correct code produced %s: %s", f.Rule, f.Message)
+		}
+	}
+}
+
+// TestAViewNameIsResolvedLikeLaravel: "invoices.index" is
+// resources/views/invoices/index.kyse.go, and a controller that renders a
+// fragment from a nested directory has to resolve the same way. Getting this
+// wrong would make view-does-not-exist fire on every correct project.
+func TestAViewNameIsResolvedLikeLaravel(t *testing.T) {
+	findings, err := doctor.Run("testdata/clean")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, f := range findings {
+		if f.Rule == "view-does-not-exist" {
+			t.Fatalf("a view that exists was reported missing: %s", f.Message)
+		}
 	}
 }

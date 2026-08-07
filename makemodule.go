@@ -100,21 +100,56 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 
 	// The tone is in docs/04-marca.md: say what happened and what is required
 	// next, without congratulating anyone.
-	fmt.Fprintf(stdout, `
-module %s created, %d files.
-
-The policy denies every action -- open what this module needs in
-modules/%s/%s.policy.go, inside the custom block.
-
-Then register it in cmd/app/main.go:
-
-    %s.New(%s.NewService(%s.NewRepo(db)), subject),
-
-and run:
-
-    aru migrate
-`, spec.Name, len(written), spec.Package(), spec.Name, spec.Package(), spec.Package(), spec.Package())
+	//
+	// Four steps, and none of them is optional: the code is written, the wiring
+	// is not. A generator that edited routes/web.go and bootstrap/app.go behind
+	// your back would be a generator you cannot read the output of -- the whole
+	// point of explicit wiring is that the file says what the application is.
+	fmt.Fprint(stdout, wiring(spec, len(written)))
 	return nil
+}
+
+// wiring is what to do with the files that were just written.
+//
+// It is a function so it can be tested: an instruction that does not compile is
+// worse than no instruction, because it is followed.
+func wiring(m gen.Module, count int) string {
+	return fmt.Sprintf(`
+%s created, %d files, in the Laravel tree.
+
+The policy denies every action. Open what this module needs in
+app/Policies/%s.go, inside the custom block, and nothing else -- that is what
+makes the default safe.
+
+Then three lines, by hand, because the wiring is meant to be readable:
+
+  routes/web.go -- the field, and the routes inside the custom block
+
+      %s *controllers.%s
+
+      r.Resource(%q, d.%s)
+
+  bootstrap/app.go -- in the routes.Deps literal
+
+      %s: controllers.New%s(
+          services.New%s(repositories.New%s(db)), sessions, csrf),
+
+  database/migrations/migrations.go -- inside the custom block of All()
+
+      %s,
+
+Then:
+
+    aru view:build
+    aru migrate
+`,
+		m.Name, count,
+		m.PolicyType(),
+		m.Entity(), m.Controller(),
+		m.Resource(), m.Entity(),
+		m.Entity(), m.Controller(),
+		m.ServiceType(), m.RepositoryType(),
+		m.MigrationVar())
 }
 
 // readModulePath reads the module path from the project's go.mod, because the

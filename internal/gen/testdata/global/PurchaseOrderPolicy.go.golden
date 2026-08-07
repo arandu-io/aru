@@ -1,0 +1,54 @@
+package policies
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/arandu-io/framework/security"
+
+	models "example.test/project/app/Models"
+)
+
+// The actions of PurchaseOrder. Constants rather than strings at the call site: a
+// typo in an action name would silently authorize nothing, or worse, everything.
+//
+// They carry the entity in the name because every policy in the application
+// lives in this package now, and five constants called ActionView would not
+// compile past the first module.
+const (
+	// PurchaseOrderView is reading one record.
+	PurchaseOrderView security.Action = "purchase_order.view"
+	// PurchaseOrderList is paging through the records.
+	PurchaseOrderList security.Action = "purchase_order.list"
+	// PurchaseOrderCreate is adding one.
+	PurchaseOrderCreate security.Action = "purchase_order.create"
+	// PurchaseOrderUpdate is changing one.
+	PurchaseOrderUpdate security.Action = "purchase_order.update"
+	// PurchaseOrderDelete is removing one.
+	PurchaseOrderDelete security.Action = "purchase_order.delete"
+)
+
+// PurchaseOrderPolicy is the only authority over who does what with PurchaseOrder.
+//
+// IT DENIES EVERYTHING. That is deliberate: a generated policy that allowed
+// anything would be a hole shipped by default, in every project that ran the
+// generator. Open what this module actually needs, and nothing else.
+type PurchaseOrderPolicy struct{}
+
+// Compile-time proof that the policy answers about this entity and no other.
+var _ security.Policy[models.PurchaseOrder] = PurchaseOrderPolicy{}
+
+// Can decides whether the subject may perform the action.
+func (PurchaseOrderPolicy) Can(ctx context.Context, s security.Subject, a security.Action, p models.PurchaseOrder) error {
+
+	// arandu:begin custom
+	// Anything the specification cannot express goes here: a rule that depends
+	// on the entity rather than only on the role, a time window, a limit.
+	//
+	//	if a == PurchaseOrderDelete && p.Approved {
+	//		return fmt.Errorf("an approved purchase_order cannot be deleted")
+	//	}
+	// arandu:end custom
+
+	return fmt.Errorf("no rule allows %s on purchase_order", a)
+}

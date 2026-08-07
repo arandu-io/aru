@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"github.com/arandu-io/aru/internal/gen"
 )
@@ -43,13 +44,44 @@ func makeAuth(args []string, stdout, stderr io.Writer) error {
 		return nil
 	}
 
-	written, skipped, err := gen.Write(root, files, *force)
+	// The layout is replaced, not skipped.
+	//
+	// `php artisan ui bootstrap --auth` overwrites layouts/app.blade.php for the
+	// same reason: the nine screens share one layout and render with its data
+	// type, so a layout from somewhere else leaves them referencing fields that
+	// do not exist. Skipping it produced exactly that -- nine views compiled
+	// against a struct the skeleton had never heard of.
+	layout := filepath.Join("resources", "views", "layouts", "app.kyse.go")
+	var replace, keep []gen.File
+	for _, f := range files {
+		if f.Path == layout {
+			replace = append(replace, f)
+			continue
+		}
+		keep = append(keep, f)
+	}
+	if _, _, err := gen.Write(root, replace, true); err != nil {
+		return err
+	}
+
+	written, skipped, err := gen.Write(root, keep, *force)
 	if err != nil {
 		return err
 	}
 
 	for _, p := range written {
 		fmt.Fprintln(stdout, "created", p)
+	}
+
+	// The views are compiled right away.
+	//
+	// Without it the project does not build: `resources/views` holds only
+	// `.kyse.go` sources, every one of them excluded by the build tag, so the
+	// package the controller imports has no Go files at all. The error Go gives
+	// -- "build constraints exclude all Go files" -- says nothing about the
+	// command the reader has to run.
+	if err := compileViews(root, stdout); err != nil {
+		return fmt.Errorf("compiling the views: %w", err)
 	}
 	if len(skipped) > 0 {
 		fmt.Fprintf(stderr, "\n%d file(s) already existed and were left alone:\n", len(skipped))
@@ -71,7 +103,7 @@ They need the view layer, and the templates need their generated Go:
     go get github.com/arandu-io/porang
     aru view:build
 
-Then, in cmd/app/main.go, register the view layer and replace auth.New with
+Then, in bootstrap/app.go, register the view layer and replace auth.New with
 authui.New:
 
     porang.NewModule(),

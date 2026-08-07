@@ -53,8 +53,8 @@ func TestGolden(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Generate: %v", err)
 			}
-			if len(files) != 9 {
-				t.Fatalf("generated %d files, want 9", len(files))
+			if len(files) != 12 {
+				t.Fatalf("generated %d files, want 12", len(files))
 			}
 
 			for _, f := range files {
@@ -113,7 +113,7 @@ func TestEveryRepositoryMethodChecksTheGrant(t *testing.T) {
 
 	var repo string
 	for _, f := range files {
-		if strings.HasSuffix(f.Path, ".repo.go") {
+		if strings.HasSuffix(f.Path, "Repository.go") {
 			repo = string(f.Content)
 		}
 	}
@@ -121,8 +121,12 @@ func TestEveryRepositoryMethodChecksTheGrant(t *testing.T) {
 		t.Fatal("no repository was generated")
 	}
 
-	for _, method := range []string{"func (r *Repo) Find", "func (r *Repo) List",
-		"func (r *Repo) Create", "func (r *Repo) Update", "func (r *Repo) Delete"} {
+	// The receiver carries the entity now: app/Repositories/ is one package for
+	// every entity, and `Repo` would collide on the second module generated.
+	entity := spec(true).Entity()
+
+	for _, method := range []string{"func (r *" + entity + "Repository) Find", "func (r *" + entity + "Repository) List",
+		"func (r *" + entity + "Repository) Create", "func (r *" + entity + "Repository) Update", "func (r *" + entity + "Repository) Delete"} {
 		i := strings.Index(repo, method)
 		if i < 0 {
 			t.Errorf("%s is missing", method)
@@ -147,7 +151,7 @@ func TestTheGeneratedPolicyDeniesByDefault(t *testing.T) {
 	}
 
 	for _, f := range files {
-		if !strings.HasSuffix(f.Path, ".policy.go") {
+		if !strings.HasSuffix(f.Path, "Policy.go") {
 			continue
 		}
 		// Comments are stripped first: the template carries an example of how to
@@ -179,7 +183,7 @@ func TestTenantScopesEveryQuery(t *testing.T) {
 	}
 
 	for _, f := range files {
-		if !strings.HasSuffix(f.Path, ".repo.go") {
+		if !strings.HasSuffix(f.Path, "Repository.go") {
 			continue
 		}
 		repo := string(f.Content)
@@ -227,7 +231,10 @@ func TestTheReceiverDoesNotShadowTheSignature(t *testing.T) {
 			// Every generated Go file has to parse, and the receiver has to be
 			// something other than what the signature already binds.
 			for _, f := range files {
-				if !strings.HasSuffix(f.Path, ".go") {
+				// A .kyse.go is a view, not Go. It ends in .go so the build tag
+				// can exclude it, and everything below the package clause is
+				// markup — which is exactly why the Go parser refuses it.
+				if !strings.HasSuffix(f.Path, ".go") || strings.HasSuffix(f.Path, ".kyse.go") {
 					continue
 				}
 				if _, err := parser.ParseFile(token.NewFileSet(), f.Path, f.Content, parser.AllErrors); err != nil {

@@ -39,14 +39,15 @@ replace github.com/arandu-io/framework => `+framework+`
 
 replace github.com/arandu-io/porang => `+porang+`
 `)
-	writeFile(t, filepath.Join(project, "cmd", "app", "main.go"), "package main\n\nfunc main() {}\n")
+	writeFile(t, filepath.Join(project, "main.go"), "package main\n\nfunc main() {}\n")
+	writeFile(t, filepath.Join(project, "arandu.toml"), "name = \"test\"\n")
 
 	chdir(t, project)
 	var out, errOut strings.Builder
 	if err := makeAuth(nil, &out, &errOut); err != nil {
 		t.Fatalf("make:auth: %v\n%s", err, errOut.String())
 	}
-	for _, name := range []string{"module.go", "handlers.go", "views.templ"} {
+	for _, name := range []string{"LoginController.go", "LoginController_handlers.go", "auth/login.kyse.go"} {
 		if !strings.Contains(out.String(), name) {
 			t.Errorf("%s was not reported as created:\n%s", name, out.String())
 		}

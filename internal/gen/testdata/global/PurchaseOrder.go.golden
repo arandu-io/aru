@@ -1,0 +1,49 @@
+package models
+
+import (
+	"errors"
+	"log/slog"
+	"time"
+)
+
+// PurchaseOrder is the entity. It has no persistence methods: this is not Active
+// Record, and a type that can save itself can save itself from anywhere.
+type PurchaseOrder struct {
+	ID            string
+	Reference     string
+	SupplierEmail string
+	Total         int64
+	Approved      bool
+	Notes         string
+	DeliveryDate  time.Time
+	CreatedAt     time.Time
+}
+
+// What can go wrong with a purchase_order, declared beside the entity rather than
+// inside the repository.
+//
+// The controller maps them to a status code and the repository returns them, so
+// both need to name them -- and a controller that imported the repository to
+// reach an error would be a controller with a door to the data layer, which is
+// the one thing the tree exists to prevent.
+var (
+	// ErrPurchaseOrderNotFound is returned when no row matches.
+	ErrPurchaseOrderNotFound = errors.New("purchase_order: not found")
+	// ErrPurchaseOrderConflict is a unique constraint refusing a duplicate.
+	ErrPurchaseOrderConflict = errors.New("purchase_order: already exists")
+	// ErrPurchaseOrderSort is an ordering the allowlist does not contain.
+	ErrPurchaseOrderSort = errors.New("purchase_order: sort field not allowed")
+)
+
+// LogValue implements slog.LogValuer, so passing the whole entity to a log call
+// records the identifiers and nothing else. Add any sensitive field to the
+// custom block below and it stays out of logs, dumps and the debug page.
+func (p PurchaseOrder) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("id", p.ID),
+	)
+}
+
+// arandu:begin custom
+// MarshalJSON, computed fields and anything else about this entity go here.
+// arandu:end custom

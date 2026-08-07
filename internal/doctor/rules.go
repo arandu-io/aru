@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/arandu-io/aru/internal/manifest"
@@ -16,18 +17,25 @@ import (
 //
 // Adding a rule that rejects existing code is a breaking change (doc 23): it
 // enters as a warning in a minor and becomes an error in the next major.
+//
+// module-imports-module is gone with the tree it policed: ADR 0019 removed
+// modules/ as a structure of the framework, and the boundary that mattered --
+// the controller reaching data directly -- is covered by the two rules named
+// after it below.
 var rules = []func(*project) []Finding{
 	unreadableFiles,
 	repositoryNeedsPolicy,
 	repositoryMethodNeedsGrant,
 	policyMustBeOpened,
-	handlerMustNotReachData,
+	controllerMustNotReachData,
+	controllerMustNotReachTheRepository,
 	tenantMustComeFromTheGrant,
 	systemGrantIsAudited,
 	noBuiltSQL,
 	sensitiveFieldNeedsRedaction,
-	moduleMustNotImportModule,
 	sessionMustRotateOnLogin,
+	viewDataMustBeAStruct,
+	viewMustExist,
 	declaredPermissionsMatchTheCode,
 	alpineHoldsClientStateOnly,
 }
@@ -36,10 +44,11 @@ var rules = []func(*project) []Finding{
 //
 // The parser used to skip an unparsable file silently, on the reasoning that the
 // compiler reports a syntax error better -- which is true, and beside the point.
-// Every rule here reasons over the whole file set, so a module whose policy.go
-// does not parse looks exactly like a module with no policy at all, and doctor
-// reported that: an invented finding, pointing at the wrong file, telling the
-// author to write a policy they had already written. Found by audit.
+// Every rule here reasons over the whole file set, so a project whose
+// InvoicePolicy.go does not parse looks exactly like a project with no policy for
+// Invoice, and doctor reported that: an invented finding, pointing at the wrong
+// file, telling the author to write a policy they had already written. Found by
+// audit.
 //
 // Reporting it first and as an error is the honest answer: what follows is
 // incomplete, and here is why.
@@ -50,70 +59,124 @@ func unreadableFiles(p *project) []Finding {
 			Rule: "file-does-not-parse", Severity: Error,
 			File: u.rel, Line: u.line,
 			Message: "this file does not parse: " + u.reason,
-			Why:     "doctor reads the whole project to answer questions about it, so a file it cannot read makes the rest of this report incomplete -- and can make it wrong: a module whose policy does not parse looks like a module with no policy. Fix the syntax and run again.",
+			Why:     "doctor reads the whole project to answer questions about it, so a file it cannot read makes the rest of this report incomplete -- and can make it wrong: an entity whose policy does not parse looks like an entity with no policy. Fix the syntax and run again.",
 		})
 	}
 	return out
 }
 
-// 1. A repository without a policy in the same module means the entity is
-// reachable and nobody decided who may reach it.
-func repositoryNeedsPolicy(p *project) []Finding {
-	files := p.files
-	hasPolicy := map[string]bool{}
-	for _, f := range files {
-		if f.module == "" || f.isTest {
-			continue
+// entityPlace is where an entity was found, for a finding that names it.
+type entityPlace struct {
+	rel  string
+	line int
+}
+
+// repositoriesAndPolicies collects, per entity, where its repository is and
+// whether it has a policy.
+//
+// Both the path and the type name are read. The path is the convention --
+// app/Repositories/InvoiceRepository.go -- and it keeps working on a file that
+// does not parse. The type name is the truth: an InvoicePolicy declared inside a
+// file called Policies.go is still the policy of Invoice, and a rule that only
+// looked at file names would demand a second one.
+func repositoriesAndPolicies(p *project) (map[string]entityPlace, map[string]bool) {
+	repositories := map[string]entityPlace{}
+	policies := map[string]bool{}
+
+	record := func(entity string, at entityPlace) {
+		if entity == "" {
+			return
 		}
-		for _, decl := range f.ast.Decls {
-			gen, ok := decl.(*ast.GenDecl)
-			if !ok {
-				continue
-			}
-			for _, spec := range gen.Specs {
-				if ts, ok := spec.(*ast.TypeSpec); ok && strings.HasSuffix(ts.Name.Name, "Policy") {
-					hasPolicy[f.module] = true
-				}
-			}
+		if _, seen := repositories[entity]; !seen {
+			repositories[entity] = at
 		}
 	}
 
-	// One finding per module, and every module -- not the first one and then
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+		switch f.category {
+		case "Repositories":
+			record(f.entity, entityPlace{f.rel, 1})
+		case "Policies":
+			if f.entity != "" {
+				policies[f.entity] = true
+			}
+		}
+
+		f.types(func(ts *ast.TypeSpec) {
+			name := ts.Name.Name
+			switch {
+			case strings.HasSuffix(name, "Repository"):
+				record(strings.TrimSuffix(name, "Repository"), entityPlace{f.rel, f.line(ts)})
+			case strings.HasSuffix(name, "Policy"):
+				if entity := strings.TrimSuffix(name, "Policy"); entity != "" {
+					policies[entity] = true
+				}
+			}
+		})
+	}
+	return repositories, policies
+}
+
+// 1. A repository without a policy for the same entity means the entity is
+// reachable and nobody decided who may reach it.
+//
+// app/Policies/ is not a convention of an organized team here, the way it is in
+// Laravel: it is skeleton, and this is the rule that makes it so (ADR 0019).
+func repositoryNeedsPolicy(p *project) []Finding {
+	repositories, policies := repositoriesAndPolicies(p)
+
+	// One finding per entity, and every entity -- not the first one and then
 	// stop. It used to break out of the loop after the first, so a project with
-	// three unprotected modules reported one, and the author found the next only
+	// three unprotected entities reported one, and the author found the next only
 	// after fixing that one and running again. Found by audit; the spec
 	// validator's own doc comment says why that is the wrong shape.
-	reported := map[string]bool{}
+	entities := make([]string, 0, len(repositories))
+	for entity := range repositories {
+		entities = append(entities, entity)
+	}
+	sort.Strings(entities)
+
 	var out []Finding
-	for _, f := range files {
-		if f.module == "" || f.isTest || hasPolicy[f.module] || reported[f.module] {
+	for _, entity := range entities {
+		if policies[entity] {
 			continue
 		}
 		// This rule concludes from an absence, so it has to know whether the
 		// absence is real. See project.blind.
-		if p.blind(f.module) {
+		if p.blind(entity) {
 			continue
 		}
-		if !strings.HasSuffix(f.rel, ".repo.go") && !strings.Contains(f.rel, "repo") {
-			continue
-		}
-		reported[f.module] = true
+		at := repositories[entity]
 		out = append(out, Finding{
 			Rule: "repository-without-policy", Severity: Error,
-			File: f.rel, Line: 1,
-			Message: "module " + f.module + " has a repository and no policy",
-			Why:     "the entity is reachable and nobody decided who may reach it. Run `aru make:policy` or write the Policy type in this module.",
+			File: at.rel, Line: at.line,
+			Message: entity + " has a repository and no policy",
+			Why:     "the entity is reachable and nobody decided who may reach it. Run `aru make:policy` or write app/Policies/" + entity + "Policy.go.",
 		})
 	}
 	return out
 }
 
+// isRepository reports whether a method belongs to a repository.
+//
+// The directory answers for a project that follows the tree, and the receiver
+// name answers for the one that does not -- a type called InvoiceRepository is a
+// repository wherever somebody filed it.
+func isRepository(f *file, fn *ast.FuncDecl) bool {
+	return f.category == "Repositories" || strings.Contains(receiverType(fn), "Repo")
+}
+
 // 2. Every repository method must call g.Check before touching the handle. The
 // signature forces the Grant to be passed; only this checks it was verified.
+//
+// It applies to List and Find exactly as it applies to Create: a read path with
+// no policy is a tenant leak with a technical name (RULE 17).
 func repositoryMethodNeedsGrant(p *project) []Finding {
-	files := p.files
 	var out []Finding
-	for _, f := range files {
+	for _, f := range p.files {
 		if f.isTest {
 			continue
 		}
@@ -122,7 +185,7 @@ func repositoryMethodNeedsGrant(p *project) []Finding {
 			if !ok || fn.Recv == nil {
 				continue
 			}
-			if !strings.Contains(receiverType(fn), "Repo") || !ast.IsExported(fn.Name.Name) {
+			if !isRepository(f, fn) || !ast.IsExported(fn.Name.Name) {
 				continue
 			}
 			if !takesGrant(fn) {
@@ -155,29 +218,40 @@ func takesGrant(fn *ast.FuncDecl) bool {
 	return false
 }
 
-// 3. A generated policy denies everything. Left that way, the module is dead
-// code -- and worse, it looks finished.
+// 3. A generated policy denies everything. Left that way, the entity is
+// unreachable -- and worse, it looks finished.
 func policyMustBeOpened(p *project) []Finding {
-	files := p.files
 	var out []Finding
-	for _, f := range files {
-		if f.isTest || f.module == "" {
+	for _, f := range p.files {
+		if f.isTest {
 			continue
 		}
 		for _, decl := range f.ast.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Name.Name != "Can" || !strings.Contains(receiverType(fn), "Policy") {
+			if !ok || fn.Name.Name != "Can" {
+				continue
+			}
+			receiver := receiverType(fn)
+			if f.category != "Policies" && !strings.Contains(receiver, "Policy") {
 				continue
 			}
 			if returnsNil(fn) {
 				continue
 			}
+
+			entity := strings.TrimSuffix(receiver, "Policy")
+			if entity == "" {
+				entity = f.entity
+			}
+			if entity == "" {
+				entity = "this entity"
+			}
 			file, line := f.at(fn)
 			out = append(out, Finding{
 				Rule: "policy-never-opened", Severity: Warning,
 				File: file, Line: line,
-				Message: "the policy of " + f.module + " denies every action",
-				Why:     "this is how `aru make:module` generates it, on purpose. Open what the module needs inside the custom block -- until then every request to it is refused.",
+				Message: "the policy of " + entity + " denies every action",
+				Why:     "this is how `aru make:policy` generates it, on purpose. Open what the application needs inside the custom block -- until then every request that reaches this entity is refused.",
 			})
 		}
 	}
@@ -203,20 +277,19 @@ func returnsNil(fn *ast.FuncDecl) bool {
 	return found
 }
 
-// 4. A handler that reaches the data package is a handler that skipped the
+// 4. A controller that reaches the data package is a controller that skipped the
 // service, and therefore the policy.
-func handlerMustNotReachData(p *project) []Finding {
-	files := p.files
+func controllerMustNotReachData(p *project) []Finding {
 	var out []Finding
-	for _, f := range files {
-		if f.isTest || !strings.HasSuffix(f.rel, "handlers.go") {
+	for _, f := range p.files {
+		if f.isTest || f.category != "Controllers" {
 			continue
 		}
 		for path := range f.imports {
 			if !strings.HasSuffix(path, "/framework/data") {
 				continue
 			}
-			// data.Query is the pagination type and belongs in a handler; the
+			// data.Query is the pagination type and belongs in a controller; the
 			// rest of the package does not.
 			onlyQuery := true
 			ast.Inspect(f.ast, func(n ast.Node) bool {
@@ -236,8 +309,8 @@ func handlerMustNotReachData(p *project) []Finding {
 			out = append(out, Finding{
 				Rule: "handler-reaches-data", Severity: Error,
 				File: f.rel, Line: 1,
-				Message: "this handler uses the data package beyond data.Query",
-				Why:     "a handler that reaches the database skipped the service, and therefore the policy. Move the call into the service, where the Grant is issued.",
+				Message: "this controller uses the data package beyond data.Query",
+				Why:     "a controller that reaches the database skipped the service, and therefore the policy. Move the call into app/Services, where the Grant is issued.",
 			})
 			break
 		}
@@ -245,7 +318,36 @@ func handlerMustNotReachData(p *project) []Finding {
 	return out
 }
 
-// 5. A tenant taken from the request is the client choosing which data to read.
+// 5. A controller that imports app/Repositories skips the service the same way,
+// and the compiler cannot see it: the repository method it calls does require a
+// Grant, and a controller can produce one with SystemGrant.
+//
+// This is the boundary ADR 0019 calls the other 20%: in Laravel, Service and
+// Repository are a convention of an organized team; here they are skeleton, and
+// the direction of the arrow is checked.
+func controllerMustNotReachTheRepository(p *project) []Finding {
+	var out []Finding
+	for _, f := range p.files {
+		if f.isTest || f.category != "Controllers" {
+			continue
+		}
+		for path := range f.imports {
+			if !strings.Contains(strings.ToLower(path), "/app/repositories") {
+				continue
+			}
+			out = append(out, Finding{
+				Rule: "controller-reaches-repository", Severity: Error,
+				File: f.rel, Line: 1,
+				Message: "this controller imports " + path,
+				Why:     "the Grant a repository requires would have to be issued here, which is the controller authorizing itself. Call app/Services instead: it validates, calls security.Authorize, and only then reaches the repository.",
+			})
+			break
+		}
+	}
+	return out
+}
+
+// 6. A tenant taken from the request is the client choosing which data to read.
 func tenantMustComeFromTheGrant(p *project) []Finding {
 	files := p.files
 	var out []Finding
@@ -255,7 +357,8 @@ func tenantMustComeFromTheGrant(p *project) []Finding {
 		}
 		f.calls(func(call *ast.CallExpr, name string) {
 			switch name {
-			case "r.PathValue", "r.FormValue", "r.PostFormValue", "req.PathValue", "req.FormValue":
+			case "r.PathValue", "r.FormValue", "r.PostFormValue", "req.PathValue", "req.FormValue",
+				"ctx.Param", "ctx.Query", "ctx.Input", "c.Param", "c.Query", "c.Input":
 			default:
 				return
 			}
@@ -304,7 +407,7 @@ func tenantMustComeFromTheGrant(p *project) []Finding {
 // The two checks above ask whether a header or a parameter is CALLED something
 // with "tenant" in it, and that is the wrong question:
 //
-//	org := r.Header.Get("X-Org")
+//	org := ctx.Query("org")
 //	g := security.SystemGrant(ActionView, org)
 //
 // passes both of them and is exactly the hole RULE 14 exists to close. The name
@@ -391,27 +494,35 @@ func readsTheRequest(name string) bool {
 		strings.HasSuffix(name, ".PathValue"),
 		strings.HasSuffix(name, ".FormValue"),
 		strings.HasSuffix(name, ".PostFormValue"),
-		strings.HasSuffix(name, ".Cookie"):
+		strings.HasSuffix(name, ".Cookie"),
+		// The httpx.Context accessors: the same values, one layer up.
+		strings.HasSuffix(name, "ctx.Param"),
+		strings.HasSuffix(name, "ctx.Query"),
+		strings.HasSuffix(name, "ctx.Input"):
 		return true
 	}
 	return false
 }
 
-// 6. SystemGrant is the one way past the policy. Its call sites are the audit.
+// 7. SystemGrant is the one way past the policy. Its call sites are the audit.
 func systemGrantIsAudited(p *project) []Finding {
-	files := p.files
 	var out []Finding
-	for _, f := range files {
+	for _, f := range p.files {
 		if f.isTest {
 			continue
 		}
 		// Seeders, jobs and commands are where it legitimately belongs, and so is
 		// a method whose name says it is seeding -- EnsureAdmin, SeedDemo. The
-		// file path alone would flag every module that offers a seeding entry
+		// file path alone would flag every entity that offers a seeding entry
 		// point, and a warning that fires on correct code gets muted.
-		legitimateFile := strings.Contains(f.rel, "seeder") ||
-			strings.Contains(f.rel, "/jobs/") ||
-			strings.Contains(f.rel, "cmd/")
+		lower := strings.ToLower(f.rel)
+		legitimateFile := strings.Contains(lower, "seeder") ||
+			strings.Contains(lower, "/jobs/") ||
+			strings.Contains(lower, "/commands/") ||
+			strings.Contains(lower, "/console/") ||
+			strings.Contains(lower, "routes/console.go") ||
+			strings.Contains(lower, "cmd/") ||
+			lower == "main.go"
 
 		enclosing := enclosingFuncs(f)
 
@@ -479,12 +590,11 @@ func enclosingFuncs(f *file) map[int]string {
 	return out
 }
 
-// 7. SQL built with Sprintf or concatenation of a variable is injection, whatever
+// 8. SQL built with Sprintf or concatenation of a variable is injection, whatever
 // the intent was.
 func noBuiltSQL(p *project) []Finding {
-	files := p.files
 	var out []Finding
-	for _, f := range files {
+	for _, f := range p.files {
 		if f.isTest {
 			continue
 		}
@@ -518,62 +628,60 @@ func looksLikeSQL(s string) bool {
 	return false
 }
 
-// 8. An entity with a secret in it needs to refuse to serialize itself, or the
+// 9. A type with a secret in it needs to refuse to serialize itself, or the
 // first Dump publishes it on the debug page.
 func sensitiveFieldNeedsRedaction(p *project) []Finding {
-	files := p.files
 	sensitive := []string{"password", "secret", "token", "document", "apikey", "api_key", "creditcard", "cpf", "cnpj"}
 
 	var out []Finding
-	for _, f := range files {
-		if f.isTest || f.module == "" {
+	for _, f := range p.files {
+		// Anything under app/ -- a model, a request, a DTO. Outside it the
+		// project is configuration and wiring, where a field called Token is the
+		// credential being read rather than a record being stored.
+		if f.isTest || f.category == "" {
 			continue
 		}
-		for _, decl := range f.ast.Decls {
-			gen, ok := decl.(*ast.GenDecl)
-			if !ok {
-				continue
+		f.types(func(ts *ast.TypeSpec) {
+			st, ok := ts.Type.(*ast.StructType)
+			if !ok || st.Fields == nil {
+				return
 			}
-			for _, spec := range gen.Specs {
-				ts, ok := spec.(*ast.TypeSpec)
-				if !ok {
-					continue
-				}
-				st, ok := ts.Type.(*ast.StructType)
-				if !ok || st.Fields == nil {
-					continue
-				}
 
-				var found string
-				for _, field := range st.Fields.List {
-					for _, n := range field.Names {
-						lower := strings.ToLower(n.Name)
-						for _, s := range sensitive {
-							if strings.Contains(lower, s) {
-								found = n.Name
-							}
+			var found string
+			for _, field := range st.Fields.List {
+				for _, n := range field.Names {
+					lower := strings.ToLower(n.Name)
+					for _, s := range sensitive {
+						if strings.Contains(lower, s) {
+							found = n.Name
 						}
 					}
 				}
-				if found == "" || hasRedaction(files, f.module, ts.Name.Name) {
-					continue
-				}
-				file, line := f.at(ts)
-				out = append(out, Finding{
-					Rule: "sensitive-field-not-redacted", Severity: Warning,
-					File: file, Line: line,
-					Message: ts.Name.Name + " holds " + found + " and does not redact itself",
-					Why:     "one observability.Dump or one log line publishes it on the debug page. Add LogValue() slog.Value and MarshalJSON to the type, so no caller has to remember.",
-				})
 			}
-		}
+			if found == "" || hasRedaction(p.files, f.dir, ts.Name.Name) {
+				return
+			}
+			file, line := f.at(ts)
+			out = append(out, Finding{
+				Rule: "sensitive-field-not-redacted", Severity: Warning,
+				File: file, Line: line,
+				Message: ts.Name.Name + " holds " + found + " and does not redact itself",
+				Why:     "one observability.Dump or one log line publishes it on the debug page. Add LogValue() slog.Value and MarshalJSON to the type, so no caller has to remember.",
+			})
+		})
 	}
 	return out
 }
 
-func hasRedaction(files []*file, module, typeName string) bool {
+// hasRedaction looks for the methods in the directory the type lives in.
+//
+// The directory, not the whole project: a method has to be declared in the
+// package of its receiver, so anywhere else is not the same type. That is also
+// what makes the check right in the Laravel tree, where app/Models and
+// app/Requests are two packages that both declare a type called User.
+func hasRedaction(files []*file, dir, typeName string) bool {
 	for _, f := range files {
-		if f.module != module {
+		if f.dir != dir {
 			continue
 		}
 		for _, decl := range f.ast.Decls {
@@ -589,47 +697,11 @@ func hasRedaction(files []*file, module, typeName string) bool {
 	return false
 }
 
-// 9. A module importing another module directly is the coupling that makes a
-// module stop being publishable.
-func moduleMustNotImportModule(p *project) []Finding {
-	files := p.files
-	var out []Finding
-	for _, f := range files {
-		if f.module == "" || f.isTest {
-			continue
-		}
-		for path := range f.imports {
-			i := strings.Index(path, "/modules/")
-			if i < 0 {
-				continue
-			}
-			other := strings.TrimPrefix(path[i+len("/modules/"):], "/")
-			if other == f.module || other == "" {
-				continue
-			}
-			// The auth module is the framework's own, and being able to read the
-			// subject is what every module needs.
-			if strings.Contains(path, "/framework/modules/") {
-				continue
-			}
-			out = append(out, Finding{
-				Rule: "module-imports-module", Severity: Warning,
-				File: f.rel, Line: 1,
-				Message: "module " + f.module + " imports module " + other + " directly",
-				Why:     "a module is a unit of distribution, and this one no longer travels alone. Talk to it through an interface this module declares, or move the shared type out of both.",
-			})
-			break
-		}
-	}
-	return out
-}
-
 // 10. Login without rotating the session id is session fixation: an attacker
 // plants a known id and inherits the session after the victim signs in.
 func sessionMustRotateOnLogin(p *project) []Finding {
-	files := p.files
 	var out []Finding
-	for _, f := range files {
+	for _, f := range p.files {
 		if f.isTest {
 			continue
 		}
@@ -660,67 +732,257 @@ func sessionMustRotateOnLogin(p *project) []Finding {
 	return out
 }
 
-// 11. What a module declares in arandu.mod.toml has to match what it does.
+// renderCall is a ctx.View or ctx.Fragment call, with the two arguments the view
+// rules care about.
+type renderCall struct {
+	call *ast.CallExpr
+	// name is the view name argument, whatever it is written as.
+	name ast.Expr
+	// data is the argument that reaches the template.
+	data ast.Expr
+}
+
+// renderCalls finds the calls that render a view.
+//
+// It matches by shape rather than by type, because doctor never type-checks:
+// `ctx.View(name, data)` has two arguments and `ctx.Fragment(status, name,
+// data)` has three, and the method names come from httpx.Context. A method
+// called View with two arguments on something else is a false positive this
+// accepts -- and the alternative, type resolution, would mean doctor could only
+// run on a project that already compiles.
+func renderCalls(f *file) []renderCall {
+	var out []renderCall
+	f.calls(func(call *ast.CallExpr, name string) {
+		switch {
+		case strings.HasSuffix(name, ".View") && len(call.Args) == 2:
+			out = append(out, renderCall{call: call, name: call.Args[0], data: call.Args[1]})
+		case strings.HasSuffix(name, ".Fragment") && len(call.Args) == 3:
+			out = append(out, renderCall{call: call, name: call.Args[1], data: call.Args[2]})
+		}
+	})
+	return out
+}
+
+// 11. The data of a view is a typed struct, never a map.
+//
+// Doc 14 makes this the reason the view layer exists at all: with a struct, a
+// renamed field is a compile error and the page cannot ship broken. With
+// map[string]any, a typo in a key is a nil the template renders as nothing --
+// the page comes up, the field is blank, and nobody finds out until a customer
+// says the invoice has no total.
+//
+// It follows the value one step, because the map is usually built on the line
+// above the render rather than inside the call.
+func viewDataMustBeAStruct(p *project) []Finding {
+	var out []Finding
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+		maps := mapVariables(f)
+
+		for _, r := range renderCalls(f) {
+			source, why := "", ""
+			switch {
+			case isMapExpression(r.data):
+				why = "this call passes a map"
+			default:
+				id, ok := r.data.(*ast.Ident)
+				if !ok {
+					continue
+				}
+				at, isMap := maps[id.Name]
+				if !isMap {
+					continue
+				}
+				source = id.Name
+				why = fmt.Sprintf("%s, built on line %d, is a map", source, f.line(at))
+			}
+
+			file, line := f.at(r.call)
+			out = append(out, Finding{
+				Rule: "view-data-is-a-map", Severity: Error,
+				File: file, Line: line,
+				Message: "the data of " + viewNameOf(r) + " is a map: " + why,
+				Why:     "a struct is what makes a typo a compile error. With a map, a renamed or misspelled key renders as an empty string, the page comes up, and the missing field is found in production. Declare the type in the view's @go block and pass it.",
+			})
+		}
+	}
+	return out
+}
+
+// viewNameOf renders the view being rendered, for a message.
+func viewNameOf(r renderCall) string {
+	if name, ok := stringLiteral(r.name); ok {
+		return "view " + name
+	}
+	return "this view"
+}
+
+// isMapExpression reports whether an expression is plainly a map.
+func isMapExpression(e ast.Expr) bool {
+	switch x := e.(type) {
+	case *ast.CompositeLit:
+		_, ok := x.Type.(*ast.MapType)
+		return ok
+	case *ast.CallExpr:
+		// make(map[string]any)
+		if id, ok := x.Fun.(*ast.Ident); ok && id.Name == "make" && len(x.Args) > 0 {
+			_, isMap := x.Args[0].(*ast.MapType)
+			return isMap
+		}
+	case *ast.UnaryExpr:
+		return isMapExpression(x.X)
+	}
+	return false
+}
+
+// mapVariables collects the local names that hold a map, per file.
+//
+// One step of assignment, no more: the shape people write is a literal on the
+// line before the render, and an analysis that promised to follow a value
+// through three functions without a type checker would be promising something it
+// cannot deliver.
+func mapVariables(f *file) map[string]ast.Node {
+	out := map[string]ast.Node{}
+
+	ast.Inspect(f.ast, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.AssignStmt:
+			if len(x.Lhs) != len(x.Rhs) {
+				return true
+			}
+			for i, rhs := range x.Rhs {
+				if !isMapExpression(rhs) {
+					continue
+				}
+				if id, ok := x.Lhs[i].(*ast.Ident); ok && id.Name != "_" {
+					out[id.Name] = rhs
+				}
+			}
+		case *ast.ValueSpec:
+			if _, isMap := x.Type.(*ast.MapType); isMap {
+				for _, id := range x.Names {
+					out[id.Name] = x
+				}
+				return true
+			}
+			for i, value := range x.Values {
+				if i < len(x.Names) && isMapExpression(value) {
+					out[x.Names[i].Name] = value
+				}
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// 12. A view that is rendered has to exist.
+//
+// The name is a string, so this is the one place in the view path the compiler
+// cannot reach: `ctx.View("invoices.idex", data)` compiles, deploys, and returns
+// 500 the first time somebody opens the page. Nothing else in the request would
+// have failed.
+//
+// It stays quiet on a project with no views at all -- a library, or an
+// application whose views have not been written yet -- because a rule that fires
+// on every call in an empty project teaches people to ignore it.
+func viewMustExist(p *project) []Finding {
+	if len(p.views) == 0 {
+		return nil
+	}
+
+	var out []Finding
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+		for _, r := range renderCalls(f) {
+			name, ok := stringLiteral(r.name)
+			if !ok || name == "" {
+				// A name computed at runtime is outside what this can check, and
+				// saying so is better than guessing.
+				continue
+			}
+			if p.hasView(name) {
+				continue
+			}
+			file, line := f.at(r.call)
+			out = append(out, Finding{
+				Rule: "view-does-not-exist", Severity: Error,
+				File: file, Line: line,
+				Message: "there is no view named " + name,
+				Why:     "the name of a view is a string, so this is the one thing in the view path the compiler cannot check: it builds, it deploys, and the page answers 500 the first time somebody opens it. Create " + viewsDir + "/" + strings.ReplaceAll(name, ".", "/") + ".kyse.go, or fix the name.",
+			})
+		}
+	}
+	return out
+}
+
+// 13. What the project declares in arandu.mod.toml has to match what it does.
 //
 // The declaration is the only thing anyone reads before installing a module from
 // the registry, and a declaration nobody verifies is worse than none: it is a
 // promise with the weight of a check and the reliability of a comment.
 //
-// Used and not declared is an error -- that is the module doing something its
+// Used and not declared is an error -- that is the code doing something its
 // installer did not agree to. Declared and not used is a warning, because asking
 // for more than you need is how a permission model erodes into everyone
 // declaring everything.
+//
+// A project with no manifest is silent. The unit of distribution is the Go
+// module (doc 18), so the file belongs at the root of a repository that is
+// published -- and an application is not published. Demanding it from every
+// `aru new` would be a warning that fires on correct code, which is how a tool
+// teaches people to stop reading it.
 func declaredPermissionsMatchTheCode(p *project) []Finding {
+	declared := p.manifest
+	if declared == nil {
+		return nil
+	}
+
+	name := declared.Name
+	if name == "" {
+		name = "this project"
+	}
+	used := usedPermissions(p)
+
 	var out []Finding
-
-	for _, module := range p.modules() {
-		declared, hasManifest := p.manifests[module]
-		if !hasManifest {
+	for _, c := range []struct {
+		name        string
+		declared    bool
+		used        bool
+		consequence string
+	}{
+		{"network", declared.Permissions.Network, used.Network,
+			"the code makes calls that leave the process, and whoever installed it agreed to a module that does not"},
+		{"filesystem", declared.Permissions.Filesystem, used.Filesystem,
+			"the code reads or writes files outside the database, which is not visible from its API"},
+		{"exec", declared.Permissions.Exec, used.Exec,
+			"the code runs another program, which is the widest capability there is"},
+		{"migrations", declared.Permissions.Migrations, used.Migrations,
+			"the code owns tables, and an installer who did not expect that will not know to run aru migrate"},
+	} {
+		switch {
+		case c.used && !c.declared:
 			out = append(out, Finding{
-				Rule: "module-without-manifest", Severity: Warning,
-				File: filepath.Join("modules", module, manifest.Name), Line: 1,
-				Message: "module " + module + " declares no metadata",
-				Why:     "a module published without " + manifest.Name + " cannot gain it later without breaking whoever already installed it. `aru make:module` writes one; copy it from another module.",
+				Rule: "permission-not-declared", Severity: Error,
+				File: relativeTo(p.root, declared.Path), Line: 1,
+				Message: name + " uses " + c.name + " and declares " + c.name + " = false",
+				Why:     c.consequence + ". Set " + c.name + " = true under [permissions], or remove the code that needs it.",
 			})
-			continue
-		}
-
-		used := usedPermissions(p, module)
-		for _, c := range []struct {
-			name        string
-			declared    bool
-			used        bool
-			consequence string
-		}{
-			{"network", declared.Permissions.Network, used.Network,
-				"the module makes calls that leave the process, and whoever installed it agreed to a module that does not"},
-			{"filesystem", declared.Permissions.Filesystem, used.Filesystem,
-				"the module reads or writes files outside the database, which is not visible from its API"},
-			{"exec", declared.Permissions.Exec, used.Exec,
-				"the module runs another program, which is the widest capability there is"},
-			{"migrations", declared.Permissions.Migrations, used.Migrations,
-				"the module owns tables, and an installer who did not expect that will not know to run aru migrate"},
-		} {
-			switch {
-			case c.used && !c.declared:
-				out = append(out, Finding{
-					Rule: "permission-not-declared", Severity: Error,
-					File: relativeTo(p.root, declared.Path), Line: 1,
-					Message: module + " uses " + c.name + " and declares " + c.name + " = false",
-					Why:     c.consequence + ". Set " + c.name + " = true under [permissions], or remove the code that needs it.",
-				})
-			case c.declared && !c.used && !p.blind(module):
-				// Absence, so it needs the guard: a module whose only network
-				// call is in a file that does not parse would be told to declare
-				// network = false, which is the opposite of true. See
-				// project.blind.
-				out = append(out, Finding{
-					Rule: "permission-not-used", Severity: Warning,
-					File: relativeTo(p.root, declared.Path), Line: 1,
-					Message: module + " declares " + c.name + " = true and does not use it",
-					Why:     "asking for more than you need is how a permission model erodes into everyone declaring everything. Set " + c.name + " = false.",
-				})
-			}
+		case c.declared && !c.used && len(p.unreadable) == 0:
+			// Absence, so it needs the guard, and here the guard is the whole
+			// file set: a project whose only network call sits in a file that
+			// does not parse would be told to declare network = false, which is
+			// the opposite of true.
+			out = append(out, Finding{
+				Rule: "permission-not-used", Severity: Warning,
+				File: relativeTo(p.root, declared.Path), Line: 1,
+				Message: name + " declares " + c.name + " = true and does not use it",
+				Why:     "asking for more than you need is how a permission model erodes into everyone declaring everything. Set " + c.name + " = false.",
+			})
 		}
 	}
 	return out
@@ -729,14 +991,20 @@ func declaredPermissionsMatchTheCode(p *project) []Finding {
 // usedPermissions is the capability audit, by AST.
 //
 // It looks at what the code calls rather than at what it imports, because
-// net/http is imported by every module that has a handler and says nothing about
-// whether the module calls out.
-func usedPermissions(p *project, module string) manifest.Permissions {
+// net/http is imported by every project that has a controller and says nothing
+// about whether it calls out.
+func usedPermissions(p *project) manifest.Permissions {
 	var used manifest.Permissions
 
 	for _, f := range p.files {
-		if f.module != module || f.isTest {
+		if f.isTest {
 			continue
+		}
+
+		// database/migrations is where the schema lives in the Laravel tree, so
+		// its existence is the declaration -- no method name to remember.
+		if strings.HasPrefix(f.rel, "database/migrations/") {
+			used.Migrations = true
 		}
 
 		for path := range f.imports {
@@ -753,7 +1021,7 @@ func usedPermissions(p *project, module string) manifest.Permissions {
 		f.calls(func(_ *ast.CallExpr, name string) {
 			switch {
 			// The client half of net/http. The server half -- Handler,
-			// ResponseWriter, StatusOK -- is every module with a route.
+			// ResponseWriter, StatusOK -- is every project with a route.
 			case name == "http.Get", name == "http.Post", name == "http.Head",
 				name == "http.PostForm", name == "http.NewRequest",
 				name == "http.NewRequestWithContext",
@@ -812,7 +1080,7 @@ var networkInAlpine = []struct {
 	{"new WebSocket", "a WebSocket"},
 }
 
-// 12. Alpine holds client state, and nothing else.
+// 14. Alpine holds client state, and nothing else.
 //
 // Doc 14 draws the line: Alpine is allowed when the state is client-only,
 // ephemeral, and invisible to the server -- a dropdown, a tab, an input mask.
@@ -826,10 +1094,10 @@ var networkInAlpine = []struct {
 func alpineHoldsClientStateOnly(p *project) []Finding {
 	var out []Finding
 
-	for _, t := range p.templates {
-		for _, match := range alpineAttribute.FindAllStringSubmatchIndex(t.body, -1) {
-			directive := t.body[match[2]:match[3]]
-			content := t.body[match[4]:match[5]]
+	for _, v := range p.views {
+		for _, match := range alpineAttribute.FindAllStringSubmatchIndex(v.body, -1) {
+			directive := v.body[match[2]:match[3]]
+			content := v.body[match[4]:match[5]]
 
 			for _, forbidden := range networkInAlpine {
 				if !strings.Contains(content, forbidden.token) {
@@ -837,7 +1105,7 @@ func alpineHoldsClientStateOnly(p *project) []Finding {
 				}
 				out = append(out, Finding{
 					Rule: "alpine-reaches-the-server", Severity: Error,
-					File: t.rel, Line: lineOf(t.body, match[0]),
+					File: v.rel, Line: lineOf(v.body, match[0]),
 					Message: directive + " contains " + forbidden.what,
 					Why: "Alpine holds state that is client-only, ephemeral and invisible to the server. " +
 						"A directive that talks to the server should be an HTMX fragment instead -- otherwise the " +

@@ -27,7 +27,7 @@ require github.com/arandu-io/framework v0.8.0
 
 replace github.com/arandu-io/framework => `+framework+`
 `)
-	writeFile(t, filepath.Join(project, "cmd", "app", "main.go"), `package main
+	writeFile(t, filepath.Join(project, "main.go"), `package main
 
 import "fmt"
 
@@ -36,6 +36,7 @@ var version = "dev"
 
 func main() { fmt.Println(version) }
 `)
+	writeFile(t, filepath.Join(project, "arandu.toml"), "name = \"test\"\n")
 
 	chdir(t, project)
 	var out, errOut strings.Builder
@@ -80,7 +81,8 @@ func main() { fmt.Println(version) }
 func TestBuildingAnImageWithoutADockerfileSaysWhere(t *testing.T) {
 	project := t.TempDir()
 	writeFile(t, filepath.Join(project, "go.mod"), "module example.test/project\n\ngo 1.25\n")
-	writeFile(t, filepath.Join(project, "cmd", "app", "main.go"), "package main\n\nfunc main() {}\n")
+	writeFile(t, filepath.Join(project, "main.go"), "package main\n\nfunc main() {}\n")
+	writeFile(t, filepath.Join(project, "arandu.toml"), "name = \"test\"\n")
 
 	chdir(t, project)
 	var out, errOut strings.Builder

@@ -134,7 +134,7 @@ func TestMakeModuleRequiresFieldsAndAProject(t *testing.T) {
 	if code == 0 {
 		t.Error("make:module ran outside a project")
 	}
-	if !strings.Contains(stderr, "cmd/app") {
+	if !strings.Contains(stderr, "arandu.toml") {
 		t.Errorf("the error does not say what is missing: %q", stderr)
 	}
 
@@ -142,7 +142,7 @@ func TestMakeModuleRequiresFieldsAndAProject(t *testing.T) {
 	if code == 0 {
 		t.Error("make:module ran with no name")
 	}
-	if !strings.Contains(stderr, "usage:") && !strings.Contains(stderr, "cmd/app") {
+	if !strings.Contains(stderr, "usage:") && !strings.Contains(stderr, "arandu.toml") {
 		t.Errorf("the error is not actionable: %q", stderr)
 	}
 }
@@ -184,7 +184,7 @@ func TestDelegationRequiresAProject(t *testing.T) {
 		if code == 0 {
 			t.Errorf("%s exited 0 outside a project", name)
 		}
-		if !strings.Contains(stderr, "cmd/app") {
+		if !strings.Contains(stderr, "arandu.toml") {
 			t.Errorf("%s does not explain what is missing: %q", name, stderr)
 		}
 	}
@@ -197,10 +197,17 @@ func TestProjectRootIsFoundFromASubdirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, "cmd", "app"), 0o755); err != nil {
+	// The three files that together say "this is an Arandu project": go.mod is
+	// any Go module, main.go is any program, and arandu.toml is what tells it
+	// apart -- without it, running `aru` inside an unrelated project would walk
+	// up and act on it.
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	deep := filepath.Join(root, "modules", "billing")
+	if err := os.WriteFile(filepath.Join(root, "arandu.toml"), []byte("name = \"test\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deep := filepath.Join(root, "app", "Http", "Controllers")
 	if err := os.MkdirAll(deep, 0o755); err != nil {
 		t.Fatal(err)
 	}

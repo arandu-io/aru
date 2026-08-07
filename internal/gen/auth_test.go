@@ -24,8 +24,8 @@ func TestAuthGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateAuth: %v", err)
 	}
-	if len(files) != 4 {
-		t.Fatalf("generated %d files, want 4", len(files))
+	if len(files) != 11 {
+		t.Fatalf("generated %d files, want 11", len(files))
 	}
 
 	for _, f := range files {
@@ -57,7 +57,9 @@ func TestTheGeneratedGoParses(t *testing.T) {
 		t.Fatalf("GenerateAuth: %v", err)
 	}
 	for _, f := range files {
-		if !strings.HasSuffix(f.Path, ".go") {
+		// A .kyse.go is a view, not Go: everything below the package clause is
+		// markup, which is exactly why the Go parser refuses it.
+		if !strings.HasSuffix(f.Path, ".go") || strings.HasSuffix(f.Path, ".kyse.go") {
 			continue
 		}
 		if _, err := parser.ParseFile(token.NewFileSet(), f.Path, f.Content, parser.AllErrors); err != nil {
@@ -75,22 +77,28 @@ func TestTheGeneratedTemplateIsNotFormatted(t *testing.T) {
 		t.Fatalf("GenerateAuth: %v", err)
 	}
 	for _, f := range files {
-		if filepath.Base(f.Path) != "views.templ" {
+		if !strings.HasSuffix(filepath.ToSlash(f.Path), "auth/login.kyse.go") {
 			continue
 		}
-		if !bytes.Contains(f.Content, []byte("templ LoginPage(")) {
-			t.Error("the templ declarations are missing")
+		// A view reaches the disk as written. It is not gofmt'd, because
+		// everything below the package clause is markup and gofmt would refuse
+		// it -- the build tag is what keeps the Go compiler out.
+		if !bytes.Contains(f.Content, []byte("//go:build kyse")) {
+			t.Error("the view has no build tag: the Go compiler would try to parse the markup")
+		}
+		if !bytes.Contains(f.Content, []byte("@extends('layouts.app')")) {
+			t.Error("the login view does not extend the layout")
 		}
 		return
 	}
-	t.Fatal("views.templ was not generated")
+	t.Fatal("auth/login.kyse.go was not generated")
 }
 
 // TestTheLoginScreenRotatesTheSession: keeping the pre-login session id is
 // session fixation. The framework's own handler does this, and a starter kit that
 // people copy from has to do it too -- `aru doctor` checks for the call.
 func TestTheLoginScreenRotatesTheSession(t *testing.T) {
-	handlers := authFile(t, "handlers.go")
+	handlers := authFile(t, "LoginController_handlers.go")
 
 	if !strings.Contains(handlers, "sessions.Rotate(") {
 		t.Error("the login handler does not rotate the session: this is session fixation")
@@ -103,7 +111,7 @@ func TestTheLoginScreenRotatesTheSession(t *testing.T) {
 // TestTheFailureMessageDoesNotEnumerateAccounts: telling the person which half
 // was wrong turns the login endpoint into a list of which emails exist.
 func TestTheFailureMessageDoesNotEnumerateAccounts(t *testing.T) {
-	handlers := authFile(t, "handlers.go")
+	handlers := authFile(t, "LoginController_handlers.go")
 
 	for _, leak := range []string{"no such user", "user not found", "unknown email", "wrong password"} {
 		if strings.Contains(strings.ToLower(handlers), leak) {
@@ -119,13 +127,14 @@ func TestTheFailureMessageDoesNotEnumerateAccounts(t *testing.T) {
 // has to bring a usable CSRF token, or the second attempt fails the check for
 // reasons nobody can see from the browser.
 func TestTheFormCarriesAFreshToken(t *testing.T) {
-	handlers := authFile(t, "handlers.go")
-	views := authFile(t, "views.templ")
+	handlers := authFile(t, "LoginController_handlers.go")
+	views := authFile(t, "auth/login.kyse.go")
 
 	if !strings.Contains(handlers, "csrf.Issue(") {
 		t.Error("the rejection path does not issue a token")
 	}
-	if !strings.Contains(views, `name="_csrf"`) {
+	// @csrf is the directive; it compiles to the hidden input with the token.
+	if !strings.Contains(views, "@csrf") {
 		t.Error("the form has no CSRF field")
 	}
 	if !strings.Contains(views, `hx-swap="outerHTML"`) || !strings.Contains(views, `hx-target="this"`) {
@@ -139,7 +148,7 @@ func TestTheFormCarriesAFreshToken(t *testing.T) {
 // TestTheScreenDoesNotReachTheDatabase: a handler that imports the data package
 // is the shape `aru doctor` rejects, and the starter kit is what people copy.
 func TestTheScreenDoesNotReachTheDatabase(t *testing.T) {
-	for _, name := range []string{"module.go", "handlers.go", "views.templ"} {
+	for _, name := range []string{"Auth/LoginController.go", "LoginController_handlers.go", "auth/login.kyse.go"} {
 		content := authFile(t, name)
 		for _, forbidden := range []string{`"database/sql"`, "framework/data"} {
 			if strings.Contains(content, forbidden) {
@@ -153,7 +162,7 @@ func TestTheScreenDoesNotReachTheDatabase(t *testing.T) {
 // where the tenant legitimately does not come from a Grant -- login, where there
 // is no session yet. It has to come from the resolver the application wired.
 func TestTheTenantDoesNotComeFromTheRequestBody(t *testing.T) {
-	handlers := authFile(t, "handlers.go")
+	handlers := authFile(t, "LoginController_handlers.go")
 
 	if !strings.Contains(handlers, "m.tenant(r)") {
 		t.Error("the tenant does not come from the resolver")
@@ -169,32 +178,71 @@ func TestTheTenantDoesNotComeFromTheRequestBody(t *testing.T) {
 // auth module. Two modules migrating one table is how a schema ends up with two
 // owners and a rollout that deadlocks.
 func TestTheStarterKitDoesNotMigrate(t *testing.T) {
-	if strings.Contains(authFile(t, "module.go"), "Migrations()") {
+	if strings.Contains(authFile(t, "Auth/LoginController.go"), "Migrations()") {
 		t.Error("the starter kit declares migrations: the users table already has an owner")
 	}
-	if !strings.Contains(authFile(t, "arandu.mod.toml"), "migrations = false") {
-		t.Error("the manifest claims tables the module does not own")
+	// The starter kit stopped being a module and became controllers in the
+	// project's own tree (ADR 0019), so there is no manifest to declare
+	// migrations = false. What the rule protects is unchanged and now
+	// structural: it emits no migration at all.
+	for _, f := range mustGenerateAuth(t) {
+		if strings.Contains(filepath.ToSlash(f.Path), "database/migrations") {
+			t.Errorf("the starter kit emitted a migration: %s", f.Path)
+		}
 	}
 }
 
-// TestTheStarterKitDeclaresItself: without the manifest, the first thing anyone
-// sees after running make:auth is a doctor warning about the files they just
-// generated.
-func TestTheStarterKitDeclaresItself(t *testing.T) {
-	toml := authFile(t, "arandu.mod.toml")
+// TestTheStarterKitLandsInTheLaravelTree: the nine views at the nine paths
+// `laravel/ui` uses, and the controller where Laravel puts it.
+//
+// The command used to write four files into modules/authui/ and declare itself
+// with a manifest. It is not a module any more -- it is the project's own code,
+// in the project's own tree (ADR 0019), so there is nothing to declare.
+func TestTheStarterKitLandsInTheLaravelTree(t *testing.T) {
+	var paths []string
+	for _, f := range mustGenerateAuth(t) {
+		paths = append(paths, filepath.ToSlash(f.Path))
+	}
+	all := strings.Join(paths, "\n")
 
-	for _, want := range []string{"name = ", "[permissions]", "network = false", "exec = false"} {
-		if !strings.Contains(toml, want) {
-			t.Errorf("the manifest has no %q", want)
+	for _, want := range []string{
+		"app/Http/Controllers/Auth/LoginController.go",
+		"resources/views/layouts/app.kyse.go",
+		"resources/views/home.kyse.go",
+		"resources/views/welcome.kyse.go",
+		"resources/views/auth/login.kyse.go",
+		"resources/views/auth/register.kyse.go",
+		"resources/views/auth/verify.kyse.go",
+		"resources/views/auth/passwords/confirm.kyse.go",
+		"resources/views/auth/passwords/email.kyse.go",
+		"resources/views/auth/passwords/reset.kyse.go",
+	} {
+		if !strings.Contains(all, want) {
+			t.Errorf("%s was not generated", want)
 		}
 	}
+
+	// And nothing lands in the old tree.
+	if strings.Contains(all, "modules/") {
+		t.Errorf("the starter kit still writes into modules/:\n%s", all)
+	}
+}
+
+// mustGenerateAuth returns the generated files or fails.
+func mustGenerateAuth(t *testing.T) []gen.File {
+	t.Helper()
+	files, err := gen.GenerateAuth(authSpec())
+	if err != nil {
+		t.Fatalf("GenerateAuth: %v", err)
+	}
+	return files
 }
 
 // TestTheStarterKitIsRegenerable: without the custom markers, regenerating eats
 // whatever the project added -- and a generator people are afraid to rerun is a
 // one-time scaffold.
 func TestTheStarterKitIsRegenerable(t *testing.T) {
-	for _, name := range []string{"module.go", "handlers.go"} {
+	for _, name := range []string{"Auth/LoginController.go", "LoginController_handlers.go"} {
 		if !strings.Contains(authFile(t, name), "arandu:begin custom") {
 			t.Errorf("%s has no custom block: a regeneration would discard the project's additions", name)
 		}
@@ -213,8 +261,11 @@ func authFile(t *testing.T, name string) string {
 	if err != nil {
 		t.Fatalf("GenerateAuth: %v", err)
 	}
+	// Matched by suffix, not by exact base name. The tree moved to Laravel's
+	// shape and the file names moved with it; a test pinned to one spelling
+	// breaks on a rename that changed nothing it was testing.
 	for _, f := range files {
-		if filepath.Base(f.Path) == name {
+		if strings.HasSuffix(filepath.ToSlash(f.Path), name) {
 			return string(f.Content)
 		}
 	}

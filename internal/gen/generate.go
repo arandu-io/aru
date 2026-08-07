@@ -29,29 +29,54 @@ func Generate(m Module) ([]File, error) {
 		return nil, err
 	}
 
-	dir := filepath.Join("modules", m.Package())
+	// The Laravel tree, directory by directory. A developer arriving from there
+	// finds each file where they expect it, and the file name is CamelCase for
+	// the same reason -- it is what makes the project recognizable (ADR 0019).
 	var out []File
 
 	for _, t := range []struct {
+		path string
+		tmpl string
+	}{
+		{filepath.Join("app", "Http", "Controllers", m.Entity()+"Controller.go"), controllerTemplate},
+		{filepath.Join("app", "Models", m.Entity()+".go"), modelTemplate},
+		{filepath.Join("app", "Policies", m.Entity()+"Policy.go"), policyTemplate},
+		{filepath.Join("app", "Repositories", m.Entity()+"Repository.go"), repositoryTemplate},
+		{filepath.Join("app", "Services", m.Entity()+"Service.go"), serviceTemplate},
+		{filepath.Join("app", "Http", "Requests", m.Entity()+"Request.go"), requestTemplate},
+		{filepath.Join("database", "migrations", m.MigrationID()+".go"), migrationTemplate},
+		{filepath.Join("app", "Http", "Controllers", m.Entity()+"Controller_test.go"), testTemplate},
+	} {
+		content, err := render(filepath.Base(t.path), t.tmpl, m)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", t.path, err)
+		}
+		out = append(out, File{Path: t.path, Content: content})
+	}
+
+	// The views. Laravel puts them under resources/views/<plural>/, one per
+	// action that has a screen.
+	views := filepath.Join("resources", "views", m.Resource())
+	for _, v := range []struct {
 		name string
 		tmpl string
 	}{
-		{"module.go", moduleTemplate},
-		{m.Name + ".entity.go", entityTemplate},
-		{m.Name + ".policy.go", policyTemplate},
-		{m.Name + ".repo.go", repoTemplate},
-		{m.Name + ".service.go", serviceTemplate},
-		{m.Name + ".request.go", requestTemplate},
-		{"handlers.go", handlersTemplate},
-		{m.Name + "_test.go", testTemplate},
-		{"arandu.mod.toml", manifestTemplate},
+		{"index", viewIndexTemplate},
+		{"show", viewShowTemplate},
+		// The two forms share their fields, and share them at generation time
+		// rather than through @include: the create screen and the edit screen
+		// take different data, and an included view receives the page's data
+		// unchanged -- so one partial would assert one type and fail on the other.
+		{"create", viewCreateTemplate + viewFieldsTemplate},
+		{"edit", viewEditTemplate + viewFieldsTemplate},
 	} {
-		content, err := render(t.name, t.tmpl, m)
+		content, err := render(v.name+".kyse.go", v.tmpl, m)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", t.name, err)
+			return nil, fmt.Errorf("%s: %w", v.name, err)
 		}
-		out = append(out, File{Path: filepath.Join(dir, t.name), Content: content})
+		out = append(out, File{Path: filepath.Join(views, v.name+".kyse.go"), Content: content})
 	}
+
 	return out, nil
 }
 
@@ -67,13 +92,26 @@ var errModulePath = fmt.Errorf("the project module path is required")
 // literal, was defined on a function nobody called. Found by audit; the first
 // lock in the spec validator was carrying it alone.
 func render(name, tmpl string, m Module) ([]byte, error) {
-	t, err := template.New(name).Funcs(template.FuncMap{
+	t := template.New(name).Funcs(template.FuncMap{
 		"lower": strings.ToLower,
 		"join":  strings.Join,
 		// quote is the second lock. The spec validator is the first, and it
 		// says why; this one holds even if a future field forgets to validate.
 		"quote": strconv.Quote,
-	}).Parse(tmpl)
+	})
+
+	// A view template is rendered with <% %> instead of {{ }}.
+	//
+	// The view it produces is kyse, and kyse interpolates with {{ }} -- the same
+	// delimiters text/template uses. Without the swap, `{{ .Name }}` in the
+	// generated view is read as an action of the generator, and generation fails
+	// on markup that is correct.
+	view := strings.HasSuffix(name, ".kyse.go")
+	if view {
+		t = t.Delims("<%", "%>")
+	}
+
+	t, err := t.Parse(tmpl)
 	if err != nil {
 		return nil, err
 	}
@@ -83,8 +121,10 @@ func render(name, tmpl string, m Module) ([]byte, error) {
 		return nil, err
 	}
 
-	// A .templ file reaches templ as written; only Go is formatted.
-	if !strings.HasSuffix(name, ".go") {
+	// Only real Go is formatted. A .kyse.go is a view: it ends in .go so the
+	// build tag can exclude it, and everything below the package clause is
+	// markup that gofmt would refuse.
+	if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, ".kyse.go") {
 		return buf.Bytes(), nil
 	}
 

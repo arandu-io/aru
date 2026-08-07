@@ -10,7 +10,12 @@ import (
 )
 
 // appPackage is where the skeleton puts the application entry point.
-const appPackage = "./cmd/app"
+// appPackage is what `go build` compiles: the module root, where main.go lives.
+//
+// It used to be "./cmd/app". The tree mirrors Laravel now, and Laravel's entry
+// point is at the root — main.go replaces both public/index.php and artisan
+// (ADR 0019).
+const appPackage = "."
 
 // delegate returns a command that forwards to the project's own binary.
 //
@@ -58,16 +63,22 @@ func projectRoot() (string, error) {
 		return "", err
 	}
 
+	// An Arandu project is a Go module with main.go at the root and an
+	// arandu.toml beside it. The arandu.toml is what tells it apart from any
+	// other Go module -- without it, running `aru` inside an unrelated project
+	// would walk up and act on it.
 	for {
 		_, modErr := os.Stat(filepath.Join(dir, "go.mod"))
-		_, appErr := os.Stat(filepath.Join(dir, "cmd", "app"))
-		if modErr == nil && appErr == nil {
+		_, mainErr := os.Stat(filepath.Join(dir, "main.go"))
+		_, tomlErr := os.Stat(filepath.Join(dir, "arandu.toml"))
+		if modErr == nil && mainErr == nil && tomlErr == nil {
 			return dir, nil
 		}
 
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", errors.New("no cmd/app found: run this from inside an Arandu project, or create one with `aru new`")
+			return "", errors.New("this is not an Arandu project: no go.mod, main.go and arandu.toml together. " +
+				"Run it from inside a project, or create one with `aru new`")
 		}
 		dir = parent
 	}

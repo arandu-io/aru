@@ -69,15 +69,20 @@ func generate(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("generate: %w", err)
 	}
 
-	// The specification is written beside the code it produced, and committed
-	// with it. That is what makes the round trip real: regenerating reads this
-	// file and produces the bytes already there.
+	// The specification is committed with the code it produced. That is what
+	// makes the round trip real: regenerating reads this file and produces the
+	// bytes already there.
+	//
+	// It lives in database/specs/ because a specification is mostly about the
+	// entity and its columns, and database/ is where the tree already keeps
+	// factories, migrations and seeders. There is no modules/<name>/ to put it
+	// beside any more (ADR 0019).
 	saved, err := spec.Marshal(module)
 	if err != nil {
 		return err
 	}
 	files = append(files, gen.File{
-		Path:    filepath.Join("modules", packageOf(module.Name), spec.FileName),
+		Path:    filepath.Join(spec.Dir, module.Name+".yaml"),
 		Content: saved,
 	})
 
@@ -107,15 +112,10 @@ func generate(args []string, stdout, stderr io.Writer) error {
 		}
 	}
 
-	fmt.Fprintf(stdout, `
-module %s generated from %s, %d files.
-
-The policy denies every action that %s did not list. Open the rest inside the
-custom block in modules/%s/%s.policy.go, then:
-
-    aru migrate
-`, module.Name, path, len(written), filepath.Base(path),
-		packageOf(module.Name), module.Name)
+	fmt.Fprintf(stdout, "\n%s generated from %s, %d files.\n", module.Name, path, len(written))
+	fmt.Fprintf(stdout, "\nThe policy opens what %s listed and denies the rest.\n",
+		filepath.Base(path))
+	fmt.Fprint(stdout, wiring(fromSpec(module, modulePath), len(written)))
 	return nil
 }
 
@@ -145,8 +145,6 @@ func fromSpec(m spec.Module, modulePath string) gen.Module {
 		Permissions: m.Permissions,
 	}
 }
-
-func packageOf(name string) string { return strings.ReplaceAll(name, "_", "") }
 
 // schemaCommand prints the JSON Schema.
 //

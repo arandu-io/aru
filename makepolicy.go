@@ -41,20 +41,23 @@ func makePolicy(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	dir := filepath.Join(root, "modules", strings.ReplaceAll(name, "_", ""))
-	if _, err := os.Stat(dir); err != nil {
-		return fmt.Errorf("module %s does not exist in modules/ -- create it with `aru make:module`", name)
-	}
-
-	// The policy is generated from the same specification as the rest, with the
-	// tenant inferred from what the module already does. Asking again for
-	// something the code already answers is how two sources of truth start.
+	// The entity is what the policy is about, and app/Models is where it lives.
+	// Asking for a policy about something that does not exist is almost always a
+	// typo, and finding out here beats finding out from a file nobody references.
 	spec := gen.Module{
 		Name:       name,
 		Fields:     []gen.Field{{Name: "placeholder", Type: gen.TypeString}},
-		Tenant:     moduleUsesTenant(dir),
 		ModulePath: modulePath,
 	}
+	entity := filepath.Join(root, "app", "Models", spec.Entity()+".go")
+	if _, err := os.Stat(entity); err != nil {
+		return fmt.Errorf("app/Models/%s.go does not exist -- create the module with `aru make:module %s`",
+			spec.Entity(), name)
+	}
+
+	// The tenant is inferred from what the repository already does, rather than
+	// asked for again: two sources of truth about one decision is how they drift.
+	spec.Tenant = repositoryUsesTenant(filepath.Join(root, "app", "Repositories", spec.RepositoryType()+".go"))
 
 	files, err := gen.Generate(spec)
 	if err != nil {
@@ -62,7 +65,7 @@ func makePolicy(args []string, stdout, stderr io.Writer) error {
 	}
 
 	for _, f := range files {
-		if !strings.HasSuffix(f.Path, ".policy.go") {
+		if filepath.Dir(f.Path) != filepath.Join("app", "Policies") {
 			continue
 		}
 		written, skipped, err := gen.Write(root, []gen.File{f}, *force)
@@ -82,24 +85,16 @@ block, and nothing else -- that is what makes the default safe.
 	return fmt.Errorf("make:policy: no policy was generated")
 }
 
-// moduleUsesTenant reports whether the module already scopes by tenant, so the
-// generated policy matches what the repository does.
-func moduleUsesTenant(dir string) bool {
-	entries, err := os.ReadDir(dir)
+// repositoryUsesTenant reports whether the repository already scopes by tenant,
+// so the generated policy matches what the queries do.
+//
+// A policy that forgot the tenant check on a repository that filters by it is
+// the one combination that looks safe and is not: every query is scoped, so
+// nothing leaks until somebody adds a query that is not.
+func repositoryUsesTenant(path string) bool {
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return false
 	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
-		if err != nil {
-			continue
-		}
-		if strings.Contains(string(b), "data.Tenant(g)") || strings.Contains(string(b), "TenantID") {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(string(b), "data.Tenant(g)")
 }

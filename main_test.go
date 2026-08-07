@@ -246,3 +246,62 @@ func TestCommandNamesAreUnique(t *testing.T) {
 		}
 	}
 }
+
+// TestTheGeneratedEnvLetsTheThreePrintedCommandsRun is the regression guard for
+// an instruction that did not work.
+//
+// `aru new` prints three commands to run next -- migrate, db:seed, serve -- and
+// db:seed refused with "set ARANDU_ADMIN_EMAIL and ARANDU_ADMIN_PASSWORD before
+// seeding the administrator". The seeder was right: an administrator with a
+// default password is an administrator everyone has. What was wrong is that
+// nothing told the reader the variables existed, and nothing wrote them.
+//
+// The password is generated per project, like APP_KEY. A constant here would be
+// the default password the refusal exists to prevent.
+func TestTheGeneratedEnvLetsTheThreePrintedCommandsRun(t *testing.T) {
+	generated := func(t *testing.T) string {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, ".env.example"),
+			[]byte("APP_KEY=\nARANDU_ADMIN_EMAIL=\nARANDU_ADMIN_PASSWORD=\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeEnv(dir); err != nil {
+			t.Fatalf("writeEnv: %v", err)
+		}
+		body, err := os.ReadFile(filepath.Join(dir, ".env"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(body)
+	}
+
+	env := generated(t)
+	for _, key := range []string{"APP_KEY=base64:", "ARANDU_ADMIN_EMAIL=", "ARANDU_ADMIN_PASSWORD="} {
+		i := strings.Index(env, key)
+		if i < 0 {
+			t.Errorf("%s is missing from the generated .env", key)
+			continue
+		}
+		// The key has to carry a value. An empty one is exactly the state that
+		// made db:seed refuse.
+		if line, _, _ := strings.Cut(env[i+len(key):], "\n"); strings.TrimSpace(line) == "" {
+			t.Errorf("%s was written with no value", key)
+		}
+	}
+
+	// Two projects must not share an administrator password.
+	if adminPassword(t, env) == adminPassword(t, generated(t)) {
+		t.Error("two projects got the same administrator password")
+	}
+}
+
+func adminPassword(t *testing.T, env string) string {
+	t.Helper()
+	_, rest, ok := strings.Cut(env, "ARANDU_ADMIN_PASSWORD=")
+	if !ok {
+		t.Fatal("no ARANDU_ADMIN_PASSWORD in the generated .env")
+	}
+	line, _, _ := strings.Cut(rest, "\n")
+	return line
+}

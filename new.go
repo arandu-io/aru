@@ -144,6 +144,25 @@ func writeEnv(dir string) error {
 
 	env := strings.Replace(string(example), "APP_KEY=",
 		"APP_KEY=base64:"+base64.StdEncoding.EncodeToString(key), 1)
+
+	// The administrator the seeder creates.
+	//
+	// `aru new` prints `aru db:seed` as the third step, and the seeder refuses
+	// without these two -- correctly, because an administrator with a default
+	// password is an administrator everyone has. The refusal was right and the
+	// instruction was wrong: nothing told the reader the variables existed, and
+	// nothing wrote them anywhere.
+	//
+	// The password is generated per project rather than shipped as a constant,
+	// for the same reason APP_KEY is. The file is 0600 and gitignored.
+	password := make([]byte, 18)
+	if _, err := rand.Read(password); err != nil {
+		return fmt.Errorf("reading random bytes: %w", err)
+	}
+	env = strings.Replace(env, "ARANDU_ADMIN_EMAIL=", "ARANDU_ADMIN_EMAIL=admin@example.test", 1)
+	env = strings.Replace(env, "ARANDU_ADMIN_PASSWORD=",
+		"ARANDU_ADMIN_PASSWORD="+base64.RawURLEncoding.EncodeToString(password), 1)
+
 	return os.WriteFile(filepath.Join(dir, ".env"), []byte(env), 0o600)
 }
 

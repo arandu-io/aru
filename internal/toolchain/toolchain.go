@@ -1,21 +1,20 @@
-// Package toolchain downloads and caches the two binaries the view layer needs.
+// Package toolchain downloads and caches the one binary the view layer needs.
 //
 // The promise is `git clone && aru dev`: no Node, no node_modules, no package
-// manager. Having a build step is allowed; being Node is not (RULE 13). So templ
-// and the Tailwind standalone CLI are fetched as single binaries, pinned to a
-// version, and cached in ~/.arandu/bin -- the same shape the Go toolchain uses
-// for itself.
+// manager. Having a build step is allowed; being Node is not (RULE 13). So the
+// Tailwind standalone CLI is fetched as a single binary, pinned to a version,
+// and cached in ~/.arandu/bin -- the same shape the Go toolchain uses for itself.
+//
+// One binary, not two. templ used to be the other, and ADR 0020 replaced it with
+// kyse, which is part of `aru` rather than something to download.
 //
 // Nothing here reaches npm, and nothing here is optional at runtime: the built
 // artifacts are committed to the project, so a deploy still needs only `go build`.
 package toolchain
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,13 +25,10 @@ import (
 	"time"
 )
 
-// Tools are pinned rather than tracked. A build that silently picks up a new
-// major of Tailwind is a build that breaks on someone else's machine and not on
-// yours, which is the worst kind. Override in arandu.toml.
-const (
-	DefaultTemplVersion    = "v0.3.1020"
-	DefaultTailwindVersion = "v4.3.3"
-)
+// DefaultTailwindVersion is pinned rather than tracked. A build that silently
+// picks up a new major of Tailwind is a build that breaks on someone else's
+// machine and not on yours, which is the worst kind. Override in arandu.toml.
+const DefaultTailwindVersion = "v4.3.3"
 
 // Tool is one managed binary.
 type Tool struct {
@@ -48,36 +44,6 @@ type Tool struct {
 	asset func(goos, goarch string) (string, bool)
 	// checksums is the release artifact listing "<sha256>  <name>" lines.
 	checksums string
-	// targz says the asset is a tarball to extract rather than a bare binary.
-	targz bool
-}
-
-// Templ returns the templ tool: .templ files to Go.
-func Templ(version string) Tool {
-	if version == "" {
-		version = DefaultTemplVersion
-	}
-	return Tool{
-		Name:      "templ",
-		Repo:      "a-h/templ",
-		Version:   version,
-		checksums: "checksums.txt",
-		targz:     true,
-		asset: func(goos, goarch string) (string, bool) {
-			os, ok := map[string]string{"darwin": "Darwin", "linux": "Linux", "windows": "Windows"}[goos]
-			if !ok {
-				return "", false
-			}
-			arch, ok := map[string]string{"amd64": "x86_64", "arm64": "arm64", "386": "i386"}[goarch]
-			if !ok {
-				return "", false
-			}
-			if os == "Darwin" && arch == "i386" {
-				return "", false
-			}
-			return fmt.Sprintf("templ_%s_%s.tar.gz", os, arch), true
-		},
-	}
 }
 
 // Tailwind returns the standalone Tailwind CLI.
@@ -189,13 +155,10 @@ func (t Tool) Ensure(w io.Writer) (string, error) {
 		return "", fmt.Errorf("%s: the downloaded %s does not match the published checksum", t.Name, assetName)
 	}
 
+	// The asset is the binary itself. Tailwind publishes it that way, and it is
+	// the only tool this package fetches -- the tar extraction that used to live
+	// here existed for templ alone, which ADR 0020 retired.
 	binary := body
-	if t.targz {
-		binary, err = extract(body, t.Name)
-		if err != nil {
-			return "", fmt.Errorf("%s: %w", t.Name, err)
-		}
-	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
@@ -230,9 +193,10 @@ func fetch(url string) ([]byte, error) {
 
 // checksumFor finds the line for one asset in a checksums file.
 //
-// Both projects publish "<sha256>  <filename>", but they disagree on the
-// filename: templ writes it bare, Tailwind writes "./name", and the sha256sum
-// binary format writes "*name" for a binary file. All three are the same asset.
+// The format is "<sha256>  <filename>", and the filename comes in three spellings
+// in the wild: bare, "./name" as Tailwind publishes it, and "*name" as the
+// sha256sum binary format writes it. All three name the same asset, and a parser
+// that handles one of them fails on first use, on somebody else's machine.
 func checksumFor(sums, asset string) (string, error) {
 	for _, line := range strings.Split(sums, "\n") {
 		fields := strings.Fields(line)
@@ -245,28 +209,4 @@ func checksumFor(sums, asset string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("the checksums file has no entry for %s", asset)
-}
-
-// extract pulls one named file out of a .tar.gz.
-func extract(body []byte, name string) ([]byte, error) {
-	gz, err := gzip.NewReader(strings.NewReader(string(body)))
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = gz.Close() }()
-
-	tr := tar.NewReader(gz)
-	for {
-		header, err := tr.Next()
-		if errors.Is(err, io.EOF) {
-			return nil, fmt.Errorf("the archive has no %s", name)
-		}
-		if err != nil {
-			return nil, err
-		}
-		if header.Typeflag != tar.TypeReg || filepath.Base(header.Name) != name {
-			continue
-		}
-		return io.ReadAll(io.LimitReader(tr, 200<<20))
-	}
 }

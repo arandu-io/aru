@@ -142,6 +142,12 @@ func (e Errors) Error() string {
 }
 
 // blockDirectives are the ones that open a region and need a matching end.
+//
+// These two maps are the whole set kyse knows, and the parser reads them
+// directly -- there is no second answer to "is this a directive". The set is
+// closed, and that is RULE 15 applied to the view: a directive that grows on
+// demand becomes a language, and a language has to be maintained forever. What
+// does not fit is written in Go, inside `@go`.
 var blockDirectives = map[string]string{
 	"section": "endsection",
 	"if":      "endif",
@@ -159,27 +165,6 @@ var inlineDirectives = map[string]bool{
 	"csrf":    true,
 	"elseif":  true,
 	"else":    true,
-}
-
-// IsDirective reports whether a name is one kyse knows.
-//
-// The set is closed, and that is RULE 15 applied to the view: a directive that
-// grows on demand becomes a language, and a language has to be maintained
-// forever. What does not fit is written in Go inside `@go`.
-func IsDirective(name string) bool {
-	if _, ok := blockDirectives[name]; ok {
-		return true
-	}
-	if inlineDirectives[name] {
-		return true
-	}
-	// The closing halves.
-	for _, end := range blockDirectives {
-		if name == end {
-			return true
-		}
-	}
-	return false
 }
 
 // OutputPath says where the Go generated from a view goes.

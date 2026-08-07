@@ -455,9 +455,6 @@ func (m Module) ServicesImport() string { return m.ModulePath + "/app/Services" 
 // RequestsImport is the import path of app/Http/Requests.
 func (m Module) RequestsImport() string { return m.ModulePath + "/app/Http/Requests" }
 
-// MigrationsImport is the import path of database/migrations.
-func (m Module) MigrationsImport() string { return m.ModulePath + "/database/migrations" }
-
 // ViewsImport is the import path of resources/views.
 func (m Module) ViewsImport() string { return m.ModulePath + "/resources/views" }
 

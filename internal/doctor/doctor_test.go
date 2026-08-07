@@ -456,3 +456,326 @@ func TestAViewNameIsResolvedLikeLaravel(t *testing.T) {
 		}
 	}
 }
+
+// gaps runs doctor over testdata/gaps, the fixture of the shapes that used to
+// pass.
+//
+// Every file in it was written by planting code in a generated project and
+// watching doctor come back green. They are kept apart from testdata/violations
+// so that the difference between "doctor never checked this" and "doctor checks
+// this" stays legible in one directory.
+func gaps(t *testing.T) []doctor.Finding {
+	t.Helper()
+	findings, err := doctor.Run("testdata/gaps")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	return findings
+}
+
+// findAt returns the finding of a rule at a file, for a test that cares where it
+// landed.
+func findAt(findings []doctor.Finding, rule, file string) *doctor.Finding {
+	for i, f := range findings {
+		if f.Rule == rule && strings.Contains(f.File, file) {
+			return &findings[i]
+		}
+	}
+	return nil
+}
+
+// mentions reports whether any finding of a rule names something.
+func mentions(findings []doctor.Finding, rule, needle string) bool {
+	for _, f := range findings {
+		if f.Rule == rule && strings.Contains(f.Message, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestARepositoryMethodThatTakesNoGrantIsCaught is RULE 17 where it is most
+// often broken.
+//
+// The audit began by skipping every method that did not take a Grant, on the
+// assumption that the signature was the enforcement. It is not: a method that
+// never declares the parameter has nothing to satisfy, so a report, a projection
+// or an export reaches the database with no policy anywhere on the path -- and
+// passed --strict.
+func TestARepositoryMethodThatTakesNoGrantIsCaught(t *testing.T) {
+	findings := gaps(t)
+
+	caught := findRule(findings, "grant-not-received")
+	if caught == nil {
+		t.Fatalf("a repository method that queries the database without a Grant was not caught:\n%v", findings)
+	}
+	if caught.Severity != doctor.Error {
+		t.Error("a read path with no policy is a warning: it is a tenant leak with a technical name")
+	}
+	if !mentions(findings, "grant-not-received", "Totals") {
+		t.Errorf("the finding does not name the method: %q", caught.Message)
+	}
+	if !strings.Contains(caught.Why, "RULE 17") || !strings.Contains(caught.Why, "doc 26") {
+		t.Errorf("the explanation cites neither RULE 17 nor doc 26: %q", caught.Why)
+	}
+	// The method that does take a Grant and checks it is the control: firing on
+	// it would make the rule useless.
+	if mentions(findings, "grant-not-received", "List") {
+		t.Error("a method that takes a Grant and checks it was reported")
+	}
+}
+
+// TestADiscardedGrantCheckIsCaught: `_ = g.Check(...)` used to satisfy the
+// audit, because it only asked whether a call to Check appeared in the body.
+//
+// A method that asks the question and throws the answer away is a method with no
+// authorization, spelled to look like one that has it -- which is worse than
+// leaving the check out, because a reader stops looking.
+func TestADiscardedGrantCheckIsCaught(t *testing.T) {
+	findings := gaps(t)
+
+	caught := findRule(findings, "grant-check-discarded")
+	if caught == nil {
+		t.Fatalf("`_ = g.Check(...)` was accepted as a check:\n%v", findings)
+	}
+	if caught.Severity != doctor.Error {
+		t.Error("discarding the answer of Check is a warning: the method is unauthorized")
+	}
+	if !strings.Contains(caught.Message, "Purge") {
+		t.Errorf("the finding does not name the method: %q", caught.Message)
+	}
+}
+
+// TestASystemGrantIsNotExcusedByItsName: the check used to switch itself off for
+// any function whose name contained ensure, seed, job, worker, migrate or
+// backfill.
+//
+// `ensureGrant` passed and `issueGrant`, identical in every other character,
+// fired. A rule a rename defeats is a spelling convention, not a check.
+func TestASystemGrantIsNotExcusedByItsName(t *testing.T) {
+	findings := gaps(t)
+
+	for _, fn := range []string{"issueGrant", "ensureGrant"} {
+		if !mentions(findings, "system-grant-outside-scope", fn) {
+			t.Errorf("SystemGrant in %s was not reported:\n%v", fn, findings)
+		}
+	}
+	// And the escape that is meant to work: explicit, on the line, in the diff.
+	if mentions(findings, "system-grant-outside-scope", "backfillTotals") {
+		t.Error("a call marked //arandu:system-grant with a reason was still reported")
+	}
+
+	// The other half of removing an allowlist is not removing the one that was
+	// right. database/seeders is where the skeleton itself calls SystemGrant,
+	// and a rule that shouts at code the generator wrote is worse than no rule.
+	clean, err := doctor.Run("testdata/clean")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if caught := findRule(clean, "system-grant-outside-scope"); caught != nil {
+		t.Errorf("the seeder the generator writes was reported: %s", caught)
+	}
+}
+
+// TestTheRequestBoundaryCoversRoutesAndMiddleware: the two rules that keep a
+// handler away from the database only looked at app/Http/Controllers.
+//
+// A handler written inline in the custom block of routes/web.go -- which the
+// skeleton invites -- and a middleware holding a repository are the same request
+// path with the same database under it, and both walked straight through.
+func TestTheRequestBoundaryCoversRoutesAndMiddleware(t *testing.T) {
+	findings := gaps(t)
+
+	if findAt(findings, "handler-reaches-data", "routes/web.go") == nil {
+		t.Errorf("a handler inline in routes/web.go reached the data package:\n%v", findings)
+	}
+	if findAt(findings, "controller-reaches-repository", "app/Http/Middleware/") == nil {
+		t.Errorf("a middleware holding a repository was not caught:\n%v", findings)
+	}
+}
+
+// TestSQLThatLostItsTenantPredicateIsCaught is what doc 15 promises as an error
+// and nothing enforced: a module generated with --tenant whose `AND tenant_id =
+// ?` somebody deleted.
+//
+// It is a leak between customers in its most direct form, and every other rule
+// stays green -- the Grant is taken, the Grant is checked, and the query returns
+// every tenant's rows.
+func TestSQLThatLostItsTenantPredicateIsCaught(t *testing.T) {
+	findings := gaps(t)
+
+	caught := findRule(findings, "sql-without-tenant-scope")
+	if caught == nil {
+		t.Fatalf("an UPDATE with no tenant predicate was not caught:\n%v", findings)
+	}
+	if caught.Severity != doctor.Error {
+		t.Error("SQL that reaches every tenant is a warning: doc 15 says error")
+	}
+	// The UPDATE is the one that matters most: it writes.
+	if !mentions(findings, "sql-without-tenant-scope", "Archive") {
+		t.Errorf("the UPDATE in Archive was not reported:\n%v", findings)
+	}
+	// The method that scopes its query is the control.
+	if mentions(findings, "sql-without-tenant-scope", "List") {
+		t.Error("a query that filters by tenant_id was reported")
+	}
+}
+
+// TestATypeThatMerelyStartsWithRepoIsNotARepository: the classifier asked
+// whether the receiver contained "Repo", so ReportPolicy, Reporter and
+// Reposition were all repositories.
+//
+// The clean fixture has a Reporter that takes a Grant and hands it to the
+// repository, which is correct code -- and it was reported for not calling
+// Check.
+func TestATypeThatMerelyStartsWithRepoIsNotARepository(t *testing.T) {
+	findings, err := doctor.Run("testdata/clean")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, f := range findings {
+		if strings.HasPrefix(f.Rule, "grant-") {
+			t.Errorf("a read model called Reporter was classified as a repository: %s: %s", f.Rule, f.Message)
+		}
+	}
+}
+
+// TestAlpineIsMatchedInEveryDirectiveAndBothQuotes: the pattern matched x-data,
+// x-init and x-effect, with double quotes only.
+//
+// x-on: and @ are precisely where a network call is written, and a formatter
+// that prefers single quotes turned the whole rule off.
+func TestAlpineIsMatchedInEveryDirectiveAndBothQuotes(t *testing.T) {
+	findings := gaps(t)
+
+	var xon, shorthand, singleQuoted bool
+	for _, f := range findings {
+		if f.Rule != "alpine-reaches-the-server" {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(f.Message, "x-on:"):
+			xon = true
+		case strings.HasPrefix(f.Message, "@"):
+			shorthand = true
+		case strings.HasPrefix(f.Message, "x-data"):
+			singleQuoted = true
+		}
+	}
+
+	if !xon {
+		t.Errorf("x-on:click with a fetch call was not caught:\n%v", findings)
+	}
+	if !shorthand {
+		t.Errorf("@click with a fetch call was not caught:\n%v", findings)
+	}
+	if !singleQuoted {
+		t.Errorf("a single-quoted x-data with a WebSocket was not caught:\n%v", findings)
+	}
+}
+
+// TestSystemGrantOutsideItsScopeHasAFixture and the one below close a hole a
+// mutation harness found: both rules could be deleted whole, with CI green.
+//
+// A rule no fixture exercises is a rule that will be deleted by the next person
+// who finds it inconvenient, and nothing will say so.
+func TestSystemGrantOutsideItsScopeHasAFixture(t *testing.T) {
+	findings := gaps(t)
+
+	caught := findRule(findings, "system-grant-outside-scope")
+	if caught == nil {
+		t.Fatalf("no fixture exercises system-grant-outside-scope:\n%v", findings)
+	}
+	if caught.Severity != doctor.Warning {
+		t.Error("a system grant outside its scope is an error: it is legitimate often enough that an error would get muted")
+	}
+}
+
+// TestAnUnusedPermissionHasAFixture: declared and not used is the half of the
+// manifest rule nothing exercised.
+func TestAnUnusedPermissionHasAFixture(t *testing.T) {
+	findings := gaps(t)
+
+	caught := findRule(findings, "permission-not-used")
+	if caught == nil {
+		t.Fatalf("no fixture exercises permission-not-used:\n%v", findings)
+	}
+	if !strings.Contains(caught.Message, "exec") {
+		t.Errorf("the message does not name the permission: %q", caught.Message)
+	}
+	if caught.Severity != doctor.Warning {
+		t.Error("asking for a permission you do not use is an error: it is untidy, not dangerous")
+	}
+}
+
+// TestTheGapsFixtureReportsNothingElse keeps the fixture honest.
+//
+// Every finding it produces has to be one of the holes it was written for. A
+// fixture that also trips three unrelated rules stops being evidence about the
+// rule under test.
+func TestTheGapsFixtureReportsNothingElse(t *testing.T) {
+	expected := map[string]bool{
+		"grant-not-received":            true,
+		"grant-check-discarded":         true,
+		"sql-without-tenant-scope":      true,
+		"system-grant-outside-scope":    true,
+		"handler-reaches-data":          true,
+		"controller-reaches-repository": true,
+		"alpine-reaches-the-server":     true,
+		"permission-not-used":           true,
+	}
+	for _, f := range gaps(t) {
+		if !expected[f.Rule] {
+			t.Errorf("the fixture also trips %s, which it was not written for: %s", f.Rule, f)
+		}
+	}
+}
+
+// TestARepositoryIsSeenByEitherSpelling guards a trade that went the wrong way.
+//
+// isRepository used strings.Contains(receiver, "Repo"), which classified
+// ReportPolicy, Reporter and Reposition as repositories -- three findings on
+// correct code. Narrowing it to HasSuffix("Repository") fixed those and went
+// blind to every type ending in Repo, in a directory the developer named.
+//
+// That predicate gates grant-not-received, grant-not-checked,
+// grant-check-discarded and sql-without-tenant-scope. A type it does not see is
+// a type where none of the four apply, so this false negative was four rules off
+// at once -- strictly worse than the noise it replaced.
+//
+// The fixture is app/Reporting/InvoiceRepo.go: exported method, no Grant, a
+// SELECT with no tenant.
+func TestARepositoryIsSeenByEitherSpelling(t *testing.T) {
+	findings, err := doctor.Run("testdata/violations")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, f := range findings {
+		if strings.Contains(f.File, "InvoiceRepo.go") {
+			return
+		}
+	}
+
+	var rules []string
+	for _, f := range findings {
+		rules = append(rules, f.Rule+" @ "+f.File)
+	}
+	t.Errorf("nothing was reported for app/Reporting/InvoiceRepo.go, an exported method with no Grant running an unscoped SELECT.\nreported:\n  %s",
+		strings.Join(rules, "\n  "))
+}
+
+// TestTheNearMissesAreStillQuiet is the other half: the three names that made
+// the substring match noisy have to stay out. A rule that fires on correct code
+// is how a tool teaches people to ignore it.
+func TestTheNearMissesAreStillQuiet(t *testing.T) {
+	findings, err := doctor.Run("testdata/clean")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, f := range findings {
+		if f.Severity == doctor.Error {
+			t.Errorf("a clean project reported %s at %s:%d -- %s", f.Rule, f.File, f.Line, f.Message)
+		}
+	}
+}

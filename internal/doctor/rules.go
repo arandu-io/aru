@@ -3,6 +3,8 @@ package doctor
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -38,6 +40,7 @@ var rules = []func(*project) []Finding{
 	viewMustExist,
 	declaredPermissionsMatchTheCode,
 	alpineHoldsClientStateOnly,
+	tenantMustScopeTheSQL,
 }
 
 // 0. A file doctor could not read makes every other rule unreliable.
@@ -165,15 +168,136 @@ func repositoryNeedsPolicy(p *project) []Finding {
 // The directory answers for a project that follows the tree, and the receiver
 // name answers for the one that does not -- a type called InvoiceRepository is a
 // repository wherever somebody filed it.
+//
+// The suffix, not the substring. It used to ask whether the receiver CONTAINED
+// "Repo", which made ReportPolicy, Reporter and Reposition repositories: a read
+// model that takes a Grant and hands it to the repository below was reported for
+// not checking it, and the code was correct. A rule that fires on correct code
+// is how a tool teaches people to ignore it. Found by audit.
 func isRepository(f *file, fn *ast.FuncDecl) bool {
-	return f.category == "Repositories" || strings.Contains(receiverType(fn), "Repo")
+	if f.category == "Repositories" {
+		return true
+	}
+	// Suffix, not substring, and both spellings.
+	//
+	// strings.Contains(t, "Repo") classified ReportPolicy, Reporter and
+	// Reposition as repositories and produced a false positive on each. Narrowing
+	// it to HasSuffix("Repository") fixed those three and lost every type ending
+	// in Repo -- and this predicate gates all four authorization rules at once,
+	// so a type it does not see is a type where none of them apply. Trading a
+	// noisy rule for a blind one is the worse half of the trade.
+	//
+	// Both suffixes exclude the three names above, because none of them ends in
+	// Repo or Repository.
+	return looksLikeRepository(receiverType(fn))
 }
 
-// 2. Every repository method must call g.Check before touching the handle. The
-// signature forces the Grant to be passed; only this checks it was verified.
+// looksLikeRepository is the naming half of isRepository, split out so the two
+// spellings and the three near-misses can be pinned by name in a test.
+func looksLikeRepository(t string) bool {
+	return strings.HasSuffix(t, "Repository") || strings.HasSuffix(t, "Repo")
+}
+
+// databaseCall reports whether a call goes through a database handle.
 //
-// It applies to List and Find exactly as it applies to Create: a read path with
-// no policy is a tenant leak with a technical name (RULE 17).
+// It is the database/sql surface, by method name: doctor never type-checks, so
+// what it can see is that something called QueryContext on something. A method
+// of a repository that calls one of these has reached the table.
+func databaseCall(name string) bool {
+	switch {
+	case strings.HasSuffix(name, ".Query"),
+		strings.HasSuffix(name, ".QueryContext"),
+		strings.HasSuffix(name, ".QueryRow"),
+		strings.HasSuffix(name, ".QueryRowContext"),
+		strings.HasSuffix(name, ".Exec"),
+		strings.HasSuffix(name, ".ExecContext"),
+		strings.HasSuffix(name, ".Prepare"),
+		strings.HasSuffix(name, ".PrepareContext"),
+		strings.HasSuffix(name, ".Begin"),
+		strings.HasSuffix(name, ".BeginTx"):
+		return true
+	}
+	return false
+}
+
+// reachesTheDatabase reports whether the body of a method touches the handle.
+func reachesTheDatabase(fn *ast.FuncDecl) bool {
+	return funcBodyContains(fn, databaseCall)
+}
+
+// grantChecks counts the calls to Check in a body, and how many of them have
+// their answer used.
+//
+// Asking only whether a call exists is what let `_ = g.Check(x)` through: the
+// method asks the question, throws the answer away, and reads like one that
+// authorizes. That is worse than leaving the check out, because a reader stops
+// looking. Found by audit.
+//
+// Used means the value goes somewhere: returned, tested in an if, or assigned to
+// a name -- which is then almost always the err of the line below. Discarded
+// means the two shapes that provably drop it: assignment to the blank identifier
+// and a bare call statement.
+func grantChecks(fn *ast.FuncDecl) (total, used int) {
+	if fn.Body == nil {
+		return 0, 0
+	}
+
+	isCheck := func(call *ast.CallExpr) bool {
+		return strings.HasSuffix(callName(call), ".Check")
+	}
+	all := map[*ast.CallExpr]bool{}
+	discarded := map[*ast.CallExpr]bool{}
+
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.CallExpr:
+			if isCheck(x) {
+				all[x] = true
+			}
+		case *ast.ExprStmt:
+			if call, ok := x.X.(*ast.CallExpr); ok && isCheck(call) {
+				discarded[call] = true
+			}
+		case *ast.AssignStmt:
+			if len(x.Lhs) != len(x.Rhs) {
+				return true
+			}
+			for i, rhs := range x.Rhs {
+				call, ok := rhs.(*ast.CallExpr)
+				if !ok || !isCheck(call) {
+					continue
+				}
+				if id, ok := x.Lhs[i].(*ast.Ident); ok && id.Name == "_" {
+					discarded[call] = true
+				}
+			}
+		}
+		return true
+	})
+	return len(all), len(all) - len(discarded)
+}
+
+// 2. Every exported repository method that touches the handle must take a Grant
+// and check it.
+//
+// Three ways to lose the policy, one rule, because they are one mistake seen
+// from three sides:
+//
+//   - the method never declares the Grant, so there is no signature to satisfy;
+//   - it declares it and never checks it, so a Grant issued for another action
+//     passes;
+//   - it checks it into the blank identifier, so the answer is thrown away.
+//
+// The first one is the hole an audit found, and it is the one that matters most:
+// the rule began by skipping every method that did not take a Grant, on the
+// assumption that the signature was the enforcement. It applies to List and Find
+// exactly as it applies to Create -- a read model, a report, a projection or an
+// export with no policy is a tenant leak with a technical name (RULE 17).
+//
+// Only exported methods. An unexported helper that runs the query for the
+// exported method above it is the shape people write, and the exported one is
+// already audited: reporting the helper as well would be a second finding for
+// one fact, and that is how a report becomes noise.
 func repositoryMethodNeedsGrant(p *project) []Finding {
 	var out []Finding
 	for _, f := range p.files {
@@ -188,19 +312,38 @@ func repositoryMethodNeedsGrant(p *project) []Finding {
 			if !isRepository(f, fn) || !ast.IsExported(fn.Name.Name) {
 				continue
 			}
-			if !takesGrant(fn) {
-				continue
-			}
-			if funcBodyContains(fn, func(n string) bool { return strings.HasSuffix(n, ".Check") }) {
-				continue
-			}
 			file, line := f.at(fn)
-			out = append(out, Finding{
-				Rule: "grant-not-checked", Severity: Error,
-				File: file, Line: line,
-				Message: fn.Name.Name + " receives a Grant and never checks it",
-				Why:     "a Grant issued for another action would pass. Start the method with: if err := g.Check(Action...); err != nil { return err }",
-			})
+
+			if !takesGrant(fn) {
+				if !reachesTheDatabase(fn) {
+					continue
+				}
+				out = append(out, Finding{
+					Rule: "grant-not-received", Severity: Error,
+					File: file, Line: line,
+					Message: fn.Name.Name + " reaches the database and receives no Grant",
+					Why:     "reading is authorized exactly like writing: a query with no policy is a tenant leak with a technical name (RULE 17, doc 26). A read model, a report, a projection and an export are not exceptions. Take a security.Grant and start the method with: if err := g.Check(Action...); err != nil { return err }",
+				})
+				continue
+			}
+
+			total, used := grantChecks(fn)
+			switch {
+			case total == 0:
+				out = append(out, Finding{
+					Rule: "grant-not-checked", Severity: Error,
+					File: file, Line: line,
+					Message: fn.Name.Name + " receives a Grant and never checks it",
+					Why:     "a Grant issued for another action would pass. Start the method with: if err := g.Check(Action...); err != nil { return err }",
+				})
+			case used == 0:
+				out = append(out, Finding{
+					Rule: "grant-check-discarded", Severity: Error,
+					File: file, Line: line,
+					Message: fn.Name.Name + " calls Check and discards the answer",
+					Why:     "`_ = g.Check(...)` asks the question and throws it away, so the method is unauthorized while reading like one that is not -- which is worse than leaving the check out, because the next reader stops looking. Return the error: if err := g.Check(Action...); err != nil { return err }",
+				})
+			}
 		}
 	}
 	return out
@@ -277,12 +420,33 @@ func returnsNil(fn *ast.FuncDecl) bool {
 	return found
 }
 
-// 4. A controller that reaches the data package is a controller that skipped the
+// requestPath names the kind of file when it sits on the path of a request, and
+// reports false when it does not.
+//
+// The two rules below used to ask for the Controllers category alone, and the
+// request does not arrive only there. A handler written inline in the custom
+// block of routes/web.go -- which the skeleton invites people to write in -- and
+// a middleware in app/Http/Middleware are the same request, one layer earlier,
+// with the same database under them. Both walked through. Found by audit.
+func requestPath(f *file) (string, bool) {
+	switch {
+	case f.category == "Controllers":
+		return "controller", true
+	case f.category == "Middleware":
+		return "middleware", true
+	case strings.HasPrefix(f.rel, "routes/"):
+		return "route file", true
+	}
+	return "", false
+}
+
+// 4. A handler that reaches the data package is a handler that skipped the
 // service, and therefore the policy.
 func controllerMustNotReachData(p *project) []Finding {
 	var out []Finding
 	for _, f := range p.files {
-		if f.isTest || f.category != "Controllers" {
+		kind, onTheRequestPath := requestPath(f)
+		if f.isTest || !onTheRequestPath {
 			continue
 		}
 		for path := range f.imports {
@@ -309,8 +473,8 @@ func controllerMustNotReachData(p *project) []Finding {
 			out = append(out, Finding{
 				Rule: "handler-reaches-data", Severity: Error,
 				File: f.rel, Line: 1,
-				Message: "this controller uses the data package beyond data.Query",
-				Why:     "a controller that reaches the database skipped the service, and therefore the policy. Move the call into app/Services, where the Grant is issued.",
+				Message: "this " + kind + " uses the data package beyond data.Query",
+				Why:     "a handler that reaches the database skipped the service, and therefore the policy -- whether it is a controller, a middleware, or written inline in the route table. Move the call into app/Services, where the Grant is issued.",
 			})
 			break
 		}
@@ -318,9 +482,9 @@ func controllerMustNotReachData(p *project) []Finding {
 	return out
 }
 
-// 5. A controller that imports app/Repositories skips the service the same way,
-// and the compiler cannot see it: the repository method it calls does require a
-// Grant, and a controller can produce one with SystemGrant.
+// 5. A handler that imports app/Repositories skips the service the same way, and
+// the compiler cannot see it: the repository method it calls does require a
+// Grant, and a handler can produce one with SystemGrant.
 //
 // This is the boundary ADR 0019 calls the other 20%: in Laravel, Service and
 // Repository are a convention of an organized team; here they are skeleton, and
@@ -328,18 +492,19 @@ func controllerMustNotReachData(p *project) []Finding {
 func controllerMustNotReachTheRepository(p *project) []Finding {
 	var out []Finding
 	for _, f := range p.files {
-		if f.isTest || f.category != "Controllers" {
+		kind, onTheRequestPath := requestPath(f)
+		if f.isTest || !onTheRequestPath {
 			continue
 		}
-		for path := range f.imports {
-			if !strings.Contains(strings.ToLower(path), "/app/repositories") {
+		for imported := range f.imports {
+			if !strings.Contains(strings.ToLower(imported), "/app/repositories") {
 				continue
 			}
 			out = append(out, Finding{
 				Rule: "controller-reaches-repository", Severity: Error,
 				File: f.rel, Line: 1,
-				Message: "this controller imports " + path,
-				Why:     "the Grant a repository requires would have to be issued here, which is the controller authorizing itself. Call app/Services instead: it validates, calls security.Authorize, and only then reaches the repository.",
+				Message: "this " + kind + " imports " + imported,
+				Why:     "the Grant a repository requires would have to be issued here, which is the request authorizing itself. Call app/Services instead: it validates, calls security.Authorize, and only then reaches the repository.",
 			})
 			break
 		}
@@ -505,25 +670,30 @@ func readsTheRequest(name string) bool {
 }
 
 // 7. SystemGrant is the one way past the policy. Its call sites are the audit.
+//
+// Two things can excuse a call, and the name of the enclosing function is not
+// one of them. It used to be: any function whose name contained ensure, seed,
+// job, worker, migrate or backfill was let through, so `ensureGrant` passed and
+// `issueGrant`, identical in every other character, fired. A check a rename
+// defeats is a spelling convention. Found by audit.
+//
+// What excuses a call:
+//
+//   - the file is one of the places the skeleton puts work with no request
+//     behind it -- database/seeders, app/Jobs, app/Console, cmd, main.go. That
+//     is a directory the framework decided, not a word somebody chose;
+//   - the line carries `//arandu:system-grant <reason>`. An escape has to be
+//     deliberate and visible: it stays in the diff, it is read in review, and
+//     the reason is written down next to the thing it excuses. A marker with no
+//     reason excuses nothing.
 func systemGrantIsAudited(p *project) []Finding {
 	var out []Finding
 	for _, f := range p.files {
 		if f.isTest {
 			continue
 		}
-		// Seeders, jobs and commands are where it legitimately belongs, and so is
-		// a method whose name says it is seeding -- EnsureAdmin, SeedDemo. The
-		// file path alone would flag every entity that offers a seeding entry
-		// point, and a warning that fires on correct code gets muted.
-		lower := strings.ToLower(f.rel)
-		legitimateFile := strings.Contains(lower, "seeder") ||
-			strings.Contains(lower, "/jobs/") ||
-			strings.Contains(lower, "/commands/") ||
-			strings.Contains(lower, "/console/") ||
-			strings.Contains(lower, "routes/console.go") ||
-			strings.Contains(lower, "cmd/") ||
-			lower == "main.go"
-
+		systemScope := inASystemScope(f.rel)
+		escapes := systemGrantEscapes(f)
 		enclosing := enclosingFuncs(f)
 
 		f.calls(func(call *ast.CallExpr, name string) {
@@ -531,7 +701,6 @@ func systemGrantIsAudited(p *project) []Finding {
 				return
 			}
 			file, line := f.at(call)
-			legitimate := legitimateFile || seedingName(enclosing[line])
 
 			// An empty tenant is refused by the framework at runtime; catching it
 			// here says so before anyone waits for the failure.
@@ -546,30 +715,62 @@ func systemGrantIsAudited(p *project) []Finding {
 					return
 				}
 			}
-			if legitimate {
+			if systemScope || escapes[line] || escapes[line-1] {
 				return
+			}
+
+			where := "SystemGrant"
+			if fn := enclosing[line]; fn != "" {
+				where = "SystemGrant in " + fn
 			}
 			out = append(out, Finding{
 				Rule: "system-grant-outside-scope", Severity: Warning,
 				File: file, Line: line,
-				Message: "SystemGrant outside a seeder, job or command",
-				Why:     "it is the one way past a policy, and its call sites are the audit. If this is a request path, the Grant should come from security.Authorize instead.",
+				Message: where + " is outside a seeder, a job and a command",
+				Why:     "it is the one way past a policy, and its call sites are the audit. If this is a request path, the Grant should come from security.Authorize instead. If the escape is deliberate, write `//arandu:system-grant <reason>` on the line, so the reason is read in review rather than inferred from the function name.",
 			})
 		})
 	}
 	return out
 }
 
-// seedingName reports whether the function name says it is seeding or running a
-// job, which are the two places a system grant belongs.
-func seedingName(name string) bool {
-	lower := strings.ToLower(name)
-	for _, p := range []string{"seed", "ensure", "job", "worker", "migrate", "backfill"} {
-		if strings.Contains(lower, p) {
+// inASystemScope reports whether the file is one of the places the skeleton puts
+// work that has no request behind it.
+//
+// By path segment, not by substring. "seeder" anywhere in a path matched
+// app/Services/SeederService.go, which is the same rename hole one level up.
+func inASystemScope(rel string) bool {
+	lower := strings.ToLower(filepath.ToSlash(rel))
+	if lower == "main.go" || lower == "routes/console.go" {
+		return true
+	}
+	for _, segment := range strings.Split(path.Dir(lower), "/") {
+		switch segment {
+		case "seeders", "jobs", "commands", "console", "cmd":
 			return true
 		}
 	}
 	return false
+}
+
+// systemGrantEscapes returns the lines carrying a deliberate escape.
+//
+// The marker is `//arandu:system-grant <reason>`, on the line of the call or on
+// the line above it, and the reason is required: a bare marker is a suppression
+// with nothing to review, which is what this rule exists to prevent.
+func systemGrantEscapes(f *file) map[int]bool {
+	out := map[int]bool{}
+	for _, group := range f.ast.Comments {
+		for _, c := range group.List {
+			text := strings.TrimSpace(strings.TrimPrefix(c.Text, "//"))
+			reason, marked := strings.CutPrefix(text, "arandu:system-grant")
+			if !marked || strings.TrimSpace(reason) == "" {
+				continue
+			}
+			out[f.fset.Position(c.Pos()).Line] = true
+		}
+	}
+	return out
 }
 
 // enclosingFuncs maps every line of the file to the function that contains it,
@@ -1064,7 +1265,13 @@ func relativeTo(root, path string) string {
 // parsing. That is a real limitation: a directive split across lines by a
 // formatter still matches, and one built by string concatenation in Go does not.
 // It catches the shape people actually write.
-var alpineAttribute = regexp.MustCompile(`(?s)(x-data|x-init|x-effect)\s*=\s*"([^"]*)"`)
+//
+// Event handlers and both quote styles, because that is where the mistake lives.
+// The pattern used to be x-data, x-init and x-effect with double quotes only, so
+// `x-on:click="fetch(...)"`, `@click="fetch(...)"` and every single-quoted form
+// went through untouched -- and an event handler is precisely where somebody
+// writes a network call. Found by audit.
+var alpineAttribute = regexp.MustCompile(`(?s)(?:^|[^\w:@-])(x-data|x-init|x-effect|x-on:[\w.:-]+|@[\w.:-]+)\s*=\s*("[^"]*"|'[^']*')`)
 
 // networkInAlpine is the set that means this state is not client-only.
 var networkInAlpine = []struct {
@@ -1097,7 +1304,10 @@ func alpineHoldsClientStateOnly(p *project) []Finding {
 	for _, v := range p.views {
 		for _, match := range alpineAttribute.FindAllStringSubmatchIndex(v.body, -1) {
 			directive := v.body[match[2]:match[3]]
-			content := v.body[match[4]:match[5]]
+			// The quotes are part of the capture, so that one alternative can
+			// hold both styles; the content is what sits between them.
+			quoted := v.body[match[4]:match[5]]
+			content := quoted[1 : len(quoted)-1]
 
 			for _, forbidden := range networkInAlpine {
 				if !strings.Contains(content, forbidden.token) {
@@ -1105,7 +1315,10 @@ func alpineHoldsClientStateOnly(p *project) []Finding {
 				}
 				out = append(out, Finding{
 					Rule: "alpine-reaches-the-server", Severity: Error,
-					File: v.rel, Line: lineOf(v.body, match[0]),
+					// The directive, not the whole match: the match starts one
+					// character earlier, and that character can be the newline
+					// that ends the line above.
+					File: v.rel, Line: lineOf(v.body, match[2]),
 					Message: directive + " contains " + forbidden.what,
 					Why: "Alpine holds state that is client-only, ephemeral and invisible to the server. " +
 						"A directive that talks to the server should be an HTMX fragment instead -- otherwise the " +
@@ -1124,4 +1337,219 @@ func lineOf(body string, offset int) int {
 		offset = len(body)
 	}
 	return strings.Count(body[:offset], "\n") + 1
+}
+
+// 15. A multi-tenant repository whose SQL lost its tenant predicate reads and
+// writes every customer's rows.
+//
+// Doc 15 lists this as an error and nothing enforced it. It is the leak in its
+// most direct form, and the reason it survives review is that everything else
+// about the method is right: the Grant is taken, the Grant is checked, the
+// policy exists -- and the `AND tenant_id = ?` somebody deleted while debugging
+// never came back. RULE 14: the tenant comes from the Grant, and it has to reach
+// the WHERE.
+//
+// INSERT is not checked here. The tenant of a row being written is a value in
+// the column list, not a predicate, and it comes from data.Tenant(g) -- a
+// different mistake, with a different shape.
+func tenantMustScopeTheSQL(p *project) []Finding {
+	multiTenant := multiTenantRepositories(p)
+	if len(multiTenant) == 0 {
+		return nil
+	}
+
+	var out []Finding
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+		for _, decl := range f.ast.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv == nil || !isRepository(f, fn) {
+				continue
+			}
+			if !multiTenant[receiverType(fn)] {
+				continue
+			}
+			for _, sql := range sqlStatements(fn) {
+				if tenantIsInThePredicate(sql.text) {
+					continue
+				}
+				file, line := f.at(sql.node)
+				out = append(out, Finding{
+					Rule: "sql-without-tenant-scope", Severity: Error,
+					File: file, Line: line,
+					Message: "the " + sql.verb + " in " + fn.Name.Name + " does not filter by tenant_id",
+					Why:     "this repository scopes its other queries by tenant, so the table has the column and this statement reaches every customer's rows -- reading them, or writing them. Add `AND tenant_id = ?` to the WHERE and pass data.Tenant(g), which is the only source of a tenant for SQL (RULE 14, doc 15).",
+				})
+			}
+		}
+	}
+	return out
+}
+
+// multiTenantRepositories reports which repository types hold a tenant column,
+// keyed by receiver type.
+//
+// Nothing in the AST says an entity is multi-tenant -- there is no type to
+// inspect and doctor never type-checks -- so it is inferred from three things
+// the code does say, any one of which is enough:
+//
+//   - a method of the type calls data.Tenant, which is the only source of a
+//     tenant for SQL;
+//   - a query of the type names tenant_id, which is the column;
+//   - the entity the repository is named after has a TenantID field.
+//
+// The third is what catches the worst case: a repository whose every query lost
+// the predicate, where the first two signals are gone with it.
+func multiTenantRepositories(p *project) map[string]bool {
+	entities := map[string]bool{}
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+		f.types(func(ts *ast.TypeSpec) {
+			st, ok := ts.Type.(*ast.StructType)
+			if !ok || st.Fields == nil {
+				return
+			}
+			for _, field := range st.Fields.List {
+				for _, n := range field.Names {
+					if strings.EqualFold(n.Name, "TenantID") {
+						entities[ts.Name.Name] = true
+					}
+				}
+			}
+		})
+	}
+
+	out := map[string]bool{}
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+		for _, decl := range f.ast.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv == nil || !isRepository(f, fn) {
+				continue
+			}
+			receiver := receiverType(fn)
+			if receiver == "" {
+				continue
+			}
+			entity := strings.TrimSuffix(receiver, "Repository")
+			if entities[entity] || funcBodyContains(fn, func(n string) bool { return n == "data.Tenant" }) {
+				out[receiver] = true
+				continue
+			}
+			for _, sql := range sqlStatements(fn) {
+				if strings.Contains(strings.ToLower(sql.text), "tenant_id") {
+					out[receiver] = true
+				}
+			}
+		}
+	}
+	return out
+}
+
+// sqlStatement is one SQL statement written in a method, as far as doctor can
+// read it.
+type sqlStatement struct {
+	// verb is SELECT, UPDATE or DELETE: the three that carry a predicate.
+	verb string
+	text string
+	node ast.Node
+}
+
+// sqlStatements reads the SQL literals of a body.
+//
+// A query is usually a literal concatenated with a constant holding the column
+// list, so the concatenation is flattened and the parts doctor cannot see are
+// dropped. That is sound for the question being asked: a column list does not
+// contain a WHERE clause, and if the tenant predicate were hidden inside a
+// constant this would report a query that is in fact scoped -- which is why the
+// message says what it saw.
+//
+// A statement written entirely in a package-level constant is outside what this
+// reads, and saying so is better than implying coverage it does not have.
+func sqlStatements(fn *ast.FuncDecl) []sqlStatement {
+	if fn.Body == nil {
+		return nil
+	}
+
+	var out []sqlStatement
+	record := func(text string, n ast.Node) {
+		if verb, ok := scopedVerb(text); ok {
+			out = append(out, sqlStatement{verb: verb, text: text, node: n})
+		}
+	}
+
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.BinaryExpr:
+			if x.Op != token.ADD {
+				return true
+			}
+			text := concatenatedString(x)
+			if text == "" {
+				return true
+			}
+			record(text, x)
+			return false
+		case *ast.BasicLit:
+			if text, ok := stringLiteral(x); ok {
+				record(text, x)
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// concatenatedString joins the string literals of a `+` chain, separated by a
+// space so that two halves never glue into one token. Anything that is not a
+// literal contributes nothing: doctor does not resolve constants.
+func concatenatedString(e ast.Expr) string {
+	switch x := e.(type) {
+	case *ast.BasicLit:
+		if text, ok := stringLiteral(x); ok {
+			return text
+		}
+	case *ast.BinaryExpr:
+		if x.Op == token.ADD {
+			return strings.TrimSpace(concatenatedString(x.X) + " " + concatenatedString(x.Y))
+		}
+	case *ast.ParenExpr:
+		return concatenatedString(x.X)
+	}
+	return ""
+}
+
+// scopedVerb reports which of the three statements that carry a predicate this
+// text is.
+func scopedVerb(text string) (string, bool) {
+	upper := strings.ToUpper(text)
+	found, at := "", -1
+	for _, verb := range []string{"SELECT ", "UPDATE ", "DELETE "} {
+		i := strings.Index(upper, verb)
+		if i < 0 || (at >= 0 && i >= at) {
+			continue
+		}
+		found, at = strings.TrimSpace(verb), i
+	}
+	return found, found != ""
+}
+
+// tenantIsInThePredicate reports whether the tenant column is in the WHERE.
+//
+// After the WHERE, not anywhere in the statement: `SELECT id, tenant_id FROM
+// invoices WHERE id = ?` names the column and reads every tenant's rows, which
+// is the exact statement this rule exists to find.
+func tenantIsInThePredicate(text string) bool {
+	lower := strings.ToLower(text)
+	where := strings.Index(lower, "where")
+	if where < 0 {
+		return false
+	}
+	return strings.Contains(lower[where:], "tenant_id")
 }

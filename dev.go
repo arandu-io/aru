@@ -9,8 +9,11 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
+
+	"github.com/arandu-io/aru/internal/kyse"
 )
 
 // pollInterval is how often the working tree is checked for changes.
@@ -35,8 +38,8 @@ func dev(args []string, stdout, stderr io.Writer) error {
 	}
 
 	// The build runs once here rather than in watch mode, because the restart
-	// loop below already reacts to .templ and .css changes -- two watchers over
-	// the same files would race on the generated output.
+	// loop below already reacts to view and stylesheet changes -- two watchers
+	// over the same files would race on the generated output.
 	if err := buildViews(root, false, stdout, stderr); err != nil {
 		return err
 	}
@@ -113,6 +116,8 @@ func stopServer(cmd *exec.Cmd) {
 // running application.
 func snapshot(root string) map[string]time.Time {
 	state := map[string]time.Time{}
+	var sources []string
+
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -131,26 +136,45 @@ func snapshot(root string) map[string]time.Time {
 			return nil
 		}
 		state[path] = info.ModTime()
+		if isViewSource(path) {
+			sources = append(sources, path)
+		}
 		return nil
 	})
+
+	// The Go kyse writes is an output, not an input: watching it would make
+	// every view build trigger the next one.
+	//
+	// Which file that is comes from kyse rather than from a suffix, because the
+	// generated name is not the source name -- auth/login.kyse.go compiles to
+	// auth_login.go, flat, with nothing in the name that announces it. Guessing
+	// would either watch the output, which is the rebuild loop, or stop watching
+	// a hand-written file that happened to match.
+	dir := filepath.Join(root, viewsDir)
+	for _, source := range sources {
+		delete(state, kyse.OutputPath(dir, source))
+	}
 	return state
 }
 
 func watched(path string) bool {
 	switch filepath.Ext(path) {
-	case ".go", ".templ", ".css", ".sql":
-		// The generated Go is an output, not an input: watching it would make
-		// every view build trigger a second one.
-		return !isGeneratedTemplate(path)
+	case ".go", ".css", ".sql":
+		return true
 	case ".env":
 		return true
 	}
 	return filepath.Base(path) == ".env"
 }
 
-func isGeneratedTemplate(path string) bool {
-	base := filepath.Base(path)
-	return len(base) > len("_templ.go") && base[len(base)-len("_templ.go"):] == "_templ.go"
+// isViewSource reports whether a path is a view somebody writes, as opposed to
+// the Go compiled from one.
+func isViewSource(path string) bool { return strings.HasSuffix(path, viewSuffix) }
+
+// isViewInput reports whether a change to this file has to go through
+// `aru view:build` before the server is restarted.
+func isViewInput(path string) bool {
+	return isViewSource(path) || filepath.Ext(path) == ".css"
 }
 
 // diff reports whether anything changed, and whether the view layer has to be
@@ -160,7 +184,7 @@ func diff(before, after map[string]time.Time) (changed, views bool) {
 		previous, existed := before[path]
 		if !existed || !previous.Equal(mod) {
 			changed = true
-			if ext := filepath.Ext(path); ext == ".templ" || ext == ".css" {
+			if isViewInput(path) {
 				views = true
 			}
 		}
@@ -168,7 +192,7 @@ func diff(before, after map[string]time.Time) (changed, views bool) {
 	for path := range before {
 		if _, exists := after[path]; !exists {
 			changed = true
-			if ext := filepath.Ext(path); ext == ".templ" || ext == ".css" {
+			if isViewInput(path) {
 				views = true
 			}
 		}

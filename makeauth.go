@@ -106,6 +106,11 @@ func makeAuth(args []string, stdout, stderr io.Writer) error {
 		}
 	}
 
+	// The wiring below is the one the generated package actually offers, and a
+	// test pins it to the symbols the generator emits. An instruction that does
+	// not compile is worse than no instruction: it sends the reader looking for
+	// a type that was never written, and this is the second time it happened
+	// here.
 	fmt.Fprintf(stdout, `
 the sign-in screens are yours now, %d files, already compiled.
 
@@ -113,15 +118,28 @@ layouts/app, home and welcome were replaced, not skipped: a page renders with
 its layout's type, so the layout and what extends it are one unit. Everything
 else was left alone if it already existed.
 
-One line in bootstrap/app.go, to answer /auth/login with these screens instead
-of the framework's:
+Two lines in bootstrap/app.go, so these screens answer /auth/login instead of
+the framework's. The import:
 
-    routes.Deps{
-        Login: controllers.NewLoginController(authService, sessions, csrf),
-    }
+    authui "%s/app/Http/Controllers/Auth"
 
-Both answer /auth/login, so register one. The framework's has the minimum markup
-that exists so authentication could be tested at all; this one has a page.
-`, len(written))
+and, in the k.Register(...) list, in place of auth.New:
+
+    authui.New(authService, sessions, csrf, auth.FixedTenant(cfg.Auth.Tenant)),
+
+Register one or the other, never both: they answer the same path. The
+framework's has the minimum markup that exists so authentication could be
+tested at all; this one has a page.
+
+Six of the nine views have no route, and that is the shape of the kit rather
+than something missing. It publishes the screens; the handlers behind
+registration, e-mail verification and password reset are the application's,
+because they write to your users table, send through your mailer and decide
+your rules. Until you write them, /welcome, /auth/register, /auth/verify and
+the three password screens answer 404 -- the screens are there, nothing routes
+to them. Their route lines go in the custom block of Routes(), in
+app/Http/Controllers/Auth/LoginController.go, and survive a --force. See ADR
+0022.
+`, len(written), modulePath)
 	return nil
 }

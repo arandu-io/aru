@@ -73,8 +73,8 @@ func TestParseReadsTheBladeShape(t *testing.T) {
 	}
 }
 
-// TestTheGeneratedGoParses: o gerador emite Go que o compilador aceita. Se ele
-// nao emitir, o erro tem que dizer que o bug e do gerador — nao da view.
+// TestTheGeneratedGoParses: the generator emits Go the compiler accepts. When it
+// does not, the error has to say the bug is the generator's -- not the view's.
 func TestTheGeneratedGoParses(t *testing.T) {
 	f, err := kyse.Parse("resources/views/home.kyse.go", homeSource)
 	if err != nil {
@@ -92,7 +92,7 @@ func TestTheGeneratedGoParses(t *testing.T) {
 		"type HomeData struct",              // o bloco @go veio junto
 		`view.Register("home", renderHome)`, // registrado pelo nome
 		"d, ok := data.(HomeData)",          // dado tipado
-		"view.WrongData",                    // e o erro quando nao bate
+		"view.WrongData",                    // the error when the type does not match
 		"template.HTMLEscapeString",         // {{ }} escapa
 		`view.RenderInto(w, "layouts.app"`,  // @extends
 		"for _, item := range d.Itens",      // @foreach
@@ -105,7 +105,7 @@ func TestTheGeneratedGoParses(t *testing.T) {
 	}
 }
 
-// TestTheLayoutYields: um layout nao estende ninguem e tem @yield.
+// TestTheLayoutYields: a layout extends nothing and has a @yield.
 func TestTheLayoutYields(t *testing.T) {
 	f, err := kyse.Parse("resources/views/layouts/app.kyse.go", layoutSource)
 	if err != nil {
@@ -124,21 +124,21 @@ func TestTheLayoutYields(t *testing.T) {
 	}
 }
 
-// TestOErroDizArquivoELinha é o critério de saída do kyse.
+// TestTheErrorNamesTheFileAndTheLine is kyse's exit criterion.
 //
-// O Laravel resolve isso com heurística: o BladeMapper recompila o template
-// inserindo marcadores, procura o mais próximo acima da linha compilada e
-// desiste após vinte linhas. Nós emitimos o Go, então a posição é exata.
-func TestOErroDizArquivoELinha(t *testing.T) {
-	casos := []struct {
-		nome  string
-		fonte string
-		linha int
-		diz   string
+// Laravel solves this with a heuristic: BladeMapper recompiles the template with
+// markers inserted, looks for the nearest one above the compiled line, and gives
+// up after twenty. We emit the Go, so the position is exact.
+func TestTheErrorNamesTheFileAndTheLine(t *testing.T) {
+	cases := []struct {
+		nome   string
+		source string
+		linha  int
+		diz    string
 	}{
 		{
 			nome: "@section sem @endsection",
-			fonte: `//go:build kyse
+			source: `//go:build kyse
 
 package views
 
@@ -150,7 +150,7 @@ package views
 		},
 		{
 			nome: "diretiva que nao existe",
-			fonte: `//go:build kyse
+			source: `//go:build kyse
 
 package views
 
@@ -162,7 +162,7 @@ package views
 		},
 		{
 			nome: "{{ sem fechar",
-			fonte: `//go:build kyse
+			source: `//go:build kyse
 
 package views
 
@@ -173,7 +173,7 @@ package views
 		},
 		{
 			nome: "sem a tag de build",
-			fonte: `package views
+			source: `package views
 
 <h1>oi</h1>
 `,
@@ -182,9 +182,9 @@ package views
 		},
 	}
 
-	for _, c := range casos {
+	for _, c := range cases {
 		t.Run(c.nome, func(t *testing.T) {
-			_, err := kyse.Parse("resources/views/home.kyse.go", c.fonte)
+			_, err := kyse.Parse("resources/views/home.kyse.go", c.source)
 			if err == nil {
 				t.Fatal("compilou uma view quebrada")
 			}
@@ -203,10 +203,10 @@ package views
 	}
 }
 
-// TestTodosOsProblemasDeUmaVez: quem conserta uma view nao deve descobrir os
-// erros um build por vez. Mesma razao do validador de spec.
-func TestTodosOsProblemasDeUmaVez(t *testing.T) {
-	fonte := `//go:build kyse
+// TestEveryProblemAtOnce: whoever fixes a view should not discover its problems
+// one build at a time. Same reason as the spec validator.
+func TestEveryProblemAtOnce(t *testing.T) {
+	source := `//go:build kyse
 
 package views
 
@@ -217,7 +217,7 @@ package views
 
 @blah
 `
-	_, err := kyse.Parse("resources/views/x.kyse.go", fonte)
+	_, err := kyse.Parse("resources/views/x.kyse.go", source)
 	if err == nil {
 		t.Fatal("compilou")
 	}
@@ -229,7 +229,7 @@ package views
 // TestMarkupForaDeSection: numa view que estende layout, markup solto seria
 // escrito antes do layout e sairia fora do <html>.
 func TestMarkupForaDeSection(t *testing.T) {
-	fonte := `//go:build kyse
+	source := `//go:build kyse
 
 package views
 
@@ -240,7 +240,7 @@ package views
 @section('content')
 @endsection
 `
-	_, err := kyse.Parse("resources/views/x.kyse.go", fonte)
+	_, err := kyse.Parse("resources/views/x.kyse.go", source)
 	if err == nil {
 		t.Fatal("aceitou markup fora de @section")
 	}
@@ -291,6 +291,89 @@ func TestElseTakesOnlyOneBranch(t *testing.T) {
 	}
 	if !(yes < elseAt && elseAt < no) {
 		t.Errorf("the branches are not separated by the else:\n%s", got)
+	}
+}
+
+// TestAViewThatReadsDataWithoutDeclaringItIsRefused is the command refusing to
+// report success over Go that does not compile.
+//
+// `{{ .Name }}` becomes `d.Name`, and `d` exists only when the view has a data
+// type. Without one the generator emitted `_ = data` and then `d.Name` -- which
+// parses, so `format.Source` accepted it, `aru view:build` printed "1 view(s)
+// compiled", and the failure surfaced later as `undefined: d` in a file marked
+// DO NOT EDIT.
+//
+// The struct outside `@go` is how it happens in practice: a `type` line in the
+// markup is text, so nothing declares anything.
+func TestAViewThatReadsDataWithoutDeclaringItIsRefused(t *testing.T) {
+	src := "//go:build kyse\n\npackage views\n\ntype HomeData struct{ Name string }\n\n<h1>Hello {{ .Name }}</h1>\n"
+
+	f, err := kyse.Parse("resources/views/home.kyse.go", src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	out, err := kyse.Generate(f, "home", "")
+	if err == nil {
+		t.Fatalf("the generator reported success over Go that does not compile:\n%s", out)
+	}
+
+	msg := err.Error()
+	for _, want := range []string{
+		"resources/views/home.kyse.go", // the source, never the generated file
+		":7:",                          // and the line the expression sits on
+		".Name",                        // and which expression it was
+		"@go",                          // and what to do about it
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the error does not mention %q:\n%s", want, msg)
+		}
+	}
+}
+
+// TestTheSectionsAreCheckedToo: a view that extends a layout puts everything in
+// sections and leaves its body empty, so a check that only walked the body would
+// miss every page written the normal way.
+func TestTheSectionsAreCheckedToo(t *testing.T) {
+	src := "//go:build kyse\n\npackage views\n\n@extends('layouts.app')\n\n@section('content')\n<h1>{{ .Title }}</h1>\n@endsection\n"
+
+	f, err := kyse.Parse("resources/views/page.kyse.go", src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	// The layout it extends declared no type either, so there is nothing to
+	// inherit -- which is exactly the state compileViews passes down.
+	if _, err := kyse.Generate(f, "page", ""); err == nil {
+		t.Error("a section reading .Title with no data type was accepted")
+	}
+}
+
+// TestAViewThatReadsNothingNeedsNoType guards the other side: a layout that only
+// frames its sections has no data to type, and demanding one would be inventing
+// a rule the language does not have.
+func TestAViewThatReadsNothingNeedsNoType(t *testing.T) {
+	src := "//go:build kyse\n\npackage views\n\n<html><body>\n@yield('content')\n</body></html>\n"
+
+	f, err := kyse.Parse("resources/views/layouts/bare.kyse.go", src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if _, err := kyse.Generate(f, "layouts.bare", ""); err != nil {
+		t.Errorf("a layout that reads no data was refused: %v", err)
+	}
+}
+
+// TestABoundVariableIsNotThePageData: inside @foreach the binding is its own
+// variable, and it is legal without a data type on the view.
+func TestABoundVariableIsNotThePageData(t *testing.T) {
+	src := "//go:build kyse\n\npackage views\n\n@go\ntype D struct{ Items []string }\n@endgo\n\n@foreach(.Items as item)\n<li>{{ item }}</li>\n@endforeach\n"
+
+	f, err := kyse.Parse("resources/views/list.kyse.go", src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if _, err := kyse.Generate(f, "list", "D"); err != nil {
+		t.Errorf("Generate: %v", err)
 	}
 }
 

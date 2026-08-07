@@ -1,0 +1,9 @@
+name = "example/gaps"
+framework = ">= 0.3"
+profiles = ["conventional"]
+
+[permissions]
+network = false
+filesystem = false
+exec = true
+migrations = false

@@ -14,6 +14,14 @@ import (
 // viewsDir is where a project keeps its views, mirroring Laravel.
 const viewsDir = "resources/views"
 
+// viewSuffix is what a view source is named.
+//
+// One constant, because two places have to agree on it: the compiler that reads
+// the sources and the watcher that rebuilds when one changes. They disagreed
+// once -- the watcher was still asking for ".templ" after ADR 0020 -- and the
+// result was `aru dev` serving the previous save.
+const viewSuffix = ".kyse.go"
+
 // compileViews turns every `.kyse.go` under resources/views into Go.
 //
 // It replaces the `templ generate` step, and it is not a binary the CLI
@@ -100,7 +108,7 @@ func findViews(dir string) ([]string, error) {
 		if err != nil || entry.IsDir() {
 			return err
 		}
-		if strings.HasSuffix(path, ".kyse.go") {
+		if strings.HasSuffix(path, viewSuffix) {
 			out = append(out, path)
 		}
 		return nil

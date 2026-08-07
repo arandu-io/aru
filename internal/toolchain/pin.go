@@ -3,6 +3,7 @@ package toolchain
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -10,9 +11,36 @@ import (
 )
 
 // Pins are the tool versions a project asks for.
+//
+// There is one, and it is not Node. The view compiler is deliberately absent:
+// kyse is part of `aru` itself, so there is nothing to pin, verify or cache
+// (ADR 0020).
 type Pins struct {
-	Templ    string
 	Tailwind string
+
+	// Retired holds the pins for tools that no longer exist. Reading them is not
+	// an error -- see the templ case in ReadPins -- but the caller is expected to
+	// say so, or the line stays in the file forever and the next reader assumes
+	// the tool is still in play.
+	Retired []retired
+}
+
+// retired is a pin that was valid once and is now dead weight.
+type retired struct {
+	line    int
+	key     string
+	because string
+}
+
+// Warn writes one line per retired pin, naming the file, the line and the fix.
+//
+// It takes a writer rather than logging, so `aru view:build` can put it on
+// stderr and leave stdout for what the command produced.
+func (p Pins) Warn(w io.Writer) {
+	for _, r := range p.Retired {
+		fmt.Fprintf(w, "arandu.toml:%d: %q is no longer a tool -- %s\n", r.line, r.key, r.because)
+		fmt.Fprintf(w, "    Remove the line. It is ignored, and it will stop being accepted in the next major.\n")
+	}
 }
 
 // ReadPins reads arandu.toml from the project root.
@@ -54,14 +82,27 @@ func ReadPins(root string) (Pins, error) {
 		}
 		value = strings.Trim(strings.TrimSpace(value), `"`)
 		switch strings.TrimSpace(key) {
-		case "templ":
-			pins.Templ = value
 		case "tailwindcss":
 			pins.Tailwind = value
+
+		case "templ":
+			// Retired, not wrong. kyse replaced templ (ADR 0020), and every
+			// project generated before that has this line -- including the
+			// published skeleton, which is what `aru new` clones today.
+			//
+			// Refusing it broke `aru view:build` and `aru build` in every one of
+			// them at once, with no deprecation window. That is the opposite of
+			// the policy the framework holds itself to (doc 23: a warning in one
+			// minor, the error in the next major), and a build tool is the worst
+			// place to break it: the first thing the reader sees is a project
+			// that stopped compiling for a reason they did not cause.
+			pins.Retired = append(pins.Retired, retired{line: i + 1, key: "templ",
+				because: "kyse replaced templ (ADR 0020); the view compiler is part of aru and needs no download"})
+
 		default:
-			// An unknown key is a typo, and a typo that is ignored is a version
-			// that silently does not apply.
-			return Pins{}, fmt.Errorf("arandu.toml:%d: unknown tool %q, want templ or tailwindcss", i+1, strings.TrimSpace(key))
+			// A key that was never a tool is a typo, and a typo that is ignored
+			// is a version that silently does not apply.
+			return Pins{}, fmt.Errorf("arandu.toml:%d: unknown tool %q, want tailwindcss", i+1, strings.TrimSpace(key))
 		}
 	}
 	return pins, nil

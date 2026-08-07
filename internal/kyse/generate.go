@@ -19,6 +19,25 @@ import (
 // storage/framework/views. Same idea, moved to build time -- which is what makes
 // the typo a compile error instead of a warning nobody reads in production.
 func Generate(f *File, name, dataType string) ([]byte, error) {
+	// A view that reads a field with no type to read it from cannot produce Go
+	// that compiles, and it has to be said here rather than by the Go compiler
+	// three steps later. See dataReference.
+	if dataType == "" {
+		if expr, line, found := dataReference(f); found {
+			return nil, &Error{
+				Path:    f.Path,
+				Line:    line,
+				Message: fmt.Sprintf("%s reads a field of the page data, and this view declares no type for it", expr),
+				Hint: "declare the struct inside @go … @endgo, which is the only place Go is Go:\n" +
+					"        @go\n" +
+					"        type PageData struct{ … }\n" +
+					"        @endgo\n" +
+					"    A type declaration outside the block is markup, not a declaration.\n" +
+					"    A view that extends a layout inherits the layout's type instead.",
+			}
+		}
+	}
+
 	g := &generator{file: f, name: name, dataType: dataType}
 	g.emit()
 
@@ -62,9 +81,9 @@ func (g *generator) emit() {
 	fn := funcName(g.name)
 	isLayout := g.yields()
 
-	// Um layout recebe as secoes que a view filha declarou; uma pagina, nao.
-	// Sao dois contratos diferentes e por isso dois registros — o @yield no
-	// fonte e o que decide qual.
+	// A layout is handed the sections the child view declared; a page is not.
+	// Two different contracts, and so two registries -- the @yield in the source
+	// is what decides which one this file is.
 	if isLayout {
 		fmt.Fprintf(&g.out, "func init() { view.RegisterLayout(%s, %s) }\n\n", strconv.Quote(g.name), fn)
 		fmt.Fprintf(&g.out, "// %s renders the %s layout.\nfunc %s(w io.Writer, data any, sections map[string]func(io.Writer) error) error {\n", fn, g.name, fn)
@@ -77,7 +96,7 @@ func (g *generator) emit() {
 		fmt.Fprintf(&g.out, "\td, ok := data.(%s)\n", g.dataType)
 		fmt.Fprintf(&g.out, "\tif !ok {\n\t\treturn view.WrongData(%s, %s, data)\n\t}\n",
 			strconv.Quote(g.name), strconv.Quote(g.dataType))
-		// `d` pode nao ser usada: um layout so com @yield nao interpola nada.
+		// `d` may go unused: a layout that is only @yield interpolates nothing.
 		g.out.WriteString("\t_ = d\n")
 	} else {
 		g.out.WriteString("\t_ = data\n")
@@ -193,6 +212,63 @@ func (g *generator) directive(n Node) {
 	case "csrf":
 		g.out.WriteString("\tif err == nil { err = view.CSRF(w, data) }\n")
 	}
+}
+
+// dataReference finds the first expression that reads a field of the page data.
+//
+// `{{ .Name }}` compiles to `d.Name`, and `d` is declared only when the view has
+// a data type -- from its own `@go` block, or inherited from the layout it
+// extends. Without one the generator emitted `_ = data` and then `d.Name`, which
+// parses; so `format.Source` accepted it, the command reported success, and the
+// failure arrived later as `undefined: d` in a file whose header says DO NOT
+// EDIT. Naming the `.kyse.go` and the line is the whole reason this compiler
+// exists rather than a template library.
+func dataReference(f *File) (expr string, line int, found bool) {
+	var walk func([]Node) bool
+	walk = func(nodes []Node) bool {
+		for _, n := range nodes {
+			for _, e := range goExpressions(n) {
+				if e = strings.TrimSpace(e); strings.HasPrefix(e, ".") {
+					expr, line, found = e, n.Line, true
+					return true
+				}
+			}
+			if walk(n.Children) {
+				return true
+			}
+		}
+		return false
+	}
+
+	if walk(f.Body) {
+		return expr, line, true
+	}
+	// A view that extends a layout keeps everything in sections and leaves its
+	// body empty, so stopping at the body would miss every page written the
+	// ordinary way.
+	for _, s := range f.Sections {
+		if walk(s.Nodes) {
+			return expr, line, true
+		}
+	}
+	return "", 0, false
+}
+
+// goExpressions are the parts of a node that reach expr and become Go.
+func goExpressions(n Node) []string {
+	switch n.Kind {
+	case Echo, Raw:
+		return []string{n.Body}
+	case Directive:
+		switch n.Name {
+		case "if", "elseif":
+			return []string{n.Body}
+		case "foreach":
+			subject, _ := splitAs(n.Body)
+			return []string{subject}
+		}
+	}
+	return nil
 }
 
 // expr turns a view expression into a Go one.

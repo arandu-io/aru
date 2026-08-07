@@ -9,10 +9,10 @@ import (
 )
 
 // TestMakeAuthProducesCodeThatCompiles is the expensive half of the check: it
-// generates the starter kit into a throwaway project and builds it against real
-// checkouts of the framework and of porang.
+// generates the starter kit into a throwaway project and builds it against a
+// real checkout of the framework.
 //
-// It skips when the sibling checkouts are not there, which is the case in CI --
+// It skips when the sibling checkout is not there, which is the case in CI --
 // the cheap structural checks in internal/gen are what run everywhere. This one
 // exists because "the template renders" and "the template compiles" are
 // different claims, and only the second one matters to the person running the

@@ -21,12 +21,13 @@ const stylesheetSource = "resources/css/app.css"
 // and the deploy stays one binary -- no asset publishing step, no CDN.
 const stylesheetOutput = "assets/app.css"
 
-// viewBuild turns .templ into Go and, when the project has its own stylesheet,
-// compiles the CSS.
+// viewBuild turns every `.kyse.go` into Go and, when the project has its own
+// stylesheet, compiles the CSS.
 //
-// Both tools are single binaries managed by aru (doc 14). Neither is Node, and
-// neither is optional at deploy time: what they produce is committed, so the
-// server only ever runs `go build`.
+// The view compiler is kyse, which is part of this CLI (ADR 0020); the CSS is
+// the Tailwind standalone binary aru downloads and verifies (doc 14). Neither is
+// Node, and neither is optional at deploy time: what they produce is committed,
+// so the server only ever runs `go build`.
 func viewBuild(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("view:build", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -47,6 +48,9 @@ func buildViews(root string, watch bool, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	// On stderr, so `aru view:build > log` keeps the warning where a person sees
+	// it and out of what the command produced.
+	pins.Warn(stderr)
 
 	// kyse is part of this CLI, not a binary it downloads. One fewer thing to
 	// pin, verify and cache -- and the view compiler moving in lockstep with the
@@ -56,8 +60,9 @@ func buildViews(root string, watch bool, stdout, stderr io.Writer) error {
 	}
 
 	if !hasStylesheet(root) {
-		// A project that only uses porang's components has nothing to compile:
-		// the stylesheet those components need is already embedded in porang.
+		// A project with no stylesheet of its own has nothing to compile: the
+		// base one is embedded in the framework's view package and served from
+		// there (ADR 0021), so the views still render styled.
 		return nil
 	}
 
@@ -86,25 +91,6 @@ func runTool(dir, binary string, args []string, stdout, stderr io.Writer) error 
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	return cmd.Run()
-}
-
-// hasTemplates reports whether the project has anything for templ to do.
-func hasTemplates(root string) bool {
-	found := false
-	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() && skipDir(d.Name()) {
-			return filepath.SkipDir
-		}
-		if filepath.Ext(path) == ".templ" {
-			found = true
-			return filepath.SkipAll
-		}
-		return nil
-	})
-	return found
 }
 
 func hasStylesheet(root string) bool {

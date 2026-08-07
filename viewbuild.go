@@ -48,18 +48,11 @@ func buildViews(root string, watch bool, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	if hasTemplates(root) {
-		templ, err := toolchain.Templ(pins.Templ).Ensure(stdout)
-		if err != nil {
-			return err
-		}
-		args := []string{"generate"}
-		if watch {
-			args = append(args, "--watch")
-		}
-		if err := runTool(root, templ, args, stdout, stderr); err != nil {
-			return fmt.Errorf("templ: %w", err)
-		}
+	// kyse is part of this CLI, not a binary it downloads. One fewer thing to
+	// pin, verify and cache -- and the view compiler moving in lockstep with the
+	// generator that writes views is what keeps them from drifting.
+	if err := compileViews(root, stdout); err != nil {
+		return err
 	}
 
 	if !hasStylesheet(root) {

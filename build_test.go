@@ -16,7 +16,7 @@ func TestBuildProducesABinaryAndItsChecksum(t *testing.T) {
 		t.Skip("compiles a project: skipped under -short")
 	}
 
-	framework, _ := siblingCheckouts(t)
+	framework := frameworkCheckout(t)
 	project := t.TempDir()
 
 	writeFile(t, filepath.Join(project, "go.mod"), `module example.test/project

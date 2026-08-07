@@ -44,17 +44,28 @@ func makeAuth(args []string, stdout, stderr io.Writer) error {
 		return nil
 	}
 
-	// The layout is replaced, not skipped.
+	// The layout and the two pages that share it are replaced, not skipped.
 	//
-	// `php artisan ui bootstrap --auth` overwrites layouts/app.blade.php for the
-	// same reason: the nine screens share one layout and render with its data
-	// type, so a layout from somewhere else leaves them referencing fields that
-	// do not exist. Skipping it produced exactly that -- nine views compiled
-	// against a struct the skeleton had never heard of.
-	layout := filepath.Join("resources", "views", "layouts", "app.kyse.go")
+	// In kyse a page that extends a layout renders with the layout's type, so
+	// the layout and everything under it are one unit. Replacing the layout
+	// alone left the skeleton's home and welcome passing HomeData to a layout
+	// now typed AuthPage: both pages answered with the error page, and -- until
+	// the renderer started buffering -- answered it with a 200.
+	//
+	// `php artisan ui bootstrap --auth` overwrites home.blade.php for the same
+	// reason. Everything else in the kit is new files, so --force still governs
+	// them.
+	owned := map[string]bool{
+		filepath.Join("resources", "views", "layouts", "app.kyse.go"): true,
+		filepath.Join("resources", "views", "home.kyse.go"):           true,
+		filepath.Join("resources", "views", "welcome.kyse.go"):        true,
+		// And the controller that renders home, for the same reason: it hands
+		// over the layout's type, so it changes when the layout does.
+		filepath.Join("app", "Http", "Controllers", "HomeController.go"): true,
+	}
 	var replace, keep []gen.File
 	for _, f := range files {
-		if f.Path == layout {
+		if owned[f.Path] {
 			replace = append(replace, f)
 			continue
 		}
@@ -96,26 +107,21 @@ func makeAuth(args []string, stdout, stderr io.Writer) error {
 	}
 
 	fmt.Fprintf(stdout, `
-the sign-in screens are yours now, %d files.
+the sign-in screens are yours now, %d files, already compiled.
 
-They need the view layer, and the templates need their generated Go:
+layouts/app, home and welcome were replaced, not skipped: a page renders with
+its layout's type, so the layout and what extends it are one unit. Everything
+else was left alone if it already existed.
 
-    go get github.com/arandu-io/porang
-    aru view:build
+One line in bootstrap/app.go, to answer /auth/login with these screens instead
+of the framework's:
 
-Then, in bootstrap/app.go, register the view layer and replace auth.New with
-authui.New:
+    routes.Deps{
+        Login: controllers.NewLoginController(authService, sessions, csrf),
+    }
 
-    porang.NewModule(),
-    authui.New(authService, sessions, csrf, auth.FixedTenant(tenantID)),
-
-The porang module is what serves the stylesheet and the scripts this page asks
-for. Without it the page renders, unstyled, with no HTMX -- and the only sign is
-three 404s in the browser console.
-
-Both answer /auth/login, so register one of them. The framework's has the
-minimum markup that exists so authentication could be tested at all; this one
-has a page.
+Both answer /auth/login, so register one. The framework's has the minimum markup
+that exists so authentication could be tested at all; this one has a page.
 `, len(written))
 	return nil
 }

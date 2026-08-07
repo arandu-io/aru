@@ -30,6 +30,15 @@ func GenerateAuth(m Module) ([]File, error) {
 	}{
 		{filepath.Join("app", "Http", "Controllers", "Auth", "LoginController.go"), authModuleTemplate},
 		{filepath.Join("app", "Http", "Controllers", "Auth", "LoginController_handlers.go"), authHandlersTemplate},
+		// HomeController comes with the kit, exactly as `php artisan ui
+		// bootstrap --auth` generates it.
+		//
+		// It is not optional here. A page renders with its layout's type, so
+		// replacing the layout replaces what home passes -- and the skeleton's
+		// controller, still handing over the struct its own view used to
+		// declare, stops compiling. The controller and the view it renders are
+		// one unit, and the kit owns both.
+		{filepath.Join("app", "Http", "Controllers", "HomeController.go"), authHomeControllerTemplate},
 	} {
 		content, err := render(filepath.Base(t.path), t.tmpl, m)
 		if err != nil {
@@ -260,3 +269,63 @@ func (m *Module) rejected(w http.ResponseWriter, r *http.Request, email string, 
 
 // The views are no longer here. `aru make:auth` writes the nine of
 // `laravel/ui` in resources/views, as kyse — see authviews.go and ADR 0022.
+
+// authHomeControllerTemplate is the HomeController the kit publishes, the same
+// file `php artisan ui bootstrap --auth` generates.
+//
+// The constructor keeps the skeleton's signature -- NewHomeController(appName)
+// -- because make:auth does not edit bootstrap/app.go. A different signature
+// would break the wiring the project already has, in a file the command never
+// touches and the reader has no reason to suspect.
+const authHomeControllerTemplate = `package controllers
+
+import (
+	"github.com/arandu-io/framework/httpx"
+
+	"{{ .ModulePath }}/resources/views"
+)
+
+// HomeController answers the landing page.
+//
+// It renders with views.AuthPage, the struct layouts/app declares: a page
+// renders with its layout's type, so every screen sharing this layout shares
+// this struct. A field this page does not use stays at its zero value.
+type HomeController struct {
+	Controller
+
+	// appName is what the page is titled. It arrives through the constructor
+	// rather than through a global read: a controller that reads the
+	// environment is a controller no test can pin.
+	appName string
+}
+
+// NewHomeController returns the controller. bootstrap/app.go builds it and hands
+// it to the routes.
+func NewHomeController(appName string) *HomeController {
+	return &HomeController{appName: appName}
+}
+
+// Compile-time proof that this controller answers GET / the way Resource and the
+// route table expect. It costs nothing and catches a renamed method.
+var _ httpx.Indexer = (*HomeController)(nil)
+
+// Index renders the landing page.
+func (c *HomeController) Index(ctx *httpx.Context) error {
+	// arandu:begin custom
+	return ctx.View("home", views.AuthPage{
+		AppName: c.appName,
+		Title:   c.appName,
+		HomeURL: "/",
+
+		// The navigation draws a link only for what answers. The kit ships the
+		// sign-in handler and nothing else, so registration and password reset
+		// stay off until you write them -- a link to a route nobody registered
+		// is a 404 the layout put there.
+		LoginURL:         "/auth/login",
+		LogoutURL:        "/auth/logout",
+		HasRegister:      false,
+		HasPasswordReset: false,
+	})
+	// arandu:end custom
+}
+`

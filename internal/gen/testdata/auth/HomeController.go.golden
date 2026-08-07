@@ -1,0 +1,51 @@
+package controllers
+
+import (
+	"github.com/arandu-io/framework/httpx"
+
+	"example.test/project/resources/views"
+)
+
+// HomeController answers the landing page.
+//
+// It renders with views.AuthPage, the struct layouts/app declares: a page
+// renders with its layout's type, so every screen sharing this layout shares
+// this struct. A field this page does not use stays at its zero value.
+type HomeController struct {
+	Controller
+
+	// appName is what the page is titled. It arrives through the constructor
+	// rather than through a global read: a controller that reads the
+	// environment is a controller no test can pin.
+	appName string
+}
+
+// NewHomeController returns the controller. bootstrap/app.go builds it and hands
+// it to the routes.
+func NewHomeController(appName string) *HomeController {
+	return &HomeController{appName: appName}
+}
+
+// Compile-time proof that this controller answers GET / the way Resource and the
+// route table expect. It costs nothing and catches a renamed method.
+var _ httpx.Indexer = (*HomeController)(nil)
+
+// Index renders the landing page.
+func (c *HomeController) Index(ctx *httpx.Context) error {
+	// arandu:begin custom
+	return ctx.View("home", views.AuthPage{
+		AppName: c.appName,
+		Title:   c.appName,
+		HomeURL: "/",
+
+		// The navigation draws a link only for what answers. The kit ships the
+		// sign-in handler and nothing else, so registration and password reset
+		// stay off until you write them -- a link to a route nobody registered
+		// is a 404 the layout put there.
+		LoginURL:         "/auth/login",
+		LogoutURL:        "/auth/logout",
+		HasRegister:      false,
+		HasPasswordReset: false,
+	})
+	// arandu:end custom
+}

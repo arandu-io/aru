@@ -22,25 +22,25 @@ func TestMakeAuthProducesCodeThatCompiles(t *testing.T) {
 		t.Skip("builds a project: skipped under -short")
 	}
 
-	framework, porang := siblingCheckouts(t)
-	templ := findTempl(t)
+	framework := frameworkCheckout(t)
 
 	project := t.TempDir()
 	writeFile(t, filepath.Join(project, "go.mod"), `module example.test/project
 
 go 1.25
 
-require (
-	github.com/arandu-io/framework v0.2.1
-	github.com/arandu-io/porang v0.3.0
-)
+require github.com/arandu-io/framework v0.11.2
 
 replace github.com/arandu-io/framework => `+framework+`
-
-replace github.com/arandu-io/porang => `+porang+`
 `)
 	writeFile(t, filepath.Join(project, "main.go"), "package main\n\nfunc main() {}\n")
 	writeFile(t, filepath.Join(project, "arandu.toml"), "name = \"test\"\n")
+
+	// The base controller every controller in the directory embeds. A real
+	// project gets it from `aru new`; the kit publishes HomeController into the
+	// same package and expects it to be there.
+	writeFile(t, filepath.Join(project, "app", "Http", "Controllers", "Controller.go"),
+		"package controllers\n\n// Controller is what every controller embeds.\ntype Controller struct{}\n")
 
 	chdir(t, project)
 	var out, errOut strings.Builder
@@ -53,42 +53,24 @@ replace github.com/arandu-io/porang => `+porang+`
 		}
 	}
 
-	runInDir(t, project, templ, "generate")
 	runInDir(t, project, goTool(t), "mod", "tidy")
 	runInDir(t, project, goTool(t), "build", "./...")
 }
 
-func siblingCheckouts(t *testing.T) (framework, porang string) {
+// frameworkCheckout is the sibling framework repository, which the generated
+// project builds against. Without it the module resolves to the published
+// version and the test would be checking a release rather than this working tree.
+func frameworkCheckout(t *testing.T) string {
 	t.Helper()
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
-	parent := filepath.Dir(wd)
-	framework = filepath.Join(parent, "framework")
-	porang = filepath.Join(parent, "porang")
-	for _, dir := range []string{framework, porang} {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err != nil {
-			t.Skipf("no checkout at %s: this test needs the sibling repositories", dir)
-		}
+	dir := filepath.Join(filepath.Dir(wd), "framework")
+	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err != nil {
+		t.Skipf("no checkout at %s: this test needs the sibling repository", dir)
 	}
-	return framework, porang
-}
-
-func findTempl(t *testing.T) string {
-	t.Helper()
-	if path, err := exec.LookPath("templ"); err == nil {
-		return path
-	}
-	home, err := os.UserHomeDir()
-	if err == nil {
-		candidate := filepath.Join(home, "go", "bin", "templ")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
-	}
-	t.Skip("templ is not installed: run `aru view:build` once, or go install github.com/a-h/templ/cmd/templ@latest")
-	return ""
+	return dir
 }
 
 func goTool(t *testing.T) string {

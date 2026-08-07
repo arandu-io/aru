@@ -260,3 +260,54 @@ func itoa(n int) string {
 	}
 	return string(b)
 }
+
+// TestElseTakesOnlyOneBranch: @else was in the parser's directive set and had no
+// case in the generator, so the node was dropped -- `@if(x) A @else B @endif`
+// became `if x { A; B }`, which prints both halves when the condition holds and
+// neither when it does not. It is why the nine starter-kit views were written
+// with `@if(.X)` followed by `@if(!d.X)` instead of an else.
+func TestElseTakesOnlyOneBranch(t *testing.T) {
+	src := "//go:build kyse\n\npackage views\n\n@go\ntype D struct{ Ok bool }\n@endgo\n\n@if(.Ok)\nYES\n@else\nNO\n@endif\n"
+
+	f, err := kyse.Parse("branch.kyse.go", src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	out, err := kyse.Generate(f, "branch", "D")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	got := string(out)
+
+	elseAt := strings.Index(got, "} else {")
+	if elseAt < 0 {
+		t.Fatalf("the generated Go has no else branch: @else was dropped\n%s", got)
+	}
+	// The literals are matched inside the WriteString call: a bare "NO"
+	// also appears in the "DO NOT EDIT" header.
+	yes, no := strings.Index(got, `WriteString(w, "YES`), strings.Index(got, `WriteString(w, "NO`)
+	if yes < 0 || no < 0 {
+		t.Fatalf("both branches must be emitted:\n%s", got)
+	}
+	if !(yes < elseAt && elseAt < no) {
+		t.Errorf("the branches are not separated by the else:\n%s", got)
+	}
+}
+
+// TestElseOutsideIfDoesNotCompile: a misplaced directive has to fail loudly.
+// Emitting nothing is what hid the bug above for as long as it lived.
+func TestElseOutsideIfDoesNotCompile(t *testing.T) {
+	src := "//go:build kyse\n\npackage views\n\n@go\ntype D struct{}\n@endgo\n\n@else\n"
+
+	f, err := kyse.Parse("stray.kyse.go", src)
+	if err != nil {
+		return // rejecting it at parse time is just as good
+	}
+	out, err := kyse.Generate(f, "stray", "D")
+	if err != nil {
+		return
+	}
+	if !strings.Contains(string(out), "#error") {
+		t.Errorf("a stray @else generated valid Go, so nothing reports it:\n%s", out)
+	}
+}

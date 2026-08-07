@@ -141,10 +141,32 @@ func (g *generator) directive(n Node) {
 	switch n.Name {
 	case "if":
 		fmt.Fprintf(&g.out, "\tif %s {\n", g.cond(n.Body))
+		// @else and @elseif arrive as children, because they are inline
+		// directives inside the block the parser opened. Each one closes the
+		// branch in progress and opens the next.
+		//
+		// Without this they had no case at all and were dropped in silence:
+		// @if(x) A @else B @endif emitted `if x { A; B }`, so both halves
+		// appeared when the condition held and neither when it did not.
 		for _, c := range n.Children {
+			if c.Kind == Directive && (c.Name == "else" || c.Name == "elseif") {
+				if c.Name == "else" {
+					g.out.WriteString("\t} else {\n")
+				} else {
+					fmt.Fprintf(&g.out, "\t} else if %s {\n", g.cond(c.Body))
+				}
+				continue
+			}
 			g.node(c)
 		}
 		g.out.WriteString("\t}\n")
+
+	case "else", "elseif":
+		// Reached only outside an @if, where the branch above never sees it.
+		// Emitting nothing is what hid the bug for as long as it lived, so this
+		// writes Go that does not compile, naming the file and the fix.
+		fmt.Fprintf(&g.out, "\t#error @%s outside @if in %s: every @%s needs an @if above it and an @endif below\n",
+			n.Name, path.Base(g.file.Path), n.Name)
 
 	case "foreach":
 		// @foreach(.Items as item) -> for _, item := range d.Items

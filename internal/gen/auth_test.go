@@ -24,8 +24,9 @@ func TestAuthGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateAuth: %v", err)
 	}
-	if len(files) != 11 {
-		t.Fatalf("generated %d files, want 11", len(files))
+	// Two controllers, HomeController, and the nine views.
+	if len(files) != 12 {
+		t.Fatalf("generated %d files, want 12", len(files))
 	}
 
 	for _, f := range files {
@@ -207,6 +208,9 @@ func TestTheStarterKitLandsInTheLaravelTree(t *testing.T) {
 
 	for _, want := range []string{
 		"app/Http/Controllers/Auth/LoginController.go",
+		// The kit owns the controller that renders home, because home renders
+		// with the layout's type and the kit replaced the layout.
+		"app/Http/Controllers/HomeController.go",
 		"resources/views/layouts/app.kyse.go",
 		"resources/views/home.kyse.go",
 		"resources/views/welcome.kyse.go",

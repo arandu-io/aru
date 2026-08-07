@@ -1,0 +1,51 @@
+package events
+
+import (
+	fwevents "github.com/arandu-io/framework/events"
+)
+
+// InvoicePaidName is the event, in the vocabulary of the domain rather than of
+// the database: "invoice.paid", never "invoice.updated". A consumer that has to
+// diff two rows to learn what happened is a consumer coupled to your schema.
+const InvoicePaidName = "invoice.paid"
+
+// InvoicePaid is what the consumer receives.
+//
+// Facts that were true when it happened, serialized as JSON. An event that says
+// "look it up" is an event that reads a row which has already changed.
+type InvoicePaid struct {
+	InvoiceId string `json:"invoice_id"`
+	Amount    int64  `json:"amount"`
+}
+
+// Event turns the payload into the record the outbox stores.
+//
+// There is no Dispatch and no Publish, and that is the whole design: the entity
+// records the event next to the rule that produced it, the service stores it in
+// the SAME transaction as the write, and the relay publishes it afterwards.
+//
+//	invoice.Record(events.InvoicePaid{
+//		// the fields above
+//	}.Event(invoice.ID))
+//
+//	// then, inside data.Transaction, in the service:
+//	if err := outbox.Store(ctx, g, invoice.PullEvents()); err != nil {
+//		return err
+//	}
+//
+// Store outside data.Transaction returns ErrNoTransaction on purpose. An event
+// stored next to a row that then rolled back is worse than no event, and an
+// event stored after the commit is one process crash away from being lost.
+func (e InvoicePaid) Event(aggregateID string) fwevents.Event {
+	return fwevents.Event{
+		Name:        InvoicePaidName,
+		Aggregate:   "invoice",
+		AggregateID: aggregateID,
+		Payload:     e,
+	}
+}
+
+// arandu:begin custom
+// Anything about this event that the fields do not say: a computed total, a
+// MarshalJSON that renames a key for a consumer you do not control.
+// arandu:end custom

@@ -258,6 +258,11 @@ func (c *PurchaseOrderController) signIn(ctx *httpx.Context) error {
 }
 
 // token issues a CSRF token for the session that is rendering the page.
+//
+// Every page needs it, including the ones that write nothing: the sign-out form
+// and every hx- request read it off the page data. A page rendered without one
+// answers 200 and then refuses the next write with 419, which reads like a
+// broken session rather than a missing field.
 func (c *PurchaseOrderController) token(ctx *httpx.Context) (string, error) {
 	return c.csrf.Issue(c.sessions.IDFromRequest(ctx.Request))
 }

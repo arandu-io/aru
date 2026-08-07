@@ -58,12 +58,24 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("make:module: %w", err)
 	}
 
+	// The sequence comes from the directory, the same way `aru make:migration`
+	// and `aru make:model --migration` take it. It used to be hardcoded to one,
+	// so two modules generated on one day produced two migrations under the same
+	// date and the same number -- distinct ids, so nothing failed, and an order
+	// between them that nothing decides.
+	date := time.Now().UTC().Format("2006_01_02")
+	seq, err := nextMigrationSequence(root, date)
+	if err != nil {
+		return err
+	}
+
 	spec := gen.Module{
 		Name:       name,
 		Fields:     parsed,
 		Tenant:     *tenant,
 		ModulePath: modulePath,
-		Date:       time.Now().UTC().Format("2006_01_02"),
+		Date:       date,
+		Sequence:   seq,
 	}
 
 	files, err := gen.Generate(spec)

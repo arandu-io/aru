@@ -1,0 +1,83 @@
+package controllers
+
+import (
+	"errors"
+	"net/http"
+
+	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/observability"
+	"github.com/arandu-io/framework/security"
+)
+
+// InvoiceController answers the invoices routes. It has none yet: write them in
+// the custom block at the end, and register each one in routes/web.go.
+//
+// It is thin on purpose: read the request, call a service, render. There is no
+// repository here and there cannot be one -- httpx.Context carries no database
+// handle, so a controller that reached the data layer would be a controller that
+// skipped the service, and therefore skipped the policy. `aru doctor` refuses it.
+type InvoiceController struct {
+	Controller
+
+	// The collaborators arrive through the constructor, never from a container
+	// and never from a package-level variable: a controller that builds its own
+	// dependencies is a controller no test can pin. Declare the service this
+	// controller calls as a field here, and pass it in bootstrap/app.go.
+	sessions *security.SessionStore
+	csrf     *security.CSRF
+}
+
+// NewInvoiceController returns the controller. bootstrap/app.go builds it and
+// hands it to the routes.
+//
+// The session store and the CSRF issuer are here because a screen is allowed to
+// know about a token and a cookie. Everything else a page needs arrives through
+// a service.
+func NewInvoiceController(sessions *security.SessionStore, csrf *security.CSRF) *InvoiceController {
+	return &InvoiceController{sessions: sessions, csrf: csrf}
+}
+
+// actor is who is acting, from the session and never from the request body.
+func (c *InvoiceController) actor(ctx *httpx.Context) (security.Subject, error) {
+	return c.sessions.Load(ctx.Ctx(), ctx.Request)
+}
+
+// signIn sends an unauthenticated visitor to the sign-in screen. Under HTMX the
+// redirect becomes HX-Redirect, so the browser navigates instead of nesting the
+// whole page inside a fragment.
+func (c *InvoiceController) signIn(ctx *httpx.Context) error {
+	return ctx.Redirect("/auth/login")
+}
+
+// token issues a CSRF token for the session that is rendering the page.
+//
+// Every page needs it, including the ones that write nothing: the sign-out form
+// and every hx- request read it off the page data. A page rendered without one
+// answers 200 and then refuses the next write with 419, which reads like a
+// broken session rather than a missing field.
+func (c *InvoiceController) token(ctx *httpx.Context) (string, error) {
+	return c.csrf.Issue(c.sessions.IDFromRequest(ctx.Request))
+}
+
+// fail turns a domain error into a status, in one place.
+//
+// Note what it does not do: it never writes the authorization error into the
+// response. Why a policy said no is information about the system, and it belongs
+// in the log. Anything unrecognized is returned, and the router turns it into
+// the error page in development and a 500 in production.
+func (c *InvoiceController) fail(ctx *httpx.Context, err error) error {
+	switch {
+	case errors.Is(err, security.ErrForbidden):
+		observability.Log(ctx.Ctx()).Warn("authorization denied", "error", err)
+		return ctx.Status(http.StatusForbidden)
+	default:
+		// The errors app/Models declares go here: NotFound is 404, Conflict is
+		// 409, an ordering outside the allowlist is 400.
+		return err
+	}
+}
+
+// arandu:begin custom
+// Actions beyond the ones above go here, and survive regeneration. Register
+// them in the custom block of routes/web.go.
+// arandu:end custom

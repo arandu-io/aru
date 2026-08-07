@@ -22,7 +22,7 @@ func TestNoArgumentsPrintsUsageAndFails(t *testing.T) {
 	if code == 0 {
 		t.Error("running with no command must exit non-zero, so scripts notice")
 	}
-	for _, want := range []string{"usage: aru <command>", "key:generate", "serve", "migrate", "routes"} {
+	for _, want := range []string{"usage: aru <command>", "key:generate", "serve", "migrate", "route:list"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("usage does not mention %q", want)
 		}
@@ -179,7 +179,7 @@ func TestNewRefusesWhatItCannotDo(t *testing.T) {
 func TestDelegationRequiresAProject(t *testing.T) {
 	t.Chdir(t.TempDir())
 
-	for _, name := range []string{"serve", "migrate", "migrate:rollback", "migrate:status", "migrate:fresh", "routes", "db:seed"} {
+	for _, name := range []string{"serve", "migrate", "migrate:rollback", "migrate:status", "migrate:fresh", "route:list", "db:seed"} {
 		code, _, stderr := exercise(t, name)
 		if code == 0 {
 			t.Errorf("%s exited 0 outside a project", name)

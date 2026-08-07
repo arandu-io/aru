@@ -1,0 +1,142 @@
+package enums
+
+import (
+	"database/sql"
+	"database/sql/driver"
+	"fmt"
+)
+
+// PaymentKind is the closed set of values the column may hold.
+//
+// Go has no enum keyword, so this is the shape that gets the guarantee anyway:
+// a named type, constants that are the only valid values, and a Scan/Value pair
+// so a value the application does not know about is an error at the read rather
+// than a zero value that silently behaves like the first case.
+//
+// That last part is the whole reason the file is longer than a PHP enum. In PHP
+// the backed enum refuses an unknown value at from(); here nothing refuses it
+// unless the type does, and a plain `type PaymentKind int` accepts anything
+// the database hands it.
+type PaymentKind int
+
+// The values. The numbers are explicit and never iota: iota renumbers everything
+// below an insertion, and the numbers are already in the database.
+const (
+	PaymentKindDraft PaymentKind = 1
+	PaymentKindSent  PaymentKind = 2
+	PaymentKindPaid  PaymentKind = 3
+	PaymentKindVoid  PaymentKind = 4
+)
+
+// PaymentKindValues lists them in declaration order.
+//
+// This is PHP's Enum::cases(). It feeds a <select> in a kyse view and it is what
+// a test asserts against, so adding a value without deciding what the form and
+// the migration do about it shows up as a failure.
+func PaymentKindValues() []PaymentKind {
+	return []PaymentKind{
+		PaymentKindDraft,
+		PaymentKindSent,
+		PaymentKindPaid,
+		PaymentKindVoid,
+	}
+}
+
+// Valid reports whether v is one of the values.
+func (v PaymentKind) Valid() bool {
+	switch v {
+	case PaymentKindDraft, PaymentKindSent, PaymentKindPaid, PaymentKindVoid:
+		return true
+	}
+	return false
+}
+
+// String is the name of the value, because the stored one is a number and a
+// number in a log is a lookup somebody has to do at three in the morning.
+func (v PaymentKind) String() string {
+	switch v {
+	case PaymentKindDraft:
+		return "draft"
+	case PaymentKindSent:
+		return "sent"
+	case PaymentKindPaid:
+		return "paid"
+	case PaymentKindVoid:
+		return "void"
+	}
+	return fmt.Sprintf("PaymentKind(%d)", int(v))
+}
+
+// Label is what a form shows.
+//
+// Separate from String on purpose: the stored value is a contract with the
+// database and with every consumer of an event, and the label is a contract
+// with nobody. Changing a label must not be able to change a row.
+func (v PaymentKind) Label() string {
+	switch v {
+	case PaymentKindDraft:
+		return "Draft"
+	case PaymentKindSent:
+		return "Sent"
+	case PaymentKindPaid:
+		return "Paid"
+	case PaymentKindVoid:
+		return "Void"
+	}
+	return v.String()
+}
+
+// ParsePaymentKind turns request input into the type, or says why it cannot.
+//
+// This is PHP's from(). app/Http/Requests calls it, so a value outside the set
+// becomes a field error the form can show rather than a row.
+func ParsePaymentKind(s string) (PaymentKind, error) {
+	for _, v := range PaymentKindValues() {
+		if v.String() == s {
+			return v, nil
+		}
+	}
+	return PaymentKindDraft, fmt.Errorf("payment kind: %q is not one of draft, sent, paid, void", s)
+}
+
+// Compile-time proof that the repository can read and write it directly.
+var (
+	_ driver.Valuer = PaymentKind(0)
+	_ sql.Scanner   = (*PaymentKind)(nil)
+)
+
+// Value implements driver.Valuer. It refuses to write a value outside the set,
+// which is what keeps a zero-valued struct from putting a zero in the column.
+func (v PaymentKind) Value() (driver.Value, error) {
+	if !v.Valid() {
+		return nil, fmt.Errorf("payment kind: refusing to write %q", v.String())
+	}
+	return int64(v), nil
+}
+
+// Scan implements sql.Scanner.
+//
+// A value the application does not know about is an error here, at the row that
+// has it, rather than a silent fallback three layers up. That is usually a
+// migration that added a value the binary being rolled out does not have yet --
+// and RULE 16 is what keeps that window short.
+func (v *PaymentKind) Scan(src any) error {
+	var n int64
+	switch raw := src.(type) {
+	case int64:
+		n = raw
+	default:
+		return fmt.Errorf("payment kind: cannot read %T from the database", src)
+	}
+	parsed := PaymentKind(n)
+	if !parsed.Valid() {
+		return fmt.Errorf("payment kind: %d is not one of the known values", n)
+	}
+	*v = parsed
+	return nil
+}
+
+// arandu:begin custom
+// Anything the set does not say: transitions (which status may follow which),
+// a grouping predicate, a colour for the badge in the view.
+// arandu:end custom

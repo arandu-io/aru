@@ -1,0 +1,50 @@
+package middleware
+
+import (
+	"net/http"
+
+	"github.com/arandu-io/framework/httpx"
+)
+
+// EnsureAccountIsActive runs before the handler, and may answer instead of it.
+//
+// Laravel writes this as a class with handle($request, Closure $next). Here it
+// is the standard net/http signature -- func(http.Handler) http.Handler, which
+// httpx.Middleware names -- and that is what makes every middleware written for
+// the Go ecosystem work in this pipeline unchanged, and this one work in any
+// other.
+//
+// It is a constructor that returns the middleware rather than the middleware
+// itself, so whatever it needs is a parameter and is visible at the wiring site:
+//
+//	func EnsureAccountIsActive(sessions *security.SessionStore) httpx.Middleware
+//
+// A middleware that reached for a package-level variable would be a middleware
+// no test can pin, and no reader of bootstrap/app.go can see the dependencies of.
+//
+// What it must not do is reach the database. A middleware is the request, one
+// layer earlier: a query here skipped the service and therefore the policy, and
+// `aru doctor` refuses it by the same rule it refuses a controller. Call a
+// service, or read what an earlier middleware already put on the context.
+func EnsureAccountIsActive() httpx.Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Before the handler.
+			//
+			// Refusing looks like this, and the return is not optional: without
+			// it the handler runs anyway and the refusal is a status nobody sees.
+			//
+			//	http.Error(w, "this account is not active", http.StatusForbidden)
+			//	return
+
+			// arandu:begin custom
+			// arandu:end custom
+
+			next.ServeHTTP(w, r)
+
+			// After the handler. Anything written here is written after the
+			// status line and the body have gone out: a header set at this point
+			// never reaches the client.
+		})
+	}
+}

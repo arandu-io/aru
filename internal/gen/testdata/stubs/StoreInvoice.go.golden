@@ -1,0 +1,50 @@
+package requests
+
+import (
+	"time"
+
+	"github.com/arandu-io/framework/validation"
+)
+
+// StoreInvoice is an input contract: what the request is allowed to carry, and
+// what makes it valid.
+//
+// The fields are explicit. There is no mass assignment and there is no struct
+// tag, so a field the client sends and this struct does not declare goes
+// nowhere -- and a rule nobody wrote is not a rule somebody switched off.
+//
+// Laravel's FormRequest also answers authorize(). This one does not, and that is
+// the decision rather than an omission: authorization is the Policy, asked with
+// security.Authorize inside the service, and a second place to say yes is a
+// second place to forget. See app/Policies.
+type StoreInvoice struct {
+	Reference     string
+	SupplierEmail string
+	Total         int64
+	DeliveryDate  time.Time
+}
+
+// Validate reports the errors per field.
+//
+// It returns all of them rather than the first: a form that rejects one field at
+// a time is a form somebody submits five times.
+func (r StoreInvoice) Validate() validation.Errors {
+	e := validation.Errors{}
+	validation.Required(e, "reference", r.Reference)
+	validation.MaxLen(e, "reference", r.Reference, 255)
+	validation.Required(e, "supplier_email", r.SupplierEmail)
+	validation.Email(e, "supplier_email", r.SupplierEmail)
+	validation.MaxLen(e, "supplier_email", r.SupplierEmail, 254)
+	validation.NotZero(e, "total", r.Total)
+
+	// arandu:begin custom
+	// Domain rules go here: ranges, formats, cross-field checks.
+	// arandu:end custom
+
+	return e
+}
+
+// Compile-time proof that this request honors the validation contract. The first
+// line of the service is in.Validate(), and this is what keeps that call
+// compiling.
+var _ validation.Validatable = StoreInvoice{}

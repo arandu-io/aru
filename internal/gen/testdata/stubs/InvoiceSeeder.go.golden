@@ -1,0 +1,42 @@
+package seeders
+
+import "context"
+
+// InvoiceSeeder seeds the invoice rows this application needs to exist.
+//
+// A seeder writes, and a write needs a security.Grant. This is one of the few
+// places security.SystemGrant is legitimate -- there is no request and no actor
+// behind it -- and `aru doctor` allows it here because of the directory this
+// file is in, not because of what the function is called. Anywhere else it is a
+// warning that has to be answered with //arandu:system-grant <reason>.
+//
+// Run must be safe to run twice. A seeder that fails on the second run cannot be
+// part of a deploy, and this one runs on every deploy that runs the first.
+type InvoiceSeeder struct{}
+
+// Name is how the seeder is addressed on the command line.
+func (InvoiceSeeder) Name() string { return "InvoiceSeeder" }
+
+// Run performs the seeding.
+func (InvoiceSeeder) Run(ctx context.Context, d Deps) error {
+	// arandu:begin custom
+	// What this looks like once it is wired -- the four lines, in order:
+	//
+	//	g := security.SystemGrant(policies.InvoiceCreate, d.Tenant)
+	//	i := factories.NewInvoiceFactory(d.Tenant).Make(1)
+	//	if _, err := d.Invoices.Create(ctx, g, i); err != nil {
+	//		return err
+	//	}
+	//
+	// d.Tenant, never a tenant this file picked: a seeder that chooses its own
+	// seeds rows nobody can reach (RULE 14).
+	//
+	// Twice safely: read before writing, or let the UNIQUE refuse the duplicate
+	// and treat models.ErrInvoiceConflict as success.
+	// arandu:end custom
+	return nil
+}
+
+// compile-time proof that the seeder honors the contract. A seeder that drifts
+// from the interface fails the build rather than failing when someone runs it.
+var _ Seeder = InvoiceSeeder{}

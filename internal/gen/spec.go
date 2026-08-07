@@ -296,6 +296,14 @@ type Module struct {
 	// than time.Now() so the generator stays deterministic and golden files mean
 	// something.
 	Date string
+	// Sequence is the six-digit half of the migration id.
+	//
+	// Zero means one, so every existing caller and every golden file keeps the id
+	// it has. It exists because two migrations written on the same day need two
+	// numbers, and the number is read off the directory rather than off the
+	// clock: a timestamp to the second collides when two commands run in the same
+	// second, and a number read off the files is the same number on every machine.
+	Sequence int
 	// Permissions maps an action to the roles allowed to take it, and is what
 	// opens the generated Policy.
 	//
@@ -428,7 +436,15 @@ func (m Module) ViewName(page string) string { return m.Resource() + "." + page 
 
 // MigrationID is the immutable identifier of the generated migration.
 func (m Module) MigrationID() string {
-	return m.Date + "_000001_create_" + m.Table() + "_table"
+	return fmt.Sprintf("%s_%06d_create_%s_table", m.Date, m.seq(), m.Table())
+}
+
+// seq is the sequence, defaulting to one.
+func (m Module) seq() int {
+	if m.Sequence <= 0 {
+		return 1
+	}
+	return m.Sequence
 }
 
 // MigrationVar is the name of the migration value, which database/migrations
@@ -657,6 +673,54 @@ func ParseFields(spec string) ([]Field, error) {
 		out = append(out, f)
 	}
 	return out, nil
+}
+
+// Normalize accepts the two spellings of one name and returns the module one.
+//
+// `aru make:module` takes a module name -- purchase_order -- and `php artisan
+// make:model` takes a class name -- PurchaseOrder. The developer this is for
+// types the second, and the generator needs the first, so both are accepted and
+// converted here rather than in eight commands.
+func Normalize(name string) string {
+	rs := []rune(strings.ReplaceAll(strings.TrimSpace(name), "-", "_"))
+	var b strings.Builder
+	for i, r := range rs {
+		if !unicode.IsUpper(r) {
+			b.WriteRune(r)
+			continue
+		}
+		// An underscore goes in front of a capital that starts a word: after a
+		// lowercase letter or a digit, or at the end of a run of capitals that is
+		// followed by a lowercase one -- so HTTPServer becomes http_server rather
+		// than h_t_t_p_server.
+		prevLower := i > 0 && (unicode.IsLower(rs[i-1]) || unicode.IsDigit(rs[i-1]))
+		prevUpper := i > 0 && unicode.IsUpper(rs[i-1])
+		nextLower := i+1 < len(rs) && unicode.IsLower(rs[i+1])
+		if i > 0 && rs[i-1] != '_' && (prevLower || (prevUpper && nextLower)) {
+			b.WriteRune('_')
+		}
+		b.WriteRune(unicode.ToLower(r))
+	}
+	return b.String()
+}
+
+// Exported turns any accepted spelling of a name into the Go type it names:
+// "invoice_line", "invoice-line" and "InvoiceLine" all become InvoiceLine.
+func Exported(name string) string { return exported(Normalize(name)) }
+
+// IsExportedIdentifier reports whether s can be a Go type name in a generated
+// file. A generator that emitted an identifier Go refuses would emit a file that
+// does not compile, which is worse than refusing here.
+func IsExportedIdentifier(s string) bool {
+	if s == "" || !unicode.IsUpper(rune(s[0])) {
+		return false
+	}
+	for _, r := range s {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 func exported(s string) string {

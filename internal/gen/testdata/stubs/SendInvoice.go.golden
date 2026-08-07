@@ -1,0 +1,86 @@
+package jobs
+
+import (
+	"context"
+
+	fwjobs "github.com/arandu-io/framework/jobs"
+	"github.com/arandu-io/framework/security"
+)
+
+// SendInvoiceName routes the job to its handler.
+//
+// A constant rather than a literal at both ends: a typo in the push enqueues
+// work nothing drains, and the worker parks it with "no handler registered"
+// instead of failing where the mistake is.
+const SendInvoiceName = "invoice.send"
+
+// SendInvoice is what the job carries.
+//
+// These are Laravel's __construct arguments, as a struct. Keep it to facts and
+// ids: a payload that says "look it up" is a payload that reads a row which has
+// already changed by the time the worker gets there.
+type SendInvoice struct {
+	InvoiceId string `json:"invoice_id"`
+	Amount    int64  `json:"amount"`
+}
+
+// DispatchSendInvoice enqueues the job.
+//
+// This is Dispatchable::dispatch with the Grant made explicit. fwjobs.New is the
+// only constructor, so every job in the system carries the tenant, an id and the
+// Grant that authorized it -- there is no shape of Job that skipped any of the
+// three (RULE 14).
+//
+// Called inside data.Transaction, the push is committed by the same transaction
+// as the row that produced it. That is the outbox guarantee applied to work
+// instead of to an event, and it is the reason the default queue is a table and
+// not Redis (ADR 0016).
+func DispatchSendInvoice(ctx context.Context, q fwjobs.Queue, g security.Grant, in SendInvoice) error {
+	j, err := fwjobs.New(g, fwjobs.DefaultQueue, SendInvoiceName, in)
+	if err != nil {
+		return err
+	}
+	return q.Push(ctx, g, j)
+}
+
+// SendInvoiceHandler is what `aru work` runs.
+//
+// Its collaborators arrive through the constructor -- there is no container, and
+// a handler that built its own service would be a handler no test can pin
+// (ADR 0001).
+type SendInvoiceHandler struct {
+	// arandu:begin custom
+	// The services this job needs. Add the fields here and the parameters to
+	// NewSendInvoiceHandler below; bootstrap already built them.
+	// arandu:end custom
+}
+
+// NewSendInvoiceHandler wires the handler.
+func NewSendInvoiceHandler() *SendInvoiceHandler {
+	return &SendInvoiceHandler{}
+}
+
+// Compile-time proof that the worker can register it.
+var _ fwjobs.Handler = (*SendInvoiceHandler)(nil)
+
+// Handle does the work.
+//
+// The Grant is rebuilt by the worker from the row -- the action and the tenant
+// the push was authorized under, and not one permission more -- so this reaches
+// repositories on exactly the same authorized path a request does.
+//
+// Delivery is at-least-once. This body has to tolerate running twice: the
+// process can die between doing the work and acknowledging it, and no queue
+// anywhere solves that. j.ID is stable across retries and is the key to
+// deduplicate on.
+func (h *SendInvoiceHandler) Handle(ctx context.Context, g security.Grant, j fwjobs.Job) error {
+	var in SendInvoice
+	if err := j.Decode(&in); err != nil {
+		return err
+	}
+
+	// arandu:begin custom
+	_, _ = g, in
+	return nil
+	// arandu:end custom
+}

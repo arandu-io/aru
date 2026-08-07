@@ -38,13 +38,12 @@ func Generate(m Module) ([]File, error) {
 		path string
 		tmpl string
 	}{
-		{filepath.Join("app", "Http", "Controllers", m.Entity()+"Controller.go"), controllerTemplate},
+		{filepath.Join("app", "Http", "Controllers", m.Entity()+"Controller.go"), controllerTemplate + controllerSessionTemplate},
 		{filepath.Join("app", "Models", m.Entity()+".go"), modelTemplate},
 		{filepath.Join("app", "Policies", m.Entity()+"Policy.go"), policyTemplate},
 		{filepath.Join("app", "Repositories", m.Entity()+"Repository.go"), repositoryTemplate},
 		{filepath.Join("app", "Services", m.Entity()+"Service.go"), serviceTemplate},
-		{filepath.Join("app", "Http", "Requests", m.Entity()+"Request.go"), requestTemplate},
-		{filepath.Join("database", "migrations", m.MigrationID()+".go"), migrationTemplate},
+		{filepath.Join("app", "Http", "Requests", m.Entity()+"Request.go"), requestTemplate + requestRulesTemplate},
 		{filepath.Join("app", "Http", "Controllers", m.Entity()+"Controller_test.go"), testTemplate},
 	} {
 		content, err := render(filepath.Base(t.path), t.tmpl, m)
@@ -53,6 +52,15 @@ func Generate(m Module) ([]File, error) {
 		}
 		out = append(out, File{Path: t.path, Content: content})
 	}
+
+	// The migration goes through MigrationSpec, which is also what
+	// `aru make:migration` and `aru make:model --migration` render: one shape of
+	// migration file, whichever command asked for it (RULE 9).
+	migration, err := RenderMigration(m.MigrationSpec())
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, migration)
 
 	// The views. Laravel puts them under resources/views/<plural>/, one per
 	// action that has a screen.
@@ -80,6 +88,58 @@ func Generate(m Module) ([]File, error) {
 	return out, nil
 }
 
+// ModelParts is what `aru make:model` was asked to write besides the model.
+type ModelParts struct{ Migration, Factory bool }
+
+// GenerateModel produces the model, and the parts the flags asked for.
+//
+// It renders the same templates Generate does: a model written by make:model and
+// a model written by make:module are the same bytes, because they are the same
+// file. A second template would be a second shape of one thing (RULE 9).
+//
+// What it never writes is a repository. A repository pulls a policy with it --
+// `aru doctor` reports repository-without-policy as an Error -- and the generated
+// policy denies everything, which pulls a service to issue the Grant. A
+// --repository flag would be `aru make:module` with an arbitrary subset missing,
+// and the mandatory path (validate, Authorize, Grant, Repository) is indivisible
+// by construction.
+func GenerateModel(m Module, parts ModelParts) ([]File, error) {
+	if err := m.Validate(); err != nil {
+		return nil, err
+	}
+
+	content, err := render(m.Entity()+".go", modelTemplate, m)
+	if err != nil {
+		return nil, err
+	}
+	out := []File{{Path: filepath.Join("app", "Models", m.Entity()+".go"), Content: content}}
+
+	if parts.Migration {
+		f, err := RenderMigration(m.MigrationSpec())
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	if parts.Factory {
+		fields := make([]FactoryField, 0, len(m.Fields))
+		for _, f := range m.Fields {
+			fields = append(fields, f.Factory())
+		}
+		f, err := RenderFactory(FactorySpec{
+			Entity:       m.Entity(),
+			Tenant:       m.Tenant,
+			Fields:       fields,
+			ModelsImport: m.ModelsImport(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, nil
+}
+
 // errModulePath is returned when the project module path is missing, which is
 // the one input the generator cannot infer.
 var errModulePath = fmt.Errorf("the project module path is required")
@@ -91,7 +151,12 @@ var errModulePath = fmt.Errorf("the project module path is required")
 // second lock on anything from a specification that lands inside a Go string
 // literal, was defined on a function nobody called. Found by audit; the first
 // lock in the spec validator was carrying it alone.
-func render(name, tmpl string, m Module) ([]byte, error) {
+// The data is `any` rather than Module because the granular commands --
+// make:controller, make:middleware, make:request, make:migration, make:factory,
+// make:seeder, make:enum -- render their own specifications through this exact
+// function. One renderer means one gofmt pass, one set of template functions and
+// one error message when a template does not parse.
+func render(name, tmpl string, data any) ([]byte, error) {
 	t := template.New(name).Funcs(template.FuncMap{
 		"lower": strings.ToLower,
 		"join":  strings.Join,
@@ -117,7 +182,7 @@ func render(name, tmpl string, m Module) ([]byte, error) {
 	}
 
 	var buf bytes.Buffer
-	if err := t.Execute(&buf, m); err != nil {
+	if err := t.Execute(&buf, data); err != nil {
 		return nil, err
 	}
 

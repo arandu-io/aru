@@ -1,0 +1,47 @@
+package requests
+
+import "github.com/arandu-io/framework/validation"
+
+// StoreReport is an input contract: what the request is allowed to carry, and
+// what makes it valid.
+//
+// The fields are explicit. There is no mass assignment and there is no struct
+// tag, so a field the client sends and this struct does not declare goes
+// nowhere -- and a rule nobody wrote is not a rule somebody switched off.
+//
+// Laravel's FormRequest also answers authorize(). This one does not, and that is
+// the decision rather than an omission: authorization is the Policy, asked with
+// security.Authorize inside the service, and a second place to say yes is a
+// second place to forget. See app/Policies.
+type StoreReport struct {
+	// arandu:begin custom
+	// The fields this request carries, exported and typed as the domain has
+	// them. The controller is what turns the text of a form into these.
+	// arandu:end custom
+}
+
+// Validate reports the errors per field.
+//
+// It returns all of them rather than the first: a form that rejects one field at
+// a time is a form somebody submits five times.
+func (r StoreReport) Validate() validation.Errors {
+	e := validation.Errors{}
+
+	// arandu:begin custom
+	// The rules. The validation package is a short list on purpose --
+	// Required, NotZero, MinLen, MaxLen, Email -- and everything the domain
+	// knows is written here, in Go, by whoever knows it:
+	//
+	//	validation.Required(e, "reference", r.Reference)
+	//	if r.Total <= 0 {
+	//		e.Add("total", "must be greater than zero")
+	//	}
+	// arandu:end custom
+
+	return e
+}
+
+// Compile-time proof that this request honors the validation contract. The first
+// line of the service is in.Validate(), and this is what keeps that call
+// compiling.
+var _ validation.Validatable = StoreReport{}

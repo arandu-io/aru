@@ -68,8 +68,12 @@ var commands = []command{
 		run:   delegate("schedule:run"),
 	},
 	{
-		name:  "work",
-		usage: "aru work [--queue=default] [--workers=4]",
+		// queue:work, the name the artisan has. What the person types is the
+		// half that needs parity -- the string handed to the project binary is
+		// an internal protocol and promises nothing to anyone, so it stays as it
+		// is and no project generated before today stops working.
+		name:  "queue:work",
+		usage: "aru queue:work [--queue=default] [--workers=4]",
 		desc:  "drain a job queue; the same image with another argument",
 		run:   delegate("work"),
 	},
@@ -80,8 +84,10 @@ var commands = []command{
 		run:   build,
 	},
 	{
-		name:  "routes",
-		usage: "aru routes",
+		// route:list, the name the artisan has, for the same reason as
+		// queue:work above.
+		name:  "route:list",
+		usage: "aru route:list",
 		desc:  "list the registered routes, by module",
 		run:   delegate("routes"),
 	},
@@ -132,6 +138,82 @@ var commands = []command{
 		usage: "aru schema [--output module.schema.json]",
 		desc:  "print the JSON Schema a specification is written against",
 		run:   schemaCommand,
+	},
+	// The granular family, in the order a migration uses them: the model first,
+	// because in Go the struct is the schema, then the request, the controller
+	// and what surrounds them. They are read together in `aru help`, and they are
+	// what somebody porting one Laravel class at a time types on the first day.
+	{
+		name:  "make:model",
+		usage: `aru make:model <Name> --fields "reference:string!u,total:money" [--tenant] [--migration] [--factory] [--force]`,
+		desc:  "generate the entity, and the migration and factory the flags ask for",
+		run:   makeModel,
+	},
+	{
+		name:  "make:migration",
+		usage: `aru make:migration <name> [--create=<table> | --table=<table>] --fields "status:string"`,
+		desc:  "generate one migration: a table, or columns added to one",
+		run:   makeMigration,
+	},
+	{
+		name:  "make:controller",
+		usage: "aru make:controller <Name> [--resource] [--invokable] [--force]",
+		desc:  "generate one controller, in the flat app/Http/Controllers package",
+		run:   makeController,
+	},
+	{
+		name:  "make:middleware",
+		usage: "aru make:middleware <Name> [--force]",
+		desc:  "generate one middleware, as the net/http signature every Go server takes",
+		run:   makeMiddleware,
+	},
+	{
+		name:  "make:request",
+		usage: `aru make:request <Name> [--fields "reference:string!"] [--force]`,
+		desc:  "generate one input contract; authorization stays in the Policy",
+		run:   makeRequest,
+	},
+	{
+		name:  "make:factory",
+		usage: "aru make:factory <Name> [--force]",
+		desc:  "generate the factory of an entity, with the fields read off its model",
+		run:   makeFactory,
+	},
+	{
+		name:  "make:seeder",
+		usage: "aru make:seeder <Name> [--force]",
+		desc:  "generate one seeder, for the registry in database/seeders",
+		run:   makeSeeder,
+	},
+	{
+		name:  "make:job",
+		usage: `aru make:job <Name> [--event-name=invoice.send] [--fields "invoice_id:uuid"] [--force]`,
+		desc:  "generate a background job: the payload it carries and the handler that runs it",
+		run:   makeJob,
+	},
+	{
+		name:  "make:command",
+		usage: `aru make:command <Name> [--signature=invoice:close] [--description="..."]`,
+		desc:  "generate a console command, in app/Console/Commands",
+		run:   makeCommand,
+	},
+	{
+		name:  "make:listener",
+		usage: `aru make:listener <Name> [--event=invoice.paid]`,
+		desc:  "generate an event listener, in app/Listeners",
+		run:   makeListener,
+	},
+	{
+		name:  "make:event",
+		usage: `aru make:event <Name> --aggregate=invoice [--event-name=invoice.paid] [--fields "..."]`,
+		desc:  "generate a domain event, stored in the outbox by the write that caused it",
+		run:   makeEvent,
+	},
+	{
+		name:  "make:enum",
+		usage: "aru make:enum <Name> --values draft,sent,paid [--int] [--force]",
+		desc:  "generate a closed set of values, with the Scan/Value pair the column needs",
+		run:   makeEnum,
 	},
 	{
 		name:  "make:policy",

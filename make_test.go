@@ -1,0 +1,247 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/arandu-io/aru/internal/gen"
+)
+
+// The wiring a command prints is tested for the same reason `wiring` is: an
+// instruction that does not compile is worse than no instruction, because it is
+// followed. The check is not that the text reads well -- it is that every
+// identifier it names is one the generated file actually declares.
+
+func TestTheControllerWiringNamesWhatTheFileDeclares(t *testing.T) {
+	for _, c := range []struct {
+		kind  gen.Kind
+		route string
+	}{
+		{gen.KindResource, `r.Resource("invoices", d.Invoice)`},
+		{gen.KindInvokable, `r.Action("GET", "/invoices", d.Invoice.Handle).Name("invoices")`},
+		{gen.KindPlain, "(no route yet"},
+	} {
+		t.Run(string(c.kind), func(t *testing.T) {
+			stub := gen.Stub{
+				Type: "InvoiceController", ModulePath: "example.test/project",
+				Resource: "invoices", Entity: "Invoice", Kind: c.kind,
+			}
+			files, err := gen.GenerateController(stub)
+			if err != nil {
+				t.Fatalf("GenerateController: %v", err)
+			}
+			source := string(files[0].Content)
+			message := wiringController(stub, gen.Module{Name: "invoice", ModulePath: "example.test/project"})
+
+			if !strings.Contains(message, c.route) {
+				t.Errorf("the printed route is not %q:\n%s", c.route, message)
+			}
+			// The constructor the message tells you to call has to exist, with
+			// the arguments the message passes it.
+			if !strings.Contains(source, "func NewInvoiceController(sessions *security.SessionStore, csrf *security.CSRF)") {
+				t.Error("the generated controller has no constructor of the shape the message calls")
+			}
+			if !strings.Contains(message, "Invoice: controllers.NewInvoiceController(sessions, csrf),") {
+				t.Errorf("the printed bootstrap line does not call the generated constructor:\n%s", message)
+			}
+			if c.kind == gen.KindInvokable && !strings.Contains(source, "func (c *InvoiceController) Handle(") {
+				t.Error("the message registers Handle and the file does not declare it")
+			}
+		})
+	}
+}
+
+func TestTheMiddlewareWiringNamesTheConstructor(t *testing.T) {
+	stub := gen.Stub{Type: "EnsureAccountIsActive", ModulePath: "example.test/project"}
+	files, err := gen.GenerateMiddleware(stub)
+	if err != nil {
+		t.Fatalf("GenerateMiddleware: %v", err)
+	}
+	source := string(files[0].Content)
+	message := wiringMiddleware(stub)
+
+	if !strings.Contains(source, "func EnsureAccountIsActive() httpx.Middleware") {
+		t.Error("the generated middleware is not a constructor returning httpx.Middleware")
+	}
+	if !strings.Contains(message, "appmiddleware.EnsureAccountIsActive()") {
+		t.Errorf("the message does not call the generated constructor:\n%s", message)
+	}
+	// The alias is not decoration: bootstrap/app.go already imports the
+	// framework package called middleware, so an unaliased import would not
+	// compile in the one file the message sends you to.
+	if !strings.Contains(message, `appmiddleware "example.test/project/app/Http/Middleware"`) {
+		t.Errorf("the message does not alias the import:\n%s", message)
+	}
+}
+
+func TestTheMigrationWiringNamesTheDeclaredValue(t *testing.T) {
+	spec := gen.MigrationSpec{
+		ID: "2026_08_07_000002_add_status_to_invoices", Var: "addStatusToInvoices", Table: "invoices",
+		Fields: []gen.Field{{Name: "status", Type: gen.TypeString}},
+	}
+	file, err := gen.RenderMigration(spec)
+	if err != nil {
+		t.Fatalf("RenderMigration: %v", err)
+	}
+	if !strings.Contains(string(file.Content), "var addStatusToInvoices = kernel.Migration{") {
+		t.Error("the generated migration does not declare the value the message registers")
+	}
+	if !strings.Contains(wiringMigration(spec), "      addStatusToInvoices,") {
+		t.Error("the message does not register the declared value")
+	}
+}
+
+func TestTheSeederWiringNamesTheDeclaredType(t *testing.T) {
+	spec := gen.SeederSpec{Entity: "Invoice"}
+	file, err := gen.RenderSeeder(spec)
+	if err != nil {
+		t.Fatalf("RenderSeeder: %v", err)
+	}
+	if !strings.Contains(string(file.Content), "type InvoiceSeeder struct{}") {
+		t.Error("the generated seeder does not declare the type the message registers")
+	}
+	message := wiringSeeder(spec)
+	for _, want := range []string{"InvoiceSeeder{},", "Invoices *repositories.InvoiceRepository", "--class=InvoiceSeeder"} {
+		if !strings.Contains(message, want) {
+			t.Errorf("the message does not say %q:\n%s", want, message)
+		}
+	}
+}
+
+func TestTheModelMessageNamesTheTwoCommandsThatReachTheTable(t *testing.T) {
+	m := gen.Module{Name: "invoice", Fields: []gen.Field{{Name: "reference", Type: gen.TypeString}},
+		ModulePath: "example.test/project", Date: "2026_08_07"}
+	message := modelWiring(m, true)
+
+	for _, want := range []string{"aru make:module invoice", "aru make:policy Invoice", "createInvoicesTable,"} {
+		if !strings.Contains(message, want) {
+			t.Errorf("the message does not say %q:\n%s", want, message)
+		}
+	}
+	// Without --migration there is no migration to register, and a message that
+	// told you to register one would send you looking for a file that is not
+	// there.
+	if strings.Contains(modelWiring(m, false), "createInvoicesTable,") {
+		t.Error("the message registers a migration the command did not write")
+	}
+}
+
+func TestTheRequestMessageDoesNotWireAnything(t *testing.T) {
+	message := usageRequest(gen.Stub{Type: "StoreInvoice", ModulePath: "example.test/project"})
+	if strings.Contains(message, "bootstrap/app.go") || strings.Contains(message, "routes.Deps") {
+		t.Error("a request is a type, not a dependency: the message wires it")
+	}
+	if !strings.Contains(message, "there is no authorize() here") {
+		t.Error("the message does not say where authorization lives, which is the one thing it is for")
+	}
+}
+
+// TestTheNameIsReadTheWayItIsTyped: the developer this is for types the class
+// name, and sometimes types the suffix as well.
+func TestTheNameIsReadTheWayItIsTyped(t *testing.T) {
+	for in, want := range map[string]string{
+		"Invoice":           "InvoiceController",
+		"invoice":           "InvoiceController",
+		"invoice_line":      "InvoiceLineController",
+		"InvoiceController": "InvoiceController",
+	} {
+		if got := suffixed(in, "Controller"); got != want {
+			t.Errorf("suffixed(%q) = %q, want %q", in, got, want)
+		}
+	}
+	for in, want := range map[string]string{
+		"Invoice":       "Invoice",
+		"InvoiceSeeder": "Invoice",
+		"invoice":       "Invoice",
+	} {
+		if got := unsuffixed(in, "Seeder"); got != want {
+			t.Errorf("unsuffixed(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestANestedNameIsRefused. artisan accepts Admin/UserController and creates a
+// nested namespace; here that would be a second package, a second import alias
+// and a second shape of wiring.
+func TestANestedNameIsRefused(t *testing.T) {
+	for _, name := range []string{"Admin/UserController", `Admin\UserController`} {
+		if err := checkFlatTree("make:controller", name); err == nil {
+			t.Errorf("%q was accepted", name)
+		}
+	}
+}
+
+// TestGuessTableIsArtisansTableGuesser: it is copied because it is real parity
+// of gesture -- it is the way the name is typed.
+func TestGuessTableIsArtisansTableGuesser(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		table  string
+		create bool
+		ok     bool
+	}{
+		{"create_invoices_table", "invoices", true, true},
+		{"create_invoices", "invoices", true, true},
+		{"add_status_to_invoices", "invoices", false, true},
+		{"add_status_to_invoices_table", "invoices", false, true},
+		{"drop_column_in_invoices", "invoices", false, true},
+		{"backfill_everything", "", false, false},
+	} {
+		table, create, ok := guessTable(c.name)
+		if table != c.table || create != c.create || ok != c.ok {
+			t.Errorf("guessTable(%q) = %q,%v,%v; want %q,%v,%v", c.name, table, create, ok, c.table, c.create, c.ok)
+		}
+	}
+}
+
+// TestNextMigrationSequenceReadsTheDirectory. The order of migrations is the
+// order of their ids, so two files written on one day need two numbers -- and
+// the number comes from the files rather than the clock, so it is the same
+// number on every machine.
+func TestNextMigrationSequenceReadsTheDirectory(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "database", "migrations")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if n, err := nextMigrationSequence(root, "2026_08_07"); err != nil || n != 1 {
+		t.Fatalf("empty directory: %d, %v; want 1", n, err)
+	}
+
+	for _, name := range []string{
+		"2026_08_07_000001_create_invoices_table.go",
+		"2026_08_07_000004_add_status_to_invoices.go",
+		"2026_08_06_000009_create_users_table.go", // another day: not counted
+		"migrations.go", // not a migration: not counted
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("package migrations\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, err := nextMigrationSequence(root, "2026_08_07"); err != nil || n != 5 {
+		t.Fatalf("got %d, %v; want 5", n, err)
+	}
+}
+
+// TestARequestThatCollidesIsRefusedByTypeAndNotByPath: make:module packs
+// StoreInvoice and UpdateInvoice into InvoiceRequest.go, so a check on the file
+// name would miss it and the real error would be a "redeclared in this block"
+// three directories away.
+func TestARequestThatCollidesIsRefusedByTypeAndNotByPath(t *testing.T) {
+	dir := t.TempDir()
+	source := "package requests\n\ntype StoreInvoice struct{}\ntype UpdateInvoice struct{}\n"
+	if err := os.WriteFile(filepath.Join(dir, "InvoiceRequest.go"), []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	where, taken := requestTypeAlreadyDeclared(dir, "StoreInvoice")
+	if !taken || where != "InvoiceRequest.go" {
+		t.Errorf("StoreInvoice: %q, %v; want InvoiceRequest.go, true", where, taken)
+	}
+	if _, taken := requestTypeAlreadyDeclared(dir, "StoreReport"); taken {
+		t.Error("a type nobody declared was reported as taken")
+	}
+}

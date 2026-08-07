@@ -1,0 +1,104 @@
+package factories
+
+import (
+	"fmt"
+	"time"
+
+	models "example.test/project/app/Models"
+)
+
+// InvoiceFactory builds invoices.
+//
+// Nothing here touches the database. A factory returns a value; storing it is a
+// repository call, and a repository call needs a security.Grant -- so a factory
+// cannot become a back door around the policy that guards the table. There is no
+// ->create() on this type for the same reason there is none on the model.
+//
+// The zero value is not usable: the tenant is required. Every other field has a
+// default and a With method that replaces it.
+type InvoiceFactory struct {
+	tenant        string
+	reference     string
+	supplierEmail string
+	total         int64
+	deliveryDate  time.Time
+}
+
+// NewInvoiceFactory returns a factory for one tenant.
+//
+// The tenant is a parameter rather than a default. A factory that picked its own
+// would build rows nobody can reach, and the failure would only show up when
+// somebody tried to read them (RULE 14).
+func NewInvoiceFactory(tenant string) InvoiceFactory {
+	return InvoiceFactory{tenant: tenant}
+}
+
+// WithReference sets the reference instead of generating one.
+func (f InvoiceFactory) WithReference(reference string) InvoiceFactory {
+	f.reference = reference
+	return f
+}
+
+// WithSupplierEmail sets the supplier_email instead of generating one.
+func (f InvoiceFactory) WithSupplierEmail(supplierEmail string) InvoiceFactory {
+	f.supplierEmail = supplierEmail
+	return f
+}
+
+// WithTotal sets the total instead of generating one.
+func (f InvoiceFactory) WithTotal(total int64) InvoiceFactory {
+	f.total = total
+	return f
+}
+
+// WithDeliveryDate sets the delivery_date instead of generating one.
+func (f InvoiceFactory) WithDeliveryDate(deliveryDate time.Time) InvoiceFactory {
+	f.deliveryDate = deliveryDate
+	return f
+}
+
+// Make returns one invoice, numbered so a batch has distinct values.
+//
+// The ID is left empty on purpose: the repository generates it with data.NewID,
+// and a factory that invented one would produce rows whose id did not come from
+// the one place ids come from.
+func (f InvoiceFactory) Make(n int) models.Invoice {
+	reference := f.reference
+	if reference == "" {
+		reference = fmt.Sprintf("reference-%d", n)
+	}
+	supplierEmail := f.supplierEmail
+	if supplierEmail == "" {
+		supplierEmail = fmt.Sprintf("user%d@example.test", n)
+	}
+	total := f.total
+	if total == 0 {
+		total = int64(n)
+	}
+	deliveryDate := f.deliveryDate
+	if deliveryDate.IsZero() {
+		deliveryDate = time.Now().UTC()
+	}
+	return models.Invoice{
+		TenantID:      f.tenant,
+		Reference:     reference,
+		SupplierEmail: supplierEmail,
+		Total:         total,
+		DeliveryDate:  deliveryDate,
+		CreatedAt:     time.Now().UTC(),
+	}
+}
+
+// MakeMany returns n invoices.
+func (f InvoiceFactory) MakeMany(n int) []models.Invoice {
+	out := make([]models.Invoice, 0, n)
+	for i := 1; i <= n; i++ {
+		out = append(out, f.Make(i))
+	}
+	return out
+}
+
+// arandu:begin custom
+// States beyond the defaults go here, and survive regeneration: an overdue
+// invoice, a cancelled one -- what `state()` says in Laravel, as a method.
+// arandu:end custom

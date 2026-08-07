@@ -21,7 +21,7 @@ const appPackage = "."
 //
 // serve, migrate and routes all need the list of registered modules, and that
 // list only exists inside the application: the modules are wired explicitly in
-// cmd/app/main.go, with no container and no plugin loading. A CLI compiled
+// bootstrap/app.go, with no container and no plugin loading. A CLI compiled
 // separately cannot know them, so the honest implementation is to run the
 // project. This is also why those subcommands exist in the skeleton's main.
 func delegate(subcommand string) func([]string, io.Writer, io.Writer) error {

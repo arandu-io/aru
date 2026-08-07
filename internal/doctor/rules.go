@@ -567,6 +567,76 @@ func tenantMustComeFromTheGrant(p *project) []Finding {
 	return out
 }
 
+// grantConstructors are the exported functions that hand back a security.Grant
+// without a Policy having answered for it.
+//
+// security.Authorize is not here, and that is the point: it IS the policy check,
+// so a Grant that came from it was authorized by construction. What is listed is
+// the escape hatch and everything that wraps it.
+//
+// It is a list rather than one name because wrapping is what got past the rules
+// below. They matched the literal `security.SystemGrant`, and jobs.GrantFor
+// delegates to it with the action and the tenant read off a Job -- an ordinary
+// exported struct that any package can fill in:
+//
+//	jobs.GrantFor(jobs.Job{Action: "customer.delete", TenantID: ctx.Query("org")})
+//
+// That reaches the database with permissions nobody granted, under a tenant the
+// caller chose, and it produced no finding at all. Found by adversarial review
+// of this file, 07/08/2026.
+//
+// A new function returning a security.Grant has to be added here. Nothing makes
+// that automatic -- the doctor reads one package at a time and does not resolve
+// types across modules -- so TestEveryGrantConstructorIsGuarded compares this
+// list against what the framework actually exports.
+var grantConstructors = []string{
+	"security.SystemGrant",
+	"jobs.GrantFor",
+}
+
+// isGrantConstructor reports whether a call hands back an unauthorized Grant.
+func isGrantConstructor(name string) bool {
+	for _, c := range grantConstructors {
+		if name == c {
+			return true
+		}
+	}
+	return false
+}
+
+// tenantArg returns the expression that supplies the tenant to a grant
+// constructor.
+//
+// The two spell it differently: security.SystemGrant takes it as the second
+// positional argument, and jobs.GrantFor takes a Job whose TenantID field
+// carries it. Reading only the positional form is what let the wrapper through.
+func tenantArg(call *ast.CallExpr, name string) (ast.Expr, bool) {
+	switch name {
+	case "security.SystemGrant":
+		if len(call.Args) >= 2 {
+			return call.Args[1], true
+		}
+	case "jobs.GrantFor":
+		if len(call.Args) != 1 {
+			return nil, false
+		}
+		lit, ok := call.Args[0].(*ast.CompositeLit)
+		if !ok {
+			return nil, false
+		}
+		for _, elt := range lit.Elts {
+			kv, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "TenantID" {
+				return kv.Value, true
+			}
+		}
+	}
+	return nil, false
+}
+
 // requestValuesReachingAGrant follows the value instead of reading the name.
 //
 // The two checks above ask whether a header or a parameter is CALLED something
@@ -618,17 +688,46 @@ func requestValuesReachingAGrant(f *file) []Finding {
 			}
 			return true
 		})
-		if len(tainted) == 0 {
-			return true
-		}
+		// No early return on an empty `tainted`: the embedded form assigns
+		// nothing, and skipping pass two here is what hid it.
 
-		// Pass two: a tainted name in the tenant argument of SystemGrant.
+		// Pass two: the tenant argument of a grant constructor, either a name
+		// pass one tainted or a request read written inline.
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
-			if !ok || callName(call) != "security.SystemGrant" || len(call.Args) < 2 {
+			if !ok {
 				return true
 			}
-			id, ok := call.Args[1].(*ast.Ident)
+			name := callName(call)
+			if !isGrantConstructor(name) {
+				return true
+			}
+			arg, ok := tenantArg(call, name)
+			if !ok {
+				return true
+			}
+
+			// The embedded form, with no variable in between:
+			//
+			//	security.SystemGrant(ActionView, ctx.Query("org"))
+			//
+			// Pass one never sees it, because nothing was assigned. It is the
+			// shortest way to write the hole this rule exists to close, and it
+			// went unreported while the longer version was caught.
+			if inner, isCall := arg.(*ast.CallExpr); isCall {
+				if readsTheRequest(callName(inner)) {
+					file, line := f.at(call)
+					out = append(out, Finding{
+						Rule: "tenant-from-request", Severity: Error,
+						File: file, Line: line,
+						Message: fmt.Sprintf("the tenant of this Grant is read straight off the request, by %s", callName(inner)),
+						Why:     "whoever sent the request picks the tenant, and reads every row of it. It comes from the Grant (RULE 14).",
+					})
+				}
+				return true
+			}
+
+			id, ok := arg.(*ast.Ident)
 			if !ok {
 				return true
 			}
@@ -697,15 +796,15 @@ func systemGrantIsAudited(p *project) []Finding {
 		enclosing := enclosingFuncs(f)
 
 		f.calls(func(call *ast.CallExpr, name string) {
-			if name != "security.SystemGrant" {
+			if !isGrantConstructor(name) {
 				return
 			}
 			file, line := f.at(call)
 
 			// An empty tenant is refused by the framework at runtime; catching it
 			// here says so before anyone waits for the failure.
-			if len(call.Args) >= 2 {
-				if lit, ok := call.Args[1].(*ast.BasicLit); ok && (lit.Value == `""` || lit.Value == "``") {
+			if arg, found := tenantArg(call, name); found {
+				if lit, ok := arg.(*ast.BasicLit); ok && (lit.Value == `""` || lit.Value == "``") {
 					out = append(out, Finding{
 						Rule: "system-grant-without-tenant", Severity: Error,
 						File: file, Line: line,

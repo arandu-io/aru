@@ -5,6 +5,7 @@ import (
 
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/jobs"
 	"github.com/arandu-io/framework/security"
 
 	repositories "example.test/p/app/Repositories"
@@ -64,4 +65,28 @@ func ByPathValue(w http.ResponseWriter, r *http.Request) {
 	g := security.SystemGrant("billing.view", tenant)
 	_ = g
 	_ = w
+}
+
+// ThroughTheJobWrapper is the same escalation, laundered through jobs.GrantFor.
+//
+// The value the client chose reaches the tenant of a Grant, and it never passes
+// through a name the rule reads: the wrapper takes a Job, and the tenant is a
+// field of it. Matching the literal `security.SystemGrant` missed this
+// completely.
+func (c BillingController) ThroughTheJobWrapper(ctx *httpx.Context) error {
+	org := ctx.Query("org")
+	g := jobs.GrantFor(jobs.Job{Action: "billing.view", TenantID: org})
+	_ = g
+	return nil
+}
+
+// Embedded is the same hole written short, with no variable in between.
+//
+// Pass one of tenant-from-request looks for an assignment, so this form went
+// unreported while the three-line version was caught -- and it is the form
+// somebody writes when they are in a hurry.
+func (c BillingController) Embedded(ctx *httpx.Context) error {
+	g := security.SystemGrant("billing.view", ctx.Query("org"))
+	_ = g
+	return nil
 }

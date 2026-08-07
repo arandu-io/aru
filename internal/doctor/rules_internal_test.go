@@ -1,7 +1,11 @@
 package doctor
 
 import (
+	"io/fs"
+	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -123,4 +127,78 @@ func keys(m map[string]bool) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// TestEveryGrantConstructorIsGuarded compares grantConstructors against what the
+// framework actually exports.
+//
+// The list is written by hand because the doctor reads one package at a time and
+// does not resolve types across modules -- it cannot ask "what returns a
+// security.Grant" the way a compiler can. A hand-written list is exactly what
+// went wrong: the rules matched `security.SystemGrant` and `jobs.GrantFor`
+// wrapped it, so a Grant for an action and a tenant nobody authorized produced
+// no finding at all.
+//
+// So this reads the framework's source next door and fails when it exports a
+// Grant constructor the list does not name. security.Authorize is excluded on
+// purpose: it is the mandatory path, and a Grant that came from it was
+// authorized by construction.
+//
+// If the framework is not on disk the test skips rather than passing quietly --
+// a guard that silently does nothing is the thing it exists to prevent.
+func TestEveryGrantConstructorIsGuarded(t *testing.T) {
+	root := filepath.Join("..", "..", "..", "framework")
+	if _, err := os.Stat(root); err != nil {
+		t.Skip("the framework is not checked out next to this repository")
+	}
+
+	// `func Name(...) [security.]Grant` and `... (Grant, error)`, exported only.
+	decl := regexp.MustCompile(`^func ([A-Z]\w*)(\[[^]]*\])?\([^)]*\)\s*\(?(security\.)?Grant\b`)
+
+	found := map[string]string{} // symbol -> package
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" || d.Name() == "testdata" {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		pkg := filepath.Base(filepath.Dir(path))
+		for _, line := range strings.Split(string(body), "\n") {
+			if m := decl.FindStringSubmatch(line); m != nil {
+				found[pkg+"."+m[1]] = path
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) == 0 {
+		t.Fatal("no Grant constructor found in the framework at all: this test stopped testing anything")
+	}
+
+	guarded := map[string]bool{}
+	for _, c := range grantConstructors {
+		guarded[c] = true
+	}
+	// The mandatory path. A Grant it returns was authorized by a Policy.
+	guarded["security.Authorize"] = true
+
+	for symbol, path := range found {
+		if !guarded[symbol] {
+			t.Errorf("%s (%s) hands back a security.Grant and no rule watches it: add it to grantConstructors, "+
+				"and give tenantArg the shape it spells the tenant in", symbol, path)
+		}
+	}
 }

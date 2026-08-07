@@ -122,12 +122,6 @@ var commands = []command{
 		run:   makeModule,
 	},
 	{
-		name:  "make:auth",
-		usage: "aru make:auth [--force]",
-		desc:  "publish the sign-in screens into the project, yours to edit",
-		run:   makeAuth,
-	},
-	{
 		name:  "generate",
 		usage: "aru generate <spec.yaml> [--check] [--dry-run] [--force]",
 		desc:  "generate a module from a specification; the model writes the spec, never the Go",

@@ -42,6 +42,7 @@ package kyse
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -180,6 +181,7 @@ var blockDirectives = map[string]string{
 	"section": "endsection",
 	"if":      "endif",
 	"foreach": "endforeach",
+	"forelse": "endforelse",
 	"for":     "endfor",
 	"while":   "endwhile",
 	"go":      "endgo",
@@ -187,12 +189,37 @@ var blockDirectives = map[string]string{
 
 // inlineDirectives take arguments and emit in place.
 var inlineDirectives = map[string]bool{
-	"extends": true,
-	"yield":   true,
-	"include": true,
-	"csrf":    true,
-	"elseif":  true,
-	"else":    true,
+	"extends":  true,
+	"yield":    true,
+	"include":  true,
+	"csrf":     true,
+	"elseif":   true,
+	"else":     true,
+	"continue": true,
+	"break":    true,
+	"empty":    true,
+}
+
+// Directives returns every directive kyse knows, block and inline, sorted.
+//
+// It exists so a test can walk the whole set. Three times now a directive was
+// declared here and had no case in the generator, and each time the node was
+// dropped in silence: @else made both halves of an if appear at once, and @for
+// and @while emitted the loop with an empty body. The build stays green, the
+// command reports success, and the page is simply missing what the author wrote.
+//
+// A closed set (RULE 15) is only a promise if something checks that every member
+// of it does something.
+func Directives() []string {
+	out := make([]string, 0, len(blockDirectives)*2+len(inlineDirectives))
+	for open, end := range blockDirectives {
+		out = append(out, open, end)
+	}
+	for name := range inlineDirectives {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // OutputPath says where the Go generated from a view goes.

@@ -199,6 +199,60 @@ func (g *generator) directive(n Node) {
 		}
 		g.out.WriteString("\t}\n")
 
+	case "for":
+		// @for(i := 0; i < len(d.Items); i++) -> the same three clauses, in Go.
+		//
+		// Blade writes @for($i = 0; $i < 10; $i++) and this is the same shape
+		// with Go's syntax, exactly as @if already takes a Go condition rather
+		// than inventing a second expression language (RULE 15).
+		fmt.Fprintf(&g.out, "\tfor %s {\n", g.clauses(n.Body))
+		for _, c := range n.Children {
+			g.node(c)
+		}
+		g.out.WriteString("\t}\n")
+
+	case "while":
+		// Go has one loop keyword, so @while(cond) is `for cond`.
+		fmt.Fprintf(&g.out, "\tfor %s {\n", g.cond(n.Body))
+		for _, c := range n.Children {
+			g.node(c)
+		}
+		g.out.WriteString("\t}\n")
+
+	case "forelse":
+		// @forelse(.Items as it) … @empty … @endforelse
+		//
+		// Blade's, and the one directive of the set that earns its keep in every
+		// generated index page: a list and its empty state are one thought, and
+		// writing them as @foreach next to @if(len(...) == 0) states the
+		// condition twice, where the two can drift apart.
+		//
+		// The @empty half arrives as a child, the same shape @else does.
+		subject, binding := splitAs(n.Body)
+		if binding == "" {
+			binding = "item"
+		}
+		before, after := splitAt(n.Children, "empty")
+		fmt.Fprintf(&g.out, "\tif len(%s) == 0 {\n", g.expr(subject))
+		for _, c := range after {
+			g.node(c)
+		}
+		fmt.Fprintf(&g.out, "\t} else {\n\t\tfor _, %s := range %s {\n\t\t\t_ = %s\n", binding, g.expr(subject), binding)
+		for _, c := range before {
+			g.node(c)
+		}
+		g.out.WriteString("\t\t}\n\t}\n")
+
+	case "continue", "break":
+		// Only meaningful inside a loop, and the Go compiler says so at the line
+		// the view wrote, which is better than this generator guessing.
+		fmt.Fprintf(&g.out, "\t%s\n", n.Name)
+
+	case "empty":
+		// Reached only outside @forelse, where the branch above never sees it.
+		fmt.Fprintf(&g.out, "\t#error @empty outside @forelse in %s: it separates the two halves of a @forelse\n",
+			path.Base(g.file.Path))
+
 	case "yield":
 		// Only meaningful inside a layout: it renders the section the child view
 		// declared, or nothing when it declared none.
@@ -271,6 +325,30 @@ func goExpressions(n Node) []string {
 	return nil
 }
 
+// clauses turns the three parts of an @for header into Go.
+//
+// Each is passed through expr on its own, so `.Items` means a field of the data
+// in the condition the same way it does everywhere else:
+//
+//	@for(i := 0; i < len(.Items); i++)  ->  for i := 0; i < len(d.Items); i++
+//
+// A header without two semicolons is passed through untouched: it is either
+// already Go or it is a mistake, and the Go compiler says which, at the line
+// the view wrote.
+func (g *generator) clauses(header string) string {
+	parts := strings.Split(strings.TrimSpace(header), ";")
+	if len(parts) != 3 {
+		return strings.TrimSpace(header)
+	}
+	for i, p := range parts {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		parts[i] = g.expr(p)
+	}
+	return strings.Join(parts, "; ")
+}
+
 // expr turns a view expression into a Go one.
 //
 // `.Name` means "a field of the data", which is what a Blade `$name` means in
@@ -331,3 +409,15 @@ func numbered(src string) string {
 }
 
 func (g *generator) yields() bool { return g.file.IsLayout() }
+
+// splitAt cuts a directive's children at the first inline directive with the
+// given name, and drops the separator. It is how @forelse finds its @empty and
+// how any two-part block would.
+func splitAt(children []Node, name string) (before, after []Node) {
+	for i, c := range children {
+		if c.Kind == Directive && c.Name == name {
+			return children[:i], children[i+1:]
+		}
+	}
+	return children, nil
+}

@@ -394,3 +394,113 @@ func TestElseOutsideIfDoesNotCompile(t *testing.T) {
 		t.Errorf("a stray @else generated valid Go, so nothing reports it:\n%s", out)
 	}
 }
+
+// TestEveryDirectiveEmitsSomething is the structural guard for a defect that
+// happened three times.
+//
+// A directive declared in the parser's set with no case in the generator is
+// dropped in silence: @else made both halves of an if appear at once, and @for
+// and @while emitted the loop with an empty body. Each time the build stayed
+// green, `aru view:build` reported success, and the page was missing exactly
+// what the author wrote -- which is the failure that takes longest to find,
+// because nothing anywhere says a word.
+//
+// A closed set (RULE 15) is only a promise if something walks it.
+func TestEveryDirectiveEmitsSomething(t *testing.T) {
+	// The ones that only make sense in a position of their own, and are covered
+	// by their own tests: the pairing halves, the layout pair, and @go, whose
+	// content is copied verbatim above the render function.
+	skip := map[string]bool{
+		"endsection": true, "endif": true, "endforeach": true, "endfor": true,
+		"endwhile": true, "endgo": true, "go": true, "section": true,
+		"extends": true, "else": true, "elseif": true, "endforelse": true,
+	}
+
+	// One minimal view per directive, and what the generated Go must contain if
+	// the case ran. The ones that wrap content are proved by the content coming
+	// out the other side; the ones that emit a call are proved by the call.
+	type probe struct{ source, wants string }
+	body := map[string]probe{
+		"if":       {"@if(d.Ok)\nMARCADOR\n@endif\n", "MARCADOR"},
+		"foreach":  {"@foreach(.Items as it)\nMARCADOR\n@endforeach\n", "MARCADOR"},
+		"for":      {"@for(i := 0; i < d.N; i++)\nMARCADOR\n@endfor\n", "MARCADOR"},
+		"while":    {"@while(d.Ok)\nMARCADOR\n@endwhile\n", "MARCADOR"},
+		"yield":    {"@yield('MARCADOR')\n", "MARCADOR"},
+		"include":  {"@include('MARCADOR')\n", "MARCADOR"},
+		"csrf":     {"@csrf\n", "view.CSRF("},
+		"forelse":  {"@forelse(.Items as it)\nMARCADOR\n@empty\nVAZIO\n@endforelse\n", "MARCADOR"},
+		"continue": {"@foreach(.Items as it)\n@continue\n@endforeach\n", "continue"},
+		"break":    {"@foreach(.Items as it)\n@break\n@endforeach\n", "break"},
+		"empty":    {"@forelse(.Items as it)\nX\n@empty\nMARCADOR\n@endforelse\n", "MARCADOR"},
+	}
+
+	for _, name := range kyse.Directives() {
+		if skip[name] {
+			continue
+		}
+		p, known := body[name]
+		if !known {
+			t.Errorf("@%s is in the directive set and this test does not exercise it: add a case above, or take it out of the set", name)
+			continue
+		}
+
+		t.Run(name, func(t *testing.T) {
+			full := "//go:build kyse\n\npackage views\n\n@go\ntype D struct {\n\tOk    bool\n\tN     int\n\tItems []string\n}\n@endgo\n\n" + p.source
+			f, err := kyse.Parse(name+".kyse.go", full)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			out, err := kyse.Generate(f, name, "D")
+			if err != nil {
+				t.Fatalf("Generate: %v", err)
+			}
+			if !strings.Contains(string(out), p.wants) {
+				t.Errorf("@%s generated Go with no trace of %q -- the node was dropped:\n%s", name, p.wants, out)
+			}
+		})
+	}
+}
+
+// TestForelseTakesOneBranchAndCommentsDoNotReachThePage reads the generated Go
+// instead of trusting that a case ran.
+//
+// Both are Blade's, and both were missing. @forelse is the one directive of the
+// set that earns its keep in every generated index page: a list and its empty
+// state are one thought, and writing them as @foreach beside @if(len(…) == 0)
+// states the condition twice, in two places that can drift.
+//
+// {{-- --}} is the other half of the same gap: a view language with no way to
+// write a note is one whose notes go in an HTML comment, visible in the page
+// source of every request.
+func TestForelseTakesOneBranchAndCommentsDoNotReachThePage(t *testing.T) {
+	src := "//go:build kyse\n\npackage views\n\n@go\ntype D struct{ Items []string }\n@endgo\n\n" +
+		"{{-- isto nao pode chegar ao navegador --}}\n" +
+		"@forelse(.Items as it)\nCOM ITENS\n@empty\nLISTA VAZIA\n@endforelse\n"
+
+	f, err := kyse.Parse("list.kyse.go", src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	out, err := kyse.Generate(f, "list", "D")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	got := string(out)
+
+	if strings.Contains(got, "isto nao pode chegar") {
+		t.Error("the comment was emitted: it would show in the page source of every request")
+	}
+
+	// The two halves have to be separated by an else, or both run.
+	empty, loop := strings.Index(got, "LISTA VAZIA"), strings.Index(got, "COM ITENS")
+	elseAt := strings.Index(got, "} else {")
+	if empty < 0 || loop < 0 {
+		t.Fatalf("one of the branches was dropped:\n%s", got)
+	}
+	if elseAt < 0 || !(empty < elseAt && elseAt < loop) {
+		t.Errorf("the empty state and the loop are not exclusive:\n%s", got)
+	}
+	if !strings.Contains(got, "len(d.Items) == 0") {
+		t.Errorf("the empty state is not decided by the length of the list:\n%s", got)
+	}
+}

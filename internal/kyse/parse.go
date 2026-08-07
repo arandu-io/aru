@@ -192,6 +192,29 @@ func (p *parser) interpolate(line string, lineNo int) []Node {
 	rest := line
 
 	for {
+		// {{-- --}} is checked first, before both interpolations, because it
+		// opens with the same two braces as the escaped form. A comment that
+		// were read as an interpolation would try to compile its own text.
+		//
+		// Blade has it and kyse did not: a view language with no way to write a
+		// note is a view language whose notes end up in the markup, visible in
+		// the page source of every request.
+		if at := strings.Index(rest, "{{--"); at >= 0 && at <= indexOr(strings.Index(rest, "{!!"), len(rest)) {
+			end := strings.Index(rest[at:], "--}}")
+			if end < 0 {
+				p.fail(lineNo, "{{-- was never closed", "close it with --}} on the same line.")
+				out = append(out, Node{Kind: Text, Body: rest + "\n", Line: lineNo})
+				return out
+			}
+			if at > 0 {
+				out = append(out, Node{Kind: Text, Body: rest[:at], Line: lineNo})
+			}
+			// The comment itself emits nothing: it does not reach the page, which
+			// is the difference from an HTML comment.
+			rest = rest[at+end+4:]
+			continue
+		}
+
 		// {!! !!} is checked before {{ }} so the raw form is not read as an
 		// escaped one containing a bang.
 		rawAt := strings.Index(rest, "{!!")
@@ -351,4 +374,13 @@ func suggest(name string) string {
 		return "did you mean " + strings.Join(near, " or ") + "?"
 	}
 	return "what does not fit a directive is written in Go, inside @go … @endgo."
+}
+
+// indexOr returns fallback when i is negative, so a missing delimiter sorts last
+// instead of first.
+func indexOr(i, fallback int) int {
+	if i < 0 {
+		return fallback
+	}
+	return i
 }

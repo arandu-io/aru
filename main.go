@@ -45,6 +45,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	cmd, ok := lookup(name)
 	if !ok {
+		// Not one of ours, so it may be one of the application's.
+		//
+		// routes/console.go is where a project declares its own commands, and
+		// the project binary dispatches them through routes.Lookup. `php artisan
+		// invoice:close` works because artisan IS the project; here aru is a
+		// separate binary, and without this the command a person just generated
+		// with `aru make:command` answers "unknown command" from the tool that
+		// generated it.
+		//
+		// The good error survives: outside a project this falls through to the
+		// usage below, and inside one the project binary lists what it knows.
+		if _, err := projectRoot(); err == nil {
+			if err := delegate(name)(rest, stdout, stderr); err != nil {
+				fmt.Fprintf(stderr, "%s\n", err)
+				return 1
+			}
+			return 0
+		}
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", name)
 		usage(stderr)
 		return 1

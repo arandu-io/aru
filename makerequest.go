@@ -114,12 +114,24 @@ func requestTypeAlreadyDeclared(dir, name string) (string, bool) {
 // message exists because validate, Authorize, Grant is the only order that
 // compiles, and the developer needs to see it once.
 func usageRequest(s gen.Stub) string {
+	// The FIRST field this request actually declares, not a name picked when the
+	// message was written. It used to say Reference always, so `aru make:request
+	// StoreCredit --fields amount:money` printed an example naming a field the
+	// generated type does not have -- and an example that does not compile is
+	// copied before it is read.
+	//
+	// A request with no fields keeps a placeholder, because there is no field to
+	// name and the shape is still what has to be shown.
+	field, input := "Field", "field"
+	if len(s.Fields) > 0 {
+		field, input = s.Fields[0].GoName(), s.Fields[0].Name
+	}
 	return fmt.Sprintf(`
 A request is not wired: it is built and it is checked.
 
   app/Http/Controllers -- the controller reads the form into it
 
-      in := requests.%s{Reference: ctx.Input("reference")}
+      in := requests.%s{%s: ctx.Input(%q)}
 
   app/Services -- the service validates it before anything else
 
@@ -130,5 +142,5 @@ A request is not wired: it is built and it is checked.
 Validate is the only thing this type owns. Who may do it is the Policy's answer,
 asked with security.Authorize after this and before the repository. That is why
 there is no authorize() here.
-`, s.Type)
+`, s.Type, field, input)
 }

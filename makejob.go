@@ -80,7 +80,7 @@ The handler is written, the registration is not.
 
 Then:
 
-    aru work
+    aru queue:work
 `, spec.Const(), spec.Handler(), modulePath+"/app/Jobs")
 	return nil
 }

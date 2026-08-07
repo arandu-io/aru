@@ -137,7 +137,7 @@ func Dispatch{{.Type}}(ctx context.Context, q fwjobs.Queue, g security.Grant, in
 	return q.Push(ctx, g, j)
 }
 
-// {{.Handler}} is what ` + "`" + `aru work` + "`" + ` runs.
+// {{.Handler}} is what ` + "`" + `aru queue:work` + "`" + ` runs.
 //
 // Its collaborators arrive through the constructor -- there is no container, and
 // a handler that built its own service would be a handler no test can pin

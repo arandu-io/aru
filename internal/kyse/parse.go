@@ -89,7 +89,7 @@ func (p *parser) header(file *File) error {
 // nodes reads the body. depth 0 is the top level, where a closing directive has
 // nothing to close and is an error rather than the end of the run — parsing
 // continues so the problems after it are reported too.
-func (p *parser) nodes(goBlocks *[]string, depth int) []Node {
+func (p *parser) nodes(goBlocks *[]Block, depth int) []Node {
 	var out []Node
 	var text strings.Builder
 	textLine := p.i + 1
@@ -138,7 +138,8 @@ func (p *parser) nodes(goBlocks *[]string, depth int) []Node {
 		switch {
 		case name == "go":
 			body := p.until("endgo", lineNo, "@go")
-			*goBlocks = append(*goBlocks, body)
+			// lineNo is the `@go` itself; the body starts on the line below it.
+			*goBlocks = append(*goBlocks, Block{Body: body, Line: lineNo + 1})
 
 		case blockDirectives[name] != "":
 			children := p.nodes(goBlocks, depth+1)

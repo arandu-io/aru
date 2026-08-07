@@ -18,7 +18,24 @@ import (
 // Laravel compiles Blade to PHP at runtime and caches it in
 // storage/framework/views. Same idea, moved to build time -- which is what makes
 // the typo a compile error instead of a warning nobody reads in production.
-func Generate(f *File, name, dataType string) ([]byte, error) {
+//
+// # Why the output path is a parameter
+//
+// The generated Go carries `//line` directives, so the compiler reports a type
+// error inside `{{ }}` at the line of the `.kyse.go` the person wrote. A
+// directive stays in effect until the next one, which means the scaffolding
+// between two interpolations has to be handed back to the generated file by
+// name -- and this function is the only place that knows which lines are the
+// view's and which are its own. Guessing the name from f.Path is not possible:
+// OutputPath flattens `auth/login.kyse.go` into `auth_login.go`, one directory
+// up, and a view whose file name contains a dot makes the mapping ambiguous in
+// the other direction.
+//
+// Both paths are written into the output verbatim -- the Go compiler prints a
+// //line file name exactly as it finds it, without resolving it -- so passing
+// them relative to the project root is what makes the reported position
+// clickable from where `go build` runs.
+func Generate(f *File, name, dataType, output string) ([]byte, error) {
 	// A view that reads a field with no type to read it from cannot produce Go
 	// that compiles, and it has to be said here rather than by the Go compiler
 	// three steps later. See dataReference.
@@ -49,7 +66,42 @@ func Generate(f *File, name, dataType string) ([]byte, error) {
 		return nil, fmt.Errorf("kyse: the Go generated from %s does not parse -- this is a bug in the generator: %w\n%s",
 			f.Path, err, numbered(src))
 	}
-	return formatted, nil
+	return resolveLineMarkers(formatted, f.Path, output), nil
+}
+
+// The placeholders the generator writes where a line directive goes.
+//
+// They are already `//line` comments, and that is what keeps them in column 1:
+// go/printer suspends indentation for a comment starting with `//line ` and
+// indents every other one. A directive one tab in is an ordinary comment the
+// compiler ignores, so a marker that survived formatting indented would be a
+// silent loss of the whole feature.
+//
+// The second one carries a line number that does not exist until gofmt has
+// settled the output, which is why both are resolved afterwards rather than
+// written final.
+const (
+	markerSource = "//line kyse-source:"
+	markerSelf   = "//line kyse-generated:1"
+)
+
+// resolveLineMarkers turns the placeholders into the real directives.
+//
+// It replaces each marker line in place, never inserting or removing one, so
+// the line numbers it hands out stay true for the markers below it.
+func resolveLineMarkers(formatted []byte, source, generated string) []byte {
+	lines := strings.Split(string(formatted), "\n")
+	for i, line := range lines {
+		switch {
+		case strings.HasPrefix(line, markerSource):
+			lines[i] = "//line " + source + ":" + line[len(markerSource):]
+		case line == markerSelf:
+			// A directive names the position of the line after it, and i counts
+			// from zero, so the line after this one is i+2.
+			lines[i] = fmt.Sprintf("//line %s:%d", generated, i+2)
+		}
+	}
+	return []byte(strings.Join(lines, "\n"))
 }
 
 type generator struct {
@@ -60,6 +112,42 @@ type generator struct {
 	// fn is the current writer variable, so nested helpers write to the same place.
 	depth int
 }
+
+// at says that what comes next was written on this line of the view.
+//
+// It is called before every construct that carries Go the person typed, and
+// paired with self. Text nodes and the directives that take only a string --
+// @yield, @include, @csrf -- are left out on purpose: nothing in them can fail
+// to compile, and a directive per line would double the size of the output for
+// no diagnosis.
+//
+// A directive names the position of the NEXT line and only that one, so the
+// line it precedes has to be the line the expression is on, already in the
+// shape gofmt leaves it. Emitting `if err == nil { … }` on one line and letting
+// the formatter break it into three put the expression two lines below the
+// directive, and every interpolation was reported one line late.
+func (g *generator) at(line int) { fmt.Fprintf(&g.out, "%s%d\n", markerSource, line) }
+
+// guarded writes one statement that runs while nothing has failed yet, with the
+// view's line pinned to the statement rather than to the `if` above it.
+//
+// The `if err == nil` around every write is what lets a view be a straight run
+// of statements instead of a chain of early returns: the first failure stops
+// the output and the rest become cheap no-ops.
+func (g *generator) guarded(line int, format string, args ...any) {
+	g.out.WriteString("\tif err == nil {\n")
+	g.at(line)
+	fmt.Fprintf(&g.out, "\t\t"+format+"\n", args...)
+	g.self()
+	g.out.WriteString("\t}\n")
+}
+
+// self hands the position back to the generated file.
+//
+// Without it a single interpolation would claim every line below it, and the
+// compiler would report a mistake in this generator at a line of the view --
+// possibly a line the view does not have.
+func (g *generator) self() { g.out.WriteString(markerSelf + "\n") }
 
 func (g *generator) emit() {
 	fmt.Fprintf(&g.out, "// Code generated by `aru view:build` from %s. DO NOT EDIT.\n",
@@ -74,7 +162,22 @@ func (g *generator) emit() {
 
 	// The @go blocks, verbatim. This is where the data struct is declared.
 	for _, block := range g.file.Go {
-		g.out.WriteString(block)
+		// The blank line after the directive is not cosmetic: it stands for the
+		// `@go` line itself, and it is what keeps the directive out of the doc
+		// comment below.
+		//
+		// A `//line` that lands inside a doc comment does not stay where it was
+		// written -- go/doc treats it as a directive and moves it to the END of
+		// the comment, against the declaration. The block then claimed its own
+		// first line for a type declared twelve lines further down, and every
+		// error inside the block was reported that far off.
+		if block.Line > 1 {
+			g.at(block.Line - 1)
+			g.out.WriteString("\n")
+		}
+		g.out.WriteString(block.Body)
+		g.out.WriteString("\n")
+		g.self()
 		g.out.WriteString("\n")
 	}
 
@@ -145,11 +248,10 @@ func (g *generator) node(n Node) {
 		// template.HTMLEscapeString is the same escape Blade's e() does, and it
 		// is not optional: a view that interpolates without escaping is the XSS
 		// this framework refuses to make easy.
-		fmt.Fprintf(&g.out, "\tif err == nil { _, err = io.WriteString(w, template.HTMLEscapeString(view.Text(%s))) }\n",
-			g.expr(n.Body))
+		g.guarded(n.Line, "_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(%s)))", g.expr(n.Body))
 
 	case Raw:
-		fmt.Fprintf(&g.out, "\tif err == nil { _, err = io.WriteString(w, view.Text(%s)) }\n", g.expr(n.Body))
+		g.guarded(n.Line, "_, err = io.WriteString(w, view.Text(%s))", g.expr(n.Body))
 
 	case Directive:
 		g.directive(n)
@@ -159,7 +261,9 @@ func (g *generator) node(n Node) {
 func (g *generator) directive(n Node) {
 	switch n.Name {
 	case "if":
+		g.at(n.Line)
 		fmt.Fprintf(&g.out, "\tif %s {\n", g.cond(n.Body))
+		g.self()
 		// @else and @elseif arrive as children, because they are inline
 		// directives inside the block the parser opened. Each one closes the
 		// branch in progress and opens the next.
@@ -172,7 +276,9 @@ func (g *generator) directive(n Node) {
 				if c.Name == "else" {
 					g.out.WriteString("\t} else {\n")
 				} else {
+					g.at(c.Line)
 					fmt.Fprintf(&g.out, "\t} else if %s {\n", g.cond(c.Body))
+					g.self()
 				}
 				continue
 			}
@@ -193,7 +299,9 @@ func (g *generator) directive(n Node) {
 		if binding == "" {
 			binding = "item"
 		}
+		g.at(n.Line)
 		fmt.Fprintf(&g.out, "\tfor _, %s := range %s {\n\t\t_ = %s\n", binding, g.expr(subject), binding)
+		g.self()
 		for _, c := range n.Children {
 			g.node(c)
 		}
@@ -205,7 +313,9 @@ func (g *generator) directive(n Node) {
 		// Blade writes @for($i = 0; $i < 10; $i++) and this is the same shape
 		// with Go's syntax, exactly as @if already takes a Go condition rather
 		// than inventing a second expression language (RULE 15).
+		g.at(n.Line)
 		fmt.Fprintf(&g.out, "\tfor %s {\n", g.clauses(n.Body))
+		g.self()
 		for _, c := range n.Children {
 			g.node(c)
 		}
@@ -213,7 +323,9 @@ func (g *generator) directive(n Node) {
 
 	case "while":
 		// Go has one loop keyword, so @while(cond) is `for cond`.
+		g.at(n.Line)
 		fmt.Fprintf(&g.out, "\tfor %s {\n", g.cond(n.Body))
+		g.self()
 		for _, c := range n.Children {
 			g.node(c)
 		}
@@ -233,11 +345,17 @@ func (g *generator) directive(n Node) {
 			binding = "item"
 		}
 		before, after := splitAt(n.Children, "empty")
+		g.at(n.Line)
 		fmt.Fprintf(&g.out, "\tif len(%s) == 0 {\n", g.expr(subject))
+		g.self()
 		for _, c := range after {
 			g.node(c)
 		}
-		fmt.Fprintf(&g.out, "\t} else {\n\t\tfor _, %s := range %s {\n\t\t\t_ = %s\n", binding, g.expr(subject), binding)
+		g.out.WriteString("\t} else {\n")
+		g.at(n.Line)
+		fmt.Fprintf(&g.out, "\t\tfor _, %s := range %s {\n", binding, g.expr(subject))
+		g.self()
+		fmt.Fprintf(&g.out, "\t\t\t_ = %s\n", binding)
 		for _, c := range before {
 			g.node(c)
 		}
@@ -246,7 +364,9 @@ func (g *generator) directive(n Node) {
 	case "continue", "break":
 		// Only meaningful inside a loop, and the Go compiler says so at the line
 		// the view wrote, which is better than this generator guessing.
+		g.at(n.Line)
 		fmt.Fprintf(&g.out, "\t%s\n", n.Name)
+		g.self()
 
 	case "empty":
 		// Reached only outside @forelse, where the branch above never sees it.

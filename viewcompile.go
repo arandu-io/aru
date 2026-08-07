@@ -87,12 +87,22 @@ func compileViews(root string, stdout io.Writer) error {
 			inherited[name] = published
 		}
 
-		out, err := kyse.Generate(file, name, dataType)
+		// Both paths are relative to the project root, because that is where
+		// `go build` runs and the compiler prints a //line file name exactly as
+		// it reads it. Handing it an absolute path, or one relative to
+		// resources/views, would report a position nobody can click.
+		target := kyse.OutputPath(dir, source)
+		targetRel, err := filepath.Rel(root, target)
+		if err != nil {
+			return err
+		}
+
+		out, err := kyse.Generate(file, name, dataType, targetRel)
 		if err != nil {
 			problems = append(problems, err.Error())
 			continue
 		}
-		if err := os.WriteFile(kyse.OutputPath(dir, source), out, 0o644); err != nil {
+		if err := os.WriteFile(target, out, 0o644); err != nil {
 			return err
 		}
 	}

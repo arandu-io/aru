@@ -59,7 +59,7 @@ func TestTheAuthViewsCompile(t *testing.T) {
 		if strings.Contains(filepath.ToSlash(f.Path), "/layouts/") {
 			want = layoutType
 		}
-		out, err := kyse.Generate(file, name, want)
+		out, err := kyse.Generate(file, name, want, "out.go")
 		if err != nil {
 			t.Errorf("%s: %v", f.Path, err)
 			continue
@@ -221,7 +221,7 @@ func TestTheLayoutRendersEveryPageAndNotOnlyItsOwn(t *testing.T) {
 		t.Errorf("the pages of the kit inherit %q, want %s", got, dataType)
 	}
 
-	out, err := kyse.Generate(file, "layouts.app", kyse.RenderType(file))
+	out, err := kyse.Generate(file, "layouts.app", kyse.RenderType(file), "out.go")
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}

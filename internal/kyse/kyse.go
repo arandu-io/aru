@@ -63,6 +63,20 @@ const (
 	GoBlock
 )
 
+// Block is one `@go … @endgo` body, with the line its first line came from.
+//
+// The line is what lets a type error inside the block name the view instead of
+// the generated file. The body is copied verbatim, so the Nth line of Body is
+// the (Line+N-1)th line of the source, and one directive at the top is enough
+// to carry the whole block.
+type Block struct {
+	// Body is the Go between the two directives, unchanged.
+	Body string
+	// Line is the 1-indexed source line the body starts on -- the line after
+	// `@go`, not the `@go` itself.
+	Line int
+}
+
 // Node is one piece of a parsed view, with the position it came from.
 //
 // The position is the reason this exists as a tree rather than a string
@@ -87,7 +101,7 @@ type File struct {
 	// Package is the clause the Go compiler stops at.
 	Package string
 	// Go is the content of the @go blocks, in order, copied verbatim.
-	Go []string
+	Go []Block
 	// Extends is the layout this view extends, or empty.
 	Extends string
 	// Sections are the named blocks, in declaration order.
@@ -289,7 +303,7 @@ func PageType(f *File) string { return firstType(f, " struct") }
 // as one that declares it above.
 func firstType(f *File, kind string) string {
 	for _, block := range f.Go {
-		for _, line := range strings.Split(block, "\n") {
+		for _, line := range strings.Split(block.Body, "\n") {
 			line = strings.TrimSpace(line)
 			if !strings.HasPrefix(line, "type ") || !strings.Contains(line, kind) {
 				continue

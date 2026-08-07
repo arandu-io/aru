@@ -1,6 +1,7 @@
 package kyse_test
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -68,8 +69,8 @@ func TestParseReadsTheBladeShape(t *testing.T) {
 	if len(f.Sections) != 1 || f.Sections[0].Name != "content" {
 		t.Fatalf("sections = %+v", f.Sections)
 	}
-	if len(f.Go) != 1 || !strings.Contains(f.Go[0], "type HomeData struct") {
-		t.Errorf("o bloco @go nao foi capturado: %+v", f.Go)
+	if len(f.Go) != 1 || !strings.Contains(f.Go[0].Body, "type HomeData struct") {
+		t.Errorf("the @go block was not captured: %+v", f.Go)
 	}
 }
 
@@ -81,7 +82,7 @@ func TestTheGeneratedGoParses(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	out, err := kyse.Generate(f, "home", "HomeData")
+	out, err := kyse.Generate(f, "home", "HomeData", "out.go")
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -115,7 +116,7 @@ func TestTheLayoutYields(t *testing.T) {
 		t.Errorf("um layout nao estende nada, e este estende %q", f.Extends)
 	}
 
-	out, err := kyse.Generate(f, "layouts.app", "LayoutData")
+	out, err := kyse.Generate(f, "layouts.app", "LayoutData", "out.go")
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -273,7 +274,7 @@ func TestElseTakesOnlyOneBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	out, err := kyse.Generate(f, "branch", "D")
+	out, err := kyse.Generate(f, "branch", "D", "out.go")
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -313,7 +314,7 @@ func TestAViewThatReadsDataWithoutDeclaringItIsRefused(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	out, err := kyse.Generate(f, "home", "")
+	out, err := kyse.Generate(f, "home", "", "out.go")
 	if err == nil {
 		t.Fatalf("the generator reported success over Go that does not compile:\n%s", out)
 	}
@@ -343,7 +344,7 @@ func TestTheSectionsAreCheckedToo(t *testing.T) {
 	}
 	// The layout it extends declared no type either, so there is nothing to
 	// inherit -- which is exactly the state compileViews passes down.
-	if _, err := kyse.Generate(f, "page", ""); err == nil {
+	if _, err := kyse.Generate(f, "page", "", "out.go"); err == nil {
 		t.Error("a section reading .Title with no data type was accepted")
 	}
 }
@@ -358,7 +359,7 @@ func TestAViewThatReadsNothingNeedsNoType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if _, err := kyse.Generate(f, "layouts.bare", ""); err != nil {
+	if _, err := kyse.Generate(f, "layouts.bare", "", "out.go"); err != nil {
 		t.Errorf("a layout that reads no data was refused: %v", err)
 	}
 }
@@ -372,7 +373,7 @@ func TestABoundVariableIsNotThePageData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if _, err := kyse.Generate(f, "list", "D"); err != nil {
+	if _, err := kyse.Generate(f, "list", "D", "out.go"); err != nil {
 		t.Errorf("Generate: %v", err)
 	}
 }
@@ -386,7 +387,7 @@ func TestElseOutsideIfDoesNotCompile(t *testing.T) {
 	if err != nil {
 		return // rejecting it at parse time is just as good
 	}
-	out, err := kyse.Generate(f, "stray", "D")
+	out, err := kyse.Generate(f, "stray", "D", "out.go")
 	if err != nil {
 		return
 	}
@@ -450,7 +451,7 @@ func TestEveryDirectiveEmitsSomething(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
 			}
-			out, err := kyse.Generate(f, name, "D")
+			out, err := kyse.Generate(f, name, "D", "out.go")
 			if err != nil {
 				t.Fatalf("Generate: %v", err)
 			}
@@ -481,7 +482,7 @@ func TestForelseTakesOneBranchAndCommentsDoNotReachThePage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	out, err := kyse.Generate(f, "list", "D")
+	out, err := kyse.Generate(f, "list", "D", "out.go")
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -502,5 +503,119 @@ func TestForelseTakesOneBranchAndCommentsDoNotReachThePage(t *testing.T) {
 	}
 	if !strings.Contains(got, "len(d.Items) == 0") {
 		t.Errorf("the empty state is not decided by the length of the list:\n%s", got)
+	}
+}
+
+// mappedLine answers where the Go compiler will say a line of the generated
+// file came from, by applying the rule the compiler applies: a `//line f:n`
+// directive names the position of the line right below it, and each line after
+// that counts up from there until the next directive.
+//
+// It is deliberately a reimplementation and not a call into the generator. A
+// test that asked the generator where it put things would agree with itself.
+func mappedLine(generated string, contains string) (file string, line int, ok bool) {
+	for _, out := range strings.Split(generated, "\n") {
+		switch {
+		case strings.HasPrefix(out, "//line "):
+			ref := strings.TrimPrefix(out, "//line ")
+			cut := strings.LastIndex(ref, ":")
+			if cut < 0 {
+				continue
+			}
+			file = ref[:cut]
+			n, err := strconv.Atoi(ref[cut+1:])
+			if err != nil {
+				continue
+			}
+			// The directive names the next line, and the increment at the
+			// bottom of this iteration is what gets us there.
+			line = n - 1
+		case strings.Contains(out, contains):
+			return file, line, true
+		}
+		line++
+	}
+	return "", 0, false
+}
+
+// TestTheCompilerIsToldWhichLineOfTheViewEachExpressionCameFrom is the exit
+// criterion of ADR 0020, which says it in one sentence: "se o erro apontar para
+// o `.go` gerado, o motor não está pronto".
+//
+// A type error inside {{ }} is the most common mistake in a view and the one
+// the whole compiler exists to catch. Reporting it against generated Go -- a
+// file whose header says DO NOT EDIT -- hands the person a position they cannot
+// act on, which is the failure this project measures itself by.
+//
+// Laravel needs a heuristic here: its BladeMapper recompiles the template with
+// markers and gives up after twenty lines. We emit the Go, so we know.
+func TestTheCompilerIsToldWhichLineOfTheViewEachExpressionCameFrom(t *testing.T) {
+	// Written with the line numbers visible, because they are the assertion.
+	src := strings.Join([]string{
+		"//go:build kyse",        // 1
+		"",                       // 2
+		"package views",          // 3
+		"",                       // 4
+		"@go",                    // 5
+		"// D is the data.",      // 6 -- a doc comment, which is where this broke
+		"type D struct {",        // 7
+		"\tName  string",         // 8
+		"\tItems []string",       // 9
+		"}",                      // 10
+		"@endgo",                 // 11
+		"",                       // 12
+		"<h1>{{ .Name }}</h1>",   // 13
+		"@if(.Name != \"\")",     // 14
+		"<p>{!! .Name !!}</p>",   // 15
+		"@endif",                 // 16
+		"@foreach(.Items as it)", // 17
+		"<li>x</li>",             // 18
+		"@endforeach",            // 19
+	}, "\n") + "\n"
+
+	f, err := kyse.Parse("resources/views/home.kyse.go", src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	out, err := kyse.Generate(f, "home", "D", "resources/views/home.go")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	generated := string(out)
+
+	for _, want := range []struct {
+		what string
+		mark string
+		line int
+	}{
+		// The declaration, which is what a wrong field type reports against.
+		// It sits under a doc comment on purpose: go/doc moves a directive to
+		// the END of the comment it lands in, so a directive written above the
+		// comment came out against the declaration and claimed the comment's
+		// first line for it.
+		{"the struct the @go block declares", "type D struct", 7},
+		{"the escaped interpolation", "template.HTMLEscapeString", 13},
+		{"the condition of @if", "if d.Name !=", 14},
+		// Matched without the escape around it: the escaped form on line 13
+		// ends in `view.Text(d.Name)))` and would be found first.
+		{"the raw interpolation", "io.WriteString(w, view.Text(", 15},
+		{"the subject of @foreach", "range d.Items", 17},
+	} {
+		file, line, ok := mappedLine(generated, want.mark)
+		if !ok {
+			t.Errorf("%s: %q is not in the generated file:\n%s", want.what, want.mark, generated)
+			continue
+		}
+		if file != "resources/views/home.kyse.go" || line != want.line {
+			t.Errorf("%s: the compiler would say %s:%d, want resources/views/home.kyse.go:%d",
+				want.what, file, line, want.line)
+		}
+	}
+
+	// And the other half: what this generator wrote itself has to be handed
+	// back, or one interpolation claims every line below it -- including lines
+	// the view does not have.
+	if file, _, ok := mappedLine(generated, "return err"); !ok || file != "resources/views/home.go" {
+		t.Errorf("the scaffolding still belongs to the view: %s", file)
 	}
 }

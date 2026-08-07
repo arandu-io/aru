@@ -5,18 +5,17 @@ package views
 @go
 // PurchaseOrdersShowData is what PurchaseOrderController.Show hands this page.
 type PurchaseOrdersShowData struct {
-	// Title is the browser tab and the heading.
-	Title string
-	// CSRF is the token the delete button sends as a header. An hx-delete
-	// carries no form body, so the hidden field a form uses would never arrive
-	// and the request would be refused with 419.
-	CSRF string
+	// Page is the state the layout draws. Its Token is also what the delete
+	// button sends as a header: an hx-delete carries no form body, so the
+	// hidden field a form uses would never arrive and the request would be
+	// refused with 419.
+	Page
 	// PurchaseOrder is the record.
 	PurchaseOrder PurchaseOrderRow
 }
 
-// PageTitle satisfies the layout's contract.
-func (d PurchaseOrdersShowData) PageTitle() string { return d.Title }
+// Compile-time proof that this page fits the layout it extends.
+var _ Layout = PurchaseOrdersShowData{}
 
 // arandu:begin custom
 // Anything else this page needs in Go goes here, and survives regeneration.
@@ -25,19 +24,16 @@ func (d PurchaseOrdersShowData) PageTitle() string { return d.Title }
 
 @extends('layouts.app')
 
-@section('header')
-	<span class="text-sm font-semibold tracking-tight">{{ .Title }}</span>
-	<nav class="text-sm text-slate-500 dark:text-slate-400">
-		<a class="hover:text-slate-900 dark:hover:text-slate-100" href="/purchase-orders">Purchase orders</a>
-	</nav>
-@endsection
-
 @section('content')
-	<div class="flex items-center justify-between gap-4">
+	<nav class="text-sm text-slate-500 dark:text-slate-400">
+		<a class="underline underline-offset-2 hover:text-slate-900 dark:hover:text-slate-100" href="/purchase-orders">Purchase orders</a>
+	</nav>
+
+	<div class="mt-2 flex items-center justify-between gap-4">
 		<h1 class="text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
 		<div class="flex items-center gap-3">
 			<a class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" href="/purchase-orders/{{ .PurchaseOrder.ID }}/edit">Edit</a>
-			<button class="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950" type="button" hx-delete="/purchase-orders/{{ .PurchaseOrder.ID }}" hx-headers='{"X-CSRF-Token": "{{ .CSRF }}"}' hx-confirm="Delete this purchase order?">Delete</button>
+			<button class="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950" type="button" hx-delete="/purchase-orders/{{ .PurchaseOrder.ID }}" hx-headers='{"X-CSRF-Token": "{{ .Token }}"}' hx-confirm="Delete this purchase order?">Delete</button>
 		</div>
 	</div>
 

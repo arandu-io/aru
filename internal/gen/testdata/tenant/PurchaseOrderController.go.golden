@@ -90,6 +90,15 @@ func (c *PurchaseOrderController) Index(ctx *httpx.Context) error {
 		rows = append(rows, c.row(p))
 	}
 
+	// The listing writes nothing, but the layout around it does: the sign-out
+	// form and every hx- request read the token off the page data. A listing
+	// rendered without one answers 200 and then refuses the next write with
+	// 419, which reads like a broken session.
+	token, err := c.token(ctx)
+	if err != nil {
+		return err
+	}
+
 	// Keyset pagination picks up after the last id of the page. A partial page
 	// is the last page, and offering a cursor there would be a link to nothing.
 	next := ""
@@ -98,7 +107,7 @@ func (c *PurchaseOrderController) Index(ctx *httpx.Context) error {
 	}
 
 	return ctx.View("purchase-orders.index", views.PurchaseOrdersIndexData{
-		Title:          "Purchase orders",
+		Page:           views.Page{Title: "Purchase orders", Token: token},
 		PurchaseOrders: rows,
 		NextCursor:     next,
 	})
@@ -125,8 +134,7 @@ func (c *PurchaseOrderController) Show(ctx *httpx.Context) error {
 	}
 
 	return ctx.View("purchase-orders.show", views.PurchaseOrdersShowData{
-		Title:         "Purchase order",
-		CSRF:          token,
+		Page:          views.Page{Title: "Purchase order", Token: token},
 		PurchaseOrder: c.row(found),
 	})
 }
@@ -142,8 +150,7 @@ func (c *PurchaseOrderController) Create(ctx *httpx.Context) error {
 	}
 
 	return ctx.View("purchase-orders.create", views.PurchaseOrdersCreateData{
-		Title:  "New purchase order",
-		CSRF:   token,
+		Page:   views.Page{Title: "New purchase order", Token: token},
 		Errors: map[string][]string{},
 	})
 }
@@ -188,8 +195,7 @@ func (c *PurchaseOrderController) Edit(ctx *httpx.Context) error {
 	}
 
 	return ctx.View("purchase-orders.edit", views.PurchaseOrdersEditData{
-		Title:  "Edit purchase order",
-		CSRF:   token,
+		Page:   views.Page{Title: "Edit purchase order", Token: token},
 		Form:   c.form(found),
 		Errors: map[string][]string{},
 	})
@@ -330,8 +336,7 @@ func (c *PurchaseOrderController) rejectedCreate(ctx *httpx.Context, form views.
 		return err
 	}
 	return c.Invalid(ctx, "purchase-orders.create", views.PurchaseOrdersCreateData{
-		Title:  "New purchase order",
-		CSRF:   token,
+		Page:   views.Page{Title: "New purchase order", Token: token},
 		Form:   form,
 		Errors: errs,
 	})
@@ -344,8 +349,7 @@ func (c *PurchaseOrderController) rejectedEdit(ctx *httpx.Context, form views.Pu
 		return err
 	}
 	return c.Invalid(ctx, "purchase-orders.edit", views.PurchaseOrdersEditData{
-		Title:  "Edit purchase order",
-		CSRF:   token,
+		Page:   views.Page{Title: "Edit purchase order", Token: token},
 		Form:   form,
 		Errors: errs,
 	})

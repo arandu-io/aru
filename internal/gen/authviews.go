@@ -21,10 +21,15 @@ import (
 // # One struct, declared once
 //
 // Only the layout carries an `@go` block. A page that extends a layout and
-// declares no type of its own renders with the layout's, which is the same
-// contract Blade has: the page hands the layout what the layout asks for. So
-// `AuthPage` holds everything the nine screens read, and a page that uses three
-// of its fields leaves the rest at the zero value.
+// declares no type of its own renders with the struct the layout declares,
+// which is the same contract Blade has: the page hands the layout what the
+// layout asks for. So `AuthPage` holds everything the nine screens read, and a
+// page that uses three of its fields leaves the rest at the zero value.
+//
+// The layout itself renders with `Layout`, the interface the skeleton declares
+// -- not with `AuthPage`. That distinction is the whole reason this kit can be
+// installed in a project that already has pages: a layout typed by one page's
+// struct renders that page and answers 500 for every other one.
 //
 // # What is deliberately absent
 //
@@ -43,6 +48,7 @@ func AuthViews() []File {
 	dir := filepath.Join("resources", "views")
 	return []File{
 		{Path: filepath.Join(dir, "layouts", "app.kyse.go"), Content: []byte(authLayoutViewTemplate)},
+		{Path: filepath.Join(dir, "page.go"), Content: []byte(authPageTemplate)},
 		{Path: filepath.Join(dir, "home.kyse.go"), Content: []byte(authHomeViewTemplate)},
 		{Path: filepath.Join(dir, "welcome.kyse.go"), Content: []byte(authWelcomeViewTemplate)},
 		{Path: filepath.Join(dir, "auth", "login.kyse.go"), Content: []byte(authLoginViewTemplate)},
@@ -56,60 +62,93 @@ func AuthViews() []File {
 
 // authLayoutViewTemplate is `layouts/app.blade.php`.
 //
-// It declares AuthPage, which every other screen renders from, and it is the
-// only one of the nine with an `@go` block.
+// It declares two types. `Layout` is the interface it renders with, repeated
+// verbatim from the skeleton because this file replaces the skeleton's -- the
+// pages already in the project are not touched by make:auth, so the contract
+// they were written against has to survive the replacement. `AuthPage` is what
+// the eight screens below render from, and it fits by embedding views.Page,
+// exactly as any other page in the project does.
 //
-// Two lines here are load-bearing and easy to delete by accident. The first is
-// hx-headers on <body>: without it every hx-post fails the CSRF check, and the
-// failure reads like a broken session rather than a missing attribute. The
+// Three things here are load-bearing and easy to delete by accident. The first
+// is hx-headers on <body>: without it every hx-post fails the CSRF check, and
+// the failure reads like a broken session rather than a missing attribute. The
 // second is the asset trio -- the stylesheet and the two scripts come from
 // view.URL, which is content-addressed and same-origin, because the CSP is
-// script-src 'self' and a CDN would mean loosening it.
+// script-src 'self' and a CDN would mean loosening it. The third is the icon:
+// this file replaces the skeleton's layout outright, so an element only the
+// skeleton had is an element the project loses without a word -- and a favicon
+// silently back to the browser default is not something anybody notices, since
+// /favicon.ico keeps answering 200 whether the layout links it or not.
+//
+// The head here is checked against the skeleton's, element by element, in
+// TestTheKitsLayoutKeepsWhatTheSkeletonsLayoutCarries.
 const authLayoutViewTemplate = `//go:build kyse
 
 package views
 
 @go
+// Layout is what every page hands the application layout.
+//
+// An interface rather than a struct, and that is the whole design: a page keeps
+// its own typed data -- one struct per page, so a typo in a field name is a
+// compile error -- and still fits the frame, because it embeds Page and Page
+// implements this. Pages carrying different data therefore share one layout,
+// which is what RULE 9 asks for: one layout, not one per shape of data.
+//
+// This is the skeleton's declaration, repeated because make:auth replaces the
+// file it lived in. It has to stay identical: views.Page asserts against it, so
+// a method dropped here stops the build in resources/views/page.go, in one
+// place, rather than in every page of the project at once.
+type Layout interface {
+	// PageTitle is what the browser tab shows.
+	PageTitle() string
+	// BrandName is the application name in the navigation bar.
+	BrandName() string
+	// CSRFToken is the token every write of this session carries.
+	CSRFToken() string
+	// SignedIn decides which half of the navigation bar is drawn.
+	SignedIn() bool
+	// SignedInName is who that half greets.
+	SignedInName() string
+	// HomeLink is where the brand points.
+	HomeLink() string
+	// LoginLink is the sign-in screen.
+	LoginLink() string
+	// LogoutLink is what the sign-out form posts to.
+	LogoutLink() string
+	// RegisterLink is the sign-up screen, or empty when registration is not
+	// open -- and the link is not drawn then.
+	RegisterLink() string
+}
+
 // AuthPage is what every screen of the starter kit renders from.
 //
-// One struct for the nine views rather than one per page: they share a layout,
-// and in kyse a page that extends a layout renders with the layout's type. A
-// field a given page does not use stays at its zero value and is never read --
-// which is cheaper than nine structs that repeat the same navigation state.
+// One struct for the eight screens rather than one per page: they share a
+// layout, and a page that extends a layout and declares nothing renders with
+// the struct the layout declares. A field a given page does not use stays at
+// its zero value and is never read -- which is cheaper than eight structs that
+// repeat the same form state.
+//
+// The chrome is not repeated here at all: the embedded Page carries the title,
+// the brand, the token and the navigation, and is what makes this struct fit
+// the layout. What is left below is what a sign-in screen has and a listing
+// does not.
 //
 // Nothing here is a helper the view reaches for on its own. There is no
 // route(), no config() and no auth(): a URL, the application name and the
 // signed-in user are fields the handler filled in, so a name that drifts is a
 // compile error instead of a blank link.
 type AuthPage struct {
-	// AppName is the brand in the navigation bar.
-	AppName string
-	// Title is the document title, already including the application name.
-	Title string
+	Page
 
-	// Token is the CSRF token issued for this session. It reaches the markup
-	// twice: as the hidden field @csrf writes, and as the hx-headers attribute
-	// on <body> that makes every HTMX request carry it.
-	Token string
-
-	// Authenticated decides which half of the navigation bar is drawn.
-	Authenticated bool
-	// UserName is the signed-in person's display name.
-	UserName string
-
-	// HasRegister and HasPasswordReset are Laravel's Route::has checks, moved to
-	// the data: an application that did not register those routes hides the
-	// links rather than linking to a 404.
-	HasRegister      bool
+	// HasPasswordReset is Laravel's Route::has check, moved to the data: an
+	// application that did not register that route hides the link rather than
+	// linking to a 404.
 	HasPasswordReset bool
 
-	// The addresses the screens post to and link to. They come from the router,
-	// through the handler.
-	HomeURL               string
+	// The addresses these screens post to and link to, beyond the navigation
+	// Page already carries. They come from the router, through the handler.
 	DashboardURL          string
-	LoginURL              string
-	LogoutURL             string
-	RegisterURL           string
 	PasswordRequestURL    string
 	PasswordEmailURL      string
 	PasswordUpdateURL     string
@@ -139,11 +178,8 @@ type AuthPage struct {
 	PasswordConfirmationError string
 }
 
-// CSRFToken is what @csrf reads to write the hidden field.
-//
-// It is a method rather than the field itself because the field is also
-// interpolated into hx-headers, and one name cannot be both.
-func (p AuthPage) CSRFToken() string { return p.Token }
+// Compile-time proof that these screens fit the layout above.
+var _ Layout = AuthPage{}
 
 // RememberAttribute is the checked attribute of the remember-me box, or nothing.
 //
@@ -163,26 +199,27 @@ func (p AuthPage) RememberAttribute() string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ .Title }}</title>
+<title>{{ .PageTitle() }}</title>
+<link rel="icon" href="/favicon.ico">
 <link rel="stylesheet" href="{{ view.URL("app.css") }}">
 <script src="{{ view.URL("htmx.min.js") }}" defer></script>
 <script src="{{ view.URL("alpine.min.js") }}" defer></script>
 </head>
-<body hx-headers='{"X-CSRF-Token": "{{ .Token }}"}' class="h-full bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
+<body hx-headers='{"X-CSRF-Token": "{{ .CSRFToken() }}"}' class="h-full bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
 <div class="flex min-h-full flex-col">
 <header class="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
 <nav class="mx-auto flex h-16 max-w-5xl items-center justify-between gap-4 px-6">
-<a href="{{ .HomeURL }}" class="text-sm font-semibold tracking-tight text-slate-900 hover:text-slate-600 dark:text-slate-100 dark:hover:text-slate-300">{{ .AppName }}</a>
+<a href="{{ .HomeLink() }}" class="text-sm font-semibold tracking-tight text-slate-900 hover:text-slate-600 dark:text-slate-100 dark:hover:text-slate-300">{{ .BrandName() }}</a>
 <div class="flex items-center gap-1 text-sm">
-@if(!d.Authenticated)
-<a href="{{ .LoginURL }}" class="rounded-md px-3 py-2 font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100">Login</a>
-@if(.HasRegister)
-<a href="{{ .RegisterURL }}" class="rounded-md px-3 py-2 font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100">Register</a>
+@if(!d.SignedIn())
+<a href="{{ .LoginLink() }}" class="rounded-md px-3 py-2 font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100">Login</a>
+@if(d.RegisterLink() != "")
+<a href="{{ .RegisterLink() }}" class="rounded-md px-3 py-2 font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100">Register</a>
 @endif
 @endif
-@if(.Authenticated)
-<span class="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">{{ .UserName }}</span>
-<form method="post" action="{{ .LogoutURL }}">
+@if(d.SignedIn())
+<span class="px-3 py-2 font-medium text-slate-600 dark:text-slate-300">{{ .SignedInName() }}</span>
+<form method="post" action="{{ .LogoutLink() }}">
 @csrf
 <button type="submit" class="rounded-md px-3 py-2 font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100">Logout</button>
 </form>
@@ -243,7 +280,7 @@ package views
 @endif
 @if(!d.Authenticated)
 <a href="{{ .LoginURL }}" class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900/20 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">Login</a>
-@if(.HasRegister)
+@if(.RegisterURL != "")
 <a href="{{ .RegisterURL }}" class="inline-flex items-center justify-center rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Register</a>
 @endif
 @endif
@@ -490,4 +527,96 @@ package views
 </section>
 </div>
 @endsection
+`
+
+// authPageTemplate is resources/views/page.go, the struct every page embeds.
+//
+// The kit publishes it rather than relying on the skeleton having it, and that
+// is not redundancy: `aru make:auth` runs on projects generated by any version
+// of `aru new`, and one that predates the layout contract has no Page at all.
+// A starter kit whose output compiles only against a recent skeleton is a
+// starter kit that fails for the person least equipped to diagnose it.
+//
+// It is plain Go, not kyse. Nothing here renders -- it is the data a page
+// carries, and the methods the layout reads it through.
+const authPageTemplate = `package views
+
+// Page is the part of every page the layout draws.
+//
+// A page struct embeds it and satisfies Layout for free:
+//
+//	type InvoicesIndexData struct {
+//	    Page                 // the chrome: brand, session, CSRF, navigation
+//	    Invoices []Invoice   // what only this page has
+//	}
+//
+// One struct per page still exists, and that is what makes a typo a compile
+// error. What it stops repeating is the state the layout needs.
+//
+// The fields are exported and the methods are what the layout reads. The
+// indirection buys the thing that was missing: a layout typed by an interface
+// renders any page that fits it, and a layout typed by one page's struct
+// renders that page and answers 500 for every other -- with a green build,
+// because the disagreement is a type assertion at run time.
+type Page struct {
+	// Title is the document title, already including the application name.
+	Title string
+	// AppName is the brand in the navigation bar.
+	AppName string
+
+	// Token is the CSRF token issued for this session. It reaches the markup
+	// twice: as the hidden field @csrf writes, and as the hx-headers attribute
+	// on <body> that makes every HTMX request carry it.
+	Token string
+
+	// Authenticated decides which half of the navigation is drawn.
+	Authenticated bool
+	// UserName is the signed-in person's display name.
+	UserName string
+	// HasRegister draws the sign-up link only where something answers it.
+	HasRegister bool
+
+	// The navigation targets. Fields rather than a route() helper the view
+	// reaches for on its own: a name that drifts is then a compile error
+	// instead of a blank link.
+	HomeURL     string
+	LoginURL    string
+	LogoutURL   string
+	RegisterURL string
+}
+
+// Compile-time proof that this satisfies what the layout renders with. If the
+// layout asks for something new, the build stops here, in one file, naming the
+// method -- instead of at the type assertion of whichever page rendered first.
+var _ Layout = Page{}
+
+// PageTitle is the document title.
+func (p Page) PageTitle() string { return p.Title }
+
+// BrandName is the application name in the navigation bar.
+func (p Page) BrandName() string { return p.AppName }
+
+// CSRFToken is the token for this session.
+func (p Page) CSRFToken() string { return p.Token }
+
+// SignedIn reports whether there is a session.
+func (p Page) SignedIn() bool { return p.Authenticated }
+
+// SignedInName is the display name of the signed-in person.
+func (p Page) SignedInName() string { return p.UserName }
+
+// ShowRegister reports whether the sign-up link is drawn.
+func (p Page) ShowRegister() bool { return p.HasRegister }
+
+// HomeLink is the landing page.
+func (p Page) HomeLink() string { return p.HomeURL }
+
+// LoginLink is the sign-in screen.
+func (p Page) LoginLink() string { return p.LoginURL }
+
+// LogoutLink is where the sign-out form posts.
+func (p Page) LogoutLink() string { return p.LogoutURL }
+
+// RegisterLink is the sign-up screen.
+func (p Page) RegisterLink() string { return p.RegisterURL }
 `

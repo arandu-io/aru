@@ -265,3 +265,94 @@ func TestTheReceiverStaysShortWhenItCan(t *testing.T) {
 		}
 	}
 }
+
+// TestEveryGeneratedViewFitsTheLayout is the other half of the regression the
+// starter kit exposed.
+//
+// A module's pages are written before `aru make:auth` runs and are not touched
+// when it does. They fit the layout by embedding views.Page, which is what
+// implements the layout's contract -- so the layout can be replaced and they
+// keep rendering. The `var _ Layout` line is where a page that stopped fitting
+// stops the build, in the project, naming the page.
+func TestEveryGeneratedViewFitsTheLayout(t *testing.T) {
+	files, err := gen.Generate(spec(true))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	seen := 0
+	for _, f := range files {
+		if !strings.HasSuffix(f.Path, ".kyse.go") {
+			continue
+		}
+		seen++
+		body := string(f.Content)
+
+		i := strings.Index(body, " struct {")
+		if i < 0 {
+			t.Errorf("%s declares no page data", f.Path)
+			continue
+		}
+		decl := body[i:]
+		if end := strings.Index(decl, "\n}"); end > 0 {
+			decl = decl[:end]
+		}
+		if !strings.Contains(decl, "\n\tPage\n") {
+			t.Errorf("%s does not embed Page, so it does not fit the layout make:auth installs:\n%s", f.Path, decl)
+		}
+		if !strings.Contains(body, "var _ Layout = ") {
+			t.Errorf("%s has no compile-time proof that it fits the layout", f.Path)
+		}
+
+		// The chrome is declared once, in views.Page. A page that declared its
+		// own Title would shadow the promoted one and the layout would read the
+		// empty one -- a blank tab on a page that answered 200.
+		for _, field := range []string{"Title string", "CSRF string"} {
+			if strings.Contains(decl, "\n\t"+field) {
+				t.Errorf("%s declares %q, which views.Page already carries", f.Path, field)
+			}
+		}
+	}
+	if seen != 4 {
+		t.Errorf("checked %d views, want the four screens", seen)
+	}
+}
+
+// TestGeneratedViewsUseOnlyTheSectionEveryLayoutYields.
+//
+// A page fills sections and a layout yields them; a section nobody yields is
+// dropped in silence. `aru make:auth` replaces the layout with one that yields
+// content and nothing else, so a generated page that put its back link in
+// @section('header') lost the link the moment the command ran -- no error, no
+// warning, just a screen you can no longer navigate out of.
+func TestGeneratedViewsUseOnlyTheSectionEveryLayoutYields(t *testing.T) {
+	files, err := gen.Generate(spec(true))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	// What the layout `aru make:auth` publishes yields, which is the smaller of
+	// the two layouts a project can have.
+	yielded := map[string]bool{"content": true}
+
+	for _, f := range files {
+		if !strings.HasSuffix(f.Path, ".kyse.go") {
+			continue
+		}
+		for rest := string(f.Content); ; {
+			i := strings.Index(rest, "@section('")
+			if i < 0 {
+				break
+			}
+			rest = rest[i+len("@section('"):]
+			end := strings.Index(rest, "'")
+			if end < 0 {
+				break
+			}
+			if name := rest[:end]; !yielded[name] {
+				t.Errorf("%s fills @section('%s'), which the layout make:auth installs does not yield: it would disappear without a word", f.Path, name)
+			}
+			rest = rest[end:]
+		}
+	}
+}

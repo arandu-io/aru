@@ -5,8 +5,10 @@ package views
 @go
 // PurchaseOrdersIndexData is what PurchaseOrderController.Index hands this page.
 type PurchaseOrdersIndexData struct {
-	// Title is the browser tab and the heading.
-	Title string
+	// Page is the state the layout draws: the title, the brand, the CSRF token
+	// and the navigation. Embedded rather than repeated, and what makes this
+	// struct fit the layout.
+	Page
 	// PurchaseOrders is the page of records.
 	PurchaseOrders []PurchaseOrderRow
 	// NextCursor is the keyset cursor of the following page. It is empty on the
@@ -14,8 +16,8 @@ type PurchaseOrdersIndexData struct {
 	NextCursor string
 }
 
-// PageTitle satisfies the layout's contract.
-func (d PurchaseOrdersIndexData) PageTitle() string { return d.Title }
+// Compile-time proof that this page fits the layout it extends.
+var _ Layout = PurchaseOrdersIndexData{}
 
 // PurchaseOrderRow is one record, formatted for display by the controller.
 type PurchaseOrderRow struct {
@@ -44,15 +46,11 @@ type PurchaseOrderRow struct {
 
 @extends('layouts.app')
 
-@section('header')
-	<span class="text-sm font-semibold tracking-tight">{{ .Title }}</span>
-	<nav class="text-sm text-slate-500 dark:text-slate-400">
-		<a class="hover:text-slate-900 dark:hover:text-slate-100" href="/purchase-orders/create">New purchase order</a>
-	</nav>
-@endsection
-
 @section('content')
-	<h1 class="text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
+	<div class="flex items-center justify-between gap-4">
+		<h1 class="text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
+		<a class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" href="/purchase-orders/create">New purchase order</a>
+	</div>
 
 	@if(len(d.PurchaseOrders) == 0)
 	<p class="mt-8 text-sm text-slate-500 dark:text-slate-400">

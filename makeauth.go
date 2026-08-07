@@ -59,6 +59,10 @@ func makeAuth(args []string, stdout, stderr io.Writer) error {
 		filepath.Join("resources", "views", "layouts", "app.kyse.go"): true,
 		filepath.Join("resources", "views", "home.kyse.go"):           true,
 		filepath.Join("resources", "views", "welcome.kyse.go"):        true,
+		// And page.go, which declares the struct the layout is read through.
+		// It travels with the layout for the same reason home does: change one
+		// without the other and every page stops rendering.
+		filepath.Join("resources", "views", "page.go"): true,
 		// And the controller that renders home, for the same reason: it hands
 		// over the layout's type, so it changes when the layout does.
 		filepath.Join("app", "Http", "Controllers", "HomeController.go"): true,

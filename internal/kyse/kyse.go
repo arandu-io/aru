@@ -98,6 +98,34 @@ type File struct {
 	Path string
 }
 
+// IsLayout reports whether this file is a layout.
+//
+// The distinction is not a naming convention: a layout receives the sections a
+// child declared, and a page does not. The source says which by containing the
+// directive that reads them.
+//
+// It matters for the data type too. A layout renders with the interface it
+// declares, so any page that satisfies it can be drawn inside; a page renders
+// with its own struct, because it interpolates fields. Reading one type for both
+// is what made `aru make:auth` install a layout typed by the sign-in struct, and
+// from then on every page `aru make:module` generated failed to render -- with a
+// green `go build`, because the disagreement is a type assertion at run time.
+func (f *File) IsLayout() bool {
+	var walk func([]Node) bool
+	walk = func(nodes []Node) bool {
+		for _, n := range nodes {
+			if n.Kind == Directive && n.Name == "yield" {
+				return true
+			}
+			if walk(n.Children) {
+				return true
+			}
+		}
+		return false
+	}
+	return walk(f.Body)
+}
+
 // Section is one `@section(name) … @endsection`.
 type Section struct {
 	Name  string
@@ -197,4 +225,52 @@ func Name(viewsDir, source string) string {
 	rel := strings.TrimPrefix(strings.TrimPrefix(source, viewsDir), "/")
 	rel = strings.TrimSuffix(rel, ".kyse.go")
 	return strings.ReplaceAll(rel, "/", ".")
+}
+
+// RenderType is the type a view asserts the data to before drawing.
+//
+// For a layout that is the interface, when it declares one. That is the whole
+// fix for a defect that cost a full cycle: `aru make:auth` installs a layout
+// whose @go block declares the sign-in struct, and reading the first type for
+// both questions made the layout render with THAT struct. From then on every
+// page `aru make:module` generated answered
+//
+//	view "layouts.app" takes AuthPage and got views.InvoicesIndexData
+//
+// with `go build` green, because a type assertion fails at run time and the
+// routes hide it: the wiring is manual, so the page 404s before anyone reaches
+// the 500.
+//
+// For a page it is the struct, because a page interpolates fields.
+func RenderType(f *File) string {
+	if f.IsLayout() {
+		if name := firstType(f, " interface"); name != "" {
+			return name
+		}
+	}
+	return PageType(f)
+}
+
+// PageType is the struct a view declared, and what a layout publishes to the
+// views that extend it.
+func PageType(f *File) string { return firstType(f, " struct") }
+
+// firstType finds the first `type X <kind>` in the @go blocks.
+//
+// Order of declaration does not decide anything: the caller asks for the kind it
+// needs. A layout that declares the interface below the struct behaves the same
+// as one that declares it above.
+func firstType(f *File, kind string) string {
+	for _, block := range f.Go {
+		for _, line := range strings.Split(block, "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "type ") || !strings.Contains(line, kind) {
+				continue
+			}
+			if fields := strings.Fields(line); len(fields) >= 2 {
+				return fields[1]
+			}
+		}
+	}
+	return ""
 }

@@ -7,26 +7,20 @@ package views
 // Store hands it back when the submission was rejected: same view, same data,
 // with the messages filled in.
 type PurchaseOrdersCreateData struct {
-	// Title is the browser tab and the heading.
-	Title string
-	// CSRF is the token the hidden field carries. @csrf reads it through
-	// CSRFToken below.
-	CSRF string
+	// Page is the state the layout draws. Its Token is what @csrf writes into
+	// the hidden field, through Page.CSRFToken -- it comes from the page data
+	// rather than from a global, because a template that reaches for request
+	// state outside the data it was given is how a form ends up carrying
+	// another session's token under load.
+	Page
 	// Form is what was typed, so a rejected submission comes back filled in.
 	Form PurchaseOrderForm
 	// Errors is the message per field, as validation produced it.
 	Errors map[string][]string
 }
 
-// PageTitle satisfies the layout's contract.
-func (d PurchaseOrdersCreateData) PageTitle() string { return d.Title }
-
-// CSRFToken is what @csrf reads.
-//
-// It comes from the page data rather than from a global: a template that reaches
-// for request state outside the data it was given is how a form ends up carrying
-// another session's token under load.
-func (d PurchaseOrdersCreateData) CSRFToken() string { return d.CSRF }
+// Compile-time proof that this page fits the layout it extends.
+var _ Layout = PurchaseOrdersCreateData{}
 
 // PurchaseOrderForm is the form as text, which is what a form carries.
 //
@@ -65,15 +59,12 @@ func (f PurchaseOrderForm) ApprovedAttr() string {
 
 @extends('layouts.app')
 
-@section('header')
-	<span class="text-sm font-semibold tracking-tight">{{ .Title }}</span>
-	<nav class="text-sm text-slate-500 dark:text-slate-400">
-		<a class="hover:text-slate-900 dark:hover:text-slate-100" href="/purchase-orders">Purchase orders</a>
-	</nav>
-@endsection
-
 @section('content')
-	<h1 class="text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
+	<nav class="text-sm text-slate-500 dark:text-slate-400">
+		<a class="underline underline-offset-2 hover:text-slate-900 dark:hover:text-slate-100" href="/purchase-orders">Purchase orders</a>
+	</nav>
+
+	<h1 class="mt-2 text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
 
 	<form class="mt-8 space-y-6" method="post" action="/purchase-orders" hx-post="/purchase-orders" hx-target="this" hx-swap="outerHTML">
 		@csrf

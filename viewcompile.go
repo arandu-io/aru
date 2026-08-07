@@ -72,12 +72,19 @@ func compileViews(root string, stdout io.Writer) error {
 		}
 
 		name := kyse.Name(dir, source)
-		dataType := declaredType(file)
+
+		// A layout renders with the interface it declares; a page renders with
+		// its struct. Two questions, two answers, from one @go block.
+		//
+		// What a layout PUBLISHES to its children is still the struct: a child
+		// interpolates fields, so it asserts the concrete type and hands the
+		// same value on to the layout, which only needs the methods.
+		dataType := kyse.RenderType(file)
 		if dataType == "" && file.Extends != "" {
 			dataType = inherited[file.Extends]
 		}
-		if declaredType(file) != "" {
-			inherited[name] = dataType
+		if published := kyse.PageType(file); published != "" {
+			inherited[name] = published
 		}
 
 		out, err := kyse.Generate(file, name, dataType)
@@ -114,25 +121,4 @@ func findViews(dir string) ([]string, error) {
 		return nil
 	})
 	return out, err
-}
-
-// declaredType finds the type a view declared in its `@go` block.
-//
-// The first `type X struct` or `type X interface` is the page data. A view that
-// declares none and extends a layout takes the layout's.
-func declaredType(f *kyse.File) string {
-	for _, block := range f.Go {
-		for _, line := range strings.Split(block, "\n") {
-			line = strings.TrimSpace(line)
-			if !strings.HasPrefix(line, "type ") {
-				continue
-			}
-			if strings.Contains(line, " struct") || strings.Contains(line, " interface") {
-				if fields := strings.Fields(line); len(fields) >= 2 {
-					return fields[1]
-				}
-			}
-		}
-	}
-	return ""
 }

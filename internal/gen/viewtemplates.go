@@ -15,12 +15,21 @@ package gen
 //   - the page data is a struct per screen, never a map, and it declares itself
 //     in the view's @go block. A field that does not exist stops the build,
 //     which is the whole reason views are compiled rather than interpreted;
-//   - every page satisfies the layout's Layout interface by having PageTitle,
-//     and the two forms also carry CSRFToken, which is what @csrf reads;
+//   - every page embeds views.Page, which is what carries the state the layout
+//     draws -- the title, the brand, the CSRF token and the navigation -- and
+//     what makes the struct satisfy the layout's Layout interface. The `var _
+//     Layout` line below each declaration is where a page that stopped fitting
+//     stops the build, naming the page;
 //   - dates and numbers arrive already formatted, as text. A view that formatted
 //     a time.Time would need the time package, and the generated file imports a
 //     fixed set -- so formatting is the controller's, which is where a decision
-//     about presentation belongs anyway.
+//     about presentation belongs anyway;
+//   - everything goes in @section('content'), and nothing in any other section.
+//     A section only one layout yields is a section that disappears without a
+//     word when the layout is replaced -- and `aru make:auth` replaces it. The
+//     back link and the "new" button used to sit in @section('header'), which
+//     the layout that kit publishes does not yield, so they vanished from every
+//     screen the moment somebody ran the command.
 
 const viewIndexTemplate = `//go:build kyse
 
@@ -29,8 +38,10 @@ package views
 @go
 // <%.ViewData "index"%> is what <%.Controller%>.Index hands this page.
 type <%.ViewData "index"%> struct {
-	// Title is the browser tab and the heading.
-	Title string
+	// Page is the state the layout draws: the title, the brand, the CSRF token
+	// and the navigation. Embedded rather than repeated, and what makes this
+	// struct fit the layout.
+	Page
 	// <%.Plural%> is the page of records.
 	<%.Plural%> []<%.RowStruct%>
 	// NextCursor is the keyset cursor of the following page. It is empty on the
@@ -38,8 +49,8 @@ type <%.ViewData "index"%> struct {
 	NextCursor string
 }
 
-// PageTitle satisfies the layout's contract.
-func (d <%.ViewData "index"%>) PageTitle() string { return d.Title }
+// Compile-time proof that this page fits the layout it extends.
+var _ Layout = <%.ViewData "index"%>{}
 
 // <%.RowStruct%> is one record, formatted for display by the controller.
 type <%.RowStruct%> struct {
@@ -58,15 +69,11 @@ type <%.RowStruct%> struct {
 
 @extends('layouts.app')
 
-@section('header')
-	<span class="text-sm font-semibold tracking-tight">{{ .Title }}</span>
-	<nav class="text-sm text-slate-500 dark:text-slate-400">
-		<a class="hover:text-slate-900 dark:hover:text-slate-100" href="<%.Route%>/create">New <%.Human%></a>
-	</nav>
-@endsection
-
 @section('content')
-	<h1 class="text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
+	<div class="flex items-center justify-between gap-4">
+		<h1 class="text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
+		<a class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" href="<%.Route%>/create">New <%.Human%></a>
+	</div>
 
 	@if(len(d.<%.Plural%>) == 0)
 	<p class="mt-8 text-sm text-slate-500 dark:text-slate-400">
@@ -112,18 +119,17 @@ package views
 @go
 // <%.ViewData "show"%> is what <%.Controller%>.Show hands this page.
 type <%.ViewData "show"%> struct {
-	// Title is the browser tab and the heading.
-	Title string
-	// CSRF is the token the delete button sends as a header. An hx-delete
-	// carries no form body, so the hidden field a form uses would never arrive
-	// and the request would be refused with 419.
-	CSRF string
+	// Page is the state the layout draws. Its Token is also what the delete
+	// button sends as a header: an hx-delete carries no form body, so the
+	// hidden field a form uses would never arrive and the request would be
+	// refused with 419.
+	Page
 	// <%.Entity%> is the record.
 	<%.Entity%> <%.RowStruct%>
 }
 
-// PageTitle satisfies the layout's contract.
-func (d <%.ViewData "show"%>) PageTitle() string { return d.Title }
+// Compile-time proof that this page fits the layout it extends.
+var _ Layout = <%.ViewData "show"%>{}
 
 // arandu:begin custom
 // Anything else this page needs in Go goes here, and survives regeneration.
@@ -132,19 +138,16 @@ func (d <%.ViewData "show"%>) PageTitle() string { return d.Title }
 
 @extends('layouts.app')
 
-@section('header')
-	<span class="text-sm font-semibold tracking-tight">{{ .Title }}</span>
-	<nav class="text-sm text-slate-500 dark:text-slate-400">
-		<a class="hover:text-slate-900 dark:hover:text-slate-100" href="<%.Route%>"><%.HumansTitle%></a>
-	</nav>
-@endsection
-
 @section('content')
-	<div class="flex items-center justify-between gap-4">
+	<nav class="text-sm text-slate-500 dark:text-slate-400">
+		<a class="underline underline-offset-2 hover:text-slate-900 dark:hover:text-slate-100" href="<%.Route%>"><%.HumansTitle%></a>
+	</nav>
+
+	<div class="mt-2 flex items-center justify-between gap-4">
 		<h1 class="text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
 		<div class="flex items-center gap-3">
 			<a class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" href="<%.Route%>/{{ .<%.Entity%>.ID }}/edit">Edit</a>
-			<button class="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950" type="button" hx-delete="<%.Route%>/{{ .<%.Entity%>.ID }}" hx-headers='{"X-CSRF-Token": "{{ .CSRF }}"}' hx-confirm="Delete this <%.Human%>?">Delete</button>
+			<button class="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950" type="button" hx-delete="<%.Route%>/{{ .<%.Entity%>.ID }}" hx-headers='{"X-CSRF-Token": "{{ .Token }}"}' hx-confirm="Delete this <%.Human%>?">Delete</button>
 		</div>
 	</div>
 
@@ -170,26 +173,20 @@ package views
 // Store hands it back when the submission was rejected: same view, same data,
 // with the messages filled in.
 type <%.ViewData "create"%> struct {
-	// Title is the browser tab and the heading.
-	Title string
-	// CSRF is the token the hidden field carries. @csrf reads it through
-	// CSRFToken below.
-	CSRF string
+	// Page is the state the layout draws. Its Token is what @csrf writes into
+	// the hidden field, through Page.CSRFToken -- it comes from the page data
+	// rather than from a global, because a template that reaches for request
+	// state outside the data it was given is how a form ends up carrying
+	// another session's token under load.
+	Page
 	// Form is what was typed, so a rejected submission comes back filled in.
 	Form <%.FormStruct%>
 	// Errors is the message per field, as validation produced it.
 	Errors map[string][]string
 }
 
-// PageTitle satisfies the layout's contract.
-func (d <%.ViewData "create"%>) PageTitle() string { return d.Title }
-
-// CSRFToken is what @csrf reads.
-//
-// It comes from the page data rather than from a global: a template that reaches
-// for request state outside the data it was given is how a form ends up carrying
-// another session's token under load.
-func (d <%.ViewData "create"%>) CSRFToken() string { return d.CSRF }
+// Compile-time proof that this page fits the layout it extends.
+var _ Layout = <%.ViewData "create"%>{}
 
 // <%.FormStruct%> is the form as text, which is what a form carries.
 //
@@ -218,15 +215,12 @@ func (f <%$.FormStruct%>) <%.GoName%>Attr() string {
 
 @extends('layouts.app')
 
-@section('header')
-	<span class="text-sm font-semibold tracking-tight">{{ .Title }}</span>
-	<nav class="text-sm text-slate-500 dark:text-slate-400">
-		<a class="hover:text-slate-900 dark:hover:text-slate-100" href="<%.Route%>"><%.HumansTitle%></a>
-	</nav>
-@endsection
-
 @section('content')
-	<h1 class="text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
+	<nav class="text-sm text-slate-500 dark:text-slate-400">
+		<a class="underline underline-offset-2 hover:text-slate-900 dark:hover:text-slate-100" href="<%.Route%>"><%.HumansTitle%></a>
+	</nav>
+
+	<h1 class="mt-2 text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
 
 	<form class="mt-8 space-y-6" method="post" action="<%.Route%>" hx-post="<%.Route%>" hx-target="this" hx-swap="outerHTML">
 		@csrf
@@ -247,21 +241,17 @@ package views
 // <%.ViewData "edit"%> is what <%.Controller%>.Edit hands this page: the form
 // filled in with a stored record, or with what was typed when Update rejected it.
 type <%.ViewData "edit"%> struct {
-	// Title is the browser tab and the heading.
-	Title string
-	// CSRF is the token the hidden field carries.
-	CSRF string
+	// Page is the state the layout draws. Its Token is what @csrf writes into
+	// the hidden field.
+	Page
 	// Form is the record as text.
 	Form <%.FormStruct%>
 	// Errors is the message per field, as validation produced it.
 	Errors map[string][]string
 }
 
-// PageTitle satisfies the layout's contract.
-func (d <%.ViewData "edit"%>) PageTitle() string { return d.Title }
-
-// CSRFToken is what @csrf reads.
-func (d <%.ViewData "edit"%>) CSRFToken() string { return d.CSRF }
+// Compile-time proof that this page fits the layout it extends.
+var _ Layout = <%.ViewData "edit"%>{}
 
 // arandu:begin custom
 // Anything else this page needs in Go goes here, and survives regeneration.
@@ -270,15 +260,12 @@ func (d <%.ViewData "edit"%>) CSRFToken() string { return d.CSRF }
 
 @extends('layouts.app')
 
-@section('header')
-	<span class="text-sm font-semibold tracking-tight">{{ .Title }}</span>
-	<nav class="text-sm text-slate-500 dark:text-slate-400">
-		<a class="hover:text-slate-900 dark:hover:text-slate-100" href="<%.Route%>/{{ .Form.ID }}">Back</a>
-	</nav>
-@endsection
-
 @section('content')
-	<h1 class="text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
+	<nav class="text-sm text-slate-500 dark:text-slate-400">
+		<a class="underline underline-offset-2 hover:text-slate-900 dark:hover:text-slate-100" href="<%.Route%>/{{ .Form.ID }}">Back</a>
+	</nav>
+
+	<h1 class="mt-2 text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
 
 	<!-- hx-put, and no action: a browser form can only send GET and POST, and
 	     the update route is PUT. HTMX sends the real method, which is why this

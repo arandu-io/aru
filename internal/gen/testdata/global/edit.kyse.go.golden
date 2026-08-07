@@ -6,21 +6,17 @@ package views
 // PurchaseOrdersEditData is what PurchaseOrderController.Edit hands this page: the form
 // filled in with a stored record, or with what was typed when Update rejected it.
 type PurchaseOrdersEditData struct {
-	// Title is the browser tab and the heading.
-	Title string
-	// CSRF is the token the hidden field carries.
-	CSRF string
+	// Page is the state the layout draws. Its Token is what @csrf writes into
+	// the hidden field.
+	Page
 	// Form is the record as text.
 	Form PurchaseOrderForm
 	// Errors is the message per field, as validation produced it.
 	Errors map[string][]string
 }
 
-// PageTitle satisfies the layout's contract.
-func (d PurchaseOrdersEditData) PageTitle() string { return d.Title }
-
-// CSRFToken is what @csrf reads.
-func (d PurchaseOrdersEditData) CSRFToken() string { return d.CSRF }
+// Compile-time proof that this page fits the layout it extends.
+var _ Layout = PurchaseOrdersEditData{}
 
 // arandu:begin custom
 // Anything else this page needs in Go goes here, and survives regeneration.
@@ -29,15 +25,12 @@ func (d PurchaseOrdersEditData) CSRFToken() string { return d.CSRF }
 
 @extends('layouts.app')
 
-@section('header')
-	<span class="text-sm font-semibold tracking-tight">{{ .Title }}</span>
-	<nav class="text-sm text-slate-500 dark:text-slate-400">
-		<a class="hover:text-slate-900 dark:hover:text-slate-100" href="/purchase-orders/{{ .Form.ID }}">Back</a>
-	</nav>
-@endsection
-
 @section('content')
-	<h1 class="text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
+	<nav class="text-sm text-slate-500 dark:text-slate-400">
+		<a class="underline underline-offset-2 hover:text-slate-900 dark:hover:text-slate-100" href="/purchase-orders/{{ .Form.ID }}">Back</a>
+	</nav>
+
+	<h1 class="mt-2 text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
 
 	<!-- hx-put, and no action: a browser form can only send GET and POST, and
 	     the update route is PUT. HTMX sends the real method, which is why this

@@ -330,23 +330,4 @@ func numbered(src string) string {
 	return b.String()
 }
 
-// yields reports whether the view has a @yield, which is what makes it a layout.
-//
-// The distinction is not a naming convention: a layout receives the sections a
-// child declared, and a page does not. The source says which by containing the
-// directive that reads them.
-func (g *generator) yields() bool {
-	var walk func([]Node) bool
-	walk = func(nodes []Node) bool {
-		for _, n := range nodes {
-			if n.Kind == Directive && n.Name == "yield" {
-				return true
-			}
-			if walk(n.Children) {
-				return true
-			}
-		}
-		return false
-	}
-	return walk(g.file.Body)
-}
+func (g *generator) yields() bool { return g.file.IsLayout() }

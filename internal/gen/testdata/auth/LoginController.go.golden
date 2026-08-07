@@ -16,7 +16,22 @@ import (
 )
 
 // Module registers the screens.
+//
+// It composes the framework's auth module instead of replacing it. Replacing it
+// took the users table out of the schema: this kit declares no table of its own
+// -- deliberately, because two owners for one table is how a rollout deadlocks
+// -- so a wiring list with this module and without the framework's had nothing
+// left to create users, and the seeder that makes the first administrator ran
+// against a database with no such table.
+//
+// Embedding it means the schema, the health check and anything the framework
+// adds to that module arrive with this one. What the kit takes over is Routes,
+// and only Routes: the published screens answer where the minimal ones did.
 type Module struct {
+	// The framework's auth module. It is the owner of the users table, and it
+	// stays the owner.
+	*auth.Module
+
 	auth     *auth.Service
 	sessions *security.SessionStore
 	csrf     *security.CSRF
@@ -25,8 +40,9 @@ type Module struct {
 
 // New returns the module.
 //
-// Register it INSTEAD of auth.New: both answer /auth/login, and this is the one
-// with a real page. Registering both would give the same path two handlers.
+// Register it INSTEAD of auth.New: this one already carries what auth.New
+// returns, and both answer /auth/login. Registering both is a duplicate route
+// and a table with two owners.
 //
 // The session store and the CSRF issuer are passed in rather than reached
 // through the service, because a screen is allowed to know about a token and a
@@ -35,20 +51,31 @@ func New(svc *auth.Service, sessions *security.SessionStore, csrf *security.CSRF
 	if tenant == nil {
 		tenant = auth.FixedTenant("")
 	}
-	return &Module{auth: svc, sessions: sessions, csrf: csrf, tenant: tenant}
+	return &Module{
+		Module:   auth.New(svc, tenant),
+		auth:     svc,
+		sessions: sessions,
+		csrf:     csrf,
+		tenant:   tenant,
+	}
 }
 
-// Compile-time proof that the module honors the contract it claims.
-var _ kernel.Module = (*Module)(nil)
+// Compile-time proof that the module honors the contracts it claims. The second
+// line is the one that matters here: it is what stops a refactor that drops the
+// embedded module and takes the users table down with it.
+var (
+	_ kernel.Module     = (*Module)(nil)
+	_ kernel.Migratable = (*Module)(nil)
+)
 
-// Name is the module identifier.
+// Name is the module identifier. The routes below are this package's, so the
+// route table names this package rather than the framework's.
 func (m *Module) Name() string { return "authui" }
 
-// Routes registers the screens.
+// Routes registers the screens, in place of the framework's.
 //
-// There are no migrations here: the users table belongs to the framework's auth
-// module, and two modules migrating one table is how a schema ends up with two
-// owners.
+// This is the one method the kit overrides. The embedded module still declares
+// the users table; it just no longer answers /auth/login, because this does.
 func (m *Module) Routes(r *httpx.Router) {
 	g := r.Group("/auth")
 	g.Get("/login", m.showLogin)

@@ -91,7 +91,22 @@ import (
 )
 
 // Module registers the screens.
+//
+// It composes the framework's auth module instead of replacing it. Replacing it
+// took the users table out of the schema: this kit declares no table of its own
+// -- deliberately, because two owners for one table is how a rollout deadlocks
+// -- so a wiring list with this module and without the framework's had nothing
+// left to create users, and the seeder that makes the first administrator ran
+// against a database with no such table.
+//
+// Embedding it means the schema, the health check and anything the framework
+// adds to that module arrive with this one. What the kit takes over is Routes,
+// and only Routes: the published screens answer where the minimal ones did.
 type Module struct {
+	// The framework's auth module. It is the owner of the users table, and it
+	// stays the owner.
+	*auth.Module
+
 	auth     *auth.Service
 	sessions *security.SessionStore
 	csrf     *security.CSRF
@@ -100,8 +115,9 @@ type Module struct {
 
 // New returns the module.
 //
-// Register it INSTEAD of auth.New: both answer /auth/login, and this is the one
-// with a real page. Registering both would give the same path two handlers.
+// Register it INSTEAD of auth.New: this one already carries what auth.New
+// returns, and both answer /auth/login. Registering both is a duplicate route
+// and a table with two owners.
 //
 // The session store and the CSRF issuer are passed in rather than reached
 // through the service, because a screen is allowed to know about a token and a
@@ -110,20 +126,31 @@ func New(svc *auth.Service, sessions *security.SessionStore, csrf *security.CSRF
 	if tenant == nil {
 		tenant = auth.FixedTenant("")
 	}
-	return &Module{auth: svc, sessions: sessions, csrf: csrf, tenant: tenant}
+	return &Module{
+		Module:   auth.New(svc, tenant),
+		auth:     svc,
+		sessions: sessions,
+		csrf:     csrf,
+		tenant:   tenant,
+	}
 }
 
-// Compile-time proof that the module honors the contract it claims.
-var _ kernel.Module = (*Module)(nil)
+// Compile-time proof that the module honors the contracts it claims. The second
+// line is the one that matters here: it is what stops a refactor that drops the
+// embedded module and takes the users table down with it.
+var (
+	_ kernel.Module     = (*Module)(nil)
+	_ kernel.Migratable = (*Module)(nil)
+)
 
-// Name is the module identifier.
+// Name is the module identifier. The routes below are this package's, so the
+// route table names this package rather than the framework's.
 func (m *Module) Name() string { return "authui" }
 
-// Routes registers the screens.
+// Routes registers the screens, in place of the framework's.
 //
-// There are no migrations here: the users table belongs to the framework's auth
-// module, and two modules migrating one table is how a schema ends up with two
-// owners.
+// This is the one method the kit overrides. The embedded module still declares
+// the users table; it just no longer answers /auth/login, because this does.
 func (m *Module) Routes(r *httpx.Router) {
 	g := r.Group("/auth")
 	g.Get("/login", m.showLogin)
@@ -142,6 +169,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/arandu-io/framework/httpx"
 	"github.com/arandu-io/framework/modules/auth"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/validation"
@@ -168,10 +196,12 @@ func (m *Module) showLogin(w http.ResponseWriter, r *http.Request) {
 	// the template column at zero, which says the view is free when nobody
 	// measured it.
 	data := views.AuthPage{
-		AppName:  "{{.ModulePath}}",
-		Title:    "Sign in",
-		Token:    token,
-		LoginURL: "/auth/login",
+		Page: views.Page{
+			AppName:  "{{.ModulePath}}",
+			Title:    "Sign in",
+			Token:    token,
+			LoginURL: "/auth/login",
+		},
 	}
 	if err := view.NewRenderer().Render(r.Context(), w, http.StatusOK, "auth.login", data); err != nil {
 		observability.Log(r.Context()).Error("rendering the sign-in page", "error", err)
@@ -219,9 +249,7 @@ func (m *Module) doLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// HX-Redirect makes HTMX navigate without a full page reload.
-	w.Header().Set("HX-Redirect", "/")
-	w.WriteHeader(http.StatusOK)
+	redirect(w, r, "/")
 }
 
 // doLogout destroys the session on the server, not only in the browser.
@@ -229,8 +257,24 @@ func (m *Module) doLogout(w http.ResponseWriter, r *http.Request) {
 	if err := m.sessions.Destroy(r.Context(), w, m.sessions.IDFromRequest(r)); err != nil {
 		observability.Log(r.Context()).Error("destroying session", "error", err)
 	}
-	w.Header().Set("HX-Redirect", "/auth/login")
-	w.WriteHeader(http.StatusOK)
+	redirect(w, r, "/auth/login")
+}
+
+// redirect answers the way the request asked to be answered.
+//
+// The form is submitted two ways on purpose: hx-post when HTMX is running, and
+// method="post" when it is not -- that is the path without JavaScript, and it is
+// the one that has to keep working. HX-Redirect is a header only HTMX reads, so
+// answering it to a plain form post is 200 with an empty body: a blank page
+// after a login that succeeded, with nothing in the log to say so.
+//
+// httpx.Context is where that branch already lives -- HX-Redirect for an HTMX
+// request, 303 with a Location for everything else. Restating it here would be a
+// second way to redirect, and the second one is the one that drifts (RULE 9).
+func redirect(w http.ResponseWriter, r *http.Request, to string) {
+	if err := (&httpx.Context{Response: w, Request: r}).Redirect(to); err != nil {
+		observability.Log(r.Context()).Error("redirecting", "error", err, "to", to)
+	}
 }
 
 // rejected re-renders just the form, which is what HTMX swaps back in.
@@ -250,10 +294,12 @@ func (m *Module) rejected(w http.ResponseWriter, r *http.Request, email string, 
 	// so answering 200 for a rejection would make the browser, the logs and
 	// every metric agree that it worked.
 	form := views.AuthPage{
-		AppName:    "{{.ModulePath}}",
-		Title:      "Sign in",
-		Token:      token,
-		LoginURL:   "/auth/login",
+		Page: views.Page{
+			AppName:  "{{.ModulePath}}",
+			Title:    "Sign in",
+			Token:    token,
+			LoginURL: "/auth/login",
+		},
 		Email:      email,
 		EmailError: errs.First(),
 	}
@@ -273,23 +319,28 @@ func (m *Module) rejected(w http.ResponseWriter, r *http.Request, email string, 
 // authHomeControllerTemplate is the HomeController the kit publishes, the same
 // file `php artisan ui bootstrap --auth` generates.
 //
-// The constructor keeps the skeleton's signature -- NewHomeController(appName)
-// -- because make:auth does not edit bootstrap/app.go. A different signature
-// would break the wiring the project already has, in a file the command never
-// touches and the reader has no reason to suspect.
+// The constructor takes the session store and the CSRF issuer, which the
+// skeleton's did not: the layout this command installs draws a sign-out form and
+// puts the token in hx-headers, and a controller that cannot read the session
+// renders a landing page that says "Login" to somebody who just signed in, with
+// an empty token that makes the next write fail the CSRF check. That is one line
+// of wiring in bootstrap/app.go, and make:auth prints it -- the same shape
+// `aru make:module` uses for every controller it writes.
 const authHomeControllerTemplate = `package controllers
 
 import (
 	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/security"
 
 	"{{ .ModulePath }}/resources/views"
 )
 
 // HomeController answers the landing page.
 //
-// It renders with views.AuthPage, the struct layouts/app declares: a page
-// renders with its layout's type, so every screen sharing this layout shares
-// this struct. A field this page does not use stays at its zero value.
+// It renders with views.AuthPage, the struct layouts/app declares: a page that
+// declares no data of its own renders with its layout's struct, so every screen
+// of the kit shares this one. A field this page does not use stays at its zero
+// value.
 type HomeController struct {
 	Controller
 
@@ -297,12 +348,20 @@ type HomeController struct {
 	// rather than through a global read: a controller that reads the
 	// environment is a controller no test can pin.
 	appName string
+
+	// sessions and csrf are what the chrome is drawn from: who is signed in,
+	// and the token every write of this session carries. They arrive through
+	// the constructor for the same reason appName does, and they are the same
+	// two every controller ` + "`aru make:module`" + ` writes takes -- a screen is
+	// allowed to know about a token and a cookie.
+	sessions *security.SessionStore
+	csrf     *security.CSRF
 }
 
 // NewHomeController returns the controller. bootstrap/app.go builds it and hands
 // it to the routes.
-func NewHomeController(appName string) *HomeController {
-	return &HomeController{appName: appName}
+func NewHomeController(appName string, sessions *security.SessionStore, csrf *security.CSRF) *HomeController {
+	return &HomeController{appName: appName, sessions: sessions, csrf: csrf}
 }
 
 // Compile-time proof that this controller answers GET / the way Resource and the
@@ -310,20 +369,50 @@ func NewHomeController(appName string) *HomeController {
 var _ httpx.Indexer = (*HomeController)(nil)
 
 // Index renders the landing page.
+//
+// The session and the token are read above the custom block, and deliberately:
+// they are what the layout draws its navigation and its hx-headers from, so a
+// regeneration that carried over an edited block would otherwise carry over a
+// page that greets a signed-in visitor with a sign-in link.
 func (c *HomeController) Index(ctx *httpx.Context) error {
+	// Who is signed in, from the session cookie and never from the request. An
+	// error here is the anonymous case -- no cookie, a forged one, or a session
+	// that expired -- and the guest half of the navigation is what gets drawn.
+	subject, err := c.sessions.Load(ctx.Ctx(), ctx.Request)
+	signedIn := err == nil
+
+	// The token reaches the markup twice: the hidden field of the sign-out form
+	// and the hx-headers attribute on <body>. A page rendered without one
+	// answers 200 and then refuses the next write with 419, which reads like a
+	// broken session rather than a missing field.
+	token, err := c.csrf.Issue(c.sessions.IDFromRequest(ctx.Request))
+	if err != nil {
+		return err
+	}
+
 	// arandu:begin custom
 	return ctx.View("home", views.AuthPage{
-		AppName: c.appName,
-		Title:   c.appName,
-		HomeURL: "/",
+		// views.Page is the state the layout draws, embedded rather than
+		// repeated. The navigation draws a link only for what answers: the kit
+		// ships the sign-in handler and nothing else, so RegisterURL stays
+		// empty and the link is not drawn -- a link to a route nobody
+		// registered is a 404 the layout put there.
+		Page: views.Page{
+			AppName:       c.appName,
+			Title:         c.appName,
+			Token:         token,
+			Authenticated: signedIn,
+			// The identifier, because that is what a session carries. Show a
+			// display name here once you have a screen that loads the user
+			// through its policy.
+			UserName:  subject.ID,
+			HomeURL:   "/",
+			LoginURL:  "/auth/login",
+			LogoutURL: "/auth/logout",
+		},
 
-		// The navigation draws a link only for what answers. The kit ships the
-		// sign-in handler and nothing else, so registration and password reset
-		// stay off until you write them -- a link to a route nobody registered
-		// is a 404 the layout put there.
-		LoginURL:         "/auth/login",
-		LogoutURL:        "/auth/logout",
-		HasRegister:      false,
+		// Password reset stays off for the same reason: write the handler, then
+		// turn the link on.
 		HasPasswordReset: false,
 	})
 	// arandu:end custom

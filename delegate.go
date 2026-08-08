@@ -86,7 +86,7 @@ func projectRoot() (string, error) {
 // moduleRoot walks up to the nearest go.mod.
 //
 // It is what the commands that act on views use, because views are not only a
-// project's. A component library -- github.com/arandu-io/kyse-ui is the first --
+// project's. A component library -- github.com/arandu-io/kyse is the first --
 // is a Go module with `.kyse.go` sources, no main.go, no arandu.toml and no
 // stylesheet, and `aru view:build` compiles it the same way.
 //

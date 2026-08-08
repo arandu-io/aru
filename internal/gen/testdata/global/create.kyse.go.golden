@@ -68,7 +68,7 @@ func (f PurchaseOrderForm) ApprovedAttr() string {
 
 	<form class="mt-8 space-y-6" method="post" action="/purchase-orders" hx-post="/purchase-orders" hx-target="this" hx-swap="outerHTML">
 		@csrf
-
+		
 		<div class="space-y-1">
 			<label class="block text-sm font-medium" for="reference">Reference</label>
 			<input class="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" id="reference" name="reference" type="text" value="{{ .Form.Reference }}" required>

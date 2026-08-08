@@ -619,3 +619,196 @@ func TestTheCompilerIsToldWhichLineOfTheViewEachExpressionCameFrom(t *testing.T)
 		t.Errorf("the scaffolding still belongs to the view: %s", file)
 	}
 }
+
+// The generated file sits beside its source, and the name is the source's with
+// one suffix swapped for another.
+//
+// This had no test at all while the rule was the opposite one -- the output
+// landed flat, `auth/login.kyse.go` compiling to `auth_login.go` a directory up
+// -- so the behaviour every project's tree depends on was resting on a comment.
+func TestTheGeneratedFileSitsBesideItsSource(t *testing.T) {
+	for _, c := range []struct{ source, want string }{
+		{"resources/views/home.kyse.go", "resources/views/home.go"},
+		{"resources/views/auth/login.kyse.go", "resources/views/auth/login.go"},
+		{"resources/views/layouts/app.kyse.go", "resources/views/layouts/app.go"},
+		{"resources/views/components/button.kyse.go", "resources/views/components/button.go"},
+	} {
+		if got := kyse.OutputPath(c.source); got != c.want {
+			t.Errorf("OutputPath(%q) = %q, want %q", c.source, got, c.want)
+		}
+	}
+}
+
+// A layout that declares no interface of its own renders with view.Layout, the
+// contract the framework publishes.
+//
+// Without the default a layout whose @go block is empty -- which is every layout
+// now that the chrome moved to framework/view -- would assert the data to the
+// empty string and generate Go that does not parse.
+func TestALayoutWithoutAnInterfaceUsesTheFrameworkContract(t *testing.T) {
+	const source = `//go:build kyse
+
+package views
+
+<html>
+	<body>
+		@yield('content')
+	</body>
+</html>
+`
+	file, err := kyse.Parse("layouts/app.kyse.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := kyse.RenderType(file); got != "view.Layout" {
+		t.Errorf("RenderType = %q, want view.Layout", got)
+	}
+}
+
+// A component compiles to an exported Go function, and that is what makes it
+// checked by the compiler rather than by the person.
+//
+// The alternative -- looking the component up by name and asserting its props at
+// run time -- reaches production for a typo, which is the failure this whole
+// project exists to make impossible. A component is the last place that should
+// be reintroduced, so this test pins the shape.
+func TestAComponentCompilesToATypedFunction(t *testing.T) {
+	const source = `//go:build kyse
+
+package components
+
+@go
+type ButtonProps struct {
+	Label   string
+	Variant string
+}
+@endgo
+
+<button class="btn" data-variant="{{ .Variant }}">{{ .Label }}</button>
+`
+	file, err := kyse.Parse("resources/views/components/button.kyse.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := kyse.Generate(file, "components.button", "ButtonProps", "resources/views/components/button.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(out)
+
+	// Exported, taking its props, returning HTML that can be interpolated.
+	if !strings.Contains(got, "func Button(props ButtonProps) template.HTML {") {
+		t.Errorf("a component is not an exported typed function:\n%s", got)
+	}
+	// Not registered: nothing looks a component up by name, so there is no name
+	// to get wrong.
+	if strings.Contains(got, "view.Register") {
+		t.Error("a component registered itself by name, which is the string lookup this shape replaces")
+	}
+	// The props are still read through d, so every directive keeps working.
+	if !strings.Contains(got, "d.Label") {
+		t.Errorf("the component does not read its props:\n%s", got)
+	}
+}
+
+// The name of the function comes from the file, and a hyphen is a word break.
+func TestAComponentIsNamedAfterItsFile(t *testing.T) {
+	const source = `//go:build kyse
+
+package components
+
+<hr>
+`
+	file, err := kyse.Parse("resources/views/components/theme-toggle.kyse.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := kyse.Generate(file, "components.theme-toggle", "", "resources/views/components/theme-toggle.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No props declared, so the function takes none rather than an empty struct.
+	if !strings.Contains(string(out), "func ThemeToggle() template.HTML {") {
+		t.Errorf("wrong function name or signature:\n%s", out)
+	}
+}
+
+// A comment spans lines, and none of it reaches the page.
+//
+// It used to have to fit on one, because the interpolator reads a line at a
+// time and could not see the closing delimiter on the next -- so a three-line
+// note about why the markup is the way it is was reported as never closed. The
+// note that runs to three lines is the one worth writing.
+func TestACommentSpansLines(t *testing.T) {
+	const source = `//go:build kyse
+
+package views
+
+<p>before</p>
+{{-- why this is here:
+     because of a thing,
+     and another thing. --}}
+<p>after</p>
+<td>{{-- inline --}}kept</td>
+`
+	file, err := kyse.Parse("home.kyse.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := kyse.Generate(file, "home", "", "home.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(out)
+
+	for _, gone := range []string{"why this is here", "another thing", "inline"} {
+		if strings.Contains(got, gone) {
+			t.Errorf("the comment reached the page: %q is in the output", gone)
+		}
+	}
+	for _, kept := range []string{"before", "after", "kept"} {
+		if !strings.Contains(got, kept) {
+			t.Errorf("the markup around the comment was eaten: %q is missing\n%s", kept, got)
+		}
+	}
+}
+
+// A view can name a type the controller owns, with an alias.
+//
+// The struct belongs with the code that fills it: that is where the fields are
+// set and where a missing one is a compile error. Repeating it in the view would
+// be two declarations of one shape, kept in step by hand -- and the view still
+// says which type it draws, in the one line that makes {{ .Email }} compile.
+func TestAViewCanAliasATypeItDoesNotOwn(t *testing.T) {
+	const source = `//go:build kyse
+
+package auth
+
+import authhttp "example.com/app/Http/Controllers/Auth"
+
+@go
+type LoginData = authhttp.LoginData
+@endgo
+
+<p>{{ .Email }}</p>
+`
+	file, err := kyse.Parse("resources/views/auth/login.kyse.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := kyse.PageType(file); got != "LoginData" {
+		t.Fatalf("PageType = %q, want LoginData", got)
+	}
+
+	out, err := kyse.Generate(file, "auth.login", kyse.RenderType(file), "resources/views/auth/login.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(out)
+	if !strings.Contains(got, "d, ok := data.(LoginData)") {
+		t.Errorf("the view does not assert the aliased type:\n%s", got)
+	}
+	if !strings.Contains(got, `authhttp "example.com/app/Http/Controllers/Auth"`) {
+		t.Errorf("the import the alias needs did not reach the output:\n%s", got)
+	}
+}

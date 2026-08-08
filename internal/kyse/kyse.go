@@ -100,6 +100,10 @@ type Node struct {
 type File struct {
 	// Package is the clause the Go compiler stops at.
 	Package string
+	// Imports are the lines of the import block, when the view has one, copied
+	// verbatim into the generated file. It is how a view draws a component that
+	// lives in another package.
+	Imports []string
 	// Go is the content of the @go blocks, in order, copied verbatim.
 	Go []Block
 	// Extends is the layout this view extends, or empty.
@@ -236,27 +240,29 @@ func Directives() []string {
 	return out
 }
 
-// OutputPath says where the Go generated from a view goes.
+// OutputPath says where the Go generated from a view goes: beside its source.
 //
-// The source keeps the nested tree — `resources/views/auth/login.kyse.go` — and
-// the generated Go lands flat in `resources/views/`, named after the path:
-// `auth_login.go`.
+//	resources/views/auth/login.kyse.go -> resources/views/auth/login.go
 //
-// It is not beside the source when the source is nested, and that is a
-// constraint of the language rather than a preference. **Go has one package per
-// directory.** With the generated file beside a nested source,
-// `resources/views/layouts/` would be a different package from
-// `resources/views/`, and the data struct a layout declares would not be visible
-// to the page that extends it. One package is what lets a page embed the
-// layout's data.
+// Each directory of views is its own Go package, named by the person in the
+// source's package clause and copied verbatim into the output. That is the
+// ordinary arrangement of a Go tree, and it is what keeps `resources/views/`
+// readable: opening `auth/` shows the four screens of `auth/` and nothing else.
 //
-// The alternative — flattening the source too — would cost the thing the whole
-// structure exists for: opening `resources/views/auth/` and finding `login`,
-// `register` and `passwords/` where they are expected.
-func OutputPath(viewsDir, source string) string {
-	rel := strings.TrimPrefix(strings.TrimPrefix(source, viewsDir), "/")
-	rel = strings.TrimSuffix(rel, ".kyse.go")
-	return viewsDir + "/" + strings.ReplaceAll(rel, "/", "_") + ".go"
+// It used to land flat -- `auth/login.kyse.go` compiled to `auth_login.go` one
+// directory up -- and the reason recorded here was that Go has one package per
+// directory, so a nested page could not see the chrome the layout declares. The
+// first half is true and the second does not follow: a nested package imports
+// what it needs like any other. What made the flattening look necessary was that
+// the chrome lived in the views package itself; it lives in `framework/view`
+// now, which every generated file already imports.
+//
+// The cost is one blank import per directory of views in bootstrap, next to the
+// one that was already there. That is the registration the whole design is built
+// on -- the same shape as a database/sql driver -- and paying it per directory
+// rather than once is what fifteen files leaving the top level costs.
+func OutputPath(source string) string {
+	return strings.TrimSuffix(source, ".kyse.go") + ".go"
 }
 
 // Name is the name a view is rendered by: the path under resources/views, with
@@ -282,18 +288,44 @@ func Name(viewsDir, source string) string {
 // the 500.
 //
 // For a page it is the struct, because a page interpolates fields.
+//
+// A layout that declares no interface renders with view.Layout, the contract
+// framework/view publishes and that view.Page satisfies. That is the ordinary
+// case now: the chrome every application drew identically -- the title, the
+// brand, the token, the four navigation links -- moved into the framework, so a
+// layout only declares an interface when it wants a different one.
 func RenderType(f *File) string {
 	if f.IsLayout() {
 		if name := firstType(f, " interface"); name != "" {
 			return name
 		}
+		return "view.Layout"
 	}
 	return PageType(f)
 }
 
-// PageType is the struct a view declared, and what a layout publishes to the
-// views that extend it.
-func PageType(f *File) string { return firstType(f, " struct") }
+// PageType is the type a view declared, and what a layout publishes to the views
+// that extend it.
+//
+// A declaration or an alias, and the alias is the interesting one:
+//
+//	@go
+//	type LoginData = authhttp.LoginData
+//	@endgo
+//
+// It is how a screen renders a struct the controller owns. The struct belongs
+// with the code that fills it -- that is where the fields are set and where a
+// missing one is a compile error -- and repeating it in the view would be two
+// declarations of one shape, kept in step by hand.
+//
+// The view still says which type it draws, in one line, and that line is what
+// makes `{{ .Email }}` compile or not.
+func PageType(f *File) string {
+	if name := firstType(f, " struct"); name != "" {
+		return name
+	}
+	return firstType(f, " = ")
+}
 
 // firstType finds the first `type X <kind>` in the @go blocks.
 //

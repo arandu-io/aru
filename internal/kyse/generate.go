@@ -27,9 +27,10 @@ import (
 // between two interpolations has to be handed back to the generated file by
 // name -- and this function is the only place that knows which lines are the
 // view's and which are its own. Guessing the name from f.Path is not possible:
-// OutputPath flattens `auth/login.kyse.go` into `auth_login.go`, one directory
-// up, and a view whose file name contains a dot makes the mapping ambiguous in
-// the other direction.
+// The output is `auth/login.go` beside `auth/login.kyse.go`, and deriving one
+// name from the other here would put the rule in two places -- OutputPath is
+// where it lives, and a caller that disagreed with it would write the directive
+// for a file that is not the one on disk.
 //
 // Both paths are written into the output verbatim -- the Go compiler prints a
 // //line file name exactly as it finds it, without resolving it -- so passing
@@ -156,8 +157,29 @@ func (g *generator) emit() {
 	fmt.Fprintf(&g.out, "package %s\n\n", g.file.Package)
 
 	g.out.WriteString("import (\n")
-	g.out.WriteString("\t\"html/template\"\n\t\"io\"\n\n")
-	g.out.WriteString("\t\"github.com/arandu-io/framework/view\"\n")
+	g.out.WriteString("\t\"html/template\"\n\t\"io\"\n")
+	// A component builds its markup into a string and returns it, so it is the
+	// one shape that needs strings. gofmt drops nothing, so it is added here
+	// rather than always.
+	if g.isComponent() {
+		g.out.WriteString("\t\"strings\"\n")
+	}
+	g.out.WriteString("\n\t\"github.com/arandu-io/framework/view\"\n")
+	// What the view imported for itself, after the ones that are always here.
+	//
+	// Anything already emitted above is dropped rather than repeated: a component
+	// whose @go block uses strings.Fields writes `import "strings"` in its source,
+	// which is the honest thing to write, and Go refuses the file if the same
+	// path appears twice.
+	//
+	// gofmt groups and sorts what survives, so the order written is not the order
+	// emitted.
+	for _, imp := range g.file.Imports {
+		if alreadyImported(g.out.String(), imp) {
+			continue
+		}
+		fmt.Fprintf(&g.out, "\t%s\n", imp)
+	}
 	g.out.WriteString(")\n\n")
 
 	// The @go blocks, verbatim. This is where the data struct is declared.
@@ -179,6 +201,11 @@ func (g *generator) emit() {
 		g.out.WriteString("\n")
 		g.self()
 		g.out.WriteString("\n")
+	}
+
+	if g.isComponent() {
+		g.emitComponent()
+		return
 	}
 
 	fn := funcName(g.name)
@@ -221,6 +248,93 @@ func (g *generator) emit() {
 
 	g.out.WriteString("}\n")
 	g.silenceUnused()
+}
+
+// alreadyImported reports whether the import block written so far names the same
+// path as this line.
+//
+// It compares the quoted path rather than the whole line, so `strings` and
+// `s "strings"` are recognised as the same import -- which they are to the
+// compiler, and a duplicate path is a compile error whatever it is named.
+func alreadyImported(written, line string) bool {
+	open := strings.IndexByte(line, '"')
+	if open < 0 {
+		return false
+	}
+	close := strings.IndexByte(line[open+1:], '"')
+	if close < 0 {
+		return false
+	}
+	return strings.Contains(written, line[open:open+close+2])
+}
+
+// isComponent reports whether this view is a component rather than a page.
+//
+// The directory decides, and it is the same directory Blade uses. A component is
+// not a page: nothing renders it by name, a controller never hands it data, and
+// it has no layout.
+func (g *generator) isComponent() bool { return strings.HasPrefix(g.name, "components.") }
+
+// emitComponent writes the component as an ordinary exported Go function.
+//
+// This is the difference between a component and a page, and it is the whole
+// reason components are worth having:
+//
+//	{!! components.Button(components.ButtonProps{Label: "Save"}) !!}
+//
+// The name is resolved by the Go compiler, the props are checked by the Go
+// compiler, and a field that does not exist stops the build. A component looked
+// up by string and asserted at run time would have neither -- a typo in the name
+// would reach production as a blank space, and wrong props as a 500. That is the
+// failure this framework exists to make impossible, so a component cannot be the
+// one place it is reintroduced.
+//
+// It returns template.HTML rather than writing to an io.Writer so it can be
+// interpolated. The value is safe by construction: every {{ }} inside the
+// component was escaped by this generator on the way in, which is what makes
+// {!! !!} the right form here and a mistake anywhere a person's text is used.
+func (g *generator) emitComponent() {
+	fn := componentFuncName(g.name)
+
+	fmt.Fprintf(&g.out, "// %s renders the %s component.\n",
+		fn, strings.TrimPrefix(g.name, "components."))
+	if g.dataType == "" {
+		fmt.Fprintf(&g.out, "func %s() template.HTML {\n", fn)
+	} else {
+		fmt.Fprintf(&g.out, "func %s(props %s) template.HTML {\n", fn, g.dataType)
+		g.out.WriteString("\td := props\n\t_ = d\n")
+	}
+
+	// A strings.Builder never fails a write, so the err every node threads
+	// through is dead here -- and dropping the guards would mean a second code
+	// path through the node emitter, which is how the two drift apart.
+	g.out.WriteString("\tw := &strings.Builder{}\n")
+	g.out.WriteString("\tvar err error\n")
+	for _, n := range g.file.Body {
+		g.node(n)
+	}
+	g.out.WriteString("\t_ = err\n")
+	g.out.WriteString("\treturn template.HTML(w.String())\n")
+	g.out.WriteString("}\n")
+	g.silenceUnused()
+}
+
+// componentFuncName turns the view name into the exported Go function.
+//
+//	components.button       -> Button
+//	components.theme-toggle -> ThemeToggle
+func componentFuncName(name string) string {
+	var b strings.Builder
+	for _, part := range strings.FieldsFunc(strings.TrimPrefix(name, "components."), func(r rune) bool {
+		return r == '/' || r == '-' || r == '_' || r == '.'
+	}) {
+		if part == "" {
+			continue
+		}
+		b.WriteString(strings.ToUpper(part[:1]))
+		b.WriteString(part[1:])
+	}
+	return b.String()
 }
 
 // emitSections builds the map a layout's @yield reads.
@@ -380,6 +494,15 @@ func (g *generator) directive(n Node) {
 			strconv.Quote(unquote(n.Body)))
 
 	case "include":
+		// A partial shares the page's data, and that is all @include does.
+		//
+		// It briefly took a second argument, so a partial could be handed data of
+		// its own. That made two ways to draw a component -- this one, resolved
+		// by string at run time, and the typed function a component compiles to
+		// -- and the string one is the worse of the two by exactly the measure
+		// this project is built on: a typo in the name reaches production. RULE 9
+		// says the second way does not get to exist, and the compiler-checked one
+		// is the one that stays.
 		fmt.Fprintf(&g.out, "\tif err == nil { err = view.Include(w, %s, data) }\n",
 			strconv.Quote(unquote(n.Body)))
 
@@ -477,10 +600,58 @@ func (g *generator) clauses(header string) string {
 // second expression language (RULE 15).
 func (g *generator) expr(e string) string {
 	e = strings.TrimSpace(e)
-	if strings.HasPrefix(e, ".") {
-		return "d" + e
+
+	var out strings.Builder
+	for i := 0; i < len(e); i++ {
+		c := e[i]
+
+		// A string or rune literal is copied out whole. `.Title` inside quotes is
+		// text somebody wrote, and rewriting it would change what the page says.
+		if c == '"' || c == '\'' || c == '`' {
+			end := closingQuote(e, i)
+			out.WriteString(e[i : end+1])
+			i = end
+			continue
+		}
+
+		// A leading dot is a field of the page data. It is leading when what
+		// precedes it cannot end an operand: `feature.Title` is a selector on a
+		// loop variable, `1.5` is a number, and neither is ours.
+		if c == '.' && i+1 < len(e) && isFieldStart(e[i+1]) && (i == 0 || !endsOperand(e[i-1])) {
+			out.WriteString("d.")
+			continue
+		}
+		out.WriteByte(c)
 	}
-	return e
+	return out.String()
+}
+
+// closingQuote finds the end of the literal that opens at i, or the end of the
+// expression when it is never closed -- which is a Go syntax error, reported by
+// the Go compiler at the view's own line.
+func closingQuote(e string, i int) int {
+	quote := e[i]
+	for j := i + 1; j < len(e); j++ {
+		if e[j] == '\\' && quote != '`' {
+			j++
+			continue
+		}
+		if e[j] == quote {
+			return j
+		}
+	}
+	return len(e) - 1
+}
+
+// isFieldStart reports whether a byte can begin an exported field name. Only
+// exported ones: a view cannot read an unexported field anyway, and requiring
+// the capital is what keeps `.5` a number.
+func isFieldStart(c byte) bool { return c >= 'A' && c <= 'Z' }
+
+// endsOperand reports whether a byte can end something a dot would select from.
+func endsOperand(c byte) bool {
+	return c == '_' || c == ')' || c == ']' || c == '}' ||
+		c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }
 
 // cond is expr for a boolean position, where a bare field is the condition.
@@ -501,6 +672,16 @@ func (g *generator) silenceUnused() {
 	g.out.WriteString("\nvar (\n")
 	g.out.WriteString("\t_ = template.HTMLEscapeString\n")
 	g.out.WriteString("\t_ = io.WriteString\n")
+	// view is unused by a view that interpolates nothing -- a component that is
+	// only markup, a layout that is only @yield. It is imported unconditionally
+	// because deciding per file would mean predicting which directives emit a
+	// call, and being wrong in the other direction is a build that fails.
+	g.out.WriteString("\t_ = view.Text\n")
+	// strings is only imported by a component, and only used by one that writes
+	// something.
+	if g.isComponent() {
+		g.out.WriteString("\t_ = strings.Builder{}\n")
+	}
 	g.out.WriteString(")\n")
 }
 

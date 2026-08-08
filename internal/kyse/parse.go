@@ -71,6 +71,7 @@ func (p *parser) header(file *File) error {
 					Hint: "without it the Go compiler reads the markup below as Go and fails.\n" +
 						"    Add it, followed by a blank line, before the package clause."}
 			}
+			p.imports(file)
 			return nil
 		default:
 			return &Error{Path: p.path, Line: p.i + 1,
@@ -82,6 +83,54 @@ func (p *parser) header(file *File) error {
 	return &Error{Path: p.path, Line: 1,
 		Message: "this view has no package clause",
 		Hint:    "add `package views` after the build tag, or the Go compiler refuses the directory."}
+}
+
+// imports reads the import block, when the view has one, and stops at the first
+// line that is neither an import nor blank.
+//
+// It is Go's own import statement rather than a directive of ours: the source is
+// a Go file, the person is already writing Go in @go, and RULE 15 keeps the
+// directive set closed. What it buys is a view that draws a component from
+// another package --
+//
+//	import "example.com/app/resources/views/components"
+//
+//	@include('components.button', components.ButtonProps{Label: "Save"})
+//
+// -- which is the whole point of components living in a directory of their own.
+//
+// Nothing here validates the paths. An import that does not resolve, or one
+// nothing uses, is reported by the Go compiler against the generated file, and
+// the //line directives put that report on the view's own line.
+func (p *parser) imports(file *File) {
+	for ; p.i < len(p.lines); p.i++ {
+		line := strings.TrimSpace(p.lines[p.i])
+
+		switch {
+		case line == "":
+			continue
+
+		case strings.HasPrefix(line, "import ("):
+			for p.i++; p.i < len(p.lines); p.i++ {
+				inner := strings.TrimSpace(p.lines[p.i])
+				if inner == ")" {
+					break
+				}
+				if inner != "" {
+					file.Imports = append(file.Imports, inner)
+				}
+			}
+			if p.i == len(p.lines) {
+				p.fail(len(p.lines), "the import block was never closed", "add ) where it ends.")
+			}
+
+		case strings.HasPrefix(line, "import "):
+			file.Imports = append(file.Imports, strings.TrimSpace(strings.TrimPrefix(line, "import")))
+
+		default:
+			return
+		}
+	}
 }
 
 // nodes reads the body, from the current line to the end or to a closing
@@ -119,6 +168,23 @@ func (p *parser) nodes(goBlocks *[]Block, depth int) []Node {
 			}
 			flush()
 			return out
+		}
+
+		// A comment that opens on this line and closes on a later one is consumed
+		// whole, before the line is read as markup.
+		//
+		// interpolate works one line at a time and cannot see the closing
+		// delimiter on the next, so without this a comment spanning lines was
+		// reported as never closed -- and the note somebody wrote about why a
+		// line is the way it is is exactly the thing that runs to three lines.
+		if at := strings.Index(line, "{{--"); at >= 0 && !strings.Contains(line[at:], "--}}") {
+			flush()
+			if before := line[:at]; strings.TrimSpace(before) != "" {
+				out = append(out, p.interpolate(before, lineNo)...)
+			}
+			p.skipComment(lineNo)
+			textLine = p.i + 1
+			continue
 		}
 
 		name, args, ok := directiveOn(trimmed)
@@ -167,6 +233,30 @@ func (p *parser) nodes(goBlocks *[]Block, depth int) []Node {
 
 	flush()
 	return out
+}
+
+// skipComment consumes a comment that spans lines, and whatever follows its
+// closing delimiter on that last line.
+//
+// Nothing it reads is emitted, which is the difference between this and an HTML
+// comment: a note about why the markup is the way it is does not belong in the
+// page source of every request.
+func (p *parser) skipComment(openLine int) {
+	for ; p.i < len(p.lines); p.i++ {
+		end := strings.Index(p.lines[p.i], "--}}")
+		if end < 0 {
+			continue
+		}
+		// What is left on the closing line is markup again. Rewriting the line in
+		// place and re-reading it is what keeps `--}}<td>` working without a
+		// second path through the interpolator.
+		p.lines[p.i] = p.lines[p.i][end+4:]
+		if strings.TrimSpace(p.lines[p.i]) == "" {
+			p.i++
+		}
+		return
+	}
+	p.fail(openLine, "{{-- was never closed", "close it with --}}.")
 }
 
 // until reads raw lines to a closing directive, without interpreting them. It is

@@ -14,6 +14,28 @@ import (
 // viewsDir is where a project keeps its views.
 const viewsDir = "resources/views"
 
+// viewsIn says which directory of a module holds its views.
+//
+// A project keeps them in resources/views, and that is the answer almost every
+// time. A component library keeps them at its own root: it has no controllers,
+// no routes and no stylesheet, so a resources/views inside it would be a
+// directory named after a structure it does not have.
+//
+// One rule and no flag. `aru view:build` is told where the views are by looking,
+// and a flag saying it again would be a second way to answer a question the tree
+// already answers -- which is how the two get to disagree.
+//
+// It matters for more than finding the files: the name a view is registered
+// under is its path relative to this directory. With the wrong base,
+// `components/button.kyse.go` compiles to a component called
+// `resources.views.components.button`, and nothing that draws it can find it.
+func viewsIn(root string) string {
+	if _, err := os.Stat(filepath.Join(root, viewsDir)); err == nil {
+		return filepath.Join(root, viewsDir)
+	}
+	return root
+}
+
 // viewSuffix is what a view source is named.
 //
 // One constant, because two places have to agree on it: the compiler that reads
@@ -28,10 +50,7 @@ const viewSuffix = ".kyse.go"
 // downloads -- kyse is part of `aru`. One fewer thing to pin, verify and cache
 // (REGRA 13).
 func compileViews(root string, stdout io.Writer) error {
-	dir := filepath.Join(root, viewsDir)
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return nil
-	}
+	dir := viewsIn(root)
 
 	sources, err := findViews(dir)
 	if err != nil {
@@ -91,7 +110,7 @@ func compileViews(root string, stdout io.Writer) error {
 		// `go build` runs and the compiler prints a //line file name exactly as
 		// it reads it. Handing it an absolute path, or one relative to
 		// resources/views, would report a position nobody can click.
-		target := kyse.OutputPath(dir, source)
+		target := kyse.OutputPath(source)
 		targetRel, err := filepath.Rel(root, target)
 		if err != nil {
 			return err

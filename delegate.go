@@ -82,3 +82,32 @@ func projectRoot() (string, error) {
 		dir = parent
 	}
 }
+
+// moduleRoot walks up to the nearest go.mod.
+//
+// It is what the commands that act on views use, because views are not only a
+// project's. A component library -- github.com/arandu-io/kyse-ui is the first --
+// is a Go module with `.kyse.go` sources, no main.go, no arandu.toml and no
+// stylesheet, and `aru view:build` compiles it the same way.
+//
+// The alternative was a script that created a throwaway project, copied the
+// sources in, built there and copied the output back. It worked, and it meant
+// the library could not be built by the command that builds views -- so the two
+// paths were free to drift, and the one nobody ran daily is the one that would.
+func moduleRoot() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", errors.New("this is not a Go module: no go.mod here or above. " +
+				"Run it from inside a project, or create one with `aru new`")
+		}
+		dir = parent
+	}
+}

@@ -146,13 +146,13 @@ func snapshot(root string) map[string]time.Time {
 	// every view build trigger the next one.
 	//
 	// Which file that is comes from kyse rather than from a suffix, because the
-	// generated name is not the source name -- auth/login.kyse.go compiles to
-	// auth_login.go, flat, with nothing in the name that announces it. Guessing
+	// generated file sits beside its source with nothing in the name that
+	// announces it: auth/login.kyse.go compiles to auth/login.go, and there is no
+	// way to tell that from a hand-written auth/helpers.go by looking. Guessing
 	// would either watch the output, which is the rebuild loop, or stop watching
 	// a hand-written file that happened to match.
-	dir := filepath.Join(root, viewsDir)
 	for _, source := range sources {
-		delete(state, kyse.OutputPath(dir, source))
+		delete(state, kyse.OutputPath(source))
 	}
 	return state
 }

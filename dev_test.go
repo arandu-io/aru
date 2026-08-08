@@ -83,12 +83,13 @@ func TestTheGeneratedViewIsNotWatched(t *testing.T) {
 		filepath.Join("resources", "views", "layouts", "app.kyse.go"),
 		filepath.Join("resources", "views", "auth", "login.kyse.go"),
 	}
-	// What `aru view:build` writes for each of them: flat in resources/views,
-	// named after the path. Nothing in the name says it was generated.
+	// What `aru view:build` writes for each of them: beside the source, with the
+	// same name. Nothing in the name says it was generated, which is exactly why
+	// the watcher asks kyse instead of matching a suffix.
 	generated := []string{
 		filepath.Join("resources", "views", "home.go"),
-		filepath.Join("resources", "views", "layouts_app.go"),
-		filepath.Join("resources", "views", "auth_login.go"),
+		filepath.Join("resources", "views", "layouts", "app.go"),
+		filepath.Join("resources", "views", "auth", "login.go"),
 	}
 	handWritten := []string{
 		filepath.Join("main.go"),

@@ -36,7 +36,9 @@ func viewBuild(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("view:build: %w", err)
 	}
 
-	root, err := projectRoot()
+	// A module root, not necessarily a project: a component library has views
+	// and no main.go. See viewsIn.
+	root, err := moduleRoot()
 	if err != nil {
 		return err
 	}

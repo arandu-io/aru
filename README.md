@@ -1,6 +1,6 @@
 <h1 align="center">arandu-io/aru</h1>
 
-<p align="center">The Arandu CLI. It is the `artisan`.</p>
+<p align="center">The Arandu command line.</p>
 
 <p align="center">
 <a href="https://github.com/arandu-io/aru/actions/workflows/ci.yml"><img src="https://github.com/arandu-io/aru/actions/workflows/ci.yml/badge.svg" alt="Build Status"></a>
@@ -9,9 +9,10 @@
 <a href="LICENSE.md"><img src="https://img.shields.io/github/license/arandu-io/aru" alt="License"></a>
 </p>
 
+
 ## About `aru`
 
-```
+```sh
 brew install arandu-io/tap/aru
 aru new my-app
 cd my-app && aru dev
@@ -19,22 +20,22 @@ cd my-app && aru dev
 
 `aru help` lists every command. The ones that carry the most:
 
-- `aru new` — a project from the skeleton
+- `aru new` — a project, ready to run
 - `aru dev` — build the views, run the application, restart on every change
 - `aru make:module` — an entity with its policy, repository, service, request, migration, seeder and four screens, compiling and tested
 - `aru generate` — the same, from a written specification
 - `aru doctor` — twenty-two checks that a project honours the framework's contracts, in CI
 - `aru trace` — a request reconstructed in the terminal, from the running application
 
-The view compiler, kyse, is part of this CLI rather than a binary it downloads:
-one fewer thing to pin, verify and cache.
+The view compiler is part of this binary rather than something it downloads: one
+fewer thing to pin, verify and cache.
 
 One direct dependency: `gopkg.in/yaml.v3`, for the specification format. CI
 refuses the second.
 
-There is no `make:auth` — the starter kit is
-[arandu-io/ui](https://github.com/arandu-io/ui), the same way `artisan` has had
-no `make:auth` since Laravel 6.
+The authentication screens are not here — they are
+[arandu-io/ui](https://github.com/arandu-io/ui), published into your project and
+yours to edit.
 
 ## Learning Arandu
 
@@ -43,7 +44,7 @@ The API reference is generated from the doc comments and lives on
 symbol carries one, and that is deliberate: it is the documentation that cannot
 drift from the code, because it sits in the same file.
 
-The CLI documents itself — `aru help` lists every command, and each one explains
+The CLI documents itself. `aru help` lists every command, and each one explains
 what it writes and what to do with it. `aru doctor` explains what it found and
 what breaks, not which rule was violated.
 

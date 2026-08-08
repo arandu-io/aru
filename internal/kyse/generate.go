@@ -15,8 +15,8 @@ import (
 // directory, no reflection: the data is the struct the view declared in its
 // `@go` block, and a field that does not exist stops the build.
 //
-// Laravel compiles Blade to PHP at runtime and caches it in
-// storage/framework/views. Same idea, moved to build time -- which is what makes
+// A template engine usually compiles to source at run time and caches the
+// result. Same idea, moved to build time -- which is what makes
 // the typo a compile error instead of a warning nobody reads in production.
 //
 // # Why the output path is a parameter
@@ -245,7 +245,7 @@ func (g *generator) node(n Node) {
 		fmt.Fprintf(&g.out, "\tif err == nil { _, err = io.WriteString(w, %s) }\n", strconv.Quote(n.Body))
 
 	case Echo:
-		// template.HTMLEscapeString is the same escape Blade's e() does, and it
+		// template.HTMLEscapeString is the escape every template engine applies, and it
 		// is not optional: a view that interpolates without escaping is the XSS
 		// this framework refuses to make easy.
 		g.guarded(n.Line, "_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(%s)))", g.expr(n.Body))
@@ -310,7 +310,7 @@ func (g *generator) directive(n Node) {
 	case "for":
 		// @for(i := 0; i < len(d.Items); i++) -> the same three clauses, in Go.
 		//
-		// Blade writes @for($i = 0; $i < 10; $i++) and this is the same shape
+		// The familiar form is @for(i = 0; i < 10; i++), and this is the same shape
 		// with Go's syntax, exactly as @if already takes a Go condition rather
 		// than inventing a second expression language (RULE 15).
 		g.at(n.Line)
@@ -334,7 +334,7 @@ func (g *generator) directive(n Node) {
 	case "forelse":
 		// @forelse(.Items as it) … @empty … @endforelse
 		//
-		// Blade's, and the one directive of the set that earns its keep in every
+		// The one directive of the set that earns its keep in every
 		// generated index page: a list and its empty state are one thought, and
 		// writing them as @foreach next to @if(len(...) == 0) states the
 		// condition twice, where the two can drift apart.
@@ -471,7 +471,7 @@ func (g *generator) clauses(header string) string {
 
 // expr turns a view expression into a Go one.
 //
-// `.Name` means "a field of the data", which is what a Blade `$name` means in
+// `.Name` means "a field of the data", which is what a bare name means in
 // context. Everything else is passed through, so `len(d.Items)` and a helper
 // call work -- the view is Go, and pretending otherwise would be inventing a
 // second expression language (RULE 15).

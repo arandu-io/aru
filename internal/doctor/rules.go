@@ -127,7 +127,7 @@ func repositoriesAndPolicies(p *project) (map[string]entityPlace, map[string]boo
 // reachable and nobody decided who may reach it.
 //
 // app/Policies/ is not a convention of an organized team here, the way it is in
-// Laravel: it is skeleton, and this is the rule that makes it so (ADR 0019).
+// elsewhere: here it is skeleton, and this is the rule that makes it so (ADR 0019).
 func repositoryNeedsPolicy(p *project) []Finding {
 	repositories, policies := repositoriesAndPolicies(p)
 
@@ -486,7 +486,7 @@ func controllerMustNotReachData(p *project) []Finding {
 // the compiler cannot see it: the repository method it calls does require a
 // Grant, and a handler can produce one with SystemGrant.
 //
-// This is the boundary ADR 0019 calls the other 20%: in Laravel, Service and
+// This is the boundary ADR 0019 calls the other 20%: elsewhere, Service and
 // Repository are a convention of an organized team; here they are skeleton, and
 // the direction of the arrow is checked.
 func controllerMustNotReachTheRepository(p *project) []Finding {
@@ -1084,7 +1084,7 @@ func sensitiveFieldNeedsRedaction(p *project) []Finding {
 //
 // The directory, not the whole project: a method has to be declared in the
 // package of its receiver, so anywhere else is not the same type. That is also
-// what makes the check right in the Laravel tree, where app/Models and
+// what makes the check right in this tree, where app/Models and
 // app/Requests are two packages that both declare a type called User.
 func hasRedaction(files []*file, dir, typeName string) bool {
 	for _, f := range files {
@@ -1408,7 +1408,7 @@ func usedPermissions(p *project) manifest.Permissions {
 			continue
 		}
 
-		// database/migrations is where the schema lives in the Laravel tree, so
+		// database/migrations is where the schema lives, so
 		// its existence is the declaration -- no method name to remember.
 		if strings.HasPrefix(f.rel, "database/migrations/") {
 			used.Migrations = true

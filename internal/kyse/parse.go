@@ -193,13 +193,13 @@ func (p *parser) interpolate(line string, lineNo int) []Node {
 	rest := line
 
 	for {
-		// {{-- --}} is checked first, before both interpolations, because it
-		// opens with the same two braces as the escaped form. A comment that
-		// were read as an interpolation would try to compile its own text.
+		// {{-- --}} is checked first, before both interpolations, because it opens
+		// with the same two braces as the escaped form. A comment that were read as
+		// an interpolation would try to compile its own text.
 		//
-		// Blade has it and kyse did not: a view language with no way to write a
-		// note is a view language whose notes end up in the markup, visible in
-		// the page source of every request.
+		// Every template language has it and kyse did not: a view language with no
+		// way to write a note is a view language whose notes end up in the markup,
+		// visible in the page source of every request.
 		if at := strings.Index(rest, "{{--"); at >= 0 && at <= indexOr(strings.Index(rest, "{!!"), len(rest)) {
 			end := strings.Index(rest[at:], "--}}")
 			if end < 0 {

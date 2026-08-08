@@ -16,7 +16,7 @@ const SendInvoiceName = "invoice.send"
 
 // SendInvoice is what the job carries.
 //
-// These are Laravel's __construct arguments, as a struct. Keep it to facts and
+// These are the arguments the job was created with, as a struct. Keep it to facts and
 // ids: a payload that says "look it up" is a payload that reads a row which has
 // already changed by the time the worker gets there.
 type SendInvoice struct {

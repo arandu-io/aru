@@ -7,7 +7,8 @@
 // been trained on Arandu -- it depends on our compiler.
 //
 // That is what answers the problem underneath: a new framework has zero examples
-// in the training set, and a model fills the gap with Laravel and Django
+// in the training set, and a model fills the gap with the frameworks it does
+// know
 // patterns that do not exist here. With an intermediate spec that stops
 // mattering: the schema fits in the context window, and it is verifiable before
 // it becomes code.

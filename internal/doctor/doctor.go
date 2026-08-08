@@ -11,7 +11,7 @@
 //
 // # The tree it reads
 //
-// The project layout is Laravel's, directory by directory (ADR 0019), so a file
+// The project layout is conventional, directory by directory (ADR 0019), so a file
 // is placed by the app/ subtree it sits in rather than by a module directory:
 // app/Policies/InvoicePolicy.go is the Policies of Invoice, and
 // app/Repositories/InvoiceRepository.go is the Repositories of the same entity.
@@ -35,7 +35,7 @@ import (
 	"github.com/arandu-io/aru/internal/manifest"
 )
 
-// viewsDir is where a project keeps its views, mirroring Laravel.
+// viewsDir is where a project keeps its views.
 const viewsDir = "resources/views"
 
 // Severity says whether a finding blocks CI.

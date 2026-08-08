@@ -29,8 +29,8 @@ func Generate(m Module) ([]File, error) {
 		return nil, err
 	}
 
-	// The Laravel tree, directory by directory. A developer arriving from there
-	// finds each file where they expect it, and the file name is CamelCase for
+	// The conventional tree, directory by directory. Each file lands where
+	// somebody would look for it, and the file name is CamelCase for
 	// the same reason -- it is what makes the project recognizable (ADR 0019).
 	var out []File
 
@@ -62,8 +62,8 @@ func Generate(m Module) ([]File, error) {
 	}
 	out = append(out, migration)
 
-	// The views. Laravel puts them under resources/views/<plural>/, one per
-	// action that has a screen.
+	// The views, under resources/views/<plural>/, one per action that has a
+	// screen.
 	views := filepath.Join("resources", "views", m.Resource())
 	for _, v := range []struct {
 		name string

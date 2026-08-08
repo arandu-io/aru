@@ -7,19 +7,17 @@ import (
 
 // Kind is which shape of controller was asked for.
 //
-// It mirrors the three stubs artisan has -- controller.plain.stub,
-// controller.stub and controller.invokable.stub -- and it is closed for the same
-// reason the type list is: a generator whose shapes grow on demand becomes a
-// language (RULE 15).
+// Three shapes, and the set is closed for the same reason the type list is: a
+// generator whose shapes grow on demand becomes a language (RULE 15).
 type Kind string
 
 // The closed set.
 const (
-	// KindPlain is a controller with no actions yet: artisan's default.
+	// KindPlain is a controller with no actions yet, and it is the default.
 	KindPlain Kind = "plain"
 	// KindResource is the seven actions httpx.Router.Resource looks for.
 	KindResource Kind = "resource"
-	// KindInvokable is one action, Handle: artisan's --invokable.
+	// KindInvokable is one action, Handle.
 	KindInvokable Kind = "invokable"
 )
 
@@ -27,8 +25,8 @@ const (
 // and `aru make:request` know, which is deliberately less than a Module.
 //
 // A Module describes an entity and generates twelve files from it. A Stub
-// describes one file, and the developer this is for -- porting a Laravel
-// application one class at a time -- asks for one file.
+// describes one file, and the person this is for -- porting an application one
+// class at a time -- asks for one file.
 type Stub struct {
 	// Type is the Go type the file declares: "InvoiceController".
 	Type string
@@ -45,7 +43,7 @@ type Stub struct {
 	// Kind picks the shape of controller. It is ignored by the other stubs.
 	Kind Kind
 	// Fields are the columns a request carries. Empty is legitimate: it is the
-	// empty stub artisan writes.
+	// empty stub.
 	Fields []Field
 }
 
@@ -99,9 +97,8 @@ func (s Stub) Validate() error {
 
 // GenerateController produces app/Http/Controllers/<Type>.go.
 //
-// One file, always. artisan writes one too: a controller is not a module, and a
-// command that also wrote a view and a migration would be `aru make:module`
-// under another name.
+// One file, always: a controller is not a module, and a command that also wrote
+// a view and a migration would be `aru make:module` under another name.
 func GenerateController(s Stub) ([]File, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err
@@ -171,8 +168,9 @@ import (
 //
 // It is thin on purpose: read the request, call a service, render. There is no
 // repository here and there cannot be one -- httpx.Context carries no database
-// handle, so a controller that reached the data layer would be a controller that
-// skipped the service, and therefore skipped the policy. ` + "`" + `aru doctor` + "`" + ` refuses it.
+// handle, so a controller that reached the data layer would be a controller
+// that skipped the service, and therefore skipped the policy. ` + "`" + `aru
+// doctor` + "`" + ` refuses it.
 type {{.Type}} struct {
 	Controller
 
@@ -200,8 +198,8 @@ func New{{.Type}}(sessions *security.SessionStore, csrf *security.CSRF) *{{.Type
 // rather than answering 404 in production.
 //
 // Delete the pair -- the line below and the method -- for every action this
-// resource does not have. That is what ` + "`" + `--api` + "`" + ` does in artisan: a controller
-// without Create and Edit registers five routes instead of seven.
+// resource does not have: a controller without Create and Edit registers five
+// routes instead of seven.
 var (
 	_ httpx.Indexer   = (*{{.Type}})(nil)
 	_ httpx.Creator   = (*{{.Type}})(nil)
@@ -254,8 +252,8 @@ func (c *{{.Type}}) Destroy(ctx *httpx.Context) error {
 {{end}}{{if .IsInvokable}}
 // Handle answers the one route this controller has.
 //
-// Laravel spells it __invoke and registers the class itself. Here the route
-// names the method, which is the same idea with a compiler behind it:
+// The usual shape registers the class itself and calls a magic method. Here the
+// route names the method, which is the same idea with a compiler behind it:
 //
 //	r.Action("GET", "/{{.Resource}}", d.{{.Entity}}.Handle).Name("{{.Resource}}")
 //
@@ -303,24 +301,27 @@ import (
 
 // {{.Type}} runs before the handler, and may answer instead of it.
 //
-// Laravel writes this as a class with handle($request, Closure $next). Here it
-// is the standard net/http signature -- func(http.Handler) http.Handler, which
-// httpx.Middleware names -- and that is what makes every middleware written for
-// the Go ecosystem work in this pipeline unchanged, and this one work in any
-// other.
+// The usual shape is a class with a handle(request, next) method. Here it is
+// the standard net/http signature -- func(http.Handler) http.Handler, which
+// httpx.Middleware names -- and that is what makes every middleware written
+// for the Go ecosystem work in this pipeline unchanged, and this one work in
+// any other.
 //
 // It is a constructor that returns the middleware rather than the middleware
-// itself, so whatever it needs is a parameter and is visible at the wiring site:
+// itself, so whatever it needs is a parameter and is visible at the wiring
+// site:
 //
 //	func {{.Type}}(sessions *security.SessionStore) httpx.Middleware
 //
 // A middleware that reached for a package-level variable would be a middleware
-// no test can pin, and no reader of bootstrap/app.go can see the dependencies of.
+// no test can pin, and no reader of bootstrap/app.go can see the dependencies
+// of.
 //
 // What it must not do is reach the database. A middleware is the request, one
-// layer earlier: a query here skipped the service and therefore the policy, and
-// ` + "`" + `aru doctor` + "`" + ` refuses it by the same rule it refuses a controller. Call a
-// service, or read what an earlier middleware already put on the context.
+// layer earlier: a query here skipped the service and therefore the policy,
+// and ` + "`" + `aru doctor` + "`" + ` refuses it by the same rule it refuses
+// a controller. Call a service, or read what an earlier middleware already put
+// on the context.
 func {{.Type}}() httpx.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -360,8 +361,8 @@ const requestStubTemplate = `package requests
 // tag, so a field the client sends and this struct does not declare goes
 // nowhere -- and a rule nobody wrote is not a rule somebody switched off.
 //
-// Laravel's FormRequest also answers authorize(). This one does not, and that is
-// the decision rather than an omission: authorization is the Policy, asked with
+// A request object often answers authorize() as well. This one does not, and
+// that is the decision rather than an omission: authorization is the Policy, asked with
 // security.Authorize inside the service, and a second place to say yes is a
 // second place to forget. See app/Policies.
 type {{.Type}} struct {

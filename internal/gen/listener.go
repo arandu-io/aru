@@ -34,18 +34,19 @@ func (l Listener) EventOrAny() string {
 
 // GenerateListener writes app/Listeners/<Name>.go.
 //
-// It is `php artisan make:listener`, and the shape differs where the delivery
-// does. Laravel dispatches an event object in process and a listener subscribes
-// to its class; here the event was written to the outbox in the same transaction
-// as the row it is about (doc 27), and the relay hands it over after the commit.
+// The shape differs from the usual one where the delivery does. In process, an
+// event object is dispatched and a listener subscribes to its class; here the
+// event was written to the outbox in the same transaction as the row it is
+// about (doc 27), and the relay hands it over after the commit.
 //
-// So a listener implements events.Publisher and answers a NAME, not a type. That
-// is what lets the producer and the consumer live in different binaries later
-// without either of them changing.
+// So a listener implements events.Publisher and answers a NAME, not a type.
+// That is what lets the producer and the consumer live in different binaries
+// later without either of them changing.
 //
 // Delivery is at-least-once by design: the relay can hand the same event twice
-// if a publish succeeded and the acknowledgement did not. The generated handler
-// says so and leaves the idempotency where only the application can put it.
+// if a publish succeeded and the acknowledgement did not. The generated
+// handler says so and leaves the idempotency where only the application can
+// put it.
 func GenerateListener(l Listener) ([]File, error) {
 	if l.ModulePath == "" {
 		return nil, errModulePath
@@ -66,8 +67,8 @@ func GenerateListener(l Listener) ([]File, error) {
 
 const listenerTemplate = `// Package listeners holds what this application does after a write commits.
 //
-// The directory is app/Listeners, where a Laravel developer looks for it. The
-// package name follows Go and stays lowercase.
+// The directory is app/Listeners, where people look for it. The package name
+// follows Go and stays lowercase.
 package listeners
 
 import (
@@ -77,7 +78,8 @@ import (
 	"github.com/arandu-io/framework/observability"
 )
 
-// {{ .Type }} answers {{ if .EventOrAny }}` + "`{{ .EventOrAny }}`" + `{{ else }}every event{{ end }}.
+// {{ .Type }} answers {{ if .EventOrAny }}` + "`{{ .EventOrAny }}`" + `{{ else
+// }}every event{{ end }}.
 //
 // It implements events.Publisher: the relay calls Publish once the event is
 // committed and readable, never inside the transaction that wrote it.

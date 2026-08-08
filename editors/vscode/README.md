@@ -22,7 +22,7 @@ regra existe para uma razão precisa — nenhum projeto Arandu precisa de Node p
 compilar ou rodar — e uma extensão de editor não muda isso.
 
 Mas a regra está escrita sem exceção, e abrir uma em silêncio é como o Node
-entrou no Laravel: pela página de erro, por um caso pontual que parecia
+entrou em projetos parecidos: pela página de erro, por um caso pontual que parecia
 inofensivo.
 
 **Então fica em aberto, para o proprietário decidir.** Três caminhos:

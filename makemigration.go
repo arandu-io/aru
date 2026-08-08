@@ -19,7 +19,8 @@ import (
 
 // makeMigration writes one migration.
 //
-// It is `php artisan make:migration`, with one difference that is not cosmetic:
+// It writes one migration, with one difference from the usual shape that is not
+// cosmetic:
 // --fields is required. See the flag's own error message -- an empty Up applies
 // nothing and is still recorded as applied, and a migration id is immutable.
 func makeMigration(args []string, stdout, stderr io.Writer) error {
@@ -40,7 +41,7 @@ func makeMigration(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("usage: aru make:migration <name> [--create=<table> | --table=<table>] --fields \"status:string,paid_at:timestamp\"")
 	}
 	// The argument names the file here, not a class, so it is not normalized: it
-	// is written in snake_case exactly as artisan takes it.
+	// is written in snake_case.
 	if !isMigrationName(name) {
 		return fmt.Errorf("make:migration: %q must be lowercase letters, digits and underscore, starting with a letter -- for example create_invoices_table or add_status_to_invoices", name)
 	}
@@ -53,7 +54,7 @@ func makeMigration(args []string, stdout, stderr io.Writer) error {
 		target, creating = *table, false
 	}
 	if target == "" {
-		// The same rule as artisan's TableGuesser: the flag always wins, and the
+		// The rule is: the flag always wins, and the
 		// name is only read when there is no flag.
 		guessed, guessedCreate, ok := guessTable(name)
 		if !ok {
@@ -143,7 +144,7 @@ Then:
 `, s.Var)
 }
 
-// migrationName is the shape artisan takes: snake_case, describing the change.
+// migrationName is the conventional shape: snake_case, describing the change.
 var migrationName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 func isMigrationName(s string) bool { return migrationName.MatchString(s) }
@@ -159,14 +160,14 @@ func migrationVar(name string) string {
 	return strings.ToLower(e[:1]) + e[1:]
 }
 
-// createPattern and changePattern are artisan's TableGuesser, which is copied
+// createPattern and changePattern guess the table from the name, which is kept
 // because it is real parity of gesture: it is the way the name is typed.
 var (
 	createPattern = regexp.MustCompile(`^create_(\w+?)(_table)?$`)
 	changePattern = regexp.MustCompile(`_(?:to|from|in)_(\w+?)(_table)?$`)
 )
 
-// guessTable reads the table out of the migration name, the way artisan does.
+// guessTable reads the table out of the migration name.
 // It only guesses: when the name does not match, the caller asks for the flag
 // rather than picking a table.
 func guessTable(name string) (table string, create bool, ok bool) {

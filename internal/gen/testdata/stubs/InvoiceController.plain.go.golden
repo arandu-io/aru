@@ -14,8 +14,9 @@ import (
 //
 // It is thin on purpose: read the request, call a service, render. There is no
 // repository here and there cannot be one -- httpx.Context carries no database
-// handle, so a controller that reached the data layer would be a controller that
-// skipped the service, and therefore skipped the policy. `aru doctor` refuses it.
+// handle, so a controller that reached the data layer would be a controller
+// that skipped the service, and therefore skipped the policy. `aru
+// doctor` refuses it.
 type InvoiceController struct {
 	Controller
 

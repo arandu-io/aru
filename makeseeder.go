@@ -10,7 +10,7 @@ import (
 
 // makeSeeder writes one seeder.
 //
-// It is `php artisan make:seeder`. The role is Laravel's -- DatabaseSeeder is
+// It writes one seeder. DatabaseSeeder is
 // the entry point, the others are called by it, and --class runs one -- and the
 // vocabulary is identical on purpose.
 func makeSeeder(args []string, stdout, stderr io.Writer) error {
@@ -35,8 +35,8 @@ func makeSeeder(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	// `aru make:seeder InvoiceSeeder` is what the Laravel developer types, and
-	// artisan does not duplicate the suffix either.
+	// `aru make:seeder InvoiceSeeder` is what people type, and the suffix is not
+	// duplicated.
 	spec := gen.SeederSpec{Entity: unsuffixed(name, "Seeder")}
 
 	file, err := gen.RenderSeeder(spec)

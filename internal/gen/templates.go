@@ -1,6 +1,6 @@
 package gen
 
-// The templates below emit into the Laravel tree: app/Models, app/Policies,
+// The templates below emit into the conventional tree: app/Models, app/Policies,
 // app/Repositories, app/Services, app/Http/Requests, app/Http/Controllers,
 // database/migrations and resources/views. There is no modules/<name>/ any
 // more -- ADR 0019 -- and the reason is recognition: the developer this
@@ -27,7 +27,7 @@ import (
 // {{.Entity}} is the entity. It has no persistence methods: this is not Active
 // Record, and a type that can save itself can save itself from anywhere.
 //
-// Coming from Eloquent, this is the difference that costs the most to find late:
+// Coming from an ORM, this is the difference that costs the most to find late:
 // there is no {{.Entity}}::find, no ->save() and no query builder on this type.
 // The table is reached by {{.Entity}}Repository, and every method of a repository
 // -- Find and List included -- takes a security.Grant that only a Policy can

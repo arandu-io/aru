@@ -11,7 +11,7 @@ import (
 	"github.com/arandu-io/aru/internal/kyse"
 )
 
-// viewsDir is where a project keeps its views, mirroring Laravel.
+// viewsDir is where a project keeps its views.
 const viewsDir = "resources/views"
 
 // viewSuffix is what a view source is named.
@@ -42,7 +42,7 @@ func compileViews(root string, stdout io.Writer) error {
 	}
 
 	// Layouts first: a page that extends one and declares no `@go` block takes
-	// the layout's data type, which is the same contract Blade has -- the page
+	// the layout's data type, which is the contract a layout needs -- the page
 	// hands the layout what the layout asks for.
 	sort.Slice(sources, func(i, j int) bool {
 		li := strings.Contains(sources[i], string(filepath.Separator)+"layouts"+string(filepath.Separator))

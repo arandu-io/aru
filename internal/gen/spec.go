@@ -399,8 +399,7 @@ func (m Module) RepositoryType() string { return m.Entity() + "Repository" }
 // ServiceType is the type name of the service.
 func (m Module) ServiceType() string { return m.Entity() + "Service" }
 
-// StoreRequest is the type name of the request that creates, in Laravel's
-// naming: StorePurchaseOrder.
+// StoreRequest is the type name of the request that creates: StorePurchaseOrder.
 func (m Module) StoreRequest() string { return "Store" + m.Entity() }
 
 // UpdateRequest is the type name of the request that updates.
@@ -431,7 +430,7 @@ func (m Module) HumansTitle() string { return upperFirst(m.Humans()) }
 func (m Module) ViewData(page string) string { return m.Plural() + exported(page) + "Data" }
 
 // ViewName is how a page is rendered: purchase-orders.index. It is the path
-// under resources/views with dots, exactly as Laravel names a view.
+// under resources/views with dots, which is how a view is named.
 func (m Module) ViewName(page string) string { return m.Resource() + "." + page }
 
 // MigrationID is the immutable identifier of the generated migration.
@@ -677,9 +676,9 @@ func ParseFields(spec string) ([]Field, error) {
 
 // Normalize accepts the two spellings of one name and returns the module one.
 //
-// `aru make:module` takes a module name -- purchase_order -- and `php artisan
-// make:model` takes a class name -- PurchaseOrder. The developer this is for
-// types the second, and the generator needs the first, so both are accepted and
+// `aru make:module` takes a module name -- purchase_order -- while the habit
+// from elsewhere is to type a class name -- PurchaseOrder. People type the
+// second, and the generator needs the first, so both are accepted and
 // converted here rather than in eight commands.
 func Normalize(name string) string {
 	rs := []rune(strings.ReplaceAll(strings.TrimSpace(name), "-", "_"))

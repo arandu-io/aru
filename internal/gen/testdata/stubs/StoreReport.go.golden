@@ -9,8 +9,8 @@ import "github.com/arandu-io/framework/validation"
 // tag, so a field the client sends and this struct does not declare goes
 // nowhere -- and a rule nobody wrote is not a rule somebody switched off.
 //
-// Laravel's FormRequest also answers authorize(). This one does not, and that is
-// the decision rather than an omission: authorization is the Policy, asked with
+// A request object often answers authorize() as well. This one does not, and
+// that is the decision rather than an omission: authorization is the Policy, asked with
 // security.Authorize inside the service, and a second place to say yes is a
 // second place to forget. See app/Policies.
 type StoreReport struct {

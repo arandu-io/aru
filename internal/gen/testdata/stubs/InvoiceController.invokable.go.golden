@@ -13,8 +13,9 @@ import (
 //
 // It is thin on purpose: read the request, call a service, render. There is no
 // repository here and there cannot be one -- httpx.Context carries no database
-// handle, so a controller that reached the data layer would be a controller that
-// skipped the service, and therefore skipped the policy. `aru doctor` refuses it.
+// handle, so a controller that reached the data layer would be a controller
+// that skipped the service, and therefore skipped the policy. `aru
+// doctor` refuses it.
 type InvoiceController struct {
 	Controller
 
@@ -38,8 +39,8 @@ func NewInvoiceController(sessions *security.SessionStore, csrf *security.CSRF) 
 
 // Handle answers the one route this controller has.
 //
-// Laravel spells it __invoke and registers the class itself. Here the route
-// names the method, which is the same idea with a compiler behind it:
+// The usual shape registers the class itself and calls a magic method. Here the
+// route names the method, which is the same idea with a compiler behind it:
 //
 //	r.Action("GET", "/invoices", d.Invoice.Handle).Name("invoices")
 //

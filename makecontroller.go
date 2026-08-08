@@ -10,15 +10,14 @@ import (
 
 // makeController writes one controller.
 //
-// It is `php artisan make:controller`, and it exists because the developer this
-// framework is for does not port a module: they port a controller, then the next
-// one. `aru make:module` writes twelve files from an entity; this writes one file
-// from a name.
+// It exists because somebody porting an application does not port a module:
+// they port a controller, then the next one. `aru make:module` writes twelve
+// files from an entity; this writes one file from a name.
 func makeController(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("make:controller", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	resource := fs.Bool("resource", false, "emit the seven actions httpx.Resource registers")
-	invokable := fs.Bool("invokable", false, "emit one action, Handle: artisan's --invokable")
+	invokable := fs.Bool("invokable", false, "emit one action, named Handle")
 	force := fs.Bool("force", false, "overwrite an existing controller, preserving the custom block")
 
 	name, args := takeName(args)

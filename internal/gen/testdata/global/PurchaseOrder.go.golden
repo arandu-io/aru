@@ -9,7 +9,7 @@ import (
 // PurchaseOrder is the entity. It has no persistence methods: this is not Active
 // Record, and a type that can save itself can save itself from anywhere.
 //
-// Coming from Eloquent, this is the difference that costs the most to find late:
+// Coming from an ORM, this is the difference that costs the most to find late:
 // there is no PurchaseOrder::find, no ->save() and no query builder on this type.
 // The table is reached by PurchaseOrderRepository, and every method of a repository
 // -- Find and List included -- takes a security.Grant that only a Policy can

@@ -303,6 +303,6 @@ func (f {{.Type}}) MakeMany(n int) []models.{{.Entity}} {
 
 // arandu:begin custom
 // States beyond the defaults go here, and survive regeneration: an overdue
-// invoice, a cancelled one -- what ` + "`" + `state()` + "`" + ` says in Laravel, as a method.
+// invoice, a cancelled one -- a named state, as a method.
 // arandu:end custom
 `

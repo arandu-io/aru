@@ -11,8 +11,8 @@ import (
 
 // makeModel writes the entity, and the parts the flags ask for.
 //
-// It is `php artisan make:model Invoice -m -f`, for the developer porting forty
-// Eloquent models who wants the struct and the migration in one gesture. What it
+// It is for somebody porting forty models who wants the struct and the
+// migration in one gesture. What it
 // never writes is a repository -- see gen.GenerateModel, which says why -- and
 // the output of the command is the cheapest place there is to teach the one
 // thing that has to be unlearned: a model here reaches nothing.
@@ -47,7 +47,8 @@ func makeModel(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	// --fields is required here and is not a flag artisan has. In Eloquent the
+	// --fields is required here, and it is the difference that matters. Where an
+	// ORM is involved the
 	// model is empty because the columns are discovered at runtime; in Go the
 	// struct is the schema, so a model with no fields describes nothing.
 	parsed, err := gen.ParseFields(*fields)
@@ -91,11 +92,11 @@ func makeModel(args []string, stdout, stderr io.Writer) error {
 }
 
 // modelWiring is the part of this command that matters most: it names, in one
-// screen, the difference between an Eloquent model and this one, and the two
+// screen, the difference between an ORM model and this one, and the two
 // commands that make the entity reachable.
 func modelWiring(m gen.Module, migration bool) string {
 	out := fmt.Sprintf(`
-A model here is data. It has no save, no find and no query builder: in Laravel
+A model here is data. It has no save, no find and no query builder: where an ORM
 the model reaches the database, and here nothing does except a Repository, whose
 every method takes a security.Grant that a Policy issued -- the reads included.
 

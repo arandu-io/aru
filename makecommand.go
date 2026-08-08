@@ -10,9 +10,9 @@ import (
 
 // makeCommand writes one console command.
 //
-// It is `php artisan make:command`, and what differs is how the command becomes
-// reachable. Artisan scans app/Console/Commands, instantiates what it finds and
-// reads a signature string at run time. Here the command is a value returned by
+// What differs from the usual shape is how the command becomes reachable.
+// Discovery scans app/Console/Commands, instantiates what it finds and reads a
+// signature string at run time. Here the command is a value returned by
 // Console() in routes/console.go, because discovery by reflection is what ADR
 // 0001 exists to refuse.
 //

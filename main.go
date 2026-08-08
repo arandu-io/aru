@@ -8,7 +8,7 @@
 // committable Go.
 //
 // The binary is called aru rather than arandu: the arandu name is already taken
-// by another tool. Same split as Laravel and artisan.
+// by another tool: the framework and the tool that drives it are separate names.
 package main
 
 import (
@@ -48,9 +48,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		// Not one of ours, so it may be one of the application's.
 		//
 		// routes/console.go is where a project declares its own commands, and
-		// the project binary dispatches them through routes.Lookup. `php artisan
-		// invoice:close` works because artisan IS the project; here aru is a
-		// separate binary, and without this the command a person just generated
+		// the project binary dispatches them through routes.Lookup. A console
+		// that ships inside the project can dispatch its own commands directly;
+		// here aru is a separate binary, and without this the command a person just generated
 		// with `aru make:command` answers "unknown command" from the tool that
 		// generated it.
 		//

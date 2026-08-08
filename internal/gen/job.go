@@ -9,9 +9,9 @@ import (
 // JobSpec is one background job.
 //
 // Two types come out of one command, and that is the only conceptual difference
-// a Laravel developer has to swallow here: in Laravel one class is both the
-// payload and the handler, because the container reinstantiates it from the
-// serialized object and injects the dependencies into handle(). There is no
+// worth explaining: the usual shape is one class that is both the payload and
+// the handler, because a container reinstantiates it from the serialized object
+// and injects the dependencies. There is no
 // container here and no object serialization -- the payload is JSON and the
 // handler is a value with its dependencies in the constructor (ADR 0001).
 type JobSpec struct {
@@ -109,7 +109,7 @@ const {{.Const}} = "{{.EventName}}"
 
 // {{.Type}} is what the job carries.
 //
-// These are Laravel's __construct arguments, as a struct. Keep it to facts and
+// These are the arguments the job was created with, as a struct. Keep it to facts and
 // ids: a payload that says "look it up" is a payload that reads a row which has
 // already changed by the time the worker gets there.
 type {{.Type}} struct {

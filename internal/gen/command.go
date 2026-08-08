@@ -44,11 +44,10 @@ func (c Command) Receiver() string { return Module{Name: Normalize(c.Name)}.Rece
 
 // GenerateCommand writes app/Console/Commands/<Name>.go.
 //
-// It is `php artisan make:command`, and the difference is where the command
-// ends up being reachable from. Artisan finds the class by scanning the
-// directory and instantiating it; here the command is a value that
-// routes/console.go returns, because a container that discovers classes by
-// reflection is the thing ADR 0001 exists to refuse.
+// The difference from the usual shape is where the command becomes reachable
+// from. Discovery scans a directory and instantiates what it finds; here the
+// command is a value that routes/console.go returns, because a container that
+// finds classes by reflection is the thing ADR 0001 exists to refuse.
 //
 // The cost is one line to add by hand, and the command prints it. What it buys
 // is that `aru route:list`, the console listing and the compiler all read the
@@ -97,8 +96,8 @@ func defaultSignature(name string) string {
 
 const commandTemplate = `// Package commands holds this application's console commands.
 //
-// The directory is app/Console/Commands, where a Laravel developer looks for it.
-// The package name follows Go and stays lowercase.
+// The directory is app/Console/Commands, where people look for it. The package
+// name follows Go and stays lowercase.
 package commands
 
 import (

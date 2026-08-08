@@ -12,9 +12,8 @@ import (
 // appPackage is where the skeleton puts the application entry point.
 // appPackage is what `go build` compiles: the module root, where main.go lives.
 //
-// It used to be "./cmd/app". The tree mirrors Laravel now, and Laravel's entry
-// point is at the root — main.go replaces both public/index.php and artisan
-// (ADR 0019).
+// It used to be "./cmd/app". The entry point is at the root now: main.go is
+// both the server and the console (ADR 0019).
 const appPackage = "."
 
 // delegate returns a command that forwards to the project's own binary.

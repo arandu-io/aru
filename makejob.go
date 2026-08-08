@@ -10,7 +10,7 @@ import (
 
 // makeJob writes one background job.
 //
-// It is `php artisan make:job`. There is no --sync: one queue (RULE 9), and a
+// It writes a background job. There is no --sync: one queue (RULE 9), and a
 // synchronous job is a function call. There is no --queue either -- the queue is
 // a constant in the generated file, and whoever chooses one at push time already
 // has fwjobs.New(g, queue, ...).

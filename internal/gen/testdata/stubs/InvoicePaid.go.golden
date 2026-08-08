@@ -4,9 +4,10 @@ import (
 	fwevents "github.com/arandu-io/framework/events"
 )
 
-// InvoicePaidName is the event, in the vocabulary of the domain rather than of
-// the database: "invoice.paid", never "invoice.updated". A consumer that has to
-// diff two rows to learn what happened is a consumer coupled to your schema.
+// InvoicePaidName is the event, in the vocabulary of the domain rather than of the
+// database: "invoice.paid", never "invoice.updated". A consumer that
+// has to diff two rows to learn what happened is a consumer coupled to your
+// schema.
 const InvoicePaidName = "invoice.paid"
 
 // InvoicePaid is what the consumer receives.

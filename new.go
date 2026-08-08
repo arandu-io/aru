@@ -14,7 +14,7 @@ import (
 )
 
 // skeletonRepo is what `aru new` clones. It is the equivalent of
-// laravel/laravel: a project, not a library. Nobody depends on it, which is what
+// a project, not a library. Nobody depends on it, which is what
 // lets the framework evolve without fighting the directory layout of older
 // projects.
 const skeletonRepo = "https://github.com/arandu-io/arandu.git"

@@ -70,13 +70,14 @@ import "context"
 // {{.Type}} seeds the {{.Human}} rows this application needs to exist.
 //
 // A seeder writes, and a write needs a security.Grant. This is one of the few
-// places security.SystemGrant is legitimate -- there is no request and no actor
-// behind it -- and ` + "`" + `aru doctor` + "`" + ` allows it here because of the directory this
-// file is in, not because of what the function is called. Anywhere else it is a
-// warning that has to be answered with //arandu:system-grant <reason>.
+// places security.SystemGrant is legitimate -- there is no request and no
+// actor behind it -- and ` + "`" + `aru doctor` + "`" + ` allows it here
+// because of the directory this file is in, not because of what the function
+// is called. Anywhere else it is a warning that has to be answered with
+// //arandu:system-grant <reason>.
 //
-// Run must be safe to run twice. A seeder that fails on the second run cannot be
-// part of a deploy, and this one runs on every deploy that runs the first.
+// Run must be safe to run twice. A seeder that fails on the second run cannot
+// be part of a deploy, and this one runs on every deploy that runs the first.
 type {{.Type}} struct{}
 
 // Name is how the seeder is addressed on the command line.

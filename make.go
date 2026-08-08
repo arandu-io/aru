@@ -10,10 +10,9 @@ import (
 
 // The granular make:* commands share this file.
 //
-// They are what the developer porting a Laravel application types on the first
-// day: one class at a time, in the tree they already know. `aru make:module`
-// writes an entity and everything around it; these write one file, the way
-// artisan does.
+// They are what somebody porting an application types on the first day: one
+// class at a time, in a tree they already know. `aru make:module` writes an
+// entity and everything around it; these write one file.
 //
 // Everything about how they behave is here, once. A second command that read its
 // name differently, or refused an existing file with another message, would be a
@@ -33,7 +32,7 @@ func takeName(args []string) (string, []string) {
 
 // checkFlatTree refuses a name that asks for a nested package.
 //
-// artisan accepts Admin/UserController and creates a nested namespace. Here that
+// A nested name like Admin/UserController would mean a nested package. Here that
 // would mean a second package, a second import alias and a second shape of
 // wiring, for a tree that is deliberately flat: every controller is in
 // app/Http/Controllers, which is why the name carries the entity.

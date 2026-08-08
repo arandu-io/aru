@@ -10,8 +10,8 @@ import (
 
 // makeEnum writes one enum.
 //
-// It is `php artisan make:enum`, with the one inversion of behaviour in the
-// whole granular family: --values is required. artisan emits an empty enum
+// It carries the one inversion of behaviour in the whole granular family:
+// --values is required. The usual generator emits an empty enum
 // because in PHP the enum is a construct of the language and the empty body
 // already behaves correctly -- from(), cases(), type safety. Go has no such
 // construct, so the value of an enum is exactly the boilerplate, and emitting

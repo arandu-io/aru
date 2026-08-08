@@ -15,7 +15,8 @@ import (
 
 // makeRequest writes one request.
 //
-// It is `php artisan make:request`, minus authorize(). A FormRequest is what the
+// It writes one input contract, and it does not answer authorize(). A request
+// object is what the
 // developer being migrated copies whole, and it is where the thesis of this
 // product is easiest to break: authorization has one home, and it is the Policy.
 func makeRequest(args []string, stdout, stderr io.Writer) error {
@@ -45,7 +46,7 @@ func makeRequest(args []string, stdout, stderr io.Writer) error {
 	}
 
 	// No automatic suffix, unlike make:controller. Controller is a universal
-	// suffix in Laravel and make:module already emits it; request names vary --
+	// suffix for a controller and make:module already emits it; request names vary --
 	// StorePostRequest, StorePost, PostStoreRequest -- and make:module emits
 	// StoreInvoice, with none. Forcing one would put two conventions in one
 	// package. The name is the developer's.

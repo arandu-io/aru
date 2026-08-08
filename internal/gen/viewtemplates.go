@@ -2,7 +2,7 @@ package gen
 
 // The four screens: the listing, one record, the empty form and the filled one.
 //
-// They are written in kyse, in Laravel's tree -- resources/views/<resource>/ --
+// They are written in kyse, under resources/views/<resource>/ --
 // with the directives kyse has and no others. The set is closed (RULE 15): what
 // does not fit a directive is written in Go, inside @go.
 //
@@ -269,7 +269,7 @@ var _ Layout = <%.ViewData "edit"%>{}
 
 	<!-- hx-put, and no action: a browser form can only send GET and POST, and
 	     the update route is PUT. HTMX sends the real method, which is why this
-	     stack does not need Laravel's @method spoofing. -->
+	     stack does not need a hidden _method field. -->
 	<form class="mt-8 space-y-6" hx-put="<%.Route%>/{{ .Form.ID }}" hx-target="this" hx-swap="outerHTML">
 		@csrf
 <%template "fields" .%>

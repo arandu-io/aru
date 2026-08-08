@@ -127,7 +127,7 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 // worse than no instruction, because it is followed.
 func wiring(m gen.Module, count int) string {
 	return fmt.Sprintf(`
-%s created, %d files, in the Laravel tree.
+%s created, %d files.
 
 The policy denies every action. Open what this module needs in
 app/Policies/%s.go, inside the custom block, and nothing else -- that is what

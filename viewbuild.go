@@ -14,7 +14,7 @@ import (
 )
 
 // stylesheetSource is where a project keeps the stylesheet it compiles, in the
-// place a Laravel developer looks for it first.
+// place somebody looks for it first.
 const stylesheetSource = "resources/css/app.css"
 
 // stylesheetOutput sits next to the code that embeds it, so `go:embed` finds it

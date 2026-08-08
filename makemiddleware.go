@@ -10,9 +10,9 @@ import (
 
 // makeMiddleware writes one middleware.
 //
-// It is `php artisan make:middleware`, and it is the piece that travels most
-// intact in a migration: the "admins only", the "subscription is active", the
-// "this tenant and no other" are all middleware in the application being ported.
+// It is the piece that travels most intact in a migration: the "admins only",
+// the "subscription is active", the "this tenant and no other" are all
+// middleware in the application being ported.
 func makeMiddleware(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("make:middleware", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -38,7 +38,7 @@ func makeMiddleware(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	// No automatic suffix: Laravel's middleware has none by convention --
+	// No automatic suffix: middleware is named for what it does --
 	// EnsureTokenIsValid -- and inventing one here would be inventing vocabulary.
 	stub := gen.Stub{Type: gen.Exported(name), ModulePath: modulePath}
 
@@ -55,8 +55,7 @@ func makeMiddleware(args []string, stdout, stderr io.Writer) error {
 }
 
 // wiringMiddleware prints both places a middleware can go, because they are
-// different scopes rather than two ways to do one thing -- exactly as global and
-// route middleware are in Laravel.
+// different scopes rather than two ways to do one thing: global and per-route.
 func wiringMiddleware(s gen.Stub) string {
 	return fmt.Sprintf(`
 Where it goes is what it protects, and both places are by hand. The import, in

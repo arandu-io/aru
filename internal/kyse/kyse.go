@@ -1,14 +1,14 @@
 // Package kyse compiles a view into Go.
 //
-// The name is guarani for knife. It is the Blade of Arandu: the directives have
-// the same names, the same shape and the same meaning, so a developer arriving
-// from Laravel writes a view on the first day without learning a syntax.
+// The name is guarani for knife. The directives are the ones a template
+// language is expected to have, with the names people already use for them, so
+// a view is written on the first day without learning a syntax.
 //
 // # The file
 //
 // The source is `home.kyse.go` and the output is `home.go`, side by side in the
-// same package. The extension ends in `.go` for the same reason `.blade.php`
-// ends in `.php`: the host language is part of the name.
+// same package. The extension ends in `.go` because the host language is part
+// of the name -- which is what lets the compiler see the file and skip it.
 //
 //	//go:build kyse
 //
@@ -81,9 +81,9 @@ type Block struct {
 //
 // The position is the reason this exists as a tree rather than a string
 // rewrite: an error has to name the line of the `.kyse.go`, not of the
-// generated file. Laravel solves the same problem with a heuristic -- its
-// BladeMapper recompiles the template inserting markers and gives up after
-// twenty lines -- and we do not have to, because we emit the Go ourselves.
+// generated file. An engine that compiles at run time can only guess at this --
+// recompile with markers, search, give up after twenty lines -- and we do not
+// have to guess, because we emit the Go ourselves.
 type Node struct {
 	Kind Kind
 	// Name is the directive name for Directive, empty otherwise.
@@ -238,7 +238,7 @@ func Directives() []string {
 
 // OutputPath says where the Go generated from a view goes.
 //
-// The source keeps Laravel's tree — `resources/views/auth/login.kyse.go` — and
+// The source keeps the nested tree — `resources/views/auth/login.kyse.go` — and
 // the generated Go lands flat in `resources/views/`, named after the path:
 // `auth_login.go`.
 //
@@ -251,8 +251,8 @@ func Directives() []string {
 // layout's data.
 //
 // The alternative — flattening the source too — would cost the thing the whole
-// structure exists for: a Laravel developer opening `resources/views/auth/` and
-// finding `login`, `register` and `passwords/` where they expect them.
+// structure exists for: opening `resources/views/auth/` and finding `login`,
+// `register` and `passwords/` where they are expected.
 func OutputPath(viewsDir, source string) string {
 	rel := strings.TrimPrefix(strings.TrimPrefix(source, viewsDir), "/")
 	rel = strings.TrimSuffix(rel, ".kyse.go")
@@ -260,8 +260,7 @@ func OutputPath(viewsDir, source string) string {
 }
 
 // Name is the name a view is rendered by: the path under resources/views, with
-// dots. `auth/login.kyse.go` is rendered as "auth.login", which is exactly how
-// Laravel names it.
+// dots. `auth/login.kyse.go` is rendered as "auth.login".
 func Name(viewsDir, source string) string {
 	rel := strings.TrimPrefix(strings.TrimPrefix(source, viewsDir), "/")
 	rel = strings.TrimSuffix(rel, ".kyse.go")

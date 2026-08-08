@@ -107,9 +107,10 @@ import (
 	fwevents "github.com/arandu-io/framework/events"
 )
 
-// {{.Const}} is the event, in the vocabulary of the domain rather than of
-// the database: "{{.EventName}}", never "{{.Aggregate}}.updated". A consumer that has to
-// diff two rows to learn what happened is a consumer coupled to your schema.
+// {{.Const}} is the event, in the vocabulary of the domain rather than of the
+// database: "{{.EventName}}", never "{{.Aggregate}}.updated". A consumer that
+// has to diff two rows to learn what happened is a consumer coupled to your
+// schema.
 const {{.Const}} = "{{.EventName}}"
 
 // {{.Type}} is what the consumer receives.

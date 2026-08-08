@@ -12,8 +12,8 @@ import (
 
 // makeFactory writes the factory of an entity that already exists.
 //
-// It is `php artisan make:factory --model=Invoice`, without the flag: the fields
-// are read off app/Models, because in Go the model is the schema. Two sources of
+// There is no --model flag: the fields are read off app/Models, because in Go
+// the model is the schema. Two sources of
 // truth about one set of columns is how they drift.
 func makeFactory(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("make:factory", flag.ContinueOnError)

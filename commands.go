@@ -68,7 +68,7 @@ var commands = []command{
 		run:   delegate("schedule:run"),
 	},
 	{
-		// queue:work, the name the artisan has. What the person types is the
+		// queue:work, the conventional name. What the person types is the
 		// half that needs parity -- the string handed to the project binary is
 		// an internal protocol and promises nothing to anyone, so it stays as it
 		// is and no project generated before today stops working.
@@ -84,7 +84,7 @@ var commands = []command{
 		run:   build,
 	},
 	{
-		// route:list, the name the artisan has, for the same reason as
+		// route:list, the conventional name, for the same reason as
 		// queue:work above.
 		name:  "route:list",
 		usage: "aru route:list",
@@ -136,7 +136,7 @@ var commands = []command{
 	// The granular family, in the order a migration uses them: the model first,
 	// because in Go the struct is the schema, then the request, the controller
 	// and what surrounds them. They are read together in `aru help`, and they are
-	// what somebody porting one Laravel class at a time types on the first day.
+	// what somebody porting one class at a time types on the first day.
 	{
 		name:  "make:model",
 		usage: `aru make:model <Name> --fields "reference:string!u,total:money" [--tenant] [--migration] [--factory] [--force]`,

@@ -812,3 +812,44 @@ type LoginData = authhttp.LoginData
 		t.Errorf("the import the alias needs did not reach the output:\n%s", got)
 	}
 }
+
+// An interpolation spans lines, because a component call with six props does
+// not fit on one.
+//
+// The lines are joined into a Go expression and gofmt lays it out again in the
+// generated file. The view's line stays the one it opened on, which is where a
+// type error inside it belongs.
+func TestAnInterpolationSpansLines(t *testing.T) {
+	const source = `//go:build kyse
+
+package views
+
+@go
+type D struct{ Email string }
+@endgo
+
+<p>{{ .Email }} and {{
+	.Email }}</p>
+{!! components.Field(components.FieldProps{
+	Name:  "email",
+	Value: .Email,
+}) !!}
+<p>after</p>
+`
+	file, err := kyse.Parse("home.kyse.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := kyse.Generate(file, "home", "D", "home.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(out)
+
+	if !strings.Contains(got, `components.Field(components.FieldProps{Name: "email", Value: d.Email})`) {
+		t.Errorf("the component call was not folded into one expression:\n%s", got)
+	}
+	if !strings.Contains(got, "after") {
+		t.Errorf("the markup after the interpolation was eaten:\n%s", got)
+	}
+}

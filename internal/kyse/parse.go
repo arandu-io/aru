@@ -187,6 +187,21 @@ func (p *parser) nodes(goBlocks *[]Block, depth int) []Node {
 			continue
 		}
 
+		// An interpolation that opens here and closes further down is joined into
+		// one logical line first.
+		//
+		// A component call is the reason. Six props do not fit on a line, and
+		// splitting them the way Go would is what anybody writes:
+		//
+		//	{!! components.Field(components.FieldProps{
+		//		Name:  "email",
+		//		Label: "Email",
+		//	}) !!}
+		//
+		// The interpolator reads one line at a time, so without this each of
+		// those lines is an unterminated {!! and the view is refused.
+		line = p.joinInterpolation(line, lineNo)
+
 		name, args, ok := directiveOn(trimmed)
 		if !ok {
 			// Ordinary markup, with the interpolations inside it.
@@ -233,6 +248,52 @@ func (p *parser) nodes(goBlocks *[]Block, depth int) []Node {
 
 	flush()
 	return out
+}
+
+// joinInterpolation folds the lines of an interpolation that spans several into
+// one, and advances past them.
+//
+// The lines are joined with a space rather than a newline: what comes out is a
+// Go expression, and gofmt lays it out again in the generated file. The view's
+// line stays the one the interpolation opened on, which is where a type error
+// inside it belongs.
+//
+// It gives up at the end of the file rather than looping, and the unterminated
+// delimiter is then reported by interpolate with the position it opened at.
+func (p *parser) joinInterpolation(line string, lineNo int) string {
+	for openUnclosed(line) {
+		if p.i+1 >= len(p.lines) {
+			return line
+		}
+		p.i++
+		line += " " + strings.TrimSpace(p.lines[p.i])
+	}
+	return line
+}
+
+// openUnclosed reports whether the line opens an interpolation it does not
+// close.
+//
+// It looks at the last opener rather than the first, because a line can hold
+// several: `{{ .A }} and {{ .B` is unterminated, and asking about the first one
+// would say it is fine.
+func openUnclosed(line string) bool {
+	raw, esc := strings.LastIndex(line, "{!!"), strings.LastIndex(line, "{{")
+
+	// A comment opens with the same two braces as an escaped interpolation and
+	// is consumed before this runs. Treating it as one here would swallow the
+	// markup after it.
+	if esc >= 0 && strings.HasPrefix(line[esc:], "{{--") {
+		esc = -1
+	}
+
+	switch {
+	case raw > esc:
+		return !strings.Contains(line[raw:], "!!}")
+	case esc >= 0:
+		return !strings.Contains(line[esc:], "}}")
+	}
+	return false
 }
 
 // skipComment consumes a comment that spans lines, and whatever follows its

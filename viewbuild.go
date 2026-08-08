@@ -60,9 +60,19 @@ func buildViews(root string, watch bool, stdout, stderr io.Writer) error {
 	}
 
 	if !hasStylesheet(root) {
-		// A project with no stylesheet of its own has nothing to compile: the
-		// base one is embedded in the framework's view package and served from
-		// there (ADR 0021), so the views still render styled.
+		// A project with no stylesheet of its own has nothing to compile, and
+		// the framework serves its embedded one in place of it (ADR 0021).
+		//
+		// That fallback is the base layer and nothing else: a reset, the theme
+		// tokens and the two rules the framework's own pages need. It carries
+		// no utilities, because since ADR 0025 the stylesheet declares its
+		// sources and the framework has no views to declare -- they belong to
+		// the project.
+		//
+		// So a project that deleted resources/css/app.css gets a page with the
+		// base layer and no utility classes. That is the honest outcome of
+		// deleting your stylesheet, and it is not a silent one: what is missing
+		// is every class the views actually use.
 		return nil
 	}
 

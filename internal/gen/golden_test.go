@@ -297,14 +297,14 @@ func TestEveryGeneratedViewFitsTheLayout(t *testing.T) {
 		if end := strings.Index(decl, "\n}"); end > 0 {
 			decl = decl[:end]
 		}
-		if !strings.Contains(decl, "\n\tPage\n") {
-			t.Errorf("%s does not embed Page, so it does not fit the layout make:auth installs:\n%s", f.Path, decl)
+		if !strings.Contains(decl, "\n\tview.Page\n") {
+			t.Errorf("%s does not embed view.Page, so it does not fit the layout the kit installs:\n%s", f.Path, decl)
 		}
-		if !strings.Contains(body, "var _ Layout = ") {
+		if !strings.Contains(body, "var _ view.Layout = ") {
 			t.Errorf("%s has no compile-time proof that it fits the layout", f.Path)
 		}
 
-		// The chrome is declared once, in views.Page. A page that declared its
+		// The chrome is declared once, in view.Page. A page that declared its
 		// own Title would shadow the promoted one and the layout would read the
 		// empty one -- a blank tab on a page that answered 200.
 		for _, field := range []string{"Title string", "CSRF string"} {

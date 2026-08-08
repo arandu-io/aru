@@ -33,15 +33,17 @@ package gen
 
 const viewIndexTemplate = `//go:build kyse
 
-package views
+package <%.Resource%>
+
+import "github.com/arandu-io/framework/view"
 
 @go
 // <%.ViewData "index"%> is what <%.Controller%>.Index hands this page.
 type <%.ViewData "index"%> struct {
-	// Page is the state the layout draws: the title, the brand, the CSRF token
-	// and the navigation. Embedded rather than repeated, and what makes this
-	// struct fit the layout.
-	Page
+	// view.Page is the chrome the layout draws: the title, the description, the
+	// CSRF token and the navigation. Embedded rather than repeated, and what
+	// makes this struct fit the layout.
+	view.Page
 	// <%.Plural%> is the page of records.
 	<%.Plural%> []<%.RowStruct%>
 	// NextCursor is the keyset cursor of the following page. It is empty on the
@@ -50,7 +52,7 @@ type <%.ViewData "index"%> struct {
 }
 
 // Compile-time proof that this page fits the layout it extends.
-var _ Layout = <%.ViewData "index"%>{}
+var _ view.Layout = <%.ViewData "index"%>{}
 
 // <%.RowStruct%> is one record, formatted for display by the controller.
 type <%.RowStruct%> struct {
@@ -114,7 +116,9 @@ type <%.RowStruct%> struct {
 
 const viewShowTemplate = `//go:build kyse
 
-package views
+package <%.Resource%>
+
+import "github.com/arandu-io/framework/view"
 
 @go
 // <%.ViewData "show"%> is what <%.Controller%>.Show hands this page.
@@ -123,13 +127,13 @@ type <%.ViewData "show"%> struct {
 	// button sends as a header: an hx-delete carries no form body, so the
 	// hidden field a form uses would never arrive and the request would be
 	// refused with 419.
-	Page
+	view.Page
 	// <%.Entity%> is the record.
 	<%.Entity%> <%.RowStruct%>
 }
 
 // Compile-time proof that this page fits the layout it extends.
-var _ Layout = <%.ViewData "show"%>{}
+var _ view.Layout = <%.ViewData "show"%>{}
 
 // arandu:begin custom
 // Anything else this page needs in Go goes here, and survives regeneration.
@@ -166,7 +170,13 @@ var _ Layout = <%.ViewData "show"%>{}
 
 const viewCreateTemplate = `//go:build kyse
 
-package views
+package <%.Resource%>
+
+import (
+	"github.com/arandu-io/kyse/components"
+
+	"github.com/arandu-io/framework/view"
+)
 
 @go
 // <%.ViewData "create"%> is what <%.Controller%>.Create hands this page, and what
@@ -178,15 +188,27 @@ type <%.ViewData "create"%> struct {
 	// rather than from a global, because a template that reaches for request
 	// state outside the data it was given is how a form ends up carrying
 	// another session's token under load.
-	Page
+	view.Page
 	// Form is what was typed, so a rejected submission comes back filled in.
 	Form <%.FormStruct%>
 	// Errors is the message per field, as validation produced it.
 	Errors map[string][]string
 }
 
+// FieldError is the first message for a field, or empty.
+//
+// A method rather than a lookup in the markup: a view that indexes a map has to
+// check the length first, and d.Errors["title"][0] without that check panics
+// on the happy path -- which is the request where nothing was wrong.
+func (d <%.ViewData "create"%>) FieldError(field string) string {
+	if msgs := d.Errors[field]; len(msgs) > 0 {
+		return msgs[0]
+	}
+	return ""
+}
+
 // Compile-time proof that this page fits the layout it extends.
-var _ Layout = <%.ViewData "create"%>{}
+var _ view.Layout = <%.ViewData "create"%>{}
 
 // <%.FormStruct%> is the form as text, which is what a form carries.
 //
@@ -235,7 +257,13 @@ func (f <%$.FormStruct%>) <%.GoName%>Attr() string {
 
 const viewEditTemplate = `//go:build kyse
 
-package views
+package <%.Resource%>
+
+import (
+	"github.com/arandu-io/kyse/components"
+
+	"github.com/arandu-io/framework/view"
+)
 
 @go
 // <%.ViewData "edit"%> is what <%.Controller%>.Edit hands this page: the form
@@ -243,15 +271,27 @@ package views
 type <%.ViewData "edit"%> struct {
 	// Page is the state the layout draws. Its Token is what @csrf writes into
 	// the hidden field.
-	Page
+	view.Page
 	// Form is the record as text.
 	Form <%.FormStruct%>
 	// Errors is the message per field, as validation produced it.
 	Errors map[string][]string
 }
 
+// FieldError is the first message for a field, or empty.
+//
+// A method rather than a lookup in the markup: a view that indexes a map has to
+// check the length first, and d.Errors["title"][0] without that check panics
+// on the happy path -- which is the request where nothing was wrong.
+func (d <%.ViewData "edit"%>) FieldError(field string) string {
+	if msgs := d.Errors[field]; len(msgs) > 0 {
+		return msgs[0]
+	}
+	return ""
+}
+
 // Compile-time proof that this page fits the layout it extends.
-var _ Layout = <%.ViewData "edit"%>{}
+var _ view.Layout = <%.ViewData "edit"%>{}
 
 // arandu:begin custom
 // Anything else this page needs in Go goes here, and survives regeneration.
@@ -288,13 +328,22 @@ var _ Layout = <%.ViewData "edit"%>{}
 // partial the page's data unchanged -- so a single partial would assert one type
 // and fail on the other.
 const viewFieldsTemplate = `<%define "fields"%><%range .Fields%>
-		<div class="space-y-1">
-			<label class="block text-sm font-medium" for="<%.Column%>"><%.Label%></label>
-<%if .IsLongText%>			<textarea class="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" id="<%.Column%>" name="<%.Column%>" rows="4"<%if .Required%> required<%end%>>{{ .Form.<%.GoName%> }}</textarea>
-<%else if .IsBool%>			<input class="size-4 rounded border-slate-300 dark:border-slate-700" id="<%.Column%>" name="<%.Column%>" type="checkbox" value="1" {{ .Form.<%.GoName%>Attr() }}>
-<%else%>			<input class="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" id="<%.Column%>" name="<%.Column%>" type="<%.InputType%>"<%if eq .InputType "number"%> step="<%.InputStep%>"<%end%> value="{{ .Form.<%.GoName%> }}"<%if .Required%> required<%end%>>
-<%end%>			@if(len(d.Errors["<%.Column%>"]) > 0)
-			<p class="text-sm text-red-600 dark:text-red-400">{{ d.Errors["<%.Column%>"][0] }}</p>
-			@endif
-		</div>
+		<%if .IsLongText%>{!! components.Textarea(components.TextareaProps{
+			Name:  "<%.Column%>",
+			Label: "<%.Label%>",
+			Value: .Form.<%.GoName%>,
+			Error: .FieldError("<%.Column%>"),
+			Rows:  6,<%if .Required%>
+			Required: true,<%end%>
+		}) !!}<%else if .IsBool%><label class="flex items-center gap-2 text-sm">
+			<input class="input" id="<%.Column%>" name="<%.Column%>" type="checkbox" value="1" {{ .Form.<%.GoName%>Attr() }}>
+			<%.Label%>
+		</label><%else%>{!! components.Field(components.FieldProps{
+			Name:  "<%.Column%>",
+			Label: "<%.Label%>",
+			Type:  "<%.InputType%>",
+			Value: .Form.<%.GoName%>,
+			Error: .FieldError("<%.Column%>"),<%if .Required%>
+			Required: true,<%end%>
+		}) !!}<%end%>
 <%end%><%end%>`

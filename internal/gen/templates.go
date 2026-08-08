@@ -658,6 +658,7 @@ import (
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
+	"github.com/arandu-io/framework/view"
 
 	requests "{{.RequestsImport}}"
 	models "{{.ModelsImport}}"
@@ -754,7 +755,7 @@ func (c *{{.Controller}}) Index(ctx *httpx.Context) error {
 	}
 
 	return ctx.View("{{.ViewName "index"}}", views.{{.ViewData "index"}}{
-		Page:       views.Page{Title: "{{.HumansTitle}}", Token: token},
+		Page:       view.Page{Title: "{{.HumansTitle}}", Token: token},
 		{{.Plural}}: rows,
 		NextCursor: next,
 	})
@@ -781,7 +782,7 @@ func (c *{{.Controller}}) Show(ctx *httpx.Context) error {
 	}
 
 	return ctx.View("{{.ViewName "show"}}", views.{{.ViewData "show"}}{
-		Page:     views.Page{Title: "{{.HumanTitle}}", Token: token},
+		Page:     view.Page{Title: "{{.HumanTitle}}", Token: token},
 		{{.Entity}}: c.row(found),
 	})
 }
@@ -797,7 +798,7 @@ func (c *{{.Controller}}) Create(ctx *httpx.Context) error {
 	}
 
 	return ctx.View("{{.ViewName "create"}}", views.{{.ViewData "create"}}{
-		Page:   views.Page{Title: "New {{.Human}}", Token: token},
+		Page:   view.Page{Title: "New {{.Human}}", Token: token},
 		Errors: map[string][]string{},
 	})
 }
@@ -842,7 +843,7 @@ func (c *{{.Controller}}) Edit(ctx *httpx.Context) error {
 	}
 
 	return ctx.View("{{.ViewName "edit"}}", views.{{.ViewData "edit"}}{
-		Page:   views.Page{Title: "Edit {{.Human}}", Token: token},
+		Page:   view.Page{Title: "Edit {{.Human}}", Token: token},
 		Form:   c.form(found),
 		Errors: map[string][]string{},
 	})
@@ -956,7 +957,7 @@ func (c *{{.Controller}}) rejectedCreate(ctx *httpx.Context, form views.{{.FormS
 		return err
 	}
 	return c.Invalid(ctx, "{{.ViewName "create"}}", views.{{.ViewData "create"}}{
-		Page:   views.Page{Title: "New {{.Human}}", Token: token},
+		Page:   view.Page{Title: "New {{.Human}}", Token: token},
 		Form:   form,
 		Errors: errs,
 	})
@@ -969,7 +970,7 @@ func (c *{{.Controller}}) rejectedEdit(ctx *httpx.Context, form views.{{.FormStr
 		return err
 	}
 	return c.Invalid(ctx, "{{.ViewName "edit"}}", views.{{.ViewData "edit"}}{
-		Page:   views.Page{Title: "Edit {{.Human}}", Token: token},
+		Page:   view.Page{Title: "Edit {{.Human}}", Token: token},
 		Form:   form,
 		Errors: errs,
 	})

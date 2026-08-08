@@ -471,7 +471,14 @@ func (m Module) ServicesImport() string { return m.ModulePath + "/app/Services" 
 func (m Module) RequestsImport() string { return m.ModulePath + "/app/Http/Requests" }
 
 // ViewsImport is the import path of resources/views.
-func (m Module) ViewsImport() string { return m.ModulePath + "/resources/views" }
+// ViewsImport is the package the generated views live in.
+//
+// One directory per resource, because the generated Go sits beside its source
+// and one directory is one Go package: resources/views/posts holds the four
+// screens of posts and their compiled forms, and nothing else.
+func (m Module) ViewsImport() string {
+	return m.ModulePath + "/resources/views/" + m.Resource()
+}
 
 // NeedsWholeParse reports whether the controller parses an integer.
 func (m Module) NeedsWholeParse() bool {

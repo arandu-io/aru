@@ -1,14 +1,16 @@
 //go:build kyse
 
-package views
+package purchase-orders
+
+import "github.com/arandu-io/framework/view"
 
 @go
 // PurchaseOrdersIndexData is what PurchaseOrderController.Index hands this page.
 type PurchaseOrdersIndexData struct {
-	// Page is the state the layout draws: the title, the brand, the CSRF token
-	// and the navigation. Embedded rather than repeated, and what makes this
-	// struct fit the layout.
-	Page
+	// view.Page is the chrome the layout draws: the title, the description, the
+	// CSRF token and the navigation. Embedded rather than repeated, and what
+	// makes this struct fit the layout.
+	view.Page
 	// PurchaseOrders is the page of records.
 	PurchaseOrders []PurchaseOrderRow
 	// NextCursor is the keyset cursor of the following page. It is empty on the
@@ -17,7 +19,7 @@ type PurchaseOrdersIndexData struct {
 }
 
 // Compile-time proof that this page fits the layout it extends.
-var _ Layout = PurchaseOrdersIndexData{}
+var _ view.Layout = PurchaseOrdersIndexData{}
 
 // PurchaseOrderRow is one record, formatted for display by the controller.
 type PurchaseOrderRow struct {

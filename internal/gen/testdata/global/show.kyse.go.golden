@@ -1,6 +1,8 @@
 //go:build kyse
 
-package views
+package purchase-orders
+
+import "github.com/arandu-io/framework/view"
 
 @go
 // PurchaseOrdersShowData is what PurchaseOrderController.Show hands this page.
@@ -9,13 +11,13 @@ type PurchaseOrdersShowData struct {
 	// button sends as a header: an hx-delete carries no form body, so the
 	// hidden field a form uses would never arrive and the request would be
 	// refused with 419.
-	Page
+	view.Page
 	// PurchaseOrder is the record.
 	PurchaseOrder PurchaseOrderRow
 }
 
 // Compile-time proof that this page fits the layout it extends.
-var _ Layout = PurchaseOrdersShowData{}
+var _ view.Layout = PurchaseOrdersShowData{}
 
 // arandu:begin custom
 // Anything else this page needs in Go goes here, and survives regeneration.

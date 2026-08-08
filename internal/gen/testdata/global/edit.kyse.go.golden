@@ -1,6 +1,12 @@
 //go:build kyse
 
-package views
+package purchase-orders
+
+import (
+	"github.com/arandu-io/kyse/components"
+
+	"github.com/arandu-io/framework/view"
+)
 
 @go
 // PurchaseOrdersEditData is what PurchaseOrderController.Edit hands this page: the form
@@ -8,15 +14,27 @@ package views
 type PurchaseOrdersEditData struct {
 	// Page is the state the layout draws. Its Token is what @csrf writes into
 	// the hidden field.
-	Page
+	view.Page
 	// Form is the record as text.
 	Form PurchaseOrderForm
 	// Errors is the message per field, as validation produced it.
 	Errors map[string][]string
 }
 
+// FieldError is the first message for a field, or empty.
+//
+// A method rather than a lookup in the markup: a view that indexes a map has to
+// check the length first, and d.Errors["title"][0] without that check panics
+// on the happy path -- which is the request where nothing was wrong.
+func (d PurchaseOrdersEditData) FieldError(field string) string {
+	if msgs := d.Errors[field]; len(msgs) > 0 {
+		return msgs[0]
+	}
+	return ""
+}
+
 // Compile-time proof that this page fits the layout it extends.
-var _ Layout = PurchaseOrdersEditData{}
+var _ view.Layout = PurchaseOrdersEditData{}
 
 // arandu:begin custom
 // Anything else this page needs in Go goes here, and survives regeneration.
@@ -38,53 +56,53 @@ var _ Layout = PurchaseOrdersEditData{}
 	<form class="mt-8 space-y-6" hx-put="/purchase-orders/{{ .Form.ID }}" hx-target="this" hx-swap="outerHTML">
 		@csrf
 		
-		<div class="space-y-1">
-			<label class="block text-sm font-medium" for="reference">Reference</label>
-			<input class="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" id="reference" name="reference" type="text" value="{{ .Form.Reference }}" required>
-			@if(len(d.Errors["reference"]) > 0)
-			<p class="text-sm text-red-600 dark:text-red-400">{{ d.Errors["reference"][0] }}</p>
-			@endif
-		</div>
+		{!! components.Field(components.FieldProps{
+			Name:  "reference",
+			Label: "Reference",
+			Type:  "text",
+			Value: .Form.Reference,
+			Error: .FieldError("reference"),
+			Required: true,
+		}) !!}
 
-		<div class="space-y-1">
-			<label class="block text-sm font-medium" for="supplier_email">Supplier email</label>
-			<input class="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" id="supplier_email" name="supplier_email" type="email" value="{{ .Form.SupplierEmail }}" required>
-			@if(len(d.Errors["supplier_email"]) > 0)
-			<p class="text-sm text-red-600 dark:text-red-400">{{ d.Errors["supplier_email"][0] }}</p>
-			@endif
-		</div>
+		{!! components.Field(components.FieldProps{
+			Name:  "supplier_email",
+			Label: "Supplier email",
+			Type:  "email",
+			Value: .Form.SupplierEmail,
+			Error: .FieldError("supplier_email"),
+			Required: true,
+		}) !!}
 
-		<div class="space-y-1">
-			<label class="block text-sm font-medium" for="total">Total</label>
-			<input class="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" id="total" name="total" type="number" step="1" value="{{ .Form.Total }}" required>
-			@if(len(d.Errors["total"]) > 0)
-			<p class="text-sm text-red-600 dark:text-red-400">{{ d.Errors["total"][0] }}</p>
-			@endif
-		</div>
+		{!! components.Field(components.FieldProps{
+			Name:  "total",
+			Label: "Total",
+			Type:  "number",
+			Value: .Form.Total,
+			Error: .FieldError("total"),
+			Required: true,
+		}) !!}
 
-		<div class="space-y-1">
-			<label class="block text-sm font-medium" for="approved">Approved</label>
-			<input class="size-4 rounded border-slate-300 dark:border-slate-700" id="approved" name="approved" type="checkbox" value="1" {{ .Form.ApprovedAttr() }}>
-			@if(len(d.Errors["approved"]) > 0)
-			<p class="text-sm text-red-600 dark:text-red-400">{{ d.Errors["approved"][0] }}</p>
-			@endif
-		</div>
+		<label class="flex items-center gap-2 text-sm">
+			<input class="input" id="approved" name="approved" type="checkbox" value="1" {{ .Form.ApprovedAttr() }}>
+			Approved
+		</label>
 
-		<div class="space-y-1">
-			<label class="block text-sm font-medium" for="notes">Notes</label>
-			<textarea class="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" id="notes" name="notes" rows="4">{{ .Form.Notes }}</textarea>
-			@if(len(d.Errors["notes"]) > 0)
-			<p class="text-sm text-red-600 dark:text-red-400">{{ d.Errors["notes"][0] }}</p>
-			@endif
-		</div>
+		{!! components.Textarea(components.TextareaProps{
+			Name:  "notes",
+			Label: "Notes",
+			Value: .Form.Notes,
+			Error: .FieldError("notes"),
+			Rows:  6,
+		}) !!}
 
-		<div class="space-y-1">
-			<label class="block text-sm font-medium" for="delivery_date">Delivery date</label>
-			<input class="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900" id="delivery_date" name="delivery_date" type="date" value="{{ .Form.DeliveryDate }}">
-			@if(len(d.Errors["delivery_date"]) > 0)
-			<p class="text-sm text-red-600 dark:text-red-400">{{ d.Errors["delivery_date"][0] }}</p>
-			@endif
-		</div>
+		{!! components.Field(components.FieldProps{
+			Name:  "delivery_date",
+			Label: "Delivery date",
+			Type:  "date",
+			Value: .Form.DeliveryDate,
+			Error: .FieldError("delivery_date"),
+		}) !!}
 
 		<div class="flex items-center gap-3">
 			<button class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300" type="submit">Save</button>

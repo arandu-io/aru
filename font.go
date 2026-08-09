@@ -165,7 +165,8 @@ deliberately: a third would be a third file in every binary, and the answer to
 
 	installed := fonts.Installed{
 		Role: fonts.Role(role), Family: got.Name, Weight: got.Weight,
-		Subsets: got.Subsets, License: got.License, Metrics: got.Metrics,
+		Subsets: got.Subsets, Category: got.Category, License: got.License,
+		Metrics:  got.Metrics,
 		FileList: notes,
 	}
 

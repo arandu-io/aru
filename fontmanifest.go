@@ -83,6 +83,8 @@ func readInstalled(root string) (map[fonts.Role]fonts.Installed, error) {
 			current.Weight = value
 		case "subsets":
 			current.Subsets = splitOn(value, ",")
+		case "category":
+			current.Category = value
 		case "license":
 			current.License = value
 		case "files":
@@ -161,6 +163,9 @@ func writeManifest(root string, list []fonts.Installed) error {
 		for _, in := range list {
 			fmt.Fprintf(&b2, "\n[fonts.%s]\nfamily = %q\nweight = %q\nsubsets = %q\n",
 				in.Role, in.Family, in.Weight, strings.Join(in.Subsets, ","))
+			if in.Category != "" {
+				fmt.Fprintf(&b2, "category = %q\n", in.Category)
+			}
 			if in.License != "" {
 				fmt.Fprintf(&b2, "license = %q\n", in.License)
 			}

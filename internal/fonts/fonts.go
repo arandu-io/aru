@@ -105,6 +105,14 @@ type Family struct {
 	Name    string
 	Weight  string
 	Subsets []string
+	// Category is the source's classification: Serif, Sans Serif, Display,
+	// Handwriting, Monospace.
+	//
+	// It decides the fallback. A geometric sans with a serif behind it is a
+	// page that paints in Georgia and then becomes Montserrat -- the shapes do
+	// not merely change, the whole voice does, and the metric override cannot
+	// hide that because it matches the space and not the drawing.
+	Category string
 	// License is the identifier the source publishes: "ofl", "apache2".
 	License string
 	// LicenseText is the licence itself, to be written beside the files.
@@ -182,7 +190,7 @@ func Fetch(client *http.Client, family, weight string, subsets []string) (Family
 	// the swap costs a reflow, which is worse than the alternative and much
 	// better than refusing to add a font over three numbers.
 
-	out.License, out.LicenseText = license(client, family)
+	out.Category, out.License, out.LicenseText = describe(client, family)
 	return out, nil
 }
 
@@ -378,35 +386,47 @@ func abs(f float64) float64 {
 //
 // It is best-effort: an empty answer records nothing rather than guessing, and a
 // licence nobody recorded is better than one recorded wrongly.
-func license(client *http.Client, family string) (string, []byte) {
+func describe(client *http.Client, family string) (category, id string, text []byte) {
 	body, err := get(client, metaAPI+strings.ReplaceAll(family, " ", "%20"), modernAgent)
 	if err != nil {
-		return "", nil
+		return "", "", nil
 	}
+	category = field(string(body), "category")
 	// The answer is JSON behind an anti-hijacking prefix. One field is wanted,
 	// so it is read with a scan rather than by decoding a document whose shape
 	// is not this package's business.
-	const key = `"license": "`
-	at := strings.Index(string(body), key)
-	if at < 0 {
-		return "", nil
+	id = field(string(body), "license")
+	if id == "" {
+		return category, "", nil
 	}
-	rest := string(body)[at+len(key):]
-	end := strings.IndexByte(rest, '"')
-	if end < 0 {
-		return "", nil
-	}
-	id := rest[:end]
 
 	// The text itself, from where the source keeps it. A best-effort fetch: an
 	// empty answer writes no file, and the identifier still reaches arandu.toml
 	// so a person can find it. Recording a licence and inventing its text would
 	// be worse than recording only the name.
-	text, err := get(client, fmt.Sprintf(licenseURL, id, repoDir(family), licenseFile(id)), modernAgent)
+	text, err = get(client, fmt.Sprintf(licenseURL, id, repoDir(family), licenseFile(id)), modernAgent)
 	if err != nil {
-		return id, nil
+		return category, id, nil
 	}
-	return id, text
+	return category, id, text
+}
+
+// field reads one string value out of the answer.
+//
+// A scan rather than a decode: two fields are wanted and the shape of the rest
+// of the document is not this package's business.
+func field(body, key string) string {
+	marker := `"` + key + `": "`
+	at := strings.Index(body, marker)
+	if at < 0 {
+		return ""
+	}
+	rest := body[at+len(marker):]
+	end := strings.IndexByte(rest, '"')
+	if end < 0 {
+		return ""
+	}
+	return rest[:end]
 }
 
 // Where the source keeps the licence text, and what it is called there.

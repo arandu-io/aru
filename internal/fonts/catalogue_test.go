@@ -179,3 +179,56 @@ func write(t *testing.T, name string, body []byte) string {
 	}
 	return path
 }
+
+// TestTheFallbackFollowsTheCategoryAndNotTheRole.
+//
+// It used to follow the role, on the assumption that a display face is a serif.
+// Installing Montserrat -- a geometric sans -- as the display face then produced
+// a page that paints in Georgia and becomes a geometric sans when the font
+// lands. The metric override cannot hide that: it matches the space the face
+// occupies, not the shapes it draws.
+func TestTheFallbackFollowsTheCategoryAndNotTheRole(t *testing.T) {
+	sans := fonts.Stylesheet([]fonts.Installed{{
+		Role: fonts.Display, Family: "Montserrat", Weight: "400 800",
+		Category: "Sans Serif",
+		FileList: []string{"montserrat-400-800-latin.woff2|U+0000-00FF|abc123abc123"},
+		Metrics:  fonts.Metrics{Ascent: 96.8, Descent: 25.1},
+	}})
+
+	if strings.Contains(sans, "Georgia") {
+		t.Error("a geometric sans falls back to a serif")
+	}
+	if !strings.Contains(sans, `local("Helvetica Neue")`) {
+		t.Errorf("the metric-matched fallback is not a sans:\n%s", sans)
+	}
+	if !strings.Contains(sans, "sans-serif;") {
+		t.Error("the last resort is not a sans either")
+	}
+
+	serif := fonts.Stylesheet([]fonts.Installed{{
+		Role: fonts.Display, Family: "Young Serif", Weight: "400",
+		Category: "Serif",
+		FileList: []string{"young-serif-400-latin.woff2|U+0000-00FF|abc123abc123"},
+		Metrics:  fonts.Metrics{Ascent: 104.6, Descent: 36.6},
+	}})
+	if !strings.Contains(serif, `local("Georgia")`) {
+		t.Errorf("a serif does not fall back to one:\n%s", serif)
+	}
+}
+
+// TestAnUnknownCategoryFallsBackToASans.
+//
+// Display and Handwriting are neither serif nor mono in any useful sense, and a
+// sans is the least wrong thing to paint before one of them arrives.
+func TestAnUnknownCategoryFallsBackToASans(t *testing.T) {
+	for _, category := range []string{"Display", "Handwriting", "", "something new"} {
+		css := fonts.Stylesheet([]fonts.Installed{{
+			Role: fonts.Display, Family: "X", Weight: "400", Category: category,
+			FileList: []string{"x-400.woff2||aaaaaaaaaaaa"},
+			Metrics:  fonts.Metrics{Ascent: 100, Descent: 25},
+		}})
+		if strings.Contains(css, "Georgia") {
+			t.Errorf("%q fell back to a serif", category)
+		}
+	}
+}

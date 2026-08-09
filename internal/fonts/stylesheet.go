@@ -33,6 +33,7 @@ type Installed struct {
 	Family   string
 	Weight   string
 	Subsets  []string
+	Category string
 	License  string
 	Metrics  Metrics
 	FileList []string
@@ -113,11 +114,11 @@ func Stylesheet(installed []Installed) string {
  * Without it, swap reflows every line under the heading when the font lands. */
 @font-face {
   font-family: %q;
-  src: local("Georgia"), local("Times New Roman"), local("Helvetica Neue"), local("Arial");
+  src: %s;
   ascent-override: %.2f%%;
   descent-override: %.2f%%;
   line-gap-override: %.2f%%;
-`, in.Family, string(in.Role)+"-fallback",
+`, in.Family, string(in.Role)+"-fallback", localFaces(in.Category),
 				in.Metrics.Ascent, in.Metrics.Descent, in.Metrics.LineGap)
 			if in.Metrics.SizeAdjust > 0 {
 				fmt.Fprintf(&b, "  size-adjust: %.2f%%;\n", in.Metrics.SizeAdjust)
@@ -145,7 +146,7 @@ func Stylesheet(installed []Installed) string {
 		if fallback != "" {
 			stack = append(stack, fmt.Sprintf("%q", fallback))
 		}
-		stack = append(stack, systemStack(in.Role))
+		stack = append(stack, systemStack(in.Category))
 		fmt.Fprintf(&b, "  %s: %s;\n", token, strings.Join(stack, ", "))
 	}
 	b.WriteString("}\n")
@@ -155,14 +156,55 @@ func Stylesheet(installed []Installed) string {
 
 // systemStack is what is drawn before the font arrives, and after it fails.
 //
-// It is the last resort and not the fallback face above: that one is metric
-// matched and this one is whatever the machine has. A page that never loads the
-// font still reads.
-func systemStack(role Role) string {
-	if role == Display {
+// It follows the CATEGORY and not the role. It used to follow the role, on the
+// assumption that a display face is a serif -- so installing Montserrat as the
+// display face produced a page that paints in Georgia and becomes a geometric
+// sans. The metric override cannot hide that: it matches the space, not the
+// drawing.
+func systemStack(category string) string {
+	switch kind(category) {
+	case "serif":
 		return `Georgia, "Times New Roman", serif`
+	case "monospace":
+		return `ui-monospace, "SF Mono", Menlo, monospace`
+	default:
+		return `ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`
 	}
-	return `ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`
+}
+
+// localFaces is what the metric-matched fallback is drawn from.
+//
+// local() and not a generic family, because the overrides stretch a SPECIFIC
+// face: ascent, descent and x-height are properties of one drawing, and
+// "sans-serif" is whatever the machine decided that means.
+//
+// The list is ordered by what is actually installed. Every one of these ships
+// with either macOS or Windows, and the first match wins.
+func localFaces(category string) string {
+	switch kind(category) {
+	case "serif":
+		return `local("Georgia"), local("Times New Roman"), local("Times")`
+	case "monospace":
+		return `local("SF Mono"), local("Menlo"), local("Consolas")`
+	default:
+		return `local("Helvetica Neue"), local("Arial"), local("Segoe UI"), local("Roboto")`
+	}
+}
+
+// kind reduces the source's classification to what the fallback turns on.
+//
+// Display and Handwriting are neither serif nor mono in any useful sense --
+// what they have in common with a sans is that a sans is the least wrong thing
+// to paint before they arrive.
+func kind(category string) string {
+	switch compact(category) {
+	case "serif":
+		return "serif"
+	case "monospace":
+		return "monospace"
+	default:
+		return "sans"
+	}
 }
 
 // cssWeight turns the API's spelling into the property's.

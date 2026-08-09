@@ -49,7 +49,7 @@ func build(args []string, stdout, stderr io.Writer) error {
 	// `.kyse.go` is a binary that serves yesterday's page, and finding that out
 	// in production is expensive for something a build step prevents.
 	if !*skipViews {
-		if err := buildViews(root, false, stdout, stderr); err != nil {
+		if err := buildViews(root, stdout, stderr); err != nil {
 			return err
 		}
 	}

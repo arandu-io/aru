@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -128,9 +129,19 @@ func compileViews(root string, stdout io.Writer) error {
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(target, out, 0o644); err != nil {
-			return err
+		// A build that changes nothing touches nothing. Every generated view is
+		// declared to Tailwind through @source, so rewriting all of them with
+		// fresh mtimes on every build defeats its scan cache -- and it is what
+		// made the dev loop see its own output as a change.
+		if previous, err := os.ReadFile(target); err != nil || !bytes.Equal(previous, out) {
+			if err := os.WriteFile(target, out, 0o644); err != nil {
+				return err
+			}
 		}
+	}
+
+	if err := pruneCompiled(root, sources); err != nil {
+		return err
 	}
 
 	if len(problems) > 0 {
@@ -157,4 +168,59 @@ func findViews(dir string) ([]string, error) {
 		return nil
 	})
 	return out, err
+}
+
+// pruneCompiled deletes generated Go whose source is gone.
+//
+// The generated file self-registers -- it carries an init that calls
+// view.Register -- so an output left behind keeps a deleted view renderable, in
+// `aru dev` and in the built binary alike, and reclaiming the name later panics
+// at boot on a duplicate registration. `aru build` cannot repair that; only
+// removing the file can, which is why `rm -rf storage/framework/views` was the
+// folk remedy this replaces.
+//
+// It only runs on a project layout. A component library compiles in place beside
+// hand-written Go -- OutputPath falls back to the source without .kyse -- and a
+// sweep there would delete somebody's code.
+func pruneCompiled(root string, sources []string) error {
+	if viewsIn(root) == root {
+		return nil
+	}
+	compiled := filepath.Join(root, kyse.CompiledDir)
+	if _, err := os.Stat(compiled); err != nil {
+		return nil
+	}
+
+	keep := make(map[string]bool, len(sources))
+	for _, source := range sources {
+		keep[kyse.OutputPath(source)] = true
+	}
+
+	var empty []string
+	err := filepath.WalkDir(compiled, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			empty = append(empty, path)
+			return nil
+		}
+		if filepath.Ext(path) != ".go" || keep[path] {
+			return nil
+		}
+		return os.Remove(path)
+	})
+	if err != nil {
+		return err
+	}
+
+	// Deepest first, so a directory that only held the file just removed goes
+	// with it. os.Remove refuses a directory that still has anything in it, which
+	// is exactly the test wanted here -- a hand-placed file keeps its directory.
+	for i := len(empty) - 1; i >= 0; i-- {
+		if empty[i] != compiled {
+			_ = os.Remove(empty[i])
+		}
+	}
+	return nil
 }

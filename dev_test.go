@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -115,5 +116,142 @@ func TestTheGeneratedViewIsNotWatched(t *testing.T) {
 		if _, watched := state[filepath.Join(root, p)]; !watched {
 			t.Errorf("%s is an input and is not being watched", p)
 		}
+	}
+}
+
+// TestTheCompiledStylesheetIsNotWatched is the same defect as the generated
+// view, in the one file the fix for that did not cover.
+//
+// `aru view:build` writes assets/app.css, and .css is watched because
+// resources/css/app.css is the input somebody edits. So the output of a build
+// was an input to the next one: a single edit to the stylesheet produced three
+// restarts and four Tailwind runs, and nothing in aru bounded it -- the loop
+// terminated only because Tailwind happens not to rewrite identical bytes.
+func TestTheCompiledStylesheetIsNotWatched(t *testing.T) {
+	root := t.TempDir()
+
+	for _, p := range []string{
+		filepath.Join("resources", "css", "app.css"), // the input
+		filepath.Join("assets", "app.css"),           // what the build writes
+		filepath.Join("assets", "fonts.go"),          // hand-written, beside it
+	} {
+		full := filepath.Join(root, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	state := snapshot(root)
+
+	if _, watching := state[filepath.Join(root, "assets", "app.css")]; watching {
+		t.Error("the compiled stylesheet is watched, so every build triggers the next")
+	}
+	if _, watching := state[filepath.Join(root, "resources", "css", "app.css")]; !watching {
+		t.Error("the stylesheet somebody edits is not watched, so editing it does nothing")
+	}
+	if _, watching := state[filepath.Join(root, "assets", "fonts.go")]; !watching {
+		t.Error("a hand-written file beside the output stopped being watched")
+	}
+}
+
+// TestNothingUnderStorageIsWatched.
+//
+// storage/ is where the running application writes: uploads, cache entries,
+// sessions. Watched, an upload restarted the process that had just served the
+// request which produced it, and re-ran the whole view build with it.
+func TestNothingUnderStorageIsWatched(t *testing.T) {
+	root := t.TempDir()
+
+	for _, p := range []string{
+		filepath.Join("storage", "app", "private", "invoice.txt"),
+		filepath.Join("storage", "framework", "cache", "x.go"),
+		filepath.Join("bin", "app"),
+		filepath.Join("main.go"),
+	} {
+		full := filepath.Join(root, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	state := snapshot(root)
+	for path := range state {
+		if strings.Contains(path, string(filepath.Separator)+"storage"+string(filepath.Separator)) {
+			t.Errorf("%s is under storage and is watched: the application's own writes restart it", path)
+		}
+	}
+	if _, watching := state[filepath.Join(root, "main.go")]; !watching {
+		t.Error("main.go stopped being watched")
+	}
+}
+
+// TestAnEmbeddedAssetIsWatched.
+//
+// A logo, a favicon, robots.txt and a vendored woff2 are compiled into the
+// binary by go:embed. Unwatched, replacing one did nothing until the next `aru
+// build` -- with no message, which reads as a caching bug that is not there.
+func TestAnEmbeddedAssetIsWatched(t *testing.T) {
+	for _, name := range []string{"logo.svg", "favicon.ico", "og.png", "inter.woff2", "robots.txt", "arandu.toml"} {
+		if !watched(name) {
+			t.Errorf("%s is embedded into the binary and is not watched, so replacing it appears to do nothing", name)
+		}
+	}
+	for _, name := range []string{"README.md", "notes.org"} {
+		if watched(name) {
+			t.Errorf("%s is watched and nothing compiles it in", name)
+		}
+	}
+}
+
+// TestARebuildThatFailedIsStillOwed.
+//
+// This is the reported bug in its purest form. A view build fails -- a typo, a
+// broken template, a network blip on the toolchain download -- and the change
+// that asked for it has already been consumed from the snapshot. Without a
+// pending flag, the next save of any ordinary .go file restarts the server
+// against generated views from before the view edit, and only `aru build`
+// repairs it. That is exactly "I have to run aru build and then aru dev".
+//
+// The loop's decision, not the loop: the process is what makes this expensive
+// to test, and the decision is where the defect was.
+func TestARebuildThatFailedIsStillOwed(t *testing.T) {
+	pending := false
+	build := func(changed, views, succeeds bool) (built, cleared bool) {
+		if !changed {
+			return false, false
+		}
+		pending = pending || views
+		if !pending {
+			return false, false
+		}
+		if !succeeds {
+			return true, false
+		}
+		pending = false
+		return true, true
+	}
+
+	// A view changes and the build fails.
+	if built, cleared := build(true, true, false); !built || cleared {
+		t.Fatal("the view change did not reach the build")
+	}
+	// Now an ordinary .go file is saved. Nothing about this change is a view,
+	// and the build still has to run -- one is owed.
+	built, cleared := build(true, false, true)
+	if !built {
+		t.Fatal("a failed view build was forgotten: the server restarts against stale views until `aru build`")
+	}
+	if !cleared {
+		t.Fatal("the debt was not cleared by a build that succeeded, so it would rebuild forever")
+	}
+	// And nothing is owed after that.
+	if built, _ := build(true, false, true); built {
+		t.Error("a build ran with nothing owed")
 	}
 }

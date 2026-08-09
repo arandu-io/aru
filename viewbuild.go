@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/arandu-io/aru/internal/kyse"
 	"github.com/arandu-io/aru/internal/toolchain"
 )
 
@@ -31,7 +32,11 @@ const stylesheetOutput = "assets/app.css"
 func viewBuild(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("view:build", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	watch := flags.Bool("watch", false, "rebuild when a file changes")
+	// There is deliberately no --watch here. `aru dev` is the loop, and a second
+	// watch implementation is the second way to do one thing (RULE 9). The flag
+	// that used to be here promised the one thing it did not do: it compiled the
+	// views exactly once and handed Tailwind a closed stdin, so it exited
+	// immediately and never recompiled a .kyse.go at all.
 	if err := flags.Parse(args); err != nil {
 		return fmt.Errorf("view:build: %w", err)
 	}
@@ -42,10 +47,10 @@ func viewBuild(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return buildViews(root, *watch, stdout, stderr)
+	return buildViews(root, stdout, stderr)
 }
 
-func buildViews(root string, watch bool, stdout, stderr io.Writer) error {
+func buildViews(root string, stdout, stderr io.Writer) error {
 	pins, err := toolchain.ReadPins(root)
 	if err != nil {
 		return err
@@ -93,9 +98,6 @@ func buildViews(root string, watch bool, stdout, stderr io.Writer) error {
 		return err
 	}
 	args := []string{"--input", stylesheetSource, "--output", stylesheetOutput, "--minify"}
-	if watch {
-		args = append(args, "--watch")
-	}
 	if err := runTool(root, tailwind, args, stdout, stderr); err != nil {
 		return fmt.Errorf("tailwindcss: %w", err)
 	}
@@ -117,10 +119,59 @@ func hasStylesheet(root string) bool {
 	return !errors.Is(err, fs.ErrNotExist)
 }
 
+// skipDir is the set of directories nothing inside is ever an input.
+//
+// storage/ is the one that matters and the one that is easy to miss: framework/
+// views under it is build output, and framework/cache, framework/sessions and
+// app/{public,private} are RUNTIME output. Watched, an upload named theme.css
+// made the request the developer had just issued restart the process that
+// served it, and re-run Tailwind. bin/, tmp/ and .arandu/ are gitignored build
+// and tool output for the same reason.
 func skipDir(name string) bool {
 	switch name {
-	case ".git", "node_modules", "vendor", "testdata":
+	case ".git", "node_modules", "vendor", "testdata", "storage", "bin", "tmp", ".arandu":
 		return true
 	}
 	return false
+}
+
+// ensureViews compiles the view layer when its output is not there yet.
+//
+// It answers one question -- does what the project imports exist -- and it is
+// not a second build path: what it runs is buildViews, the same one `aru
+// view:build` runs. The distinction that keeps it from becoming one is that it
+// never rebuilds anything that is merely out of date. Staleness is what `aru
+// dev` watches for; absence is what stops the project compiling at all.
+//
+// Absence is the normal state twice: after `aru new`, and after every clone,
+// because both the compiled views and the compiled stylesheet are gitignored
+// build output that a go:embed and a handful of imports refer to by name.
+func ensureViews(root string, stderr io.Writer) error {
+	sources, err := findViews(viewsIn(root))
+	if err != nil || len(sources) == 0 {
+		// No views is a legitimate shape -- an API with no HTML -- and a project
+		// that cannot be walked has a problem this is not the place to report.
+		return nil
+	}
+
+	missing := ""
+	for _, source := range sources {
+		if _, err := os.Stat(kyse.OutputPath(source)); errors.Is(err, fs.ErrNotExist) {
+			missing = source
+			break
+		}
+	}
+	if missing == "" && (!hasStylesheet(root) || exists(filepath.Join(root, stylesheetOutput))) {
+		return nil
+	}
+
+	// On stderr: this is the command explaining itself, not what the command
+	// produced, and `aru routes > routes.txt` should not collect it.
+	fmt.Fprintln(stderr, "the view layer has not been compiled yet; building it once")
+	return buildViews(root, stderr, stderr)
+}
+
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

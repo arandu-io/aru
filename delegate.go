@@ -34,6 +34,24 @@ func delegate(subcommand string) func([]string, io.Writer, io.Writer) error {
 			return errors.New("the go toolchain was not found in PATH, and aru needs it to run the project")
 		}
 
+		// The views have to exist before the project can be compiled at all.
+		//
+		// bootstrap/app.go imports storage/framework/views, and that directory is
+		// build output: it is gitignored, so it is empty after `aru new` and after
+		// every fresh clone. Every command here runs the project, so without this
+		// the first thing anybody typed answered
+		//
+		//	no required module provides package example.test/x/storage/framework/views
+		//
+		// which names a package they never wrote and cannot get. `aru view:build`
+		// was the fix and nothing said so -- it is where "I have to run aru build
+		// before anything works" came from. Building it here is not a second way
+		// to build views; it is the same buildViews, run when its output is
+		// missing.
+		if err := ensureViews(root, stderr); err != nil {
+			return err
+		}
+
 		full := append([]string{"run", appPackage, subcommand}, args...)
 		cmd := exec.Command("go", full...)
 		cmd.Dir = root

@@ -284,6 +284,14 @@ const (
 	compiledPath = "storage/framework/views/"
 )
 
+// CompiledDir is compiledPath as a caller can use it, without the trailing
+// separator.
+//
+// Exported so that whatever sweeps the compiled tree and whatever writes into
+// it read the same constant. Two string literals for one directory is how a
+// sweeper comes to look somewhere the writer never wrote.
+const CompiledDir = "storage/framework/views"
+
 // Name is the name a view is rendered by: the path under resources/views, with
 // dots. `auth/login.kyse.go` is rendered as "auth.login".
 func Name(viewsDir, source string) string {

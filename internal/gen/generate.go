@@ -44,7 +44,20 @@ func Generate(m Module) ([]File, error) {
 		{filepath.Join("app", "Repositories", m.Entity()+"Repository.go"), repositoryTemplate},
 		{filepath.Join("app", "Services", m.Entity()+"Service.go"), serviceTemplate},
 		{filepath.Join("app", "Http", "Requests", m.Entity()+"Request.go"), requestTemplate + requestRulesTemplate},
-		{filepath.Join("app", "Http", "Controllers", m.Entity()+"Controller_test.go"), testTemplate},
+		// The test goes to tests/Unit, not beside the controller.
+		//
+		// It is the Laravel arrangement: tests/Unit for what is checked without
+		// booting, tests/Feature for what boots the application and makes a
+		// request. What this one checks -- that every repository method demands
+		// its Grant, and that the policy denies an action nobody defined -- needs
+		// neither a server nor a database.
+		//
+		// The name is <Entity>_test.go, not <Entity>Test.go. Laravel's convention
+		// is the second and Go's rule is the first, and Go's is not a
+		// convention: a file that does not end in _test.go is compiled into the
+		// package, so the "test" would ship in the binary and its Test functions
+		// would never run.
+		{filepath.Join("tests", "Unit", m.Entity()+"_test.go"), testTemplate},
 	} {
 		content, err := render(filepath.Base(t.path), t.tmpl, m)
 		if err != nil {

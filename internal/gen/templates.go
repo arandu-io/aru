@@ -1082,7 +1082,7 @@ func (c *{{.Controller}}) token(ctx *httpx.Context) (string, error) {
 }
 {{end}}`
 
-const testTemplate = `package controllers_test
+const testTemplate = `package unit_test
 
 import (
 	"context"

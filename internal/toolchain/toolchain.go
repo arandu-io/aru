@@ -41,7 +41,7 @@ type Tool struct {
 	Version string
 	// asset names the release artifact for a platform, and reports whether the
 	// platform is published at all.
-	asset func(goos, goarch string) (string, bool)
+	asset func(goos, goarch, libc string) (string, bool)
 	// checksums is the release artifact listing "<sha256>  <name>" lines.
 	checksums string
 }
@@ -61,7 +61,7 @@ func Tailwind(version string) Tool {
 		Repo:      "tailwindlabs/tailwindcss",
 		Version:   version,
 		checksums: "sha256sums.txt",
-		asset: func(goos, goarch string) (string, bool) {
+		asset: func(goos, goarch, libc string) (string, bool) {
 			switch goos {
 			case "darwin":
 				switch goarch {
@@ -71,11 +71,27 @@ func Tailwind(version string) Tool {
 					return "tailwindcss-macos-x64", true
 				}
 			case "linux":
+				// Two Linux builds, and picking the wrong one fails in a way
+				// that says the opposite of what is wrong:
+				//
+				//	fork/exec …/tailwindcss-v4.3.3: no such file or directory
+				//
+				// naming the file that was just downloaded and is right there.
+				// What is missing is the dynamic loader -- the glibc build on a
+				// musl system, which is every Alpine image, and Alpine is what
+				// the Dockerfile builds in.
+				//
+				// The alternative was gcompat in every Dockerfile. Downloading
+				// the right binary is one place instead of one per project.
+				suffix := ""
+				if libc == "musl" {
+					suffix = "-musl"
+				}
 				switch goarch {
 				case "arm64":
-					return "tailwindcss-linux-arm64", true
+					return "tailwindcss-linux-arm64" + suffix, true
 				case "amd64":
-					return "tailwindcss-linux-x64", true
+					return "tailwindcss-linux-x64" + suffix, true
 				}
 			case "windows":
 				if goarch == "amd64" {
@@ -85,6 +101,30 @@ func Tailwind(version string) Tool {
 			return "", false
 		},
 	}
+}
+
+// libc is which C library this system has: "musl" or "gnu".
+//
+// It is decided by looking for musl's dynamic loader rather than by reading
+// /etc/os-release, because the question is what can load a binary and not which
+// distribution somebody is on -- a glibc binary on Alpine fails the same way
+// whatever the release file says.
+//
+// Anything that is not Linux is "gnu", which is a lie and does not matter: the
+// macOS and Windows assets have no variants to choose between.
+func libc() string {
+	if runtime.GOOS != "linux" {
+		return "gnu"
+	}
+	for _, loader := range []string{
+		"/lib/ld-musl-x86_64.so.1",
+		"/lib/ld-musl-aarch64.so.1",
+	} {
+		if _, err := os.Stat(loader); err == nil {
+			return "musl"
+		}
+	}
+	return "gnu"
 }
 
 // Dir is where the managed binaries live: ~/.arandu/bin.
@@ -125,7 +165,7 @@ func (t Tool) Ensure(w io.Writer) (string, error) {
 		return path, nil
 	}
 
-	assetName, ok := t.asset(runtime.GOOS, runtime.GOARCH)
+	assetName, ok := t.asset(runtime.GOOS, runtime.GOARCH, libc())
 	if !ok {
 		return "", fmt.Errorf("%s does not publish a binary for %s/%s: install it yourself and put it in %s",
 			t.Name, runtime.GOOS, runtime.GOARCH, filepath.Dir(path))

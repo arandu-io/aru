@@ -108,7 +108,7 @@ func TestNearestSuggestsSomethingForATypo(t *testing.T) {
 // TestALocalFileNeedsAFamilyName.
 //
 // Deriving one from the path would produce a CSS family called
-// HyzisGrotesk-Regular-v3-final, which is what the file is called and not what
+// Arandu-Regular-v3-final, which is what the file is called and not what
 // the font is.
 func TestALocalFileNeedsAFamilyName(t *testing.T) {
 	path := write(t, "Own.ttf", []byte("not really a font"))
@@ -126,7 +126,7 @@ func TestALocalFileNeedsAFamilyName(t *testing.T) {
 func TestALocalFileKeepsItsExtension(t *testing.T) {
 	path := write(t, "Own.ttf", []byte("not really a font"))
 
-	got, err := fonts.Local(path, "Hyzis Grotesk", "400", "")
+	got, err := fonts.Local(path, "Arandu", "400", "")
 	if err != nil {
 		t.Fatal(err)
 	}

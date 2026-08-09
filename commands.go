@@ -112,7 +112,7 @@ var commands = []command{
 	{
 		name: "font:add",
 		usage: `aru font:add "Young Serif" --as display [--weight 400..700] [--subset latin,latin-ext]` + "\n" +
-			`             aru font:add --file ./Own.woff2 --family "Own" --as display [--metrics-from ./Own.ttf]`,
+			`             aru font:add --file ./Arandu.woff2 --family "Arandu" --as display [--metrics-from ./Arandu.ttf]`,
 		desc: "vendor a font into the project, from the catalogue or from a file of your own",
 		run:  fontAdd,
 	},

@@ -31,7 +31,7 @@ var formats = map[string]string{
 // Local reads a font from disk and returns it in the shape Fetch would have.
 //
 // family is what the CSS will call it, and it is required: a file name is not a
-// family name, and deriving one from "HyzisGrotesk-Regular-v3-final.ttf" would
+// family name, and deriving one from "Arandu-Regular-v3-final.ttf" would
 // produce a family called exactly that.
 //
 // metricsFrom is an optional TrueType or OpenType to read the fallback metrics
@@ -44,10 +44,10 @@ func Local(path, family, weight, metricsFrom string) (Family, error) {
 	if strings.TrimSpace(family) == "" {
 		return Family{}, fmt.Errorf(`--family is required with --file.
 
-A file name is not a family name: --file HyzisGrotesk-Regular-v3.ttf would
-produce a CSS family called HyzisGrotesk-Regular-v3.
+A file name is not a family name: --file Arandu-Regular-v3.ttf would
+produce a CSS family called Arandu-Regular-v3.
 
-    aru font:add --file ./HyzisGrotesk.woff2 --family "Hyzis Grotesk" --as display`)
+    aru font:add --file ./Arandu.woff2 --family "Arandu" --as display`)
 	}
 
 	ext := strings.ToLower(filepath.Ext(path))

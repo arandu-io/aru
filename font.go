@@ -90,7 +90,7 @@ Anything in the catalogue, by the name it is published under. To find one:
 
 Or a file of your own:
 
-    aru font:add --file ./HyzisGrotesk.woff2 --family "Hyzis Grotesk" --as display`)
+    aru font:add --file ./Arandu.woff2 --family "Arandu" --as display`)
 	}
 	if !fonts.Role(role).Valid() {
 		return fmt.Errorf(`--as must be display or body, and %q is neither.
@@ -126,15 +126,7 @@ deliberately: a third would be a third file in every binary, and the answer to
 	} else {
 		fmt.Fprintf(stdout, "fetching %s...\n", family)
 		if got, err = fonts.Fetch(nil, family, weight, subsetList); err != nil {
-			// A name that matched nothing is the common mistake, and a refusal
-			// that only says so sends somebody to a browser.
-			if all, cErr := fonts.Catalogue(nil); cErr == nil {
-				if near := fonts.Nearest(all, family, 6); len(near) > 0 {
-					return fmt.Errorf("%s: %w\n\n  did you mean: %s\n  or search: aru font:search %s",
-						family, err, strings.Join(near, ", "), firstWord(family))
-				}
-			}
-			return fmt.Errorf("%s: %w", family, err)
+			return notInTheCatalogue(family, weight, err)
 		}
 	}
 
@@ -350,6 +342,52 @@ func fontToken(role string) string {
 		return "sans"
 	}
 	return "display"
+}
+
+// notInTheCatalogue turns a failed fetch into something a person can act on.
+//
+// What the transport says is "answered 400 Bad Request" and a URL, which is
+// true and useless: the catalogue refuses an unknown family with the same
+// status it refuses a malformed request. So the catalogue is consulted -- once,
+// only on the failure path -- and the answer says which of the two mistakes it
+// was.
+//
+// The --file line is not decoration. A project whose own font is named after
+// the project will have somebody type the name without --file, and the fastest
+// way past that is the command that would have worked.
+func notInTheCatalogue(family, weight string, cause error) error {
+	all, err := fonts.Catalogue(nil)
+	if err != nil {
+		// The catalogue is unreachable too, so this is the network and not the
+		// name. Saying "no such family" here would send somebody looking for a
+		// typo in something they spelled correctly.
+		return fmt.Errorf("%s: %w", family, cause)
+	}
+
+	if e, ok := fonts.Find(all, family); ok {
+		// It exists, so the weight or the subset is what was refused -- and the
+		// family knows which weights it has.
+		return fmt.Errorf(`%s exists, but not at weight %q.
+
+  it has: %s
+
+    aru font:info %q`, e.Family, weight, e.WeightRange(), e.Family)
+	}
+
+	msg := fmt.Sprintf("there is no %q in the catalogue", family)
+	if near := fonts.Nearest(all, family, 6); len(near) > 0 {
+		msg += "\n\n  did you mean: " + strings.Join(near, ", ")
+		msg += "\n  or search:    aru font:search " + firstWord(family)
+	} else {
+		msg += "\n\n  aru font:search " + firstWord(family) + "   to look for it"
+	}
+	return fmt.Errorf(`%s
+
+  If it is a font of your own -- one being drawn, or bought from a foundry --
+  it is vendored from a file instead:
+
+    aru font:add --file ./%s.woff2 --family %q --as display`,
+		msg, fonts.Slug(family), family)
 }
 
 // firstWord is what to suggest searching for: the whole name matched nothing, so

@@ -620,22 +620,32 @@ func TestTheCompilerIsToldWhichLineOfTheViewEachExpressionCameFrom(t *testing.T)
 	}
 }
 
-// The generated file sits beside its source, and the name is the source's with
-// one suffix swapped for another.
+// The compiled view goes under storage, mirroring the tree it came from.
 //
-// This had no test at all while the rule was the opposite one -- the output
-// landed flat, `auth/login.kyse.go` compiling to `auth_login.go` a directory up
-// -- so the behaviour every project's tree depends on was resting on a comment.
-func TestTheGeneratedFileSitsBesideItsSource(t *testing.T) {
+// It is where Laravel puts a compiled Blade template. A compiled view is build
+// output, and build output next to its source is a file people read diffs of and
+// eventually edit -- this one opens with DO NOT EDIT and is overwritten on the
+// next build.
+//
+// This had no test at all through two earlier arrangements, so the rule every
+// project's tree depends on was resting on a comment.
+func TestTheCompiledViewGoesUnderStorage(t *testing.T) {
 	for _, c := range []struct{ source, want string }{
-		{"resources/views/home.kyse.go", "resources/views/home.go"},
-		{"resources/views/auth/login.kyse.go", "resources/views/auth/login.go"},
-		{"resources/views/layouts/app.kyse.go", "resources/views/layouts/app.go"},
-		{"resources/views/components/button.kyse.go", "resources/views/components/button.go"},
+		{"resources/views/home.kyse.go", "storage/framework/views/home.go"},
+		{"resources/views/auth/login.kyse.go", "storage/framework/views/auth/login.go"},
+		{"resources/views/layouts/app.kyse.go", "storage/framework/views/layouts/app.go"},
+		{"resources/views/auth/passwords/reset.kyse.go", "storage/framework/views/auth/passwords/reset.go"},
 	} {
 		if got := kyse.OutputPath(c.source); got != c.want {
 			t.Errorf("OutputPath(%q) = %q, want %q", c.source, got, c.want)
 		}
+	}
+
+	// A library keeps its views at its own root and has no resources/views to
+	// mirror. It compiles in place, because there is no storage in a library and
+	// the output is what `go get` serves.
+	if got, want := kyse.OutputPath("components/button.kyse.go"), "components/button.go"; got != want {
+		t.Errorf("a library: OutputPath = %q, want %q", got, want)
 	}
 }
 

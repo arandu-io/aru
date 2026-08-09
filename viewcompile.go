@@ -121,6 +121,13 @@ func compileViews(root string, stdout io.Writer) error {
 			problems = append(problems, err.Error())
 			continue
 		}
+		// The directory is created here, not assumed. The compiled views live
+		// under storage, which is gitignored -- so in a fresh clone every one of
+		// these directories is missing, and the first build failed with
+		// "no such file or directory" naming a path nobody had ever created.
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
 		if err := os.WriteFile(target, out, 0o644); err != nil {
 			return err
 		}

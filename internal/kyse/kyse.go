@@ -262,8 +262,27 @@ func Directives() []string {
 // on -- the same shape as a database/sql driver -- and paying it per directory
 // rather than once is what fifteen files leaving the top level costs.
 func OutputPath(source string) string {
-	return strings.TrimSuffix(source, ".kyse.go") + ".go"
+	at := strings.Index(source, viewsPath)
+	if at < 0 {
+		// A library keeps its views at its own root and has no resources/views
+		// to mirror, nor a storage to mirror it into. It compiles in place,
+		// because the output is what `go get` serves rather than build output
+		// somebody regenerates -- see arandu-io/kyse.
+		return strings.TrimSuffix(source, ".kyse.go") + ".go"
+	}
+	return source[:at] + compiledPath + strings.TrimSuffix(source[at+len(viewsPath):], ".kyse.go") + ".go"
 }
+
+// Where a view is written and where its compiled form goes.
+//
+// The tree under compiledPath mirrors the tree under viewsPath, so
+// `resources/views/posts/index.kyse.go` compiles to
+// `storage/framework/views/posts/index.go` -- the same arrangement Laravel has,
+// at the same address, for the same reason.
+const (
+	viewsPath    = "resources/views/"
+	compiledPath = "storage/framework/views/"
+)
 
 // Name is the name a view is rendered by: the path under resources/views, with
 // dots. `auth/login.kyse.go` is rendered as "auth.login".

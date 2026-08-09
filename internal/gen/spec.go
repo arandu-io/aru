@@ -470,14 +470,22 @@ func (m Module) ServicesImport() string { return m.ModulePath + "/app/Services" 
 // RequestsImport is the import path of app/Http/Requests.
 func (m Module) RequestsImport() string { return m.ModulePath + "/app/Http/Requests" }
 
-// ViewsImport is the import path of resources/views.
-// ViewsImport is the package the generated views live in.
+// ViewsImport is the package the compiled views live in.
 //
-// One directory per resource, because the generated Go sits beside its source
-// and one directory is one Go package: resources/views/posts holds the four
-// screens of posts and their compiled forms, and nothing else.
+// storage/framework/views and not resources/views, and that is not a detail: a
+// view is WRITTEN in resources/views/<resource>/show.kyse.go and COMPILED to
+// storage/framework/views/<resource>/show.go, which is the only one of the two
+// the Go compiler ever sees -- the source carries `//go:build kyse` precisely so
+// that it does not.
+//
+// Importing the source directory produces "build constraints exclude all Go
+// files", which names the right directory for the wrong reason and sends the
+// reader looking for a missing build tag. This generator emitted exactly that
+// for one release. Found by generating a module and building it.
+//
+// One directory per resource, because one directory is one Go package.
 func (m Module) ViewsImport() string {
-	return m.ModulePath + "/resources/views/" + m.Resource()
+	return m.ModulePath + "/storage/framework/views/" + m.Resource()
 }
 
 // NeedsWholeParse reports whether the controller parses an integer.

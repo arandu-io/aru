@@ -427,9 +427,6 @@ func (p *parser) assemble(file *File, nodes []Node) {
 				Name: unquote(n.Body), Nodes: n.Children, Line: n.Line,
 			})
 
-		case n.Kind == Text && strings.TrimSpace(n.Body) == "":
-			// Whitespace between directives at the top level is not content.
-
 		default:
 			file.Body = append(file.Body, n)
 		}
@@ -437,16 +434,40 @@ func (p *parser) assemble(file *File, nodes []Node) {
 
 	// A view that extends a layout puts its content in sections. Markup outside
 	// one would be written before the layout and land outside <html>.
+	//
+	// Blank lines out there are not markup -- they are the spacing between
+	// @extends and @section, which nobody wrote as content -- so they are
+	// dropped rather than reported.
 	if file.Extends != "" {
+		kept := file.Body[:0]
 		for _, n := range file.Body {
 			if n.Kind == Text && strings.TrimSpace(n.Body) == "" {
 				continue
 			}
-			p.fail(n.Line, "this markup is outside any @section, in a view that extends a layout",
-				"wrap it in @section('content') … @endsection, or it renders outside the page.")
-			break
+			kept = append(kept, n)
 		}
+		file.Body = kept
+
+		if len(file.Body) > 0 {
+			p.fail(file.Body[0].Line, "this markup is outside any @section, in a view that extends a layout",
+				"wrap it in @section('content') … @endsection, or it renders outside the page.")
+		}
+		return
 	}
+
+	// A view with NO layout keeps its blank lines, and that is not a nicety.
+	//
+	// Dropping them here was correct for the section-based case and wrong for
+	// this one, and the difference does not show in HTML -- a browser collapses
+	// whitespace, so every page looked right. It shows in a plain-text e-mail,
+	// where the paragraph breaks vanish and, worse, a URL on its own line ends
+	// up glued to the first word of the next sentence:
+	//
+	//	https://example.com/auth/verify/confirm?token=abcThe link works for 24 hours.
+	//
+	// Every mail client that autolinks then produces a link with "The" on the
+	// end of the token. Found by a feature test that followed the link it was
+	// sent rather than asserting that a function was called.
 }
 
 func isClosing(trimmed string) bool {

@@ -33,6 +33,9 @@ func renderInternalDoctorTestdataCleanResourcesViewsLayoutsApp(w io.Writer, data
 	_ = d
 	var err error
 	if err == nil {
+		_, err = io.WriteString(w, "\n")
+	}
+	if err == nil {
 		_, err = io.WriteString(w, "<!doctype html>\n")
 	}
 	if err == nil {
@@ -50,7 +53,7 @@ func renderInternalDoctorTestdataCleanResourcesViewsLayoutsApp(w io.Writer, data
 	if err == nil {
 //line internal/doctor/testdata/clean/resources/views/layouts/app.kyse.go:16
 		_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(d.Title)))
-//line internal/doctor/testdata/clean/storage/framework/views/layouts/app.go:54
+//line internal/doctor/testdata/clean/storage/framework/views/layouts/app.go:57
 	}
 	if err == nil {
 		_, err = io.WriteString(w, "</title>\n")
@@ -78,6 +81,9 @@ func renderInternalDoctorTestdataCleanResourcesViewsLayoutsApp(w io.Writer, data
 	}
 	if err == nil {
 		_, err = io.WriteString(w, "</html>\n")
+	}
+	if err == nil {
+		_, err = io.WriteString(w, "\n")
 	}
 	return err
 }

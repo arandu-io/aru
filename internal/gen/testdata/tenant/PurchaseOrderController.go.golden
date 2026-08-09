@@ -16,7 +16,7 @@ import (
 	requests "example.test/project/app/Http/Requests"
 	models "example.test/project/app/Models"
 	services "example.test/project/app/Services"
-	views "example.test/project/resources/views/purchase-orders"
+	views "example.test/project/storage/framework/views/purchase-orders"
 )
 
 // PurchaseOrderController answers the seven routes of the purchase-orders resource.

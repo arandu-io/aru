@@ -33,15 +33,21 @@ func renderInternalDoctorTestdataViolationsResourcesViewsBillingIndex(w io.Write
 	_ = d
 	var err error
 	if err == nil {
+		_, err = io.WriteString(w, "\n")
+	}
+	if err == nil {
 		_, err = io.WriteString(w, "<h1>")
 	}
 	if err == nil {
 //line internal/doctor/testdata/violations/resources/views/billing/index.kyse.go:12
 		_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(d.Title)))
-//line internal/doctor/testdata/violations/storage/framework/views/billing/index.go:42
+//line internal/doctor/testdata/violations/storage/framework/views/billing/index.go:45
 	}
 	if err == nil {
 		_, err = io.WriteString(w, "</h1>\n")
+	}
+	if err == nil {
+		_, err = io.WriteString(w, "\n")
 	}
 	if err == nil {
 		_, err = io.WriteString(w, "<!-- Violation: Alpine reaching the server. This should be an HTMX fragment --\n")
@@ -65,6 +71,9 @@ func renderInternalDoctorTestdataViolationsResourcesViewsBillingIndex(w io.Write
 		_, err = io.WriteString(w, "</div>\n")
 	}
 	if err == nil {
+		_, err = io.WriteString(w, "\n")
+	}
+	if err == nil {
 		_, err = io.WriteString(w, "<!-- This one is fine: open/closed is client-only, ephemeral and invisible to\n")
 	}
 	if err == nil {
@@ -78,6 +87,9 @@ func renderInternalDoctorTestdataViolationsResourcesViewsBillingIndex(w io.Write
 	}
 	if err == nil {
 		_, err = io.WriteString(w, "</div>\n")
+	}
+	if err == nil {
+		_, err = io.WriteString(w, "\n")
 	}
 	return err
 }

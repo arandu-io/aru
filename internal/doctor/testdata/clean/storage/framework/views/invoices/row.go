@@ -33,12 +33,15 @@ func renderInternalDoctorTestdataCleanResourcesViewsInvoicesRow(w io.Writer, dat
 	_ = d
 	var err error
 	if err == nil {
+		_, err = io.WriteString(w, "\n")
+	}
+	if err == nil {
 		_, err = io.WriteString(w, "<li class=\"py-2\" id=\"invoice-")
 	}
 	if err == nil {
 //line internal/doctor/testdata/clean/resources/views/invoices/row.kyse.go:12
 		_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(d.Invoice.ID)))
-//line internal/doctor/testdata/clean/storage/framework/views/invoices/row.go:42
+//line internal/doctor/testdata/clean/storage/framework/views/invoices/row.go:45
 	}
 	if err == nil {
 		_, err = io.WriteString(w, "\">\n")
@@ -49,7 +52,7 @@ func renderInternalDoctorTestdataCleanResourcesViewsInvoicesRow(w io.Writer, dat
 	if err == nil {
 //line internal/doctor/testdata/clean/resources/views/invoices/row.kyse.go:13
 		_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(d.Invoice.Reference)))
-//line internal/doctor/testdata/clean/storage/framework/views/invoices/row.go:53
+//line internal/doctor/testdata/clean/storage/framework/views/invoices/row.go:56
 	}
 	if err == nil {
 		_, err = io.WriteString(w, "</span>\n")
@@ -60,13 +63,16 @@ func renderInternalDoctorTestdataCleanResourcesViewsInvoicesRow(w io.Writer, dat
 	if err == nil {
 //line internal/doctor/testdata/clean/resources/views/invoices/row.kyse.go:14
 		_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(d.Invoice.Total)))
-//line internal/doctor/testdata/clean/storage/framework/views/invoices/row.go:64
+//line internal/doctor/testdata/clean/storage/framework/views/invoices/row.go:67
 	}
 	if err == nil {
 		_, err = io.WriteString(w, "</span>\n")
 	}
 	if err == nil {
 		_, err = io.WriteString(w, "</li>\n")
+	}
+	if err == nil {
+		_, err = io.WriteString(w, "\n")
 	}
 	return err
 }

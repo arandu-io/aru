@@ -863,3 +863,63 @@ type D struct{ Email string }
 		t.Errorf("the markup after the interpolation was eaten:\n%s", got)
 	}
 }
+
+// TestAViewWithNoLayoutKeepsItsBlankLines.
+//
+// The section-based case drops them, correctly: whitespace between @extends and
+// @section is not content. Doing the same to a view with no layout is invisible
+// in HTML -- a browser collapses whitespace, so every page still looked right --
+// and destroys a plain-text e-mail, where the paragraph breaks are the only
+// structure there is.
+//
+// The failure that found it: a URL alone on a line came out glued to the first
+// word of the next sentence, so every mail client that autolinks produced a link
+// with three extra characters on the end of the token.
+func TestAViewWithNoLayoutKeepsItsBlankLines(t *testing.T) {
+	f, err := kyse.Parse("resources/views/mail/note.kyse.go", `//go:build kyse
+
+package mail
+
+Confirm your address:
+{{ .Link }}
+
+The link works for 24 hours.
+`)
+	if err != nil {
+		t.Fatalf("the view did not parse: %v", err)
+	}
+	generated, err := kyse.Generate(f, "mail.note", "NoteData", "out.go")
+	if err != nil {
+		t.Fatalf("the view did not compile: %v", err)
+	}
+	out := string(generated)
+
+	// The blank line survives as a newline of its own, so the link and the
+	// sentence after it are not on the same line.
+	if !strings.Contains(out, `"\n"`) {
+		t.Errorf("the blank line was dropped: a link on its own line ends up glued to the next sentence\n%s", out)
+	}
+}
+
+// TestAViewWithALayoutStillRefusesMarkupOutsideASection: the blank-line fix must
+// not turn the mistake it sits next to into silence.
+func TestAViewWithALayoutStillRefusesMarkupOutsideASection(t *testing.T) {
+	_, err := kyse.Parse("resources/views/home.kyse.go", `//go:build kyse
+
+package views
+
+@extends('layouts.app')
+
+<p>this is outside every section</p>
+
+@section('content')
+	<p>this one is fine</p>
+@endsection
+`)
+	if err == nil {
+		t.Fatal("markup outside a section was accepted: it renders before <html>")
+	}
+	if !strings.Contains(err.Error(), "outside any @section") {
+		t.Errorf("the error does not say what is wrong: %v", err)
+	}
+}

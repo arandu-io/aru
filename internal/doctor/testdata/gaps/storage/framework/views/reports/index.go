@@ -33,15 +33,21 @@ func renderInternalDoctorTestdataGapsResourcesViewsReportsIndex(w io.Writer, dat
 	_ = d
 	var err error
 	if err == nil {
+		_, err = io.WriteString(w, "\n")
+	}
+	if err == nil {
 		_, err = io.WriteString(w, "<h1>")
 	}
 	if err == nil {
 //line internal/doctor/testdata/gaps/resources/views/reports/index.kyse.go:12
 		_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(d.Title)))
-//line internal/doctor/testdata/gaps/storage/framework/views/reports/index.go:42
+//line internal/doctor/testdata/gaps/storage/framework/views/reports/index.go:45
 	}
 	if err == nil {
 		_, err = io.WriteString(w, "</h1>\n")
+	}
+	if err == nil {
+		_, err = io.WriteString(w, "\n")
 	}
 	if err == nil {
 		_, err = io.WriteString(w, "<!-- x-on: with double quotes. The audit matched x-data, x-init and x-effect\n")
@@ -53,6 +59,9 @@ func renderInternalDoctorTestdataGapsResourcesViewsReportsIndex(w io.Writer, dat
 		_, err = io.WriteString(w, "<div x-on:click=\"fetch('/api/totals')\">Load</div>\n")
 	}
 	if err == nil {
+		_, err = io.WriteString(w, "\n")
+	}
+	if err == nil {
 		_, err = io.WriteString(w, "<!-- The shorthand, with single quotes. Same directive, two spellings, and\n")
 	}
 	if err == nil {
@@ -62,6 +71,9 @@ func renderInternalDoctorTestdataGapsResourcesViewsReportsIndex(w io.Writer, dat
 		_, err = io.WriteString(w, "<div @click='fetch(\"/api/totals\")'>Load</div>\n")
 	}
 	if err == nil {
+		_, err = io.WriteString(w, "\n")
+	}
+	if err == nil {
 		_, err = io.WriteString(w, "<!-- x-data with single quotes: the directive the audit did match, in the quote\n")
 	}
 	if err == nil {
@@ -69,6 +81,9 @@ func renderInternalDoctorTestdataGapsResourcesViewsReportsIndex(w io.Writer, dat
 	}
 	if err == nil {
 		_, err = io.WriteString(w, "<div x-data='{ socket: new WebSocket(\"/ws\") }'>Live</div>\n")
+	}
+	if err == nil {
+		_, err = io.WriteString(w, "\n")
 	}
 	if err == nil {
 		_, err = io.WriteString(w, "<!-- Client-only, and it stays silent: which panel is open dies on reload\n")
@@ -84,6 +99,9 @@ func renderInternalDoctorTestdataGapsResourcesViewsReportsIndex(w io.Writer, dat
 	}
 	if err == nil {
 		_, err = io.WriteString(w, "</div>\n")
+	}
+	if err == nil {
+		_, err = io.WriteString(w, "\n")
 	}
 	return err
 }

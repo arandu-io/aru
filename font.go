@@ -46,7 +46,7 @@ func fontAdd(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	var family, role, weight, subsets string
+	var family, role, weight, subsets, file, metricsFrom string
 	var rest []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -56,6 +56,12 @@ func fontAdd(args []string, stdout, stderr io.Writer) error {
 			weight, i = next(args, i)
 		case "--subset", "-s":
 			subsets, i = next(args, i)
+		case "--file", "-f":
+			file, i = next(args, i)
+		case "--family":
+			family, i = next(args, i)
+		case "--metrics-from":
+			metricsFrom, i = next(args, i)
 		default:
 			if strings.HasPrefix(args[i], "-") {
 				return fmt.Errorf("unknown flag %q", args[i])
@@ -63,15 +69,28 @@ func fontAdd(args []string, stdout, stderr io.Writer) error {
 			rest = append(rest, args[i])
 		}
 	}
-	family = strings.Join(rest, " ")
+	// A positional name and --family are the same field. The positional form is
+	// what a catalogue install reads like; --family is what a file install
+	// needs, because the family and the path are two different strings.
+	if positional := strings.Join(rest, " "); positional != "" {
+		family = positional
+	}
 
-	if family == "" {
+	if family == "" && file == "" {
 		return fmt.Errorf(`which family?
 
     aru font:add "Young Serif" --as display
     aru font:add "Public Sans" --as body --weight 400..700
 
-Anything on fonts.google.com, by the name it is published under.`)
+Anything in the catalogue, by the name it is published under. To find one:
+
+    aru font:search grotesk
+    aru font:search --category serif --variable
+    aru font:info "Young Serif"
+
+Or a file of your own:
+
+    aru font:add --file ./HyzisGrotesk.woff2 --family "Hyzis Grotesk" --as display`)
 	}
 	if !fonts.Role(role).Valid() {
 		return fmt.Errorf(`--as must be display or body, and %q is neither.
@@ -87,16 +106,36 @@ deliberately: a third would be a third file in every binary, and the answer to
 			subsetList = append(subsetList, s)
 		}
 	}
-	if len(subsetList) == 0 {
+	// Only for a catalogue install. A file of your own covers whatever it
+	// covers, and announcing a subset choice nobody made would be announcing
+	// something untrue.
+	if len(subsetList) == 0 && file == "" {
 		subsetList = []string{"latin"}
 		fmt.Fprintln(stderr, "subset: latin (English and Portuguese are both inside U+0000-00FF;")
 		fmt.Fprintln(stderr, "        --subset latin,latin-ext adds Polish, Czech and Turkish)")
 	}
 
-	fmt.Fprintf(stdout, "fetching %s...\n", family)
-	got, err := fonts.Fetch(nil, family, weight, subsetList)
-	if err != nil {
-		return fmt.Errorf("%s: %w", family, err)
+	var got fonts.Family
+	if file != "" {
+		// A file of your own: no download, no catalogue, and no licence to
+		// fetch. Whoever drew it owns those questions.
+		if got, err = fonts.Local(file, family, weight, metricsFrom); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "vendoring %s as %s\n", file, got.Name)
+	} else {
+		fmt.Fprintf(stdout, "fetching %s...\n", family)
+		if got, err = fonts.Fetch(nil, family, weight, subsetList); err != nil {
+			// A name that matched nothing is the common mistake, and a refusal
+			// that only says so sends somebody to a browser.
+			if all, cErr := fonts.Catalogue(nil); cErr == nil {
+				if near := fonts.Nearest(all, family, 6); len(near) > 0 {
+					return fmt.Errorf("%s: %w\n\n  did you mean: %s\n  or search: aru font:search %s",
+						family, err, strings.Join(near, ", "), firstWord(family))
+				}
+			}
+			return fmt.Errorf("%s: %w", family, err)
+		}
 	}
 
 	// Written before anything is recorded, so a failure halfway leaves files
@@ -149,6 +188,9 @@ deliberately: a third would be a third file in every binary, and the answer to
 	}
 
 	fmt.Fprintf(stdout, "\n%s is the %s face, %s in the binary\n", got.Name, role, size(total))
+	if advice := fonts.Advice(got, file); advice != "" {
+		fmt.Fprintf(stderr, "\n  %s\n", advice)
+	}
 	if got.Metrics.Ascent > 0 {
 		fmt.Fprintf(stdout, "  metric-matched fallback: ascent %.1f%%, descent %.1f%%\n",
 			got.Metrics.Ascent, got.Metrics.Descent)
@@ -308,6 +350,15 @@ func fontToken(role string) string {
 		return "sans"
 	}
 	return "display"
+}
+
+// firstWord is what to suggest searching for: the whole name matched nothing, so
+// half of it is the better query.
+func firstWord(s string) string {
+	if i := strings.IndexByte(s, ' '); i > 0 {
+		return s[:i]
+	}
+	return s
 }
 
 func size(n int) string {

@@ -96,8 +96,8 @@ func Stylesheet(installed []Installed) string {
   font-style: normal;
   font-weight: %s;
   font-display: swap;
-  src: url("%s") format("woff2");
-`, in.Family, cssWeight(in.Weight), assetURL(hash, file))
+  src: url("%s") format(%q);
+`, in.Family, cssWeight(in.Weight), assetURL(hash, file), Format(file))
 			if unicodeRange != "" {
 				fmt.Fprintf(&b, "  unicode-range: %s;\n", unicodeRange)
 			}
@@ -186,6 +186,35 @@ func parseFileNote(note string) (file, unicodeRange, hash string) {
 	file, rest, _ := strings.Cut(note, "|")
 	unicodeRange, hash, _ = strings.Cut(rest, "|")
 	return file, unicodeRange, hash
+}
+
+// Format is what the src: declares, from the extension.
+//
+// It is not decoration: a browser skips a source whose format it does not
+// support without downloading it, so a .ttf declared as woff2 is a font every
+// browser fetches and then refuses -- with an error naming neither the file nor
+// the declaration.
+func Format(file string) string {
+	switch {
+	case strings.HasSuffix(file, ".ttf"):
+		return "truetype"
+	case strings.HasSuffix(file, ".otf"):
+		return "opentype"
+	default:
+		return "woff2"
+	}
+}
+
+// ContentType is what the framework serves a vendored face as.
+func ContentType(file string) string {
+	switch {
+	case strings.HasSuffix(file, ".ttf"):
+		return "font/ttf"
+	case strings.HasSuffix(file, ".otf"):
+		return "font/otf"
+	default:
+		return "font/woff2"
+	}
 }
 
 // assetURL is where the framework serves a file with that content hash.

@@ -110,10 +110,23 @@ var commands = []command{
 		run:   viewBuild,
 	},
 	{
-		name:  "font:add",
-		usage: `aru font:add "Young Serif" --as display [--weight 400..700] [--subset latin,latin-ext]`,
-		desc:  "vendor a web font into the project: no CDN, no npm, nothing fetched at run time",
-		run:   fontAdd,
+		name: "font:add",
+		usage: `aru font:add "Young Serif" --as display [--weight 400..700] [--subset latin,latin-ext]` + "\n" +
+			`             aru font:add --file ./Own.woff2 --family "Own" --as display [--metrics-from ./Own.ttf]`,
+		desc: "vendor a font into the project, from the catalogue or from a file of your own",
+		run:  fontAdd,
+	},
+	{
+		name:  "font:search",
+		usage: "aru font:search [query] [--category serif] [--variable] [--limit 25|--all]",
+		desc:  "browse the catalogue: what exists, its weights and its licence",
+		run:   fontSearch,
+	},
+	{
+		name:  "font:info",
+		usage: `aru font:info "Young Serif"`,
+		desc:  "one family in full: weights, axes, scripts, who drew it",
+		run:   fontInfo,
 	},
 	{
 		name:  "font:list",

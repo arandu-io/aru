@@ -73,6 +73,11 @@ type Face struct {
 	UnicodeRange string
 	// File is the name the font is written and served under.
 	File string
+	// ContentType is what it is served as. Empty means font/woff2, which is
+	// every face that came from the catalogue -- a local file may be a .ttf or
+	// an .otf, and serving one of those as woff2 is a font every browser
+	// refuses with an error that names neither.
+	ContentType string
 	// Body is the woff2 itself.
 	Body []byte
 }

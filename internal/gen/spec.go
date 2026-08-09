@@ -488,6 +488,21 @@ func (m Module) ViewsImport() string {
 	return m.ModulePath + "/storage/framework/views/" + m.Resource()
 }
 
+// ViewsPackage is the Go package clause of the compiled views.
+//
+// It is Resource with the hyphens removed, and it exists because Resource has
+// them by design: "purchase-orders" is the URL segment, the directory name and
+// the first half of the view name, and all three want the hyphen. A Go package
+// name cannot have one.
+//
+// Without this, every module whose name is more than one word generated
+// `package purchase-orders` and the project did not compile -- reported by kyse
+// as a bug in the generator, which it was. `aru make:module thing` never showed
+// it: one word has no separator.
+func (m Module) ViewsPackage() string {
+	return strings.ReplaceAll(m.Resource(), "-", "")
+}
+
 // NeedsWholeParse reports whether the controller parses an integer.
 func (m Module) NeedsWholeParse() bool {
 	for _, f := range m.Fields {

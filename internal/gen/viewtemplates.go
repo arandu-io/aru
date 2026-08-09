@@ -33,7 +33,7 @@ package gen
 
 const viewIndexTemplate = `//go:build kyse
 
-package <%.Resource%>
+package <%.ViewsPackage%>
 
 import "github.com/arandu-io/framework/view"
 
@@ -116,7 +116,7 @@ type <%.RowStruct%> struct {
 
 const viewShowTemplate = `//go:build kyse
 
-package <%.Resource%>
+package <%.ViewsPackage%>
 
 import "github.com/arandu-io/framework/view"
 
@@ -170,7 +170,7 @@ var _ view.Layout = <%.ViewData "show"%>{}
 
 const viewCreateTemplate = `//go:build kyse
 
-package <%.Resource%>
+package <%.ViewsPackage%>
 
 import (
 	"github.com/arandu-io/kyse/components"
@@ -257,7 +257,7 @@ func (f <%$.FormStruct%>) <%.GoName%>Attr() string {
 
 const viewEditTemplate = `//go:build kyse
 
-package <%.Resource%>
+package <%.ViewsPackage%>
 
 import (
 	"github.com/arandu-io/kyse/components"

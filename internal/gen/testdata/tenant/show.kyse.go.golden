@@ -1,6 +1,6 @@
 //go:build kyse
 
-package purchase-orders
+package purchaseorders
 
 import "github.com/arandu-io/framework/view"
 

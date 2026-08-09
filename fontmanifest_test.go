@@ -135,3 +135,43 @@ func readManifestFile(t *testing.T, root string) string {
 	}
 	return string(b)
 }
+
+// TestABlockWrittenBeforeTheMarkerIsStillFound.
+//
+// The marker was added after the format shipped. Without recognising what the
+// previous version wrote, the first run of a newer CLI leaves the old comment
+// above the block it just replaced -- one orphan, permanently, which is the
+// duplication this whole change exists to remove.
+func TestABlockWrittenBeforeTheMarkerIsStillFound(t *testing.T) {
+	root := t.TempDir()
+	writeManifestFile(t, root, `[tools]
+tailwindcss = "v4.3.3"
+
+# The vendored faces. Written by `+"`aru font:add`"+`, and the files themselves are
+# under assets/fonts/ and committed -- so this section is not what makes the
+# build reproducible. The bytes are.
+
+[fonts.display]
+family = "Young Serif"
+weight = "400"
+files = "young-serif-400-latin.woff2||abc"
+`)
+
+	if err := writeManifest(root, []fonts.Installed{{
+		Role: fonts.Display, Family: "Montserrat", Weight: "400..800",
+		FileList: []string{"montserrat-400-800-latin.woff2||def"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	got := readManifestFile(t, root)
+	if n := strings.Count(got, "The vendored faces."); n != 1 {
+		t.Errorf("the old comment was left behind: %d copies\n%s", n, got)
+	}
+	if strings.Contains(got, "Young Serif") {
+		t.Error("the previous face survived being replaced")
+	}
+	if !strings.Contains(got, "[tools]") {
+		t.Error("the rest of the file went with it")
+	}
+}

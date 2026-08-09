@@ -29,6 +29,12 @@ import (
 // of the same nine-line note.
 const marker = "# --- aru font:add ---"
 
+// legacyMarker is the first line of the block as it was written before the
+// marker existed. It is recognised so that upgrading does not leave one orphan
+// comment behind, and it costs a string compare per line of a file that is
+// forty lines long.
+const legacyMarker = "# The vendored faces."
+
 // readInstalled parses the [fonts.*] sections.
 //
 // A missing file, or a file with no [fonts] section, is not an error: it is
@@ -146,7 +152,11 @@ func writeManifest(root string, list []fonts.Installed) error {
 	for _, raw := range strings.Split(string(b), "\n") {
 		line := strings.TrimSpace(raw)
 
-		if strings.HasPrefix(line, marker) {
+		// The marker, or the first line of a block written before the marker
+		// existed. Without the second, the first run of a newer CLI cannot find
+		// what an older one wrote, and leaves an orphan comment above the block
+		// it just replaced -- the very duplication this fixes, once, on upgrade.
+		if strings.HasPrefix(line, marker) || strings.HasPrefix(line, legacyMarker) {
 			dropping = true
 			continue
 		}

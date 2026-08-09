@@ -83,6 +83,9 @@ func ReadPins(root string) (Pins, error) {
 			section = strings.Trim(line, "[]")
 			continue
 		}
+		// [fonts.display] and [fonts.body] belong to `aru font:add`, which reads
+		// them itself. Skipped here rather than rejected: this function knows
+		// about build tools, and a section it does not own is not a typo.
 		if section != "tools" && section != "arandu" {
 			continue
 		}

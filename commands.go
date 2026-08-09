@@ -110,6 +110,24 @@ var commands = []command{
 		run:   viewBuild,
 	},
 	{
+		name:  "font:add",
+		usage: `aru font:add "Young Serif" --as display [--weight 400..700] [--subset latin,latin-ext]`,
+		desc:  "vendor a web font into the project: no CDN, no npm, nothing fetched at run time",
+		run:   fontAdd,
+	},
+	{
+		name:  "font:list",
+		usage: "aru font:list",
+		desc:  "show the vendored faces, their licences and what they weigh",
+		run:   fontList,
+	},
+	{
+		name:  "font:remove",
+		usage: "aru font:remove <display|body>",
+		desc:  "drop a vendored face and fall back to the system stack",
+		run:   fontRemove,
+	},
+	{
 		name:  "new",
 		usage: "aru new <name> [--module github.com/you/name]",
 		desc:  "create a new project from the skeleton",

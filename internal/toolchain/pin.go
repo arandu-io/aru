@@ -18,6 +18,17 @@ import (
 type Pins struct {
 	Tailwind string
 
+	// Aru is the oldest CLI this project can be built with, as "v0.17.0".
+	//
+	// It exists because the failure it prevents is unreadable. A project written
+	// with a current CLI, opened with an older one, is refused view by view with
+	// messages about markup that is correct -- sixty of them, each naming a line
+	// that is fine -- and the person concludes the project is broken.
+	//
+	// Empty means no floor, which is every project generated before this
+	// existed. Those keep working.
+	Aru string
+
 	// Retired holds the pins for tools that no longer exist. Reading them is not
 	// an error -- see the templ case in ReadPins -- but the caller is expected to
 	// say so, or the line stays in the file forever and the next reader assumes
@@ -72,7 +83,7 @@ func ReadPins(root string) (Pins, error) {
 			section = strings.Trim(line, "[]")
 			continue
 		}
-		if section != "tools" {
+		if section != "tools" && section != "arandu" {
 			continue
 		}
 
@@ -82,6 +93,9 @@ func ReadPins(root string) (Pins, error) {
 		}
 		value = strings.Trim(strings.TrimSpace(value), `"`)
 		switch strings.TrimSpace(key) {
+		case "aru":
+			pins.Aru = value
+
 		case "tailwindcss":
 			pins.Tailwind = value
 

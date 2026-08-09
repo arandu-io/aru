@@ -54,6 +54,13 @@ func buildViews(root string, watch bool, stdout, stderr io.Writer) error {
 	// it and out of what the command produced.
 	pins.Warn(stderr)
 
+	// Before anything is compiled. An old CLI refuses correct views one message
+	// per line, and none of those messages says the CLI is what is old -- so
+	// this has to be the first thing the person reads, not the sixty-first.
+	if err := toolchain.CheckVersion(Version(), pins.Aru); err != nil {
+		return err
+	}
+
 	// kyse is part of this CLI, not a binary it downloads. One fewer thing to
 	// pin, verify and cache -- and the view compiler moving in lockstep with the
 	// generator that writes views is what keeps them from drifting.

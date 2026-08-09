@@ -20,6 +20,10 @@ import (
 // version is set at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
+// Version is what this build reports, for the check that refuses a CLI older
+// than a project asks for.
+func Version() string { return version }
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }

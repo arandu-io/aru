@@ -21,6 +21,14 @@ import (
 // for the OTHER role without going back to the network to re-read numbers it
 // already had.
 
+// marker opens the block this file generates.
+//
+// A comment rather than a section, because what is generated is a comment AND
+// the sections under it -- and a rule that only recognises sections leaves the
+// comment behind, which is how four runs of `aru font:add` produced four copies
+// of the same nine-line note.
+const marker = "# --- aru font:add ---"
+
 // readInstalled parses the [fonts.*] sections.
 //
 // A missing file, or a file with no [fonts] section, is not an error: it is
@@ -125,14 +133,31 @@ func writeManifest(root string, list []fonts.Installed) error {
 		return err
 	}
 
+	// Everything this function wrote last time comes out, and the marker is how
+	// it knows where that started.
+	//
+	// It used to cut by section, which removed the [fonts.*] blocks and left the
+	// comment above them -- so every run appended a second copy of a nine-line
+	// note, and a project whose font was changed four times had four of them.
+	// The generated block is not only sections, so a section-shaped rule cannot
+	// find all of it.
 	var kept []string
-	inFonts := false
+	dropping := false
 	for _, raw := range strings.Split(string(b), "\n") {
 		line := strings.TrimSpace(raw)
-		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			inFonts = strings.HasPrefix(strings.Trim(line, "[]"), "fonts.")
+
+		if strings.HasPrefix(line, marker) {
+			dropping = true
+			continue
 		}
-		if !inFonts {
+		// A section that is not ours ends the generated block. Nothing writes
+		// one after it today, and relying on "to the end of the file" would make
+		// that permanent by accident.
+		if dropping && strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") &&
+			!strings.HasPrefix(strings.Trim(line, "[]"), "fonts.") {
+			dropping = false
+		}
+		if !dropping {
 			kept = append(kept, raw)
 		}
 	}
@@ -151,6 +176,7 @@ func writeManifest(root string, list []fonts.Installed) error {
 
 	if len(list) > 0 {
 		b2.WriteString(`
+` + marker + `
 # The vendored faces. Written by ` + "`aru font:add`" + `, and the files themselves are
 # under assets/fonts/ and committed -- so this section is not what makes the
 # build reproducible. The bytes are.

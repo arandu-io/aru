@@ -186,6 +186,12 @@ var commands = []command{
 		run:   makeJob,
 	},
 	{
+		name:  `make:mail`,
+		usage: `aru make:mail <Name> [--subject "Welcome"] [--fields "name:string"] [--force]`,
+		desc:  "generate a mailable and the two views it renders, HTML and plain text",
+		run:   makeMail,
+	},
+	{
 		name:  "make:command",
 		usage: `aru make:command <Name> [--signature=invoice:close] [--description="..."]`,
 		desc:  "generate a console command, in app/Console/Commands",

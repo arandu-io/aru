@@ -88,12 +88,21 @@ func dev(args []string, stdout, stderr io.Writer) error {
 		case <-interrupted:
 			return stop(stdout, interrupted)
 		case err := <-server.exited:
-			// The application died on its own: a port already taken, a panic in
-			// an init, a compile error. Say so once, rather than leaving the loop
-			// printing "restarting" with nothing behind it. The next save is
-			// usually the fix, which is the argument the view build makes too.
+			// The application died on its own: a panic in an init, a compile
+			// error, a port already taken. Say so once, rather than leaving the
+			// loop printing "restarting" with nothing behind it.
 			server.done = true
 			fmt.Fprintf(stderr, "the application exited: %v\n", err)
+
+			// And when carrying on cannot help, stop instead of pretending.
+			// A port that is already in use is taken by something this loop
+			// cannot outlast -- usually a previous `aru dev` that outlived its
+			// parent, still answering the browser, which is why the site looks
+			// like it works and ignores every change.
+			if message, fatal := diagnoseExit(server.output()); fatal {
+				fmt.Fprintf(stderr, "\n%s", message)
+				return errors.New("the application cannot start")
+			}
 			continue
 		case <-time.After(pollInterval):
 		}
@@ -165,13 +174,30 @@ type serverProcess struct {
 	cmd    *exec.Cmd
 	exited chan error
 	done   bool
+
+	// said is the last of what the application printed, kept so that an exit
+	// can be explained rather than only reported.
+	said *tail
+}
+
+// output is what the application last said.
+func (s *serverProcess) output() string {
+	if s == nil || s.said == nil {
+		return ""
+	}
+	return s.said.String()
 }
 
 func startServer(root string, args []string, stdout, stderr io.Writer) (*serverProcess, error) {
+	// The application's own words are kept as well as printed, because the
+	// sentence that explains an exit is in them and the loop has to read it to
+	// know whether trying again can help. See diagnoseExit.
+	said := newTail(stderr)
+
 	cmd := exec.Command("go", append([]string{"run", appPackage, "serve"}, args...)...)
 	cmd.Dir = root
 	cmd.Stdout = stdout
-	cmd.Stderr = stderr
+	cmd.Stderr = said
 	cmd.Stdin = os.Stdin
 	// A process group, so stopping kills `go run` and the binary it spawned.
 	// Without this the compiled application survives every restart and the next
@@ -183,7 +209,7 @@ func startServer(root string, args []string, stdout, stderr io.Writer) (*serverP
 		return nil, fmt.Errorf("starting the application: %w", err)
 	}
 
-	s := &serverProcess{cmd: cmd, exited: make(chan error, 1)}
+	s := &serverProcess{cmd: cmd, exited: make(chan error, 1), said: said}
 	go func() { s.exited <- cmd.Wait() }()
 	return s, nil
 }

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -253,5 +254,38 @@ func TestARebuildThatFailedIsStillOwed(t *testing.T) {
 	// And nothing is owed after that.
 	if built, _ := build(true, false, true); built {
 		t.Error("a build ran with nothing owed")
+	}
+}
+
+// TestEverySignalThatEndsASessionIsHandled.
+//
+// A signal missing from Notify keeps its default disposition: the runtime kills
+// the process immediately, no deferred function runs, killGroup is never
+// reached, and the application keeps the port forever.
+//
+// SIGHUP was missing, and SIGHUP is what the kernel sends when the terminal
+// window closes -- which is how most sessions of this command actually end. One
+// orphan was found three hours old, still answering the browser with a binary
+// from before two fixes that day, while every new `aru dev` died on "address
+// already in use" and said only "exit status 1". SIGQUIT is ctrl-backslash, the
+// same defect with a rarer trigger.
+func TestEverySignalThatEndsASessionIsHandled(t *testing.T) {
+	handled := map[os.Signal]bool{}
+	for _, s := range devSignals {
+		handled[s] = true
+	}
+
+	for _, c := range []struct {
+		signal os.Signal
+		how    string
+	}{
+		{os.Interrupt, "ctrl-c"},
+		{syscall.SIGTERM, "a supervisor stopping the command"},
+		{syscall.SIGHUP, "the terminal window being closed"},
+		{syscall.SIGQUIT, "ctrl-backslash"},
+	} {
+		if !handled[c.signal] {
+			t.Errorf("%v is not handled, so %s leaves the application holding the port forever", c.signal, c.how)
+		}
 	}
 }

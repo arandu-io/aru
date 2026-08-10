@@ -16,6 +16,12 @@ import (
 	"github.com/arandu-io/aru/internal/kyse"
 )
 
+// devSignals is every way a session of this command ends.
+//
+// Named rather than written inline so a test can read it: what is missing from
+// this list is invisible in review and shows up as a process nobody can find.
+var devSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT}
+
 // pollInterval is how often the working tree is checked for changes.
 //
 // Polling rather than an OS watcher, because a watcher means a third-party
@@ -55,7 +61,22 @@ func dev(args []string, stdout, stderr io.Writer) error {
 	}
 
 	interrupted := make(chan os.Signal, 1)
-	signal.Notify(interrupted, os.Interrupt, syscall.SIGTERM)
+	// SIGHUP and SIGQUIT are here because leaving them out was a defect, and an
+	// expensive one.
+	//
+	// A signal not in this set keeps its default disposition: the runtime
+	// terminates the process immediately and no deferred function runs, so
+	// killGroup is never called and the application keeps the port forever.
+	//
+	// SIGHUP is what the kernel sends when the terminal window closes, which is
+	// how most sessions of this command actually end -- nobody types anything,
+	// and the orphan is already there. One was found three hours old, still
+	// answering the browser with a binary from before two fixes that day, while
+	// every new `aru dev` died on "address already in use". SIGQUIT is ctrl-\,
+	// the same defect with a rarer trigger.
+	//
+	// Reproduced against a real pty, both before and after this line.
+	signal.Notify(interrupted, devSignals...)
 	defer signal.Stop(interrupted)
 
 	server, err := startServer(root, args, stdout, stderr)

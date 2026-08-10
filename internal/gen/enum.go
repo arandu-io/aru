@@ -3,6 +3,7 @@ package gen
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -92,19 +93,72 @@ func (s EnumSpec) Validate() error {
 	return nil
 }
 
-// ParseEnumValues reads the --values flag: "draft,sent,paid,void".
+// ParseEnumValues reads the --values flag: "draft,sent,paid,void", or
+// "draft=1,sent=2,paid=3" when the numbers have to be pinned.
+//
+// # Why a number can be written down
+//
+// An --int enum is stored as an integer, so its numbers are the meaning of every
+// row already written. Numbering by position alone made adding a value a data
+// migration nobody was told about: `--values "draft,sent,paid" --force` on a
+// file that had been generated as "draft,paid" moves paid from 2 to 3, and every
+// row holding 2 silently becomes "sent". --force exists precisely so that
+// re-running is how you add a value, so the intended workflow was the one that
+// repointed the data.
+//
+// Positional numbering is kept for the first run, where there is nothing to
+// repoint and writing "=1,=2,=3" would be ceremony. Mixing the two forms in one
+// flag is refused rather than guessed at: what the person meant by
+// "draft,sent=7,paid" is not knowable, and a wrong guess is the same silent
+// repointing.
 func ParseEnumValues(spec, typeName string, asInt bool) ([]EnumValue, error) {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
 		return nil, fmt.Errorf(`--values is required, for example: --values "draft,sent,paid,void"`)
 	}
+
 	var out []EnumValue
+	pinned, positional := 0, 0
+	seen := map[int]string{}
+
 	for _, part := range strings.Split(spec, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
 		}
-		out = append(out, EnumValue{Name: part, Number: len(out) + 1, Type: typeName})
+
+		name, number, explicit := strings.Cut(part, "=")
+		name = strings.TrimSpace(name)
+		value := len(out) + 1
+
+		if explicit {
+			pinned++
+			if !asInt {
+				return nil, fmt.Errorf("%q pins a number, and this enum is stored as text: drop the =%s, or add --int", part, number)
+			}
+			n, err := strconv.Atoi(strings.TrimSpace(number))
+			if err != nil {
+				return nil, fmt.Errorf("%q: %s is not a number", part, number)
+			}
+			if n <= 0 {
+				return nil, fmt.Errorf("%q: the number has to be positive -- zero is the zero value of the type, which means \"unset\"", part)
+			}
+			value = n
+		} else {
+			positional++
+		}
+
+		if before, taken := seen[value]; taken {
+			return nil, fmt.Errorf("%s and %s would both be %d", before, name, value)
+		}
+		seen[value] = name
+
+		out = append(out, EnumValue{Name: name, Number: value, Type: typeName})
+	}
+
+	if pinned > 0 && positional > 0 {
+		return nil, fmt.Errorf("some values pin a number and some do not.\n" +
+			"Write all of them or none: mixing the two is how a value silently moves")
 	}
 	return out, nil
 }

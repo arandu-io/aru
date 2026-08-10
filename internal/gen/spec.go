@@ -39,33 +39,35 @@ const (
 // same in SQLite, PostgreSQL and MySQL, which is what lets one schema serve all
 // three (ADR 0009).
 var types = map[Type]struct {
-	Go     string
-	SQL    string
-	Zero   string
-	Import string
+	Go   string
+	SQL  string
+	Zero string
+	// SQLZero is the DEFAULT an added column carries. See Field.SQLZero.
+	SQLZero string
+	Import  string
 }{
 	// VARCHAR for the short kinds, TEXT for the long one. That is the
 	// distinction the DSL already draws -- "short text, up to a line" against
 	// "long text" -- and the generator used to collapse both to TEXT, which
 	// MySQL refuses in a UNIQUE or an index without a prefix length. See
 	// data.KeyText. Found by audit.
-	TypeString: {Go: "string", SQL: "VARCHAR(255)", Zero: `""`},
-	TypeText:   {Go: "string", SQL: "TEXT", Zero: `""`},
-	TypeInt:    {Go: "int64", SQL: "INTEGER", Zero: "0"},
+	TypeString: {Go: "string", SQL: "VARCHAR(255)", Zero: `""`, SQLZero: "''"},
+	TypeText:   {Go: "string", SQL: "TEXT", Zero: `""`, SQLZero: "''"},
+	TypeInt:    {Go: "int64", SQL: "INTEGER", Zero: "0", SQLZero: "0"},
 	// DOUBLE PRECISION, not REAL: REAL is four bytes in PostgreSQL, so a
 	// float64 written through it comes back rounded to about seven digits --
 	// silently, on read, with no error anywhere. SQLite gives "DOUB" REAL
 	// affinity and MySQL accepts the spelling, so one word serves all three.
 	// Found by audit.
-	TypeDecimal: {Go: "float64", SQL: "DOUBLE PRECISION", Zero: "0"},
+	TypeDecimal: {Go: "float64", SQL: "DOUBLE PRECISION", Zero: "0", SQLZero: "0"},
 	// Money is an integer of cents, never a float: 0.1 + 0.2 is not 0.3 in
 	// binary floating point, and an invoice off by a cent is a support ticket.
-	TypeMoney:     {Go: "int64", SQL: "INTEGER", Zero: "0"},
-	TypeBool:      {Go: "bool", SQL: "BOOLEAN", Zero: "false"},
-	TypeDate:      {Go: "time.Time", SQL: "DATE", Zero: "time.Time{}", Import: "time"},
-	TypeTimestamp: {Go: "time.Time", SQL: "TIMESTAMP", Zero: "time.Time{}", Import: "time"},
-	TypeUUID:      {Go: "string", SQL: "VARCHAR(255)", Zero: `""`},
-	TypeEmail:     {Go: "string", SQL: "VARCHAR(255)", Zero: `""`},
+	TypeMoney:     {Go: "int64", SQL: "INTEGER", Zero: "0", SQLZero: "0"},
+	TypeBool:      {Go: "bool", SQL: "BOOLEAN", Zero: "false", SQLZero: "FALSE"},
+	TypeDate:      {Go: "time.Time", SQL: "DATE", Zero: "time.Time{}", Import: "time", SQLZero: "'1970-01-01'"},
+	TypeTimestamp: {Go: "time.Time", SQL: "TIMESTAMP", Zero: "time.Time{}", Import: "time", SQLZero: "'1970-01-01 00:00:01'"},
+	TypeUUID:      {Go: "string", SQL: "VARCHAR(255)", Zero: `""`, SQLZero: "''"},
+	TypeEmail:     {Go: "string", SQL: "VARCHAR(255)", Zero: `""`, SQLZero: "''"},
 }
 
 // Field is one column of the entity.
@@ -84,6 +86,22 @@ func (f Field) GoType() string { return types[f.Type].Go }
 
 // SQLType is the column type, in the portable subset.
 func (f Field) SQLType() string { return types[f.Type].SQL }
+
+// SQLZero is the value a column of this type gets when it is added to a table
+// that already has rows.
+//
+// It exists because of RULE 16: a column added during a rollout has to be
+// readable by the PREVIOUS binary and by the next one. The alter template used
+// to add the column nullable with no default, while the scan the same generator
+// emits reads every column straight into its Go type -- so the moment `aru
+// migrate` ran, the replicas still on the old binary answered
+// "converting NULL to int is unsupported" on every read of that table, and the
+// ones on the new binary did too until something wrote each row. Shipped that
+// way in examples/database/migrations/2026_08_09_000001_add_views_to_posts.go.
+//
+// The two halves have to agree, and a default is the half that needs no second
+// pass over the data.
+func (f Field) SQLZero() string { return types[f.Type].SQLZero }
 
 // Column is the column name.
 func (f Field) Column() string { return f.Name }
@@ -620,6 +638,19 @@ func (m Module) UniqueFields() []Field {
 // Validate reports what is wrong with the specification, before any file is
 // written. A specification error must never become broken code.
 func (m Module) Validate() error {
+	// A required bool cannot be expressed. validation.NotZero compares against
+	// the zero value, and the zero value of a bool is false -- so the generated
+	// rule reports "is required" for an unchecked box, and the generated view
+	// renders a checkbox, whose unchecked state is exactly false. The form could
+	// never be submitted. Refused here rather than generated: "this field is
+	// required" on a box the person did tick is a bug report nobody can act on.
+	for _, f := range m.Fields {
+		if f.Type == TypeBool && f.Required {
+			return fmt.Errorf("%s is a required bool, and there is no such thing: an unchecked box is false, "+
+				"which is the zero value the rule refuses.\n"+
+				"Drop the ! to make it optional, or model the two states you actually mean as an enum", f.Name)
+		}
+	}
 	if m.Name == "" {
 		return fmt.Errorf("the module needs a name")
 	}

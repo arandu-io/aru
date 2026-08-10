@@ -240,9 +240,19 @@ func Directives() []string {
 	return out
 }
 
-// OutputPath says where the Go generated from a view goes: beside its source.
+// OutputPath says where the Go generated from a view goes: under storage,
+// mirroring the tree of the source.
 //
-//	resources/views/auth/login.kyse.go -> resources/views/auth/login.go
+//	resources/views/auth/login.kyse.go -> storage/framework/views/auth/login.go
+//
+// It is build output, so it is gitignored: written beside the source, every
+// `aru view:build` would put 28 files nobody wrote into `git status`, and a
+// reviewer would have to skip them in every review.
+//
+// This comment used to say "beside its source" and showed the wrong example. It
+// has been wrong since the Laravel tree landed and it is published on
+// pkg.go.dev, so it was the copy of this mistake that reached people outside the
+// project. Corrected 10/08/2026, with docs/09 and RULE 13.
 //
 // Each directory of views is its own Go package, named by the person in the
 // source's package clause and copied verbatim into the output. That is the

@@ -118,7 +118,13 @@ func (m {{.Type}}) Envelope() mail.Envelope {
 func (m {{.Type}}) Content() mail.Content {
 	return mail.Content{
 		View: "{{.View}}",
-		Data: m,
+		// The plain-text part, which this command writes beside the HTML one.
+		// Without this line the text view self-registered, sat in the tree
+		// looking wired, and could never be sent: every message went out
+		// HTML-only, which is a spam score and nothing at all in a client that
+		// does not render HTML.
+		TextView: "{{.View}}-text",
+		Data:     m,
 	}
 }
 

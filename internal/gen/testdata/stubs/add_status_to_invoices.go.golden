@@ -19,8 +19,8 @@ import "github.com/arandu-io/framework/kernel"
 // a new migration instead.
 var addStatusToInvoices = kernel.Migration{
 	ID: "2026_08_07_000002_add_status_to_invoices",
-	Up: `ALTER TABLE invoices ADD COLUMN status VARCHAR(255);
-ALTER TABLE invoices ADD COLUMN paid_at TIMESTAMP;
+	Up: `ALTER TABLE invoices ADD COLUMN status VARCHAR(255) DEFAULT '';
+ALTER TABLE invoices ADD COLUMN paid_at TIMESTAMP DEFAULT '1970-01-01 00:00:01';
 `,
 	// Dropping the column drops the index with it on all three engines, which is
 	// why there is no DROP INDEX here: its spelling is the one thing SQLite,

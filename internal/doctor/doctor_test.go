@@ -723,6 +723,7 @@ func TestTheGapsFixtureReportsNothingElse(t *testing.T) {
 		"controller-reaches-repository": true,
 		"alpine-reaches-the-server":     true,
 		"permission-not-used":           true,
+		"outbox-not-registered":         true,
 	}
 	for _, f := range gaps(t) {
 		if !expected[f.Rule] {
@@ -820,5 +821,70 @@ func TestTheGeneratorsOwnConcatenationIsQuiet(t *testing.T) {
 		if f.Rule == "sql-built-by-concatenation" {
 			t.Errorf("a clean project was reported at %s:%d -- %s", f.File, f.Line, f.Message)
 		}
+	}
+}
+
+// TestAModuleWhoseWritesNeedAnotherModulesTableIsCaught.
+//
+// auth.Register publishes a domain event inside the transaction that creates the
+// account, so it cannot commit without the outbox table. That table travels with
+// events.NewModule(), and both shipped bootstraps register it -- but nothing
+// connects the two, so an application that drops the line while tidying compiles,
+// passes its tests, and answers 500 to the first person who signs up, with
+// "no such table: outbox" on the screen where a failure is least recoverable.
+func TestAModuleWhoseWritesNeedAnotherModulesTableIsCaught(t *testing.T) {
+	findings := gaps(t)
+
+	caught := findRule(findings, "outbox-not-registered")
+	if caught == nil {
+		t.Fatalf("a project registering auth and no outbox table was not caught:\n%v", findings)
+	}
+	if caught.Severity != doctor.Error {
+		t.Error("a sign-up that fails every time is a warning: nothing about it works, and CI would pass")
+	}
+	// auth.NewService and not auth.New, which this fixture also calls: the
+	// registration builds nothing and can sit in a controller, while the service
+	// is what constructs the outbox and sits in the bootstrap -- which is the
+	// file the explanation below tells the reader to edit.
+	if !strings.Contains(caught.Message, "auth.NewService") {
+		t.Errorf("the finding does not name what needs the table: %q", caught.Message)
+	}
+	// The reader has to be able to fix it without going to look for the name of
+	// the module, and to know what breaks if they do not.
+	if !strings.Contains(caught.Why, "events.NewModule()") {
+		t.Errorf("the explanation does not say what to add: %q", caught.Why)
+	}
+	if !strings.Contains(caught.Why, "no such table: outbox") {
+		t.Errorf("the explanation does not say what the failure looks like: %q", caught.Why)
+	}
+	if !strings.Contains(caught.File, "bootstrap/") {
+		t.Errorf("the finding points at %s, and the line to add is in the bootstrap", caught.File)
+	}
+
+	// One missing line, one finding. This fixture reaches the outbox twice --
+	// it builds the service and registers the module -- and saying so twice
+	// would be two entries that ask for the same single edit.
+	var times int
+	for _, f := range findings {
+		if f.Rule == "outbox-not-registered" {
+			times++
+		}
+	}
+	if times != 1 {
+		t.Errorf("the same missing line was reported %d times", times)
+	}
+}
+
+// The other half, and the one that decides whether the rule is usable: the shape
+// both shipped bootstraps have -- auth and the events module registered together
+// -- has to come back silent. A rule that fires on the correct wiring is how a
+// tool teaches people to ignore it.
+func TestRegisteringTheOutboxNextToWhatWritesToItIsSilent(t *testing.T) {
+	findings, err := doctor.Run("testdata/clean")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if caught := findRule(findings, "outbox-not-registered"); caught != nil {
+		t.Errorf("the wiring the skeleton ships was reported: %s", caught)
 	}
 }

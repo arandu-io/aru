@@ -160,7 +160,7 @@ import "github.com/arandu-io/framework/kernel"
 // a new migration instead.
 var {{.Var}} = kernel.Migration{
 	ID: "{{.ID}}",
-	Up: ` + "`" + `{{range .Fields}}ALTER TABLE {{$.Table}} ADD COLUMN {{.Column}} {{.SQLType}};
+	Up: ` + "`" + `{{range .Fields}}ALTER TABLE {{$.Table}} ADD COLUMN {{.Column}} {{.SQLType}} DEFAULT {{.SQLZero}};
 {{end}}{{range .UniqueFields}}CREATE UNIQUE INDEX {{$.Table}}_{{.Column}}_uidx ON {{$.Table}} ({{if $.Tenant}}tenant_id, {{end}}{{.Column}});
 {{end}}` + "`" + `,
 	// Dropping the column drops the index with it on all three engines, which is

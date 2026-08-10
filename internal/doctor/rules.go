@@ -41,6 +41,7 @@ var rules = []func(*project) []Finding{
 	declaredPermissionsMatchTheCode,
 	alpineHoldsClientStateOnly,
 	tenantMustScopeTheSQL,
+	theOutboxTableTravelsWithWhatWritesToIt,
 }
 
 // 0. A file doctor could not read makes every other rule unreliable.
@@ -1656,6 +1657,148 @@ func multiTenantRepositories(p *project) map[string]bool {
 		}
 	}
 	return out
+}
+
+// outboxWriters are the calls that put a domain event in the outbox, and
+// therefore cannot commit without the table.
+//
+// The value is the sentence that says what stops working, because the two are
+// not the same failure to the person reading the report: one is a module of the
+// framework that publishes on its own, and the other is the application's own
+// code choosing to.
+// auth.NewService is in the list and auth.New is too, and they are not ranked
+// the same -- see outboxWriterRank. NewService is where the Outbox is actually
+// constructed, from the repository's handle; New is the registration and builds
+// nothing, taking a service somebody else made.
+//
+// The rule began with the registration alone, and on the reference application
+// that put the finding in the wrong file: examples/ wraps auth.New inside
+// app/Http/Controllers/Auth/LoginController.go, so the report pointed at a
+// controller while its own sentence said to add a line to bootstrap/app.go. A
+// finding that names one file and asks for a change in another is one the reader
+// has to re-derive, and the file it named is not even wrong -- it is just not
+// where anything is missing.
+var outboxWriters = map[string]string{
+	"auth.NewService": "the auth module publishes auth.user.registered inside the transaction that creates the account, so every sign-up fails",
+	"auth.New":        "the auth module publishes auth.user.registered inside the transaction that creates the account, so every sign-up fails",
+	// events.NewOutbox is what auth.NewService builds internally and what a
+	// module written by hand builds directly. Reaching for it is the same
+	// commitment.
+	"events.NewOutbox": "this code stores domain events in the same transaction as the write that produced them, so that write fails",
+}
+
+// outboxWriterRank decides which call a single finding points at.
+//
+// A construction beats a registration, because construction is where the
+// commitment is made and it sits in the bootstrap, next to the line the reader
+// has to add. A registration is kept in the list so that a project handed its
+// service from another package is still covered, and ranked below so it is only
+// used when there is nothing better.
+func outboxWriterRank(call string) int {
+	if call == "auth.New" {
+		return 1
+	}
+	return 0
+}
+
+// outboxProviders are the registrations that bring the table.
+//
+// Two, because the relay is registered instead of the plain module when
+// something publishes: events.WithRelay carries the same Migrations. A rule that
+// knew only NewModule would fire on the more advanced of the two correct
+// wirings, which is how a tool teaches people to ignore it.
+var outboxProviders = map[string]bool{
+	"events.NewModule": true,
+	"events.WithRelay": true,
+}
+
+// 16. A module whose writes need another module's table.
+//
+// The compiler cannot see this and neither can any test the application runs
+// against an empty database that it also migrated: auth.Register succeeds in
+// development and fails in production the first time somebody signs up, with
+// "no such table: outbox", on the screen where a 500 costs the most and where
+// the person has no way to route around it. The table travels with
+// events.NewModule() -- that is the whole reason the events module exists rather
+// than the schema being copied into each project's migrations -- and both
+// shipped bootstraps register it. An application that deletes the line while
+// tidying gets no warning from anything else.
+//
+// It is an Error rather than the Warning doc 23 asks new rules to enter as. That
+// policy is about rules that reject code which works, and this one cannot: the
+// only project it fires on is one where creating an account already fails a
+// hundred percent of the time. Reporting that as a warning would mean CI passes
+// on an application whose sign-up is broken.
+//
+// It concludes from an absence -- no registration anywhere in the project -- so
+// it says nothing when a file did not parse, for the reason project.blind
+// exists: the missing line may be in the file nobody could read.
+//
+// # The limit, stated rather than implied
+//
+// It sees the calls written in this project. A project whose modules are
+// registered by a helper living in another repository is one this cannot answer
+// about, and it reports the writer as unprovided -- the finding names the line to
+// add, so the cost of being wrong there is one line read and dismissed. The
+// alternative, resolving registrations across module boundaries, is a type
+// checker, and doctor deliberately runs on a project that does not compile.
+func theOutboxTableTravelsWithWhatWritesToIt(p *project) []Finding {
+	type writer struct {
+		file   string
+		line   int
+		call   string
+		breaks string
+	}
+
+	var writers []writer
+	provided := false
+
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+		f.calls(func(call *ast.CallExpr, name string) {
+			if outboxProviders[name] {
+				provided = true
+				return
+			}
+			breaks, writes := outboxWriters[name]
+			if !writes {
+				return
+			}
+			file, line := f.at(call)
+			writers = append(writers, writer{file: file, line: line, call: name, breaks: breaks})
+		})
+	}
+
+	if provided || len(writers) == 0 || len(p.unreadable) > 0 {
+		return nil
+	}
+
+	// One finding, whatever the project touches the outbox from. The fact is
+	// about the project -- there is no outbox table anywhere in it -- and the fix
+	// is one line in one file; a report that states it three times, once per call
+	// site, is three entries somebody has to read to learn they all say the same
+	// thing. The call site chosen is only where the report points, so it is the
+	// most useful one: see outboxWriterRank.
+	sort.SliceStable(writers, func(i, j int) bool {
+		if a, b := outboxWriterRank(writers[i].call), outboxWriterRank(writers[j].call); a != b {
+			return a < b
+		}
+		if writers[i].file != writers[j].file {
+			return writers[i].file < writers[j].file
+		}
+		return writers[i].line < writers[j].line
+	})
+
+	w := writers[0]
+	return []Finding{{
+		Rule: "outbox-not-registered", Severity: Error,
+		File: w.file, Line: w.line,
+		Message: w.call + " stores domain events and this project registers no outbox table",
+		Why: w.breaks + " -- at runtime, with `no such table: outbox`, in front of whoever was using it. " +
+			"The table belongs to the events module so that it travels rather than being copied into every project: add events.NewModule() to the k.Register(...) list in bootstrap/app.go, or events.WithRelay(relay) if something already publishes them.",
+	}}
 }
 
 // sqlStatement is one SQL statement written in a method, as far as doctor can

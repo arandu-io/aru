@@ -621,6 +621,22 @@ func (g *generator) expr(e string) string {
 			out.WriteString("d.")
 			continue
 		}
+
+		// A leading dot with no field after it is the page data itself.
+		//
+		// This is not a new rule, it is the one above without its exception: if
+		// `.Title` is a field of the data, `.` is the data. It is what a
+		// component that asks the page a question is handed --
+		// `components.FieldProps{Name: "email", Page: .}` -- and without it the
+		// only way to write that was `d`, the generator's own variable name,
+		// which a view has no business knowing.
+		//
+		// A digit after the dot is still a number, so `.5` is untouched.
+		if c == '.' && (i == 0 || !endsOperand(e[i-1])) &&
+			(i+1 >= len(e) || !isDigit(e[i+1])) {
+			out.WriteByte('d')
+			continue
+		}
 		out.WriteByte(c)
 	}
 	return out.String()
@@ -647,6 +663,10 @@ func closingQuote(e string, i int) int {
 // exported ones: a view cannot read an unexported field anyway, and requiring
 // the capital is what keeps `.5` a number.
 func isFieldStart(c byte) bool { return c >= 'A' && c <= 'Z' }
+
+// isDigit reports whether a byte is a decimal digit. It is what keeps `.5` a
+// number rather than the page data followed by a stray 5.
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 
 // endsOperand reports whether a byte can end something a dot would select from.
 func endsOperand(c byte) bool {

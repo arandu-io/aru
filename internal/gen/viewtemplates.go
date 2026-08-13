@@ -332,7 +332,7 @@ const viewFieldsTemplate = `<%define "fields"%><%range .Fields%>
 			Name:  "<%.Column%>",
 			Label: "<%.Label%>",
 			Value: .Form.<%.GoName%>,
-			Error: .FieldError("<%.Column%>"),
+			Page: .,
 			Rows:  6,<%if .Required%>
 			Required: true,<%end%>
 		}) !!}<%else if .IsBool%><label class="flex items-center gap-2 text-sm">
@@ -343,7 +343,7 @@ const viewFieldsTemplate = `<%define "fields"%><%range .Fields%>
 			Label: "<%.Label%>",
 			Type:  "<%.InputType%>",
 			Value: .Form.<%.GoName%>,
-			Error: .FieldError("<%.Column%>"),<%if .Required%>
+			Page: .,<%if .Required%>
 			Required: true,<%end%>
 		}) !!}<%end%>
 <%end%><%end%>`

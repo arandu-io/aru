@@ -61,7 +61,7 @@ var _ view.Layout = PurchaseOrdersEditData{}
 			Label: "Reference",
 			Type:  "text",
 			Value: .Form.Reference,
-			Error: .FieldError("reference"),
+			Page: .,
 			Required: true,
 		}) !!}
 
@@ -70,7 +70,7 @@ var _ view.Layout = PurchaseOrdersEditData{}
 			Label: "Supplier email",
 			Type:  "email",
 			Value: .Form.SupplierEmail,
-			Error: .FieldError("supplier_email"),
+			Page: .,
 			Required: true,
 		}) !!}
 
@@ -79,7 +79,7 @@ var _ view.Layout = PurchaseOrdersEditData{}
 			Label: "Total",
 			Type:  "number",
 			Value: .Form.Total,
-			Error: .FieldError("total"),
+			Page: .,
 			Required: true,
 		}) !!}
 
@@ -92,7 +92,7 @@ var _ view.Layout = PurchaseOrdersEditData{}
 			Name:  "notes",
 			Label: "Notes",
 			Value: .Form.Notes,
-			Error: .FieldError("notes"),
+			Page: .,
 			Rows:  6,
 		}) !!}
 
@@ -101,7 +101,7 @@ var _ view.Layout = PurchaseOrdersEditData{}
 			Label: "Delivery date",
 			Type:  "date",
 			Value: .Form.DeliveryDate,
-			Error: .FieldError("delivery_date"),
+			Page: .,
 		}) !!}
 
 		<div class="flex items-center gap-3">

@@ -654,7 +654,7 @@ import (
 {{- end}}
 
 	"github.com/arandu-io/framework/data"
-	"github.com/arandu-io/framework/httpx"
+	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
@@ -669,7 +669,7 @@ import (
 // {{.Controller}} answers the seven routes of the {{.Resource}} resource.
 //
 // It is thin on purpose: read the request, call the service, render. There is no
-// repository here and there cannot be one -- httpx.Context carries no database
+// repository here and there cannot be one -- fhttp.Context carries no database
 // handle, so a controller that reached the data layer would be a controller that
 // skipped the service, and therefore skipped the policy.
 type {{.Controller}} struct {
@@ -690,18 +690,18 @@ func New{{.Controller}}(svc *services.{{.ServiceType}}, sessions *security.Sessi
 	return &{{.Controller}}{svc: svc, sessions: sessions, csrf: csrf}
 }
 
-// Compile-time proof of the seven actions httpx.Router.Resource looks for. It
+// Compile-time proof of the seven actions fhttp.Router.Resource looks for. It
 // registers the ones the controller implements and nothing else, so a route that
 // exists is a route that answers -- and a renamed method fails the build here
 // rather than answering 404 in production.
 var (
-	_ httpx.Indexer   = (*{{.Controller}})(nil)
-	_ httpx.Creator   = (*{{.Controller}})(nil)
-	_ httpx.Storer    = (*{{.Controller}})(nil)
-	_ httpx.Shower    = (*{{.Controller}})(nil)
-	_ httpx.Editor    = (*{{.Controller}})(nil)
-	_ httpx.Updater   = (*{{.Controller}})(nil)
-	_ httpx.Destroyer = (*{{.Controller}})(nil)
+	_ fhttp.Indexer   = (*{{.Controller}})(nil)
+	_ fhttp.Creator   = (*{{.Controller}})(nil)
+	_ fhttp.Storer    = (*{{.Controller}})(nil)
+	_ fhttp.Shower    = (*{{.Controller}})(nil)
+	_ fhttp.Editor    = (*{{.Controller}})(nil)
+	_ fhttp.Updater   = (*{{.Controller}})(nil)
+	_ fhttp.Destroyer = (*{{.Controller}})(nil)
 )
 
 // {{.Unexported}}PerPage is how many records the listing asks for when the request
@@ -710,7 +710,7 @@ var (
 const {{.Unexported}}PerPage = 25
 
 // Index renders the listing.
-func (c *{{.Controller}}) Index(ctx *httpx.Context) error {
+func (c *{{.Controller}}) Index(ctx *fhttp.Context) error {
 	actor, err := c.actor(ctx)
 	if err != nil {
 		return c.signIn(ctx)
@@ -762,7 +762,7 @@ func (c *{{.Controller}}) Index(ctx *httpx.Context) error {
 }
 
 // Show renders one record.
-func (c *{{.Controller}}) Show(ctx *httpx.Context) error {
+func (c *{{.Controller}}) Show(ctx *fhttp.Context) error {
 	actor, err := c.actor(ctx)
 	if err != nil {
 		return c.signIn(ctx)
@@ -788,7 +788,7 @@ func (c *{{.Controller}}) Show(ctx *httpx.Context) error {
 }
 
 // Create renders the empty form.
-func (c *{{.Controller}}) Create(ctx *httpx.Context) error {
+func (c *{{.Controller}}) Create(ctx *fhttp.Context) error {
 	if _, err := c.actor(ctx); err != nil {
 		return c.signIn(ctx)
 	}
@@ -804,7 +804,7 @@ func (c *{{.Controller}}) Create(ctx *httpx.Context) error {
 }
 
 // Store takes the submitted form.
-func (c *{{.Controller}}) Store(ctx *httpx.Context) error {
+func (c *{{.Controller}}) Store(ctx *fhttp.Context) error {
 	actor, err := c.actor(ctx)
 	if err != nil {
 		return c.signIn(ctx)
@@ -827,7 +827,7 @@ func (c *{{.Controller}}) Store(ctx *httpx.Context) error {
 }
 
 // Edit renders the form filled in.
-func (c *{{.Controller}}) Edit(ctx *httpx.Context) error {
+func (c *{{.Controller}}) Edit(ctx *fhttp.Context) error {
 	actor, err := c.actor(ctx)
 	if err != nil {
 		return c.signIn(ctx)
@@ -850,7 +850,7 @@ func (c *{{.Controller}}) Edit(ctx *httpx.Context) error {
 }
 
 // Update writes the submitted form onto the stored record.
-func (c *{{.Controller}}) Update(ctx *httpx.Context) error {
+func (c *{{.Controller}}) Update(ctx *fhttp.Context) error {
 	actor, err := c.actor(ctx)
 	if err != nil {
 		return c.signIn(ctx)
@@ -879,7 +879,7 @@ func (c *{{.Controller}}) Update(ctx *httpx.Context) error {
 }
 
 // Destroy removes the record.
-func (c *{{.Controller}}) Destroy(ctx *httpx.Context) error {
+func (c *{{.Controller}}) Destroy(ctx *fhttp.Context) error {
 	actor, err := c.actor(ctx)
 	if err != nil {
 		return c.signIn(ctx)
@@ -922,7 +922,7 @@ func (c *{{.Controller}}) form({{.Receiver}} models.{{.Entity}}) views.{{.FormSt
 // was typed -- so a rejected submission comes back filled in rather than blank --
 // and the errors parsing itself found. A number that is not a number is rejected
 // here, naming the field, rather than reaching the service as a silent zero.
-func (c *{{.Controller}}) input(ctx *httpx.Context) (requests.{{.StoreRequest}}, views.{{.FormStruct}}, validation.Errors) {
+func (c *{{.Controller}}) input(ctx *fhttp.Context) (requests.{{.StoreRequest}}, views.{{.FormStruct}}, validation.Errors) {
 	errs := validation.Errors{}
 
 	in := requests.{{.StoreRequest}}{
@@ -951,7 +951,7 @@ func (c *{{.Controller}}) input(ctx *httpx.Context) (requests.{{.StoreRequest}},
 
 // rejectedCreate re-renders the creation form with its errors, as the 422
 // fragment HTMX swaps back in.
-func (c *{{.Controller}}) rejectedCreate(ctx *httpx.Context, form views.{{.FormStruct}}, errs validation.Errors) error {
+func (c *{{.Controller}}) rejectedCreate(ctx *fhttp.Context, form views.{{.FormStruct}}, errs validation.Errors) error {
 	token, err := c.token(ctx)
 	if err != nil {
 		return err
@@ -964,7 +964,7 @@ func (c *{{.Controller}}) rejectedCreate(ctx *httpx.Context, form views.{{.FormS
 }
 
 // rejectedEdit re-renders the edit form with its errors.
-func (c *{{.Controller}}) rejectedEdit(ctx *httpx.Context, form views.{{.FormStruct}}, errs validation.Errors) error {
+func (c *{{.Controller}}) rejectedEdit(ctx *fhttp.Context, form views.{{.FormStruct}}, errs validation.Errors) error {
 	token, err := c.token(ctx)
 	if err != nil {
 		return err
@@ -982,7 +982,7 @@ func (c *{{.Controller}}) rejectedEdit(ctx *httpx.Context, form views.{{.FormStr
 // response. Why a policy said no is information about the system, and it belongs
 // in the log. Anything unrecognized is returned, and the router turns it into
 // the error page in development and a 500 in production.
-func (c *{{.Controller}}) fail(ctx *httpx.Context, err error) error {
+func (c *{{.Controller}}) fail(ctx *fhttp.Context, err error) error {
 	switch {
 	case errors.Is(err, security.ErrForbidden):
 		observability.Log(ctx.Ctx()).Warn("authorization denied", "error", err)
@@ -999,7 +999,7 @@ func (c *{{.Controller}}) fail(ctx *httpx.Context, err error) error {
 }
 {{if .NeedsWholeParse}}
 // whole reads an integer field, and names the field when it is not one.
-func (c *{{.Controller}}) whole(ctx *httpx.Context, field string, e validation.Errors) int64 {
+func (c *{{.Controller}}) whole(ctx *fhttp.Context, field string, e validation.Errors) int64 {
 	raw := ctx.Input(field)
 	if raw == "" {
 		return 0
@@ -1013,7 +1013,7 @@ func (c *{{.Controller}}) whole(ctx *httpx.Context, field string, e validation.E
 }
 {{end}}{{if .NeedsFractionParse}}
 // fraction reads a decimal field.
-func (c *{{.Controller}}) fraction(ctx *httpx.Context, field string, e validation.Errors) float64 {
+func (c *{{.Controller}}) fraction(ctx *fhttp.Context, field string, e validation.Errors) float64 {
 	raw := ctx.Input(field)
 	if raw == "" {
 		return 0
@@ -1028,7 +1028,7 @@ func (c *{{.Controller}}) fraction(ctx *httpx.Context, field string, e validatio
 {{end}}{{if .NeedsTimeParse}}
 // moment reads a date or a timestamp, in the layout the matching HTML input
 // submits.
-func (c *{{.Controller}}) moment(ctx *httpx.Context, field, layout string, e validation.Errors) time.Time {
+func (c *{{.Controller}}) moment(ctx *fhttp.Context, field, layout string, e validation.Errors) time.Time {
 	raw := ctx.Input(field)
 	if raw == "" {
 		return time.Time{}
@@ -1060,14 +1060,14 @@ func (c *{{.Controller}}) moment(ctx *httpx.Context, field, layout string, e val
 // which both gen.Module and gen.Stub have.
 const controllerSessionTemplate = `{{define "controllerSession"}}
 // actor is who is acting, from the session and never from the request body.
-func (c *{{.Controller}}) actor(ctx *httpx.Context) (security.Subject, error) {
+func (c *{{.Controller}}) actor(ctx *fhttp.Context) (security.Subject, error) {
 	return c.sessions.Load(ctx.Ctx(), ctx.Request)
 }
 
 // signIn sends an unauthenticated visitor to the sign-in screen. Under HTMX the
 // redirect becomes HX-Redirect, so the browser navigates instead of nesting the
 // whole page inside a fragment.
-func (c *{{.Controller}}) signIn(ctx *httpx.Context) error {
+func (c *{{.Controller}}) signIn(ctx *fhttp.Context) error {
 	return ctx.Redirect("/auth/login")
 }
 
@@ -1077,7 +1077,7 @@ func (c *{{.Controller}}) signIn(ctx *httpx.Context) error {
 // and every hx- request read it off the page data. A page rendered without one
 // answers 200 and then refuses the next write with 419, which reads like a
 // broken session rather than a missing field.
-func (c *{{.Controller}}) token(ctx *httpx.Context) (string, error) {
+func (c *{{.Controller}}) token(ctx *fhttp.Context) (string, error) {
 	return c.csrf.Issue(c.sessions.IDFromRequest(ctx.Request))
 }
 {{end}}`

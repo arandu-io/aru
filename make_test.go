@@ -62,8 +62,8 @@ func TestTheMiddlewareWiringNamesTheConstructor(t *testing.T) {
 	source := string(files[0].Content)
 	message := wiringMiddleware(stub)
 
-	if !strings.Contains(source, "func EnsureAccountIsActive() httpx.Middleware") {
-		t.Error("the generated middleware is not a constructor returning httpx.Middleware")
+	if !strings.Contains(source, "func EnsureAccountIsActive() fhttp.Middleware") {
+		t.Error("the generated middleware is not a constructor returning fhttp.Middleware")
 	}
 	if !strings.Contains(message, "appmiddleware.EnsureAccountIsActive()") {
 		t.Errorf("the message does not call the generated constructor:\n%s", message)

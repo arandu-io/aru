@@ -16,7 +16,7 @@ import (
 func makeController(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("make:controller", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	resource := fs.Bool("resource", false, "emit the seven actions httpx.Resource registers")
+	resource := fs.Bool("resource", false, "emit the seven actions http.Resource registers")
 	invokable := fs.Bool("invokable", false, "emit one action, named Handle")
 	force := fs.Bool("force", false, "overwrite an existing controller, preserving the custom block")
 

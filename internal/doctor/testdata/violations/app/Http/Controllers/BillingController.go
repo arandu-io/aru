@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/arandu-io/framework/data"
-	"github.com/arandu-io/framework/httpx"
+	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/jobs"
 	"github.com/arandu-io/framework/security"
 
@@ -19,7 +19,7 @@ type BillingController struct {
 
 // Index is a violation twice over: the data of the view is a map, and the
 // controller reaches the data package beyond data.Query.
-func (c BillingController) Index(ctx *httpx.Context) error {
+func (c BillingController) Index(ctx *fhttp.Context) error {
 	db := data.Wrap(nil, data.DialectSQLite)
 	_ = db
 
@@ -28,14 +28,14 @@ func (c BillingController) Index(ctx *httpx.Context) error {
 
 // Show is a violation twice over: the view does not exist, and its data is a map
 // built on the line above.
-func (c BillingController) Show(ctx *httpx.Context) error {
+func (c BillingController) Show(ctx *fhttp.Context) error {
 	payload := map[string]string{"id": ctx.Param("id")}
 	return ctx.View("billing.missing", payload)
 }
 
 // ByTenant is a violation: the tenant comes from the request, so the client
 // chooses whose data to read.
-func (c BillingController) ByTenant(ctx *httpx.Context) error {
+func (c BillingController) ByTenant(ctx *fhttp.Context) error {
 	tenant := ctx.Param("tenant_id")
 	_ = tenant
 	return nil
@@ -44,7 +44,7 @@ func (c BillingController) ByTenant(ctx *httpx.Context) error {
 // ByOrg is the shape the name-based rule never caught: the parameter is called
 // org, so nothing in it contains "tenant", and the value goes straight into the
 // tenant of a Grant.
-func (c BillingController) ByOrg(ctx *httpx.Context) error {
+func (c BillingController) ByOrg(ctx *fhttp.Context) error {
 	org := ctx.Query("org")
 	g := security.SystemGrant("billing.view", org)
 	_ = g
@@ -73,7 +73,7 @@ func ByPathValue(w http.ResponseWriter, r *http.Request) {
 // through a name the rule reads: the wrapper takes a Job, and the tenant is a
 // field of it. Matching the literal `security.SystemGrant` missed this
 // completely.
-func (c BillingController) ThroughTheJobWrapper(ctx *httpx.Context) error {
+func (c BillingController) ThroughTheJobWrapper(ctx *fhttp.Context) error {
 	org := ctx.Query("org")
 	g := jobs.GrantFor(jobs.Job{Action: "billing.view", TenantID: org})
 	_ = g
@@ -85,7 +85,7 @@ func (c BillingController) ThroughTheJobWrapper(ctx *httpx.Context) error {
 // Pass one of tenant-from-request looks for an assignment, so this form went
 // unreported while the three-line version was caught -- and it is the form
 // somebody writes when they are in a hurry.
-func (c BillingController) Embedded(ctx *httpx.Context) error {
+func (c BillingController) Embedded(ctx *fhttp.Context) error {
 	g := security.SystemGrant("billing.view", ctx.Query("org"))
 	_ = g
 	return nil

@@ -15,7 +15,7 @@ type Kind string
 const (
 	// KindPlain is a controller with no actions yet, and it is the default.
 	KindPlain Kind = "plain"
-	// KindResource is the seven actions httpx.Router.Resource looks for.
+	// KindResource is the seven actions fhttp.Router.Resource looks for.
 	KindResource Kind = "resource"
 	// KindInvokable is one action, Handle.
 	KindInvokable Kind = "invokable"
@@ -152,7 +152,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/arandu-io/framework/httpx"
+	fhttp "github.com/arandu-io/framework/http"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
 )
@@ -167,7 +167,7 @@ import (
 {{- end}}
 //
 // It is thin on purpose: read the request, call a service, render. There is no
-// repository here and there cannot be one -- httpx.Context carries no database
+// repository here and there cannot be one -- fhttp.Context carries no database
 // handle, so a controller that reached the data layer would be a controller
 // that skipped the service, and therefore skipped the policy. ` + "`" + `aru
 // doctor` + "`" + ` refuses it.
@@ -192,7 +192,7 @@ func New{{.Type}}(sessions *security.SessionStore, csrf *security.CSRF) *{{.Type
 	return &{{.Type}}{sessions: sessions, csrf: csrf}
 }
 {{if .IsResource}}
-// Compile-time proof of the seven actions httpx.Router.Resource looks for. It
+// Compile-time proof of the seven actions fhttp.Router.Resource looks for. It
 // registers the ones the controller implements and nothing else, so a route that
 // exists is a route that answers -- and a renamed method fails the build here
 // rather than answering 404 in production.
@@ -201,13 +201,13 @@ func New{{.Type}}(sessions *security.SessionStore, csrf *security.CSRF) *{{.Type
 // resource does not have: a controller without Create and Edit registers five
 // routes instead of seven.
 var (
-	_ httpx.Indexer   = (*{{.Type}})(nil)
-	_ httpx.Creator   = (*{{.Type}})(nil)
-	_ httpx.Storer    = (*{{.Type}})(nil)
-	_ httpx.Shower    = (*{{.Type}})(nil)
-	_ httpx.Editor    = (*{{.Type}})(nil)
-	_ httpx.Updater   = (*{{.Type}})(nil)
-	_ httpx.Destroyer = (*{{.Type}})(nil)
+	_ fhttp.Indexer   = (*{{.Type}})(nil)
+	_ fhttp.Creator   = (*{{.Type}})(nil)
+	_ fhttp.Storer    = (*{{.Type}})(nil)
+	_ fhttp.Shower    = (*{{.Type}})(nil)
+	_ fhttp.Editor    = (*{{.Type}})(nil)
+	_ fhttp.Updater   = (*{{.Type}})(nil)
+	_ fhttp.Destroyer = (*{{.Type}})(nil)
 )
 
 // Index renders the listing.
@@ -216,37 +216,37 @@ var (
 // success with no body looks like it worked -- in the browser, in the logs and
 // on every dashboard -- and that is the failure nobody debugs. Replace it with
 // the screen.
-func (c *{{.Type}}) Index(ctx *httpx.Context) error {
+func (c *{{.Type}}) Index(ctx *fhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Create renders the empty form.
-func (c *{{.Type}}) Create(ctx *httpx.Context) error {
+func (c *{{.Type}}) Create(ctx *fhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Store takes the submitted form.
-func (c *{{.Type}}) Store(ctx *httpx.Context) error {
+func (c *{{.Type}}) Store(ctx *fhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Show renders one record.
-func (c *{{.Type}}) Show(ctx *httpx.Context) error {
+func (c *{{.Type}}) Show(ctx *fhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Edit renders the form filled in.
-func (c *{{.Type}}) Edit(ctx *httpx.Context) error {
+func (c *{{.Type}}) Edit(ctx *fhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Update writes the submitted form onto the stored record.
-func (c *{{.Type}}) Update(ctx *httpx.Context) error {
+func (c *{{.Type}}) Update(ctx *fhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Destroy removes the record.
-func (c *{{.Type}}) Destroy(ctx *httpx.Context) error {
+func (c *{{.Type}}) Destroy(ctx *fhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 {{end}}{{if .IsInvokable}}
@@ -263,7 +263,7 @@ func (c *{{.Type}}) Destroy(ctx *httpx.Context) error {
 // The body answers 501 and not an empty 200. A generated action that answered
 // success with no body looks like it worked -- in the browser, in the logs and
 // on every dashboard -- and that is the failure nobody debugs.
-func (c *{{.Type}}) Handle(ctx *httpx.Context) error {
+func (c *{{.Type}}) Handle(ctx *fhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 {{end}}{{template "controllerSession" .}}
@@ -273,7 +273,7 @@ func (c *{{.Type}}) Handle(ctx *httpx.Context) error {
 // response. Why a policy said no is information about the system, and it belongs
 // in the log. Anything unrecognized is returned, and the router turns it into
 // the error page in development and a 500 in production.
-func (c *{{.Type}}) fail(ctx *httpx.Context, err error) error {
+func (c *{{.Type}}) fail(ctx *fhttp.Context, err error) error {
 	switch {
 	case errors.Is(err, security.ErrForbidden):
 		observability.Log(ctx.Ctx()).Warn("authorization denied", "error", err)
@@ -296,14 +296,14 @@ const middlewareTemplate = `package middleware
 import (
 	"net/http"
 
-	"github.com/arandu-io/framework/httpx"
+	fhttp "github.com/arandu-io/framework/http"
 )
 
 // {{.Type}} runs before the handler, and may answer instead of it.
 //
 // The usual shape is a class with a handle(request, next) method. Here it is
 // the standard net/http signature -- func(http.Handler) http.Handler, which
-// httpx.Middleware names -- and that is what makes every middleware written
+// fhttp.Middleware names -- and that is what makes every middleware written
 // for the Go ecosystem work in this pipeline unchanged, and this one work in
 // any other.
 //
@@ -311,7 +311,7 @@ import (
 // itself, so whatever it needs is a parameter and is visible at the wiring
 // site:
 //
-//	func {{.Type}}(sessions *security.SessionStore) httpx.Middleware
+//	func {{.Type}}(sessions *security.SessionStore) fhttp.Middleware
 //
 // A middleware that reached for a package-level variable would be a middleware
 // no test can pin, and no reader of bootstrap/app.go can see the dependencies
@@ -322,7 +322,7 @@ import (
 // and ` + "`" + `aru doctor` + "`" + ` refuses it by the same rule it refuses
 // a controller. Call a service, or read what an earlier middleware already put
 // on the context.
-func {{.Type}}() httpx.Middleware {
+func {{.Type}}() fhttp.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Before the handler.

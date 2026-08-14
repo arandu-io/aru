@@ -760,7 +760,7 @@ func readsTheRequest(name string) bool {
 		strings.HasSuffix(name, ".FormValue"),
 		strings.HasSuffix(name, ".PostFormValue"),
 		strings.HasSuffix(name, ".Cookie"),
-		// The httpx.Context accessors: the same values, one layer up.
+		// The http.Context accessors: the same values, one layer up.
 		strings.HasSuffix(name, "ctx.Param"),
 		strings.HasSuffix(name, "ctx.Query"),
 		strings.HasSuffix(name, "ctx.Input"):
@@ -1154,7 +1154,7 @@ type renderCall struct {
 //
 // It matches by shape rather than by type, because doctor never type-checks:
 // `ctx.View(name, data)` has two arguments and `ctx.Fragment(status, name,
-// data)` has three, and the method names come from httpx.Context. A method
+// data)` has three, and the method names come from http.Context. A method
 // called View with two arguments on something else is a false positive this
 // accepts -- and the alternative, type resolution, would mean doctor could only
 // run on a project that already compiles.

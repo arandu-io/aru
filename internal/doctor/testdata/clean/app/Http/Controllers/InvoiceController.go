@@ -4,7 +4,7 @@ package controllers
 
 import (
 	"github.com/arandu-io/framework/data"
-	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/http"
 
 	services "example.test/p/app/Services"
 	views "example.test/p/resources/views"
@@ -25,8 +25,8 @@ func NewInvoiceController(invoices *services.InvoiceService) InvoiceController {
 }
 
 // Index lists the invoices of the signed-in tenant.
-func (c InvoiceController) Index(ctx *httpx.Context) error {
-	actor, err := httpx.Actor(ctx)
+func (c InvoiceController) Index(ctx *http.Context) error {
+	actor, err := http.Actor(ctx)
 	if err != nil {
 		return err
 	}
@@ -46,8 +46,8 @@ func (c InvoiceController) Index(ctx *httpx.Context) error {
 }
 
 // Show renders one invoice as a fragment, for HTMX.
-func (c InvoiceController) Show(ctx *httpx.Context) error {
-	actor, err := httpx.Actor(ctx)
+func (c InvoiceController) Show(ctx *http.Context) error {
+	actor, err := http.Actor(ctx)
 	if err != nil {
 		return err
 	}

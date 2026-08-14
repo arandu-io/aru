@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/http"
 
 	repositories "example.test/gaps/app/Repositories"
 )
@@ -14,6 +14,6 @@ type Audit struct {
 }
 
 // Handle records the request.
-func (m Audit) Handle(ctx *httpx.Context, next httpx.Handler) error {
+func (m Audit) Handle(ctx *http.Context, next http.Handler) error {
 	return next(ctx)
 }

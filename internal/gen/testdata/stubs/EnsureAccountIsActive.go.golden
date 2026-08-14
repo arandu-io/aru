@@ -3,14 +3,14 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/arandu-io/framework/httpx"
+	fhttp "github.com/arandu-io/framework/http"
 )
 
 // EnsureAccountIsActive runs before the handler, and may answer instead of it.
 //
 // The usual shape is a class with a handle(request, next) method. Here it is
 // the standard net/http signature -- func(http.Handler) http.Handler, which
-// httpx.Middleware names -- and that is what makes every middleware written
+// fhttp.Middleware names -- and that is what makes every middleware written
 // for the Go ecosystem work in this pipeline unchanged, and this one work in
 // any other.
 //
@@ -18,7 +18,7 @@ import (
 // itself, so whatever it needs is a parameter and is visible at the wiring
 // site:
 //
-//	func EnsureAccountIsActive(sessions *security.SessionStore) httpx.Middleware
+//	func EnsureAccountIsActive(sessions *security.SessionStore) fhttp.Middleware
 //
 // A middleware that reached for a package-level variable would be a middleware
 // no test can pin, and no reader of bootstrap/app.go can see the dependencies
@@ -29,7 +29,7 @@ import (
 // and `aru doctor` refuses it by the same rule it refuses
 // a controller. Call a service, or read what an earlier middleware already put
 // on the context.
-func EnsureAccountIsActive() httpx.Middleware {
+func EnsureAccountIsActive() fhttp.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Before the handler.

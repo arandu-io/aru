@@ -4,16 +4,16 @@ package routes
 
 import (
 	"github.com/arandu-io/framework/data"
-	"github.com/arandu-io/framework/httpx"
+	"github.com/arandu-io/framework/http"
 )
 
 // Web registers the web routes.
-func Web(r *httpx.Router) {
+func Web(r *http.Router) {
 	// arandu:begin custom
 	// A handler written inline, in the block the skeleton invites people to
 	// write in: same request path as a controller, same database, and the two
 	// rules that police the boundary only looked at app/Http/Controllers.
-	r.Action("GET", "/totals", func(ctx *httpx.Context) error {
+	r.Action("GET", "/totals", func(ctx *http.Context) error {
 		db := data.Wrap(nil, data.DialectSQLite)
 		_ = db
 		return nil

@@ -192,7 +192,7 @@ func TestTheGranularCommandsAndMakeModuleAgree(t *testing.T) {
 		// The three methods come from one template, so the only difference
 		// between the two files is the receiver type.
 		stub := strings.ReplaceAll(string(files[0].Content), "InvoiceController", "PurchaseOrderController")
-		for _, method := range []string{"actor(ctx *httpx.Context)", "signIn(ctx *httpx.Context)", "token(ctx *httpx.Context)"} {
+		for _, method := range []string{"actor(ctx *fhttp.Context)", "signIn(ctx *fhttp.Context)", "token(ctx *fhttp.Context)"} {
 			if !strings.Contains(stub, method) || !strings.Contains(find("Controller.go"), method) {
 				t.Errorf("%s is not emitted by both make:controller and make:module", method)
 			}

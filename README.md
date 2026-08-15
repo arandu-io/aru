@@ -4,7 +4,7 @@
 
 <h1 align="center">arandu-io/aru</h1>
 
-<p align="center">The Arandu command line.</p>
+<p align="center">The command line: a project, a full module, and a lint that checks the architecture held.</p>
 
 <p align="center">
 <a href="https://github.com/arandu-io/aru/actions/workflows/ci.yml"><img src="https://github.com/arandu-io/aru/actions/workflows/ci.yml/badge.svg" alt="Build Status"></a>
@@ -22,24 +22,64 @@ aru new my-app
 cd my-app && aru dev
 ```
 
-`aru help` lists every command. The ones that carry the most:
+`aru` is the toolchain of a Go framework for web applications, services and
+APIs: it generates a full module — entity, policy, repository, service,
+request, migration, screens — compiling and tested, in one command, and its
+`doctor` reads a project's source to check that the architecture it compiled
+against is still the one it is running.
 
-- `aru new` — a project, ready to run
-- `aru dev` — build the views, run the application, restart on every change
-- `aru make:module` — an entity with its policy, repository, service, request, migration, seeder and four screens, compiling and tested
-- `aru generate` — the same, from a written specification
-- `aru doctor` — twenty-two checks that a project honours the framework's contracts, in CI
-- `aru trace` — a request reconstructed in the terminal, from the running application
+## What it delivers
 
-The view compiler is part of this binary rather than something it downloads: one
-fewer thing to pin, verify and cache.
+`aru help` lists every command, grouped here by what they do:
+
+| group | commands |
+|---|---|
+| run the project | `serve` `dev` `build` `new` `doctor` `trace` `generate` `schema` |
+| generate a module | `make:module` `make:model` `make:migration` `make:controller` `make:middleware` `make:request` `make:factory` `make:seeder` `make:job` `make:command` `make:listener` `make:event` `make:enum` `make:policy` |
+| migrations | `migrate` `migrate:rollback` `migrate:status` `migrate:fresh` |
+| fonts | `font:add` `font:search` `font:info` `font:list` `font:remove` |
+| everything else | `key:generate` `schedule:list` `schedule:run` `queue:work` `route:list` `db:seed` `view:build` |
+
+plus `help` and `version`.
+
+- **`aru make:module`** — an entity with its policy, repository, service,
+  request, migration, seeder and four screens, compiling and tested from the
+  moment it lands.
+- **`aru generate`** — the same output, from a written specification: the
+  model writes the spec, never the Go.
+- **`aru doctor`** — 23 named rules read the AST of a project, without
+  running it, and fail CI on the first error. Among them:
+  `repository-without-policy`, `grant-not-checked`, `sql-without-tenant-scope`,
+  `tenant-from-request`, `tenant-from-header`, `sql-built-by-concatenation`,
+  `view-does-not-exist`, `session-not-rotated`.
+- **`aru trace`** — a request reconstructed in the terminal, from the running
+  application.
+- **`aru font:add`** — vendors a font into the project: the unicode range and
+  the metric overrides are read out of the font file itself, not guessed.
+
+The view compiler is part of this binary rather than something it downloads:
+one fewer thing to pin, verify and cache.
 
 One direct dependency: `gopkg.in/yaml.v3`, for the specification format. CI
-refuses the second.
+refuses a second one. 18,522 lines of production code and 6,123 of test,
+across 27 test files.
 
-The authentication screens are not here — they are
-[arandu-io/ui](https://github.com/arandu-io/ui), published into your project and
-yours to edit.
+The authentication screens are not here — `go run github.com/arandu-io/ui@latest auth`
+publishes 13 of them into your project, and they are yours to edit from the
+moment they land.
+
+## Install
+
+```sh
+brew install arandu-io/tap/aru
+```
+
+## The rest of Arandu
+
+`arandu` is the skeleton this CLI clones; `arandu-io/framework` is what a
+project runs on; `hesape` is the 47-package collection the framework is built
+from; `examples` is a complete application, generated the same way `aru
+make:module` generates one.
 
 ## Learning Arandu
 

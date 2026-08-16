@@ -1,0 +1,18 @@
+# What this CLI declares about itself.
+
+name = "arandu-io/aru"
+profiles = ["conventional", "performance"]
+
+[permissions]
+# delegate.go, viewbuild.go, build.go, new.go and dev.go all shell out, mostly
+# to `go build` and to the project's own compiled binary.
+exec = true
+# The font catalogue and the Tailwind toolchain are both downloaded and
+# verified, not vendored.
+network = true
+# make:module, make:migration, view:build and the code generator all write
+# files into the project.
+filesystem = true
+# aru never opens a database connection itself: migrate delegates to the
+# project's own binary, which owns its tables.
+migrations = false

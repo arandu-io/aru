@@ -289,7 +289,7 @@ func TestTheGeneratedRequestHasNoAuthorize(t *testing.T) {
 
 // TestAnAlteringMigrationAddsNothingNotNull: a NOT NULL column added to a table
 // that has rows fails on every row already there, and during a rollout the
-// previous binary does not fill it in (RULE 16).
+// previous binary does not fill it in.
 func TestAnAlteringMigrationAddsNothingNotNull(t *testing.T) {
 	file, err := gen.RenderMigration(gen.MigrationSpec{
 		ID: "2026_08_07_000002_add_status_to_invoices", Var: "addStatusToInvoices", Table: "invoices",

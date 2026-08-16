@@ -2,9 +2,9 @@ package gen
 
 // The four screens: the listing, one record, the empty form and the filled one.
 //
-// They are written in kyse, under resources/views/<resource>/ --
-// with the directives kyse has and no others. The set is closed (RULE 15): what
-// does not fit a directive is written in Go, inside @go.
+// They are written in kyse, under resources/views/<resource>/ -- with the
+// directives kyse has and no others. The set is closed: what does not fit a
+// directive is written in Go, inside @go.
 //
 // These templates are rendered with <% %> instead of {{ }}, because {{ }} is
 // what a view interpolates with, and a generator sharing the delimiters would
@@ -26,10 +26,9 @@ package gen
 //     about presentation belongs anyway;
 //   - everything goes in @section('content'), and nothing in any other section.
 //     A section only one layout yields is a section that disappears without a
-//     word when the layout is replaced -- and `aru make:auth` replaces it. The
-//     back link and the "new" button used to sit in @section('header'), which
-//     the layout that kit publishes does not yield, so they vanished from every
-//     screen the moment somebody ran the command.
+//     word when the layout is replaced. A back link or a "new" button placed in
+//     @section('header') disappears from every screen the moment a layout that
+//     does not yield that section takes over.
 
 const viewIndexTemplate = `//go:build kyse
 

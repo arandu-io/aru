@@ -139,13 +139,12 @@ func TestAnUnknownToolIsAnError(t *testing.T) {
 }
 
 // TestTheErrorNeverOffersTempl: the message that lists what a tool key may be
-// has to name only tools that exist. Offering `templ` sent readers to install a
-// binary that nothing has downloaded since ADR 0020.
+// has to name only tools that exist. Offering `templ` sends the reader to
+// install a binary nothing downloads.
 //
-// This replaces TestATemplPinIsRefused, which asserted the opposite and was
-// right about the goal and wrong about the mechanism: refusing the key broke
-// every project that had it, which was all of them. Retirement with a warning
-// is in TestARetiredPinDoesNotBreakTheBuild.
+// Refusing the key outright would break every project that carries it, which is
+// every project generated before kyse. Retirement with a warning is in
+// TestARetiredPinDoesNotBreakTheBuild.
 func TestTheErrorNeverOffersTempl(t *testing.T) {
 	root := t.TempDir()
 	writePins(t, root, "[tools]\ntailwindcs = \"v4.1.11\"\n")

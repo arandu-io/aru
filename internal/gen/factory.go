@@ -16,7 +16,7 @@ import (
 // `aru make:factory` reads the model and only ever sees int64 and time.Time. A
 // default that depended on the DSL would make the same file come out two ways
 // depending on which command wrote it, which is the definition of two shapes of
-// one thing (RULE 9).
+// one thing.
 type FactoryField struct {
 	GoName string
 	GoType string
@@ -246,7 +246,7 @@ type {{.Type}} struct {
 //
 // The tenant is a parameter rather than a default. A factory that picked its own
 // would build rows nobody can reach, and the failure would only show up when
-// somebody tried to read them (RULE 14).
+// somebody tried to read them.
 func New{{.Type}}(tenant string) {{.Type}} {
 	return {{.Type}}{tenant: tenant}
 }

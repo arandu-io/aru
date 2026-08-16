@@ -10,7 +10,7 @@ import "github.com/arandu-io/framework/kernel"
 //
 // A migration is immutable once published. Changing this one changes nothing on
 // a database that already applied it, and leaves two schemas in the world under
-// one id -- alter it with a new migration instead (RULE 16).
+// one id -- alter it with a new migration instead.
 //
 // Every type below spells the same in SQLite, PostgreSQL and MySQL, so one
 // schema serves all three. Anything a key or an index names is VARCHAR rather

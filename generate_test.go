@@ -91,8 +91,8 @@ func TestGenerateProducesTheModule(t *testing.T) {
 	}
 }
 
-// TestTheRoundTripIsByteForByte is what doc 19 asks for, and it is the property
-// that decides whether anyone ever regenerates.
+// TestTheRoundTripIsByteForByte covers the property that decides whether anyone
+// ever regenerates.
 //
 // Generated code -> specification -> generated code, identical. Without it there
 // is no way to promise that regenerating does not destroy work, and without that
@@ -135,7 +135,7 @@ func TestTheRoundTripIsByteForByte(t *testing.T) {
 	}
 }
 
-// TestRegeneratingKeepsTheCustomBlock: the escape hatch of doc 19. Without it,
+// TestRegeneratingKeepsTheCustomBlock covers the escape hatch. Without it,
 // regenerating eats whatever the project added, and a generator people are
 // afraid to rerun is a generator nobody reruns.
 func TestRegeneratingKeepsTheCustomBlock(t *testing.T) {

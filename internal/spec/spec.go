@@ -1,4 +1,4 @@
-// Package spec is the declarative form of a module: the DSL of phase 4.
+// Package spec is the declarative form of a module: the DSL a model writes.
 //
 // # The principle, repeated because everything depends on it
 //
@@ -8,8 +8,7 @@
 //
 // That is what answers the problem underneath: a new framework has zero examples
 // in the training set, and a model fills the gap with the frameworks it does
-// know
-// patterns that do not exist here. With an intermediate spec that stops
+// know -- patterns that do not exist here. With an intermediate spec that stops
 // mattering: the schema fits in the context window, and it is verifiable before
 // it becomes code.
 //
@@ -29,7 +28,7 @@
 // That is the decision the product lives or dies on. A DSL that grows to fit
 // each case becomes a language somebody maintains forever; one too narrow and
 // the user hits the wall on the first requirement that is not CRUD, and leaves.
-// The escape hatch is the answer to both (RULE 15, doc 19).
+// The escape hatch is the answer to both.
 package spec
 
 import (
@@ -83,7 +82,7 @@ type Field struct {
 // Types is the closed set, with what each one means.
 //
 // Closed because an open set is a type system, and a type system is a language.
-// Adding one is a decision with an ADR, not a pull request.
+// Adding one is a decision, not a pull request.
 var Types = map[string]string{
 	"string":    "short text, up to a line",
 	"text":      "long text",
@@ -274,12 +273,12 @@ func isReserved(name string) bool { return known(reserved, name) }
 //
 // A name from this list reaches the generated DDL unquoted -- `order TEXT NOT
 // NULL` -- and the engine rejects the migration with a syntax error pointing at
-// a character position in a file nobody wrote by hand. Found by audit.
+// a character position in a file nobody wrote by hand.
 //
 // Refused rather than quoted. Quoting is spelled differently on each engine
 // ("order" here, `+"`order`"+` there), and one schema that serves all three is the
-// whole point of the portable subset (ADR 0009). Renaming the field costs the
-// author five seconds; carrying a per-engine quoting rule costs forever.
+// whole point of the portable subset. Renaming the field costs the author five
+// seconds; carrying a per-engine quoting rule costs forever.
 var sqlReserved = []string{
 	"add", "all", "alter", "and", "as", "asc", "between", "by", "case", "cast",
 	"check", "column", "constraint", "create", "cross", "current_date",
@@ -299,9 +298,9 @@ func isSQLReserved(name string) bool { return known(sqlReserved, name) }
 // goReserved is the Go keyword set.
 //
 // A module named "range" produces `package range`, and a field named "type"
-// produces a struct member the compiler refuses. The generator used to get as
-// far as writing the file and then report a template bug, which sends the
-// author looking in the wrong place entirely.
+// produces a struct member the compiler refuses. Refused here rather than in the
+// generator, which gets as far as writing the file and then reports a template
+// bug -- sending the author looking in the wrong place entirely.
 var goReserved = []string{
 	"break", "case", "chan", "const", "continue", "default", "defer", "else",
 	"fallthrough", "for", "func", "go", "goto", "if", "import", "interface",

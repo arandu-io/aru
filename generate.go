@@ -16,9 +16,8 @@ import (
 // generate turns a specification into a module.
 //
 // The same engine as make:module, fed from a file instead of from flags. That
-// is not a detail: two generators would drift, and the whole promise of phase 4
-// is that what a model produces goes through the code path that already has
-// golden files.
+// is not a detail: two generators would drift, and what a model produces has to
+// go through the code path that already has golden files.
 //
 // The model writes the YAML. It never writes Go.
 func generate(args []string, stdout, stderr io.Writer) error {
@@ -76,7 +75,7 @@ func generate(args []string, stdout, stderr io.Writer) error {
 	// It lives in database/specs/ because a specification is mostly about the
 	// entity and its columns, and database/ is where the tree already keeps
 	// factories, migrations and seeders. There is no modules/<name>/ to put it
-	// beside any more (ADR 0019).
+	// beside.
 	saved, err := spec.Marshal(module)
 	if err != nil {
 		return err
@@ -123,8 +122,7 @@ func generate(args []string, stdout, stderr io.Writer) error {
 //
 // One direction, and it is the narrow one: everything the DSL expresses maps
 // onto something make:module already generates. A spec field with no equivalent
-// would mean the DSL grew past the generator, which is the drift RULE 15 exists
-// to prevent.
+// would mean the DSL grew past the generator, and the DSL is a closed set.
 func fromSpec(m spec.Module, modulePath string) gen.Module {
 	fields := make([]gen.Field, 0, len(m.Fields))
 	for _, f := range m.Fields {

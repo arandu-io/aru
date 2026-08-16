@@ -11,9 +11,9 @@ import (
 // Two types come out of one command, and that is the only conceptual difference
 // worth explaining: the usual shape is one class that is both the payload and
 // the handler, because a container reinstantiates it from the serialized object
-// and injects the dependencies. There is no
-// container here and no object serialization -- the payload is JSON and the
-// handler is a value with its dependencies in the constructor (ADR 0001).
+// and injects the dependencies. There is no container here and no object
+// serialization -- the payload is JSON and the handler is a value with its
+// dependencies in the constructor.
 type JobSpec struct {
 	// Type is the Go type the payload takes: "SendInvoice".
 	Type string
@@ -120,15 +120,14 @@ type {{.Type}} struct {
 
 // Dispatch{{.Type}} enqueues the job.
 //
-// This is Dispatchable::dispatch with the Grant made explicit. fwjobs.New is the
-// only constructor, so every job in the system carries the tenant, an id and the
-// Grant that authorized it -- there is no shape of Job that skipped any of the
-// three (RULE 14).
+// The Grant is explicit, and fwjobs.New is the only constructor, so every job in
+// the system carries the tenant, an id and the Grant that authorized it -- there
+// is no shape of Job that skipped any of the three.
 //
 // Called inside data.Transaction, the push is committed by the same transaction
 // as the row that produced it. That is the outbox guarantee applied to work
 // instead of to an event, and it is the reason the default queue is a table and
-// not Redis (ADR 0016).
+// not Redis.
 func Dispatch{{.Type}}(ctx context.Context, q fwjobs.Queue, g security.Grant, in {{.Type}}) error {
 	j, err := fwjobs.New(g, fwjobs.DefaultQueue, {{.Const}}, in)
 	if err != nil {
@@ -140,8 +139,7 @@ func Dispatch{{.Type}}(ctx context.Context, q fwjobs.Queue, g security.Grant, in
 // {{.Handler}} is what ` + "`" + `aru queue:work` + "`" + ` runs.
 //
 // Its collaborators arrive through the constructor -- there is no container, and
-// a handler that built its own service would be a handler no test can pin
-// (ADR 0001).
+// a handler that built its own service would be a handler no test can pin.
 type {{.Handler}} struct {
 	// arandu:begin custom
 	// The services this job needs. Add the fields here and the parameters to

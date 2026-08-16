@@ -211,9 +211,9 @@ const (
 
 // {{.Type}}Values lists them in declaration order.
 //
-// This is PHP's Enum::cases(). It feeds a <select> in a kyse view and it is what
-// a test asserts against, so adding a value without deciding what the form and
-// the migration do about it shows up as a failure.
+// It feeds a <select> in a kyse view and it is what a test asserts against, so
+// adding a value without deciding what the form and the migration do about it
+// shows up as a failure.
 func {{.Type}}Values() []{{.Type}} {
 	return []{{.Type}}{
 {{- range .Values}}
@@ -295,8 +295,8 @@ func (v {{.Type}}) Value() (driver.Value, error) {
 //
 // A value the application does not know about is an error here, at the row that
 // has it, rather than a silent fallback three layers up. That is usually a
-// migration that added a value the binary being rolled out does not have yet --
-// and RULE 16 is what keeps that window short.
+// migration that added a value the binary being rolled out does not have yet,
+// which is why a migration must stay compatible with the previous binary.
 func (v *{{.Type}}) Scan(src any) error {
 {{- if .Int}}
 	var n int64

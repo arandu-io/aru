@@ -116,7 +116,7 @@ func collapse(s string) string { return strings.Join(strings.Fields(s), " ") }
 // MySQL stores TEXT off-page and refuses it in a key without a prefix length, so
 // `id TEXT PRIMARY KEY` fails with "BLOB/TEXT column used in key specification
 // without a key length". That is the first statement of the first migration --
-// MySQL never got past creating the table. Found by audit.
+// MySQL never gets past creating the table.
 func TestNothingKeyedIsDeclaredTEXT(t *testing.T) {
 	m := spec(true)
 	migration := collapse(migrationOf(t, m))
@@ -168,9 +168,10 @@ func TestValidationAgreesWithTheColumn(t *testing.T) {
 	}
 }
 
-// migrationOf devolve a migration gerada, seja qual for o nome do arquivo.
+// migrationOf returns the generated migration, whatever the file is called.
 //
-// O nome carrega a data, e prender o teste a ela o quebra na virada do dia.
+// The name carries the date, and pinning the test to it breaks the test at
+// midnight.
 func migrationOf(t *testing.T, m gen.Module) string {
 	t.Helper()
 	for name, body := range byName(t, m) {

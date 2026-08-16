@@ -8,7 +8,7 @@ import (
 // Kind is which shape of controller was asked for.
 //
 // Three shapes, and the set is closed for the same reason the type list is: a
-// generator whose shapes grow on demand becomes a language (RULE 15).
+// generator whose shapes grow on demand becomes a language.
 type Kind string
 
 // The closed set.

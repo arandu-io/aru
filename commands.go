@@ -15,9 +15,8 @@ type command struct {
 	run   func(args []string, stdout, stderr io.Writer) error
 }
 
-// commands is the whole CLI surface. Phase 1 implements the four commands the
-// roadmap requires; the rest state which phase they arrive in, because an empty
-// command that pretends to work is worse than one that says it does not.
+// commands is the whole CLI surface. Everything listed here runs, because an
+// empty command that pretends to work is worse than one that says it does not.
 var commands = []command{
 	{
 		name:  "key:generate",
@@ -276,7 +275,7 @@ func lookup(name string) (command, bool) {
 }
 
 // usage prints the command list. No emoji and no exclamation marks: the tone is
-// in 00-meta/DOC-brand.md, and it is sober everywhere, including here.
+// sober everywhere, including here.
 func usage(w io.Writer) {
 	fmt.Fprint(w, "arandu — a Go framework for SaaS\n\nusage: aru <command> [arguments]\n\n")
 

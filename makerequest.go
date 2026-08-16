@@ -116,10 +116,10 @@ func requestTypeAlreadyDeclared(dir, name string) (string, bool) {
 // compiles, and the developer needs to see it once.
 func usageRequest(s gen.Stub) string {
 	// The FIRST field this request actually declares, not a name picked when the
-	// message was written. It used to say Reference always, so `aru make:request
-	// StoreCredit --fields amount:money` printed an example naming a field the
-	// generated type does not have -- and an example that does not compile is
-	// copied before it is read.
+	// message was written. A fixed name would make `aru make:request StoreCredit
+	// --fields amount:money` print an example naming a field the generated type
+	// does not have, and an example that does not compile is copied before it is
+	// read.
 	//
 	// A request with no fields keeps a placeholder, because there is no field to
 	// name and the shape is still what has to be shown.

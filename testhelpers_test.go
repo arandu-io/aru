@@ -8,10 +8,9 @@ import (
 	"testing"
 )
 
-// The helpers below travelled with makeauth_test.go until the starter kit moved
-// to its own module (arandu-io/ui). They are used by build_test.go, new_test.go
-// and the rest, so they live on their own now instead of inside whichever test
-// file happened to be written first.
+// The helpers below are shared by build_test.go, new_test.go and the rest, so
+// they live on their own instead of inside whichever test file happened to be
+// written first.
 
 // frameworkCheckout is the sibling framework repository, which the generated
 // project builds against. Without it the module resolves to the published

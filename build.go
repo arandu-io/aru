@@ -15,9 +15,8 @@ import (
 // build compiles the application into one static binary.
 //
 // One artifact: no runtime, no vendor directory, no node_modules, no web server
-// required in front. That is the deploy story of doc 17, and this is the command
-// that produces it -- CGO off, assets already embedded, templates already
-// compiled.
+// required in front. This is the command that produces it -- CGO off, assets
+// already embedded, templates already compiled.
 //
 // The version and the commit go in through -ldflags rather than a constant
 // somebody edits, because a binary that reports the wrong version sends people

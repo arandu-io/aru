@@ -156,11 +156,10 @@ func Stylesheet(installed []Installed) string {
 
 // systemStack is what is drawn before the font arrives, and after it fails.
 //
-// It follows the CATEGORY and not the role. It used to follow the role, on the
-// assumption that a display face is a serif -- so installing Montserrat as the
-// display face produced a page that paints in Georgia and becomes a geometric
-// sans. The metric override cannot hide that: it matches the space, not the
-// drawing.
+// It follows the CATEGORY and not the role. Following the role assumes a display
+// face is a serif, so installing Montserrat as the display face produces a page
+// that paints in Georgia and becomes a geometric sans. The metric override
+// cannot hide that: it matches the space, not the drawing.
 func systemStack(category string) string {
 	switch kind(category) {
 	case "serif":

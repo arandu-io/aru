@@ -89,9 +89,9 @@ func (p *parser) header(file *File) error {
 // line that is neither an import nor blank.
 //
 // It is Go's own import statement rather than a directive of ours: the source is
-// a Go file, the person is already writing Go in @go, and RULE 15 keeps the
-// directive set closed. What it buys is a view that draws a component from
-// another package --
+// a Go file, the person is already writing Go in @go, and the directive set
+// stays closed. What it buys is a view that draws a component from another
+// package --
 //
 //	import "example.com/app/resources/views/components"
 //
@@ -466,8 +466,7 @@ func (p *parser) assemble(file *File, nodes []Node) {
 	//	https://example.com/auth/verify/confirm?token=abcThe link works for 24 hours.
 	//
 	// Every mail client that autolinks then produces a link with "The" on the
-	// end of the token. Found by a feature test that followed the link it was
-	// sent rather than asserting that a function was called.
+	// end of the token.
 }
 
 func isClosing(trimmed string) bool {

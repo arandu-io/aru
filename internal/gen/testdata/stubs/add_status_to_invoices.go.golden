@@ -12,7 +12,7 @@ import "github.com/arandu-io/framework/kernel"
 // Every column is added nullable, with no NOT NULL. During a rollout the
 // previous binary is still inserting rows and knows nothing about these columns,
 // so a NOT NULL without a default fails on its first insert -- and on every row
-// already in the table. Backfill, then tighten it in a later migration (RULE 16).
+// already in the table. Backfill, then tighten it in a later migration.
 //
 // A migration is immutable once published. Changing this one after it has been
 // applied anywhere leaves two schemas in the world under one id -- alter it with

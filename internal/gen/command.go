@@ -46,8 +46,8 @@ func (c Command) Receiver() string { return Module{Name: Normalize(c.Name)}.Rece
 //
 // The difference from the usual shape is where the command becomes reachable
 // from. Discovery scans a directory and instantiates what it finds; here the
-// command is a value that routes/console.go returns, because a container that
-// finds classes by reflection is the thing ADR 0001 exists to refuse.
+// command is a value that routes/console.go returns, because nothing in this
+// framework finds a type by reflection.
 //
 // The cost is one line to add by hand, and the command prints it. What it buys
 // is that `aru route:list`, the console listing and the compiler all read the
@@ -132,7 +132,7 @@ func New{{ .Type }}() *{{ .Type }} {
 // A command runs outside a request, so there is no session and no Grant from a
 // signed-in person. Work that touches tenant data takes security.SystemGrant
 // with the tenant named explicitly, and ` + "`aru doctor`" + ` checks that it is
-// scoped (REGRA 14).
+// scoped.
 func ({{ .Receiver }} *{{ .Type }}) Run(ctx context.Context, args []string) error {
 	// arandu:begin custom
 	fmt.Println("{{ .Signature }}: not implemented")

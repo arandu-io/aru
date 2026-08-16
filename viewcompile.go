@@ -40,16 +40,14 @@ func viewsIn(root string) string {
 // viewSuffix is what a view source is named.
 //
 // One constant, because two places have to agree on it: the compiler that reads
-// the sources and the watcher that rebuilds when one changes. They disagreed
-// once -- the watcher was still asking for ".templ" after ADR 0020 -- and the
-// result was `aru dev` serving the previous save.
+// the sources and the watcher that rebuilds when one changes. If they disagree,
+// `aru dev` serves the previous save.
 const viewSuffix = ".kyse.go"
 
 // compileViews turns every `.kyse.go` under resources/views into Go.
 //
-// It replaces the `templ generate` step, and it is not a binary the CLI
-// downloads -- kyse is part of `aru`. One fewer thing to pin, verify and cache
-// (REGRA 13).
+// The compiler is not a binary the CLI downloads -- kyse is part of `aru`. One
+// fewer thing to pin, verify and cache.
 func compileViews(root string, stdout io.Writer) error {
 	dir := viewsIn(root)
 

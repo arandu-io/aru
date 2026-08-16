@@ -17,13 +17,8 @@ import (
 // go wrong that the compiler cannot see -- and each message says what breaks,
 // not which rule was violated.
 //
-// Adding a rule that rejects existing code is a breaking change (doc 23): it
-// enters as a warning in a minor and becomes an error in the next major.
-//
-// module-imports-module is gone with the tree it policed: ADR 0019 removed
-// modules/ as a structure of the framework, and the boundary that mattered --
-// the controller reaching data directly -- is covered by the two rules named
-// after it below.
+// Adding a rule that rejects existing code is a breaking change: it enters as a
+// warning in a minor and becomes an error in the next major.
 var rules = []func(*project) []Finding{
 	unreadableFiles,
 	repositoryNeedsPolicy,
@@ -46,13 +41,12 @@ var rules = []func(*project) []Finding{
 
 // 0. A file doctor could not read makes every other rule unreliable.
 //
-// The parser used to skip an unparsable file silently, on the reasoning that the
-// compiler reports a syntax error better -- which is true, and beside the point.
-// Every rule here reasons over the whole file set, so a project whose
-// InvoicePolicy.go does not parse looks exactly like a project with no policy for
-// Invoice, and doctor reported that: an invented finding, pointing at the wrong
-// file, telling the author to write a policy they had already written. Found by
-// audit.
+// Skipping an unparsable file silently would leave the syntax error to the
+// compiler, which reports it better -- and that is beside the point. Every rule
+// here reasons over the whole file set, so a project whose InvoicePolicy.go does
+// not parse looks exactly like a project with no policy for Invoice: an invented
+// finding, pointing at the wrong file, telling the author to write a policy they
+// had already written.
 //
 // Reporting it first and as an error is the honest answer: what follows is
 // incomplete, and here is why.
@@ -127,16 +121,15 @@ func repositoriesAndPolicies(p *project) (map[string]entityPlace, map[string]boo
 // 1. A repository without a policy for the same entity means the entity is
 // reachable and nobody decided who may reach it.
 //
-// app/Policies/ is not a convention of an organized team here, the way it is in
-// elsewhere: here it is skeleton, and this is the rule that makes it so (ADR 0019).
+// app/Policies/ is not a convention an organized team chooses to keep: it is
+// skeleton, and this is the rule that makes it so.
 func repositoryNeedsPolicy(p *project) []Finding {
 	repositories, policies := repositoriesAndPolicies(p)
 
 	// One finding per entity, and every entity -- not the first one and then
-	// stop. It used to break out of the loop after the first, so a project with
-	// three unprotected entities reported one, and the author found the next only
-	// after fixing that one and running again. Found by audit; the spec
-	// validator's own doc comment says why that is the wrong shape.
+	// stop. Breaking out after the first would make a project with three
+	// unprotected entities report one, and the author would find the next only
+	// after fixing that one and running again.
 	entities := make([]string, 0, len(repositories))
 	for entity := range repositories {
 		entities = append(entities, entity)
@@ -170,11 +163,11 @@ func repositoryNeedsPolicy(p *project) []Finding {
 // name answers for the one that does not -- a type called InvoiceRepository is a
 // repository wherever somebody filed it.
 //
-// The suffix, not the substring. It used to ask whether the receiver CONTAINED
-// "Repo", which made ReportPolicy, Reporter and Reposition repositories: a read
-// model that takes a Grant and hands it to the repository below was reported for
-// not checking it, and the code was correct. A rule that fires on correct code
-// is how a tool teaches people to ignore it. Found by audit.
+// The suffix, not the substring. Asking whether the receiver CONTAINS "Repo"
+// makes ReportPolicy, Reporter and Reposition repositories: a read model that
+// takes a Grant and hands it to the repository below is reported for not
+// checking it, and the code is correct. A rule that fires on correct code is how
+// a tool teaches people to ignore it.
 func isRepository(f *file, fn *ast.FuncDecl) bool {
 	if f.category == "Repositories" {
 		return true
@@ -232,7 +225,7 @@ func reachesTheDatabase(fn *ast.FuncDecl) bool {
 // Asking only whether a call exists is what let `_ = g.Check(x)` through: the
 // method asks the question, throws the answer away, and reads like one that
 // authorizes. That is worse than leaving the check out, because a reader stops
-// looking. Found by audit.
+// looking.
 //
 // Used means the value goes somewhere: returned, tested in an if, or assigned to
 // a name -- which is then almost always the err of the line below. Discarded
@@ -289,11 +282,11 @@ func grantChecks(fn *ast.FuncDecl) (total, used int) {
 //     passes;
 //   - it checks it into the blank identifier, so the answer is thrown away.
 //
-// The first one is the hole an audit found, and it is the one that matters most:
-// the rule began by skipping every method that did not take a Grant, on the
-// assumption that the signature was the enforcement. It applies to List and Find
-// exactly as it applies to Create -- a read model, a report, a projection or an
-// export with no policy is a tenant leak with a technical name (RULE 17).
+// The first one matters most, and it is the one a signature check misses:
+// skipping every method that does not take a Grant assumes the signature is the
+// enforcement. It applies to List and Find exactly as it applies to Create -- a
+// read model, a report, a projection or an export with no policy is a tenant
+// leak with a technical name.
 //
 // Only exported methods. An unexported helper that runs the query for the
 // exported method above it is the shape people write, and the exported one is
@@ -323,7 +316,7 @@ func repositoryMethodNeedsGrant(p *project) []Finding {
 					Rule: "grant-not-received", Severity: Error,
 					File: file, Line: line,
 					Message: fn.Name.Name + " reaches the database and receives no Grant",
-					Why:     "reading is authorized exactly like writing: a query with no policy is a tenant leak with a technical name (RULE 17, doc 26). A read model, a report, a projection and an export are not exceptions. Take a security.Grant and start the method with: if err := g.Check(Action...); err != nil { return err }",
+					Why:     "reading is authorized exactly like writing: a query with no policy is a tenant leak with a technical name. A read model, a report, a projection and an export are not exceptions. Take a security.Grant and start the method with: if err := g.Check(Action...); err != nil { return err }",
 				})
 				continue
 			}
@@ -424,11 +417,11 @@ func returnsNil(fn *ast.FuncDecl) bool {
 // requestPath names the kind of file when it sits on the path of a request, and
 // reports false when it does not.
 //
-// The two rules below used to ask for the Controllers category alone, and the
+// The two rules below cannot ask for the Controllers category alone, because the
 // request does not arrive only there. A handler written inline in the custom
 // block of routes/web.go -- which the skeleton invites people to write in -- and
 // a middleware in app/Http/Middleware are the same request, one layer earlier,
-// with the same database under them. Both walked through. Found by audit.
+// with the same database under them.
 func requestPath(f *file) (string, bool) {
 	switch {
 	case f.category == "Controllers":
@@ -487,9 +480,8 @@ func controllerMustNotReachData(p *project) []Finding {
 // the compiler cannot see it: the repository method it calls does require a
 // Grant, and a handler can produce one with SystemGrant.
 //
-// This is the boundary ADR 0019 calls the other 20%: elsewhere, Service and
-// Repository are a convention of an organized team; here they are skeleton, and
-// the direction of the arrow is checked.
+// Service and Repository are not a convention an organized team chooses to keep:
+// they are skeleton, and the direction of the arrow between them is checked.
 func controllerMustNotReachTheRepository(p *project) []Finding {
 	var out []Finding
 	for _, f := range p.files {
@@ -583,8 +575,7 @@ func tenantMustComeFromTheGrant(p *project) []Finding {
 //	jobs.GrantFor(jobs.Job{Action: "customer.delete", TenantID: ctx.Query("org")})
 //
 // That reaches the database with permissions nobody granted, under a tenant the
-// caller chose, and it produced no finding at all. Found by adversarial review
-// of this file, 07/08/2026.
+// caller chose, and a rule matching one literal name produces no finding at all.
 //
 // A new function returning a security.Grant has to be added here. Nothing makes
 // that automatic -- the doctor reads one package at a time and does not resolve
@@ -646,9 +637,9 @@ func tenantArg(call *ast.CallExpr, name string) (ast.Expr, bool) {
 //	org := ctx.Query("org")
 //	g := security.SystemGrant(ActionView, org)
 //
-// passes both of them and is exactly the hole RULE 14 exists to close. The name
-// of a header is chosen by whoever wrote the client; what makes it a tenant is
-// where the value ends up. Found by audit.
+// passes both of them, and it is exactly the hole that matters. The name of a
+// header is chosen by whoever wrote the client; what makes it a tenant is where
+// the value ends up.
 //
 // The analysis is deliberately small: within one function, a variable assigned
 // from something the request controls is tainted, and a tainted variable
@@ -722,7 +713,7 @@ func requestValuesReachingAGrant(f *file) []Finding {
 						Rule: "tenant-from-request", Severity: Error,
 						File: file, Line: line,
 						Message: fmt.Sprintf("the tenant of this Grant is read straight off the request, by %s", callName(inner)),
-						Why:     "whoever sent the request picks the tenant, and reads every row of it. It comes from the Grant (RULE 14).",
+						Why:     "whoever sent the request picks the tenant, and reads every row of it. It comes from the Grant.",
 					})
 				}
 				return true
@@ -772,10 +763,10 @@ func readsTheRequest(name string) bool {
 // 7. SystemGrant is the one way past the policy. Its call sites are the audit.
 //
 // Two things can excuse a call, and the name of the enclosing function is not
-// one of them. It used to be: any function whose name contained ensure, seed,
-// job, worker, migrate or backfill was let through, so `ensureGrant` passed and
-// `issueGrant`, identical in every other character, fired. A check a rename
-// defeats is a spelling convention. Found by audit.
+// one of them. Letting through any function whose name contains ensure, seed,
+// job, worker, migrate or backfill passes `ensureGrant` and fires on
+// `issueGrant`, identical in every other character. A check a rename defeats is
+// a spelling convention.
 //
 // What excuses a call:
 //
@@ -922,16 +913,14 @@ func noBuiltSQL(p *project) []Finding {
 	return out
 }
 
-// concatenatedSQL is the other half, and the half that was missing.
+// concatenatedSQL is the other half of the check.
 //
-// The rule only ever read fmt.Sprintf, while its own name promised more and ADR
-// 0024 stated as fact that it had been widened -- in the paragraph that argues
-// the project does not need sqlc. So the one barrier against hand-built SQL had
-// a hole exactly where the decision leaned on it:
+// Reading fmt.Sprintf alone leaves a hole in the one barrier against hand-built
+// SQL:
 //
 //	"SELECT id FROM invoices WHERE reference LIKE '%" + term + "%'"
 //
-// passed clean, with term coming straight off the request.
+// passes clean, with term coming straight off the request.
 //
 // # What separates it from the concatenation the generator writes on purpose
 //
@@ -1340,8 +1329,8 @@ func viewMustExist(p *project) []Finding {
 // declaring everything.
 //
 // A project with no manifest is silent. The unit of distribution is the Go
-// module (doc 18), so the file belongs at the root of a repository that is
-// published -- and an application is not published. Demanding it from every
+// module, so the file belongs at the root of a repository that is published --
+// and an application is not published. Demanding it from every
 // `aru new` would be a warning that fires on correct code, which is how a tool
 // teaches people to stop reading it.
 func declaredPermissionsMatchTheCode(p *project) []Finding {
@@ -1474,10 +1463,10 @@ func relativeTo(root, path string) string {
 // It catches the shape people actually write.
 //
 // Event handlers and both quote styles, because that is where the mistake lives.
-// The pattern used to be x-data, x-init and x-effect with double quotes only, so
+// Matching x-data, x-init and x-effect with double quotes alone would let
 // `x-on:click="fetch(...)"`, `@click="fetch(...)"` and every single-quoted form
-// went through untouched -- and an event handler is precisely where somebody
-// writes a network call. Found by audit.
+// through untouched -- and an event handler is precisely where somebody writes a
+// network call.
 var alpineAttribute = regexp.MustCompile(`(?s)(?:^|[^\w:@-])(x-data|x-init|x-effect|x-on:[\w.:-]+|@[\w.:-]+)\s*=\s*("[^"]*"|'[^']*')`)
 
 // networkInAlpine is the set that means this state is not client-only.
@@ -1496,14 +1485,13 @@ var networkInAlpine = []struct {
 
 // 14. Alpine holds client state, and nothing else.
 //
-// Doc 14 draws the line: Alpine is allowed when the state is client-only,
-// ephemeral, and invisible to the server -- a dropdown, a tab, an input mask.
-// The moment a directive talks to the server, the component should have been an
-// HTMX fragment, and the application now has two ways to fetch data with two
-// sets of error handling, two loading states and two places CSRF can be
-// forgotten.
+// Alpine is allowed when the state is client-only, ephemeral, and invisible to
+// the server -- a dropdown, a tab, an input mask. The moment a directive talks
+// to the server, the component should have been an HTMX fragment, and the
+// application now has two ways to fetch data with two sets of error handling,
+// two loading states and two places CSRF can be forgotten.
 //
-// Without this check, RULE 9 is opinion, and opinion does not survive a code
+// Without this check that line is opinion, and opinion does not survive a code
 // review at 6pm.
 func alpineHoldsClientStateOnly(p *project) []Finding {
 	var out []Finding
@@ -1549,12 +1537,11 @@ func lineOf(body string, offset int) int {
 // 15. A multi-tenant repository whose SQL lost its tenant predicate reads and
 // writes every customer's rows.
 //
-// Doc 15 lists this as an error and nothing enforced it. It is the leak in its
-// most direct form, and the reason it survives review is that everything else
-// about the method is right: the Grant is taken, the Grant is checked, the
-// policy exists -- and the `AND tenant_id = ?` somebody deleted while debugging
-// never came back. RULE 14: the tenant comes from the Grant, and it has to reach
-// the WHERE.
+// It is the leak in its most direct form, and the reason it survives review is
+// that everything else about the method is right: the Grant is taken, the Grant
+// is checked, the policy exists -- and the `AND tenant_id = ?` somebody deleted
+// while debugging never came back. The tenant comes from the Grant, and it has
+// to reach the WHERE.
 //
 // INSERT is not checked here. The tenant of a row being written is a value in
 // the column list, not a predicate, and it comes from data.Tenant(g) -- a
@@ -1587,7 +1574,7 @@ func tenantMustScopeTheSQL(p *project) []Finding {
 					Rule: "sql-without-tenant-scope", Severity: Error,
 					File: file, Line: line,
 					Message: "the " + sql.verb + " in " + fn.Name.Name + " does not filter by tenant_id",
-					Why:     "this repository scopes its other queries by tenant, so the table has the column and this statement reaches every customer's rows -- reading them, or writing them. Add `AND tenant_id = ?` to the WHERE and pass data.Tenant(g), which is the only source of a tenant for SQL (RULE 14, doc 15).",
+					Why:     "this repository scopes its other queries by tenant, so the table has the column and this statement reaches every customer's rows -- reading them, or writing them. Add `AND tenant_id = ?` to the WHERE and pass data.Tenant(g), which is the only source of a tenant for SQL.",
 				})
 			}
 		}
@@ -1724,7 +1711,7 @@ var outboxProviders = map[string]bool{
 // shipped bootstraps register it. An application that deletes the line while
 // tidying gets no warning from anything else.
 //
-// It is an Error rather than the Warning doc 23 asks new rules to enter as. That
+// It is an Error rather than the Warning a new rule normally enters as. That
 // policy is about rules that reject code which works, and this one cannot: the
 // only project it fires on is one where creating an account already fails a
 // hundred percent of the time. Reporting that as a warning would mean CI passes

@@ -59,9 +59,9 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 	}
 
 	// The sequence comes from the directory, the same way `aru make:migration`
-	// and `aru make:model --migration` take it. It used to be hardcoded to one,
-	// so two modules generated on one day produced two migrations under the same
-	// date and the same number -- distinct ids, so nothing failed, and an order
+	// and `aru make:model --migration` take it. Hardcoding it to one would give
+	// two modules generated on the same day two migrations under the same date
+	// and the same number -- distinct ids, so nothing fails, and an order
 	// between them that nothing decides.
 	date := time.Now().UTC().Format("2006_01_02")
 	seq, err := nextMigrationSequence(root, date)
@@ -110,8 +110,8 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 		}
 	}
 
-	// The tone is in 00-meta/DOC-brand.md: say what happened and what is required
-	// next, without congratulating anyone.
+	// Say what happened and what is required next, without congratulating
+	// anyone.
 	//
 	// Four steps, and none of them is optional: the code is written, the wiring
 	// is not. A generator that edited routes/web.go and bootstrap/app.go behind

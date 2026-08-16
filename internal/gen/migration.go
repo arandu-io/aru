@@ -9,7 +9,7 @@ import (
 //
 // `aru make:module`, `aru make:model --migration` and `aru make:migration` all
 // render through this: three commands, one shape of file. A second template
-// would drift on the first change nobody remembered to make twice (RULE 9).
+// would drift on the first change nobody remembered to make twice.
 type MigrationSpec struct {
 	// ID is the immutable identifier: "2026_08_07_000002_add_status_to_invoices".
 	ID string
@@ -50,7 +50,7 @@ func (s MigrationSpec) Validate() error {
 		return fmt.Errorf("a migration needs an id, a variable name and a table")
 	}
 	if len(s.Fields) == 0 {
-		return fmt.Errorf("a migration with no columns applies nothing and is still recorded as applied (RULE 16)")
+		return fmt.Errorf("a migration with no columns applies nothing and is still recorded as applied")
 	}
 	seen := map[string]bool{}
 	for _, f := range s.Fields {
@@ -108,7 +108,7 @@ import "github.com/arandu-io/framework/kernel"
 //
 // A migration is immutable once published. Changing this one changes nothing on
 // a database that already applied it, and leaves two schemas in the world under
-// one id -- alter it with a new migration instead (RULE 16).
+// one id -- alter it with a new migration instead.
 //
 // Every type below spells the same in SQLite, PostgreSQL and MySQL, so one
 // schema serves all three. Anything a key or an index names is VARCHAR rather
@@ -153,7 +153,7 @@ import "github.com/arandu-io/framework/kernel"
 // Every column is added nullable, with no NOT NULL. During a rollout the
 // previous binary is still inserting rows and knows nothing about these columns,
 // so a NOT NULL without a default fails on its first insert -- and on every row
-// already in the table. Backfill, then tighten it in a later migration (RULE 16).
+// already in the table. Backfill, then tighten it in a later migration.
 //
 // A migration is immutable once published. Changing this one after it has been
 // applied anywhere leaves two schemas in the world under one id -- alter it with

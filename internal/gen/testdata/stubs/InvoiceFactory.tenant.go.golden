@@ -28,7 +28,7 @@ type InvoiceFactory struct {
 //
 // The tenant is a parameter rather than a default. A factory that picked its own
 // would build rows nobody can reach, and the failure would only show up when
-// somebody tried to read them (RULE 14).
+// somebody tried to read them.
 func NewInvoiceFactory(tenant string) InvoiceFactory {
 	return InvoiceFactory{tenant: tenant}
 }

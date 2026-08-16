@@ -27,26 +27,22 @@ const stylesheetOutput = "assets/app.css"
 // componentLibrary is the module whose Go files carry class names that no view
 // of the project spells out.
 //
-// One name and not a list: kyse is the component library (ADR 0027) -- imported,
-// never copied -- and a second one would be a second way to draw a button
-// (RULE 9).
+// One name and not a list: kyse is the component library -- imported, never
+// copied -- and a second one would be a second way to draw a button.
 const componentLibrary = "github.com/arandu-io/kyse"
 
 // viewBuild turns every `.kyse.go` into Go and, when the project has its own
 // stylesheet, compiles the CSS.
 //
-// The view compiler is kyse, which is part of this CLI (ADR 0020); the CSS is
-// the Tailwind standalone binary aru downloads and verifies (doc 14). Neither is
-// Node, and neither is optional at deploy time: what they produce is committed,
-// so the server only ever runs `go build`.
+// The view compiler is kyse, which is part of this CLI; the CSS is the Tailwind
+// standalone binary aru downloads and verifies. Neither is Node, and neither is
+// optional at deploy time: what they produce is committed, so the server only
+// ever runs `go build`.
 func viewBuild(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("view:build", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	// There is deliberately no --watch here. `aru dev` is the loop, and a second
-	// watch implementation is the second way to do one thing (RULE 9). The flag
-	// that used to be here promised the one thing it did not do: it compiled the
-	// views exactly once and handed Tailwind a closed stdin, so it exited
-	// immediately and never recompiled a .kyse.go at all.
+	// watch implementation is the second way to do one thing.
 	if err := flags.Parse(args); err != nil {
 		return fmt.Errorf("view:build: %w", err)
 	}
@@ -85,13 +81,12 @@ func buildViews(root string, stdout, stderr io.Writer) error {
 
 	if !hasStylesheet(root) {
 		// A project with no stylesheet of its own has nothing to compile, and
-		// the framework serves its embedded one in place of it (ADR 0021).
+		// the framework serves its embedded one in place of it.
 		//
 		// That fallback is the base layer and nothing else: a reset, the theme
 		// tokens and the two rules the framework's own pages need. It carries
-		// no utilities, because since ADR 0025 the stylesheet declares its
-		// sources and the framework has no views to declare -- they belong to
-		// the project.
+		// no utilities, because the stylesheet declares its sources and the
+		// framework has no views to declare -- they belong to the project.
 		//
 		// So a project that deleted resources/css/app.css gets a page with the
 		// base layer and no utility classes. That is the honest outcome of
@@ -129,7 +124,7 @@ func buildViews(root string, stdout, stderr io.Writer) error {
 //
 // Tailwind only reads class names out of files an @source names, and a project's
 // app.css can only name directories of the project. The components are an
-// imported module (ADR 0027) whose source lives in the module cache, so every
+// imported module whose source lives in the module cache, so every
 // class kyse renders and no view of the project repeats was absent from the
 // compiled stylesheet -- silently, because missing CSS is not an error anywhere.
 // Measured on this repository: 193 KB of built stylesheet with zero occurrences
@@ -147,7 +142,7 @@ func buildViews(root string, stdout, stderr io.Writer) error {
 // Two other shapes were weighed. kyse could ship a compiled utility layer of its
 // own, imported beside the component CSS -- that is a second stylesheet, with a
 // second Tailwind version and a second copy of the theme tokens, and the pair
-// drifts (RULE 9). Or the class names could be listed by hand in
+// drifts. Or the class names could be listed by hand in
 // `@source inline(...)` next to the library -- that is this bug with one extra
 // step, because a hand-kept list goes stale the first time somebody adds a class
 // and says nothing when it does. Reading the directory costs one `go list` and
@@ -161,7 +156,6 @@ func stylesheetInput(root string) (string, error) {
 	// The project's stylesheet is imported by absolute path, and the relative
 	// @source and @import lines inside it keep resolving against its own
 	// directory: Tailwind resolves those per file, not against the entry.
-	// Verified against tailwindcss v4.3.3.
 	input := "@import " + cssString(filepath.Join(root, stylesheetSource)) + ";\n"
 	if dir != "" {
 		// Every .go under the module rather than a list of its directories. The

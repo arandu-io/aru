@@ -142,9 +142,9 @@ func writeManifest(root string, list []fonts.Installed) error {
 	// Everything this function wrote last time comes out, and the marker is how
 	// it knows where that started.
 	//
-	// It used to cut by section, which removed the [fonts.*] blocks and left the
-	// comment above them -- so every run appended a second copy of a nine-line
-	// note, and a project whose font was changed four times had four of them.
+	// Cutting by section would remove the [fonts.*] blocks and leave the comment
+	// above them, so every run would append a second copy of a nine-line note,
+	// and a project whose font was changed four times would carry four of them.
 	// The generated block is not only sections, so a section-shaped rule cannot
 	// find all of it.
 	var kept []string

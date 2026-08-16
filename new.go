@@ -182,7 +182,7 @@ var editorSettings []byte
 // is the first impression somebody gets of the view layer.
 //
 // It is settings, not an extension: settings need no manifest and therefore no
-// package.json, which RULE 13 forbids. The grammar that would make the
+// package.json, which a project never carries. The grammar that would make the
 // highlighting fine lives in aru/editors/vscode/ and is not published yet --
 // see the README there for the decision that is open.
 func writeEditorSettings(dir string) error {

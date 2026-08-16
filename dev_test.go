@@ -12,9 +12,9 @@ import (
 // TestAViewSourceSchedulesAViewBuild is the daily loop of the view layer: save a
 // `.kyse.go`, reload, see the change.
 //
-// The gate used to ask for ".templ", an extension kyse never writes and ADR 0020
-// retired. A `.kyse.go` ends in ".go", so the watcher noticed the edit, restarted
-// the server, and served the Go generated from the previous save.
+// A `.kyse.go` ends in ".go", so a gate that only recognizes ordinary Go notices
+// the edit, restarts the server, and serves the Go generated from the previous
+// save.
 func TestAViewSourceSchedulesAViewBuild(t *testing.T) {
 	source := filepath.Join("resources", "views", "home.kyse.go")
 
@@ -71,12 +71,9 @@ func TestOrdinaryGoDoesNotScheduleAViewBuild(t *testing.T) {
 	}
 }
 
-// TestTheGeneratedViewIsNotWatched is the other half of the same fix, and it has
-// to land with it: the Go kyse emits is a `.go` file inside the watched tree, so
-// a rebuild triggered by a view source would look like a change and trigger the
-// next rebuild.
-//
-// The guard used to look for the "_templ.go" suffix, which kyse never writes.
+// TestTheGeneratedViewIsNotWatched: the Go kyse emits is a `.go` file inside the
+// watched tree, so a rebuild triggered by a view source would look like a change
+// and trigger the next rebuild.
 func TestTheGeneratedViewIsNotWatched(t *testing.T) {
 	root := t.TempDir()
 

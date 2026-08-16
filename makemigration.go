@@ -67,14 +67,14 @@ func makeMigration(args []string, stdout, stderr io.Writer) error {
 	parsed, err := gen.ParseFields(*fields)
 	if err != nil {
 		return fmt.Errorf("make:migration: a migration with an empty Up applies nothing and is still recorded as applied, "+
-			"and a migration id is immutable -- it would never run again (RULE 16): %w", err)
+			"and a migration id is immutable -- it would never run again: %w", err)
 	}
 	if !creating {
 		for _, f := range parsed {
 			if f.Required {
 				return fmt.Errorf("make:migration: column %q is declared required: a NOT NULL column added to a table that has rows "+
 					"fails on every row already there, and during a rollout the previous binary does not fill it in. "+
-					"Add it nullable, backfill, and tighten it in a later migration (RULE 16)", f.Name)
+					"Add it nullable, backfill, and tighten it in a later migration", f.Name)
 			}
 		}
 	}

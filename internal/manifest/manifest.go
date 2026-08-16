@@ -1,9 +1,8 @@
 // Package manifest reads arandu.mod.toml, the metadata every module declares.
 //
-// It exists from phase 2 rather than from the phase that needs it, and the
-// reason is narrow: a module published without the file cannot gain it later
-// without breaking whoever already installed it. The registry that consumes this
-// is phase 4; the contract cannot wait for it.
+// It exists ahead of the registry that consumes it, and the reason is narrow: a
+// module published without the file cannot gain it later without breaking
+// whoever already installed it. The contract cannot wait for its consumer.
 //
 // What the file declares is capability, not intent: a module that says it makes
 // no outbound network calls and then imports an HTTP client is rejected by
@@ -29,7 +28,7 @@ type Module struct {
 	// Framework is the version range this module supports: ">= 0.3".
 	Framework string
 	// Profiles lists the deployment profiles it works on: conventional,
-	// performance. See doc 12.
+	// performance.
 	Profiles []string
 	// Permissions is what it does beyond compute and its own database rows.
 	Permissions Permissions

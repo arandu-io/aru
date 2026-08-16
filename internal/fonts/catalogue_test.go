@@ -182,11 +182,11 @@ func write(t *testing.T, name string, body []byte) string {
 
 // TestTheFallbackFollowsTheCategoryAndNotTheRole.
 //
-// It used to follow the role, on the assumption that a display face is a serif.
-// Installing Montserrat -- a geometric sans -- as the display face then produced
-// a page that paints in Georgia and becomes a geometric sans when the font
-// lands. The metric override cannot hide that: it matches the space the face
-// occupies, not the shapes it draws.
+// Following the role instead assumes a display face is a serif, so installing
+// Montserrat -- a geometric sans -- as the display face produces a page that
+// paints in Georgia and becomes a geometric sans when the font lands. The metric
+// override cannot hide that: it matches the space the face occupies, not the
+// shapes it draws.
 func TestTheFallbackFollowsTheCategoryAndNotTheRole(t *testing.T) {
 	sans := fonts.Stylesheet([]fonts.Installed{{
 		Role: fonts.Display, Family: "Montserrat", Weight: "400 800",

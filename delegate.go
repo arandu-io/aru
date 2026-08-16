@@ -12,8 +12,7 @@ import (
 // appPackage is where the skeleton puts the application entry point.
 // appPackage is what `go build` compiles: the module root, where main.go lives.
 //
-// It used to be "./cmd/app". The entry point is at the root now: main.go is
-// both the server and the console (ADR 0019).
+// The entry point is at the root: main.go is both the server and the console.
 const appPackage = "."
 
 // delegate returns a command that forwards to the project's own binary.

@@ -13,8 +13,7 @@ import (
 // Pins are the tool versions a project asks for.
 //
 // There is one, and it is not Node. The view compiler is deliberately absent:
-// kyse is part of `aru` itself, so there is nothing to pin, verify or cache
-// (ADR 0020).
+// kyse is part of `aru` itself, so there is nothing to pin, verify or cache.
 type Pins struct {
 	Tailwind string
 
@@ -62,7 +61,7 @@ func (p Pins) Warn(w io.Writer) {
 // belongs to the project, not to whoever happens to be running the command.
 //
 // Only [tools] is read. This is configuration, not a language: a file that grows
-// its own syntax is a file somebody has to maintain forever (RULE 15).
+// its own syntax is a file somebody has to maintain forever.
 func ReadPins(root string) (Pins, error) {
 	b, err := os.ReadFile(filepath.Join(root, "arandu.toml"))
 	if errors.Is(err, fs.ErrNotExist) {
@@ -103,18 +102,18 @@ func ReadPins(root string) (Pins, error) {
 			pins.Tailwind = value
 
 		case "templ":
-			// Retired, not wrong. kyse replaced templ (ADR 0020), and every
-			// project generated before that has this line -- including the
-			// published skeleton, which is what `aru new` clones today.
+			// Retired, not wrong. kyse replaced templ, and every project
+			// generated before that has this line -- including the published
+			// skeleton, which is what `aru new` clones today.
 			//
-			// Refusing it broke `aru view:build` and `aru build` in every one of
-			// them at once, with no deprecation window. That is the opposite of
-			// the policy the framework holds itself to (doc 23: a warning in one
-			// minor, the error in the next major), and a build tool is the worst
-			// place to break it: the first thing the reader sees is a project
-			// that stopped compiling for a reason they did not cause.
+			// Refusing it would break `aru view:build` and `aru build` in every
+			// one of them at once, with no deprecation window. A retired key
+			// warns in one minor and becomes an error in the next major, and a
+			// build tool is the worst place to skip that: the first thing the
+			// reader sees is a project that stopped compiling for a reason they
+			// did not cause.
 			pins.Retired = append(pins.Retired, retired{line: i + 1, key: "templ",
-				because: "kyse replaced templ (ADR 0020); the view compiler is part of aru and needs no download"})
+				because: "kyse replaced templ; the view compiler is part of aru and needs no download"})
 
 		default:
 			// A key that was never a tool is a typo, and a typo that is ignored

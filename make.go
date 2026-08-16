@@ -16,7 +16,7 @@ import (
 //
 // Everything about how they behave is here, once. A second command that read its
 // name differently, or refused an existing file with another message, would be a
-// second way to do one thing inside the generator itself (RULE 9).
+// second way to do one thing inside the generator itself.
 
 // takeName pulls the positional name off the front of the arguments.
 //

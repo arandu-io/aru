@@ -30,7 +30,7 @@ func (InvoiceSeeder) Run(ctx context.Context, d Deps) error {
 	//	}
 	//
 	// d.Tenant, never a tenant this file picked: a seeder that chooses its own
-	// seeds rows nobody can reach (RULE 14).
+	// seeds rows nobody can reach.
 	//
 	// Twice safely: read before writing, or let the UNIQUE refuse the duplicate
 	// and treat models.ErrInvoiceConflict as success.

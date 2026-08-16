@@ -37,8 +37,8 @@ func outsideTheWorkspace(t *testing.T) {
 // TestTailwindIsToldWhereTheImportedComponentsLive is the unit half of a defect
 // that only showed up as a page.
 //
-// The components are an imported module (ADR 0027) and the project's stylesheet
-// can only declare directories of the project, so Tailwind never read a single
+// The components are an imported module and the project's stylesheet can only
+// declare directories of the project, so Tailwind never read a single
 // class name out of kyse. `.text-destructive`, which components.Field writes on
 // the error line of every form, was absent from 193 KB of compiled CSS: a
 // rejected form explained itself in the body colour, and no build said so.

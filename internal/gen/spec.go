@@ -2,9 +2,9 @@
 //
 // It is deterministic and it does not call a model: the same specification
 // produces the same bytes, which is what makes golden files a real test rather
-// than a formality. In phase 4 the specification comes from a YAML file a model
-// wrote; today it comes from command-line flags. The generator does not care
-// which, and that is the point -- the model never writes Go.
+// than a formality. The specification comes from a YAML file a model wrote or
+// from command-line flags. The generator does not care which, and that is the
+// point -- the model never writes Go.
 package gen
 
 import (
@@ -16,7 +16,7 @@ import (
 
 // Type is a field type. The set is closed by decision, not by omission: a
 // generator whose type list grows on demand becomes a language, and a language
-// has to be maintained forever. See 00-meta/DOC-dsl-and-generation.md.
+// has to be maintained forever.
 type Type string
 
 // The closed set.
@@ -37,7 +37,7 @@ const (
 //
 // The SQL column types are the portable subset: every one of them spells the
 // same in SQLite, PostgreSQL and MySQL, which is what lets one schema serve all
-// three (ADR 0009).
+// three.
 var types = map[Type]struct {
 	Go   string
 	SQL  string
@@ -48,9 +48,8 @@ var types = map[Type]struct {
 }{
 	// VARCHAR for the short kinds, TEXT for the long one. That is the
 	// distinction the DSL already draws -- "short text, up to a line" against
-	// "long text" -- and the generator used to collapse both to TEXT, which
-	// MySQL refuses in a UNIQUE or an index without a prefix length. See
-	// data.KeyText. Found by audit.
+	// "long text". Collapsing both to TEXT leaves MySQL refusing a UNIQUE or an
+	// index without a prefix length. See data.KeyText.
 	TypeString: {Go: "string", SQL: "VARCHAR(255)", Zero: `""`, SQLZero: "''"},
 	TypeText:   {Go: "string", SQL: "TEXT", Zero: `""`, SQLZero: "''"},
 	TypeInt:    {Go: "int64", SQL: "INTEGER", Zero: "0", SQLZero: "0"},
@@ -58,7 +57,6 @@ var types = map[Type]struct {
 	// float64 written through it comes back rounded to about seven digits --
 	// silently, on read, with no error anywhere. SQLite gives "DOUB" REAL
 	// affinity and MySQL accepts the spelling, so one word serves all three.
-	// Found by audit.
 	TypeDecimal: {Go: "float64", SQL: "DOUBLE PRECISION", Zero: "0", SQLZero: "0"},
 	// Money is an integer of cents, never a float: 0.1 + 0.2 is not 0.3 in
 	// binary floating point, and an invoice off by a cent is a support ticket.
@@ -90,14 +88,12 @@ func (f Field) SQLType() string { return types[f.Type].SQL }
 // SQLZero is the value a column of this type gets when it is added to a table
 // that already has rows.
 //
-// It exists because of RULE 16: a column added during a rollout has to be
-// readable by the PREVIOUS binary and by the next one. The alter template used
-// to add the column nullable with no default, while the scan the same generator
-// emits reads every column straight into its Go type -- so the moment `aru
-// migrate` ran, the replicas still on the old binary answered
+// A column added during a rollout has to be readable by the PREVIOUS binary and
+// by the next one. Adding it nullable with no default, while the scan the same
+// generator emits reads every column straight into its Go type, means that the
+// moment `aru migrate` runs the replicas still on the old binary answer
 // "converting NULL to int is unsupported" on every read of that table, and the
-// ones on the new binary did too until something wrote each row. Shipped that
-// way in examples/database/migrations/2026_08_09_000001_add_views_to_posts.go.
+// ones on the new binary do too until something writes each row.
 //
 // The two halves have to agree, and a default is the half that needs no second
 // pass over the data.
@@ -498,8 +494,7 @@ func (m Module) RequestsImport() string { return m.ModulePath + "/app/Http/Reque
 //
 // Importing the source directory produces "build constraints exclude all Go
 // files", which names the right directory for the wrong reason and sends the
-// reader looking for a missing build tag. This generator emitted exactly that
-// for one release. Found by generating a module and building it.
+// reader looking for a missing build tag.
 //
 // One directory per resource, because one directory is one Go package.
 func (m Module) ViewsImport() string {
@@ -590,9 +585,8 @@ func (m Module) Receiver() string {
 	// compile. Two letters is enough to get out of the way, and it reads like
 	// what a person would have written: "su" for Subscription.
 	//
-	// Found by a real measurement: ten specifications written by models, two of
-	// which named an entity starting with S. A generator tested on one module
-	// never sees this.
+	// An entity starting with S is common enough that a generator exercised on
+	// one module never sees the collision.
 	if taken(initial) && len(m.Entity()) > 1 {
 		return strings.ToLower(m.Entity()[:2])
 	}
@@ -693,8 +687,8 @@ func TypeList() string {
 // ParseFields reads the --fields flag: "name:string!,email:email!u,total:money".
 //
 // The suffixes are "!" for required and "u" for unique. It is terse because it
-// is typed on a command line; the YAML specification of phase 4 spells the same
-// thing out, and produces the same Module.
+// is typed on a command line; the YAML specification spells the same thing out,
+// and produces the same Module.
 func ParseFields(spec string) ([]Field, error) {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {

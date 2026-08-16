@@ -8,9 +8,9 @@ import (
 	"testing"
 )
 
-// TestBuildProducesABinaryAndItsChecksum: the artifact of doc 17 is one static
-// binary with a checksum beside it, and a version that came from the tag rather
-// than from a constant somebody edits.
+// TestBuildProducesABinaryAndItsChecksum: the artifact is one static binary with
+// a checksum beside it, and a version that came from the tag rather than from a
+// constant somebody edits.
 func TestBuildProducesABinaryAndItsChecksum(t *testing.T) {
 	if testing.Short() {
 		t.Skip("compiles a project: skipped under -short")

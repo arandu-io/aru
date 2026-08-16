@@ -51,7 +51,7 @@ func (s SeederSpec) Validate() error {
 // It depends on no import from the project, and that is what keeps it compiling
 // before the wiring exists: a seeder generated with the repository call already
 // written would not build until the developer had edited seeders.Deps and
-// main.go, and RULE 5 says what comes out of the generator compiles.
+// main.go, and what comes out of the generator has to compile.
 func RenderSeeder(s SeederSpec) (File, error) {
 	if err := s.Validate(); err != nil {
 		return File{}, err
@@ -95,7 +95,7 @@ func ({{.Type}}) Run(ctx context.Context, d Deps) error {
 	//	}
 	//
 	// d.Tenant, never a tenant this file picked: a seeder that chooses its own
-	// seeds rows nobody can reach (RULE 14).
+	// seeds rows nobody can reach.
 	//
 	// Twice safely: read before writing, or let the UNIQUE refuse the duplicate
 	// and treat models.Err{{.Entity}}Conflict as success.

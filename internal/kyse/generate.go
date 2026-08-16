@@ -270,9 +270,8 @@ func alreadyImported(written, line string) bool {
 
 // isComponent reports whether this view is a component rather than a page.
 //
-// The directory decides, and it is the same directory Blade uses. A component is
-// not a page: nothing renders it by name, a controller never hands it data, and
-// it has no layout.
+// The directory decides. A component is not a page: nothing renders it by name,
+// a controller never hands it data, and it has no layout.
 func (g *generator) isComponent() bool { return strings.HasPrefix(g.name, "components.") }
 
 // emitComponent writes the component as an ordinary exported Go function.
@@ -426,7 +425,7 @@ func (g *generator) directive(n Node) {
 		//
 		// The familiar form is @for(i = 0; i < 10; i++), and this is the same shape
 		// with Go's syntax, exactly as @if already takes a Go condition rather
-		// than inventing a second expression language (RULE 15).
+		// than inventing a second expression language.
 		g.at(n.Line)
 		fmt.Fprintf(&g.out, "\tfor %s {\n", g.clauses(n.Body))
 		g.self()
@@ -496,13 +495,12 @@ func (g *generator) directive(n Node) {
 	case "include":
 		// A partial shares the page's data, and that is all @include does.
 		//
-		// It briefly took a second argument, so a partial could be handed data of
-		// its own. That made two ways to draw a component -- this one, resolved
-		// by string at run time, and the typed function a component compiles to
-		// -- and the string one is the worse of the two by exactly the measure
-		// this project is built on: a typo in the name reaches production. RULE 9
-		// says the second way does not get to exist, and the compiler-checked one
-		// is the one that stays.
+		// A second argument, letting a partial be handed data of its own, would
+		// make two ways to draw a component -- this one, resolved by string at
+		// run time, and the typed function a component compiles to -- and the
+		// string one is the worse of the two by exactly the measure this project
+		// is built on: a typo in the name reaches production. The
+		// compiler-checked one is the one that stays.
 		fmt.Fprintf(&g.out, "\tif err == nil { err = view.Include(w, %s, data) }\n",
 			strconv.Quote(unquote(n.Body)))
 
@@ -597,7 +595,7 @@ func (g *generator) clauses(header string) string {
 // `.Name` means "a field of the data", which is what a bare name means in
 // context. Everything else is passed through, so `len(d.Items)` and a helper
 // call work -- the view is Go, and pretending otherwise would be inventing a
-// second expression language (RULE 15).
+// second expression language.
 func (g *generator) expr(e string) string {
 	e = strings.TrimSpace(e)
 

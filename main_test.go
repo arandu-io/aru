@@ -112,9 +112,8 @@ func TestKeyGenerateRejectsArguments(t *testing.T) {
 	}
 }
 
-// TestEveryCommandIsImplemented: the phase 2 commands are all in. What is left
-// of the phase lives in other repositories -- the adapters -- and this test is
-// what will notice if one of these ever regresses to a stub.
+// TestEveryCommandIsImplemented: every command in the list runs, and this test
+// is what will notice if one of them ever regresses to a stub.
 func TestEveryCommandIsImplemented(t *testing.T) {
 	for _, c := range commands {
 		out := &bytes.Buffer{}

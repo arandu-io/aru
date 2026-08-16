@@ -14,7 +14,7 @@
 //
 // It is the same shape as the Tailwind binary the toolchain package pins --
 // downloaded once, verified, recorded, and then it is simply a file in the
-// project. Having a build step is allowed; being Node is not (RULE 13).
+// project. Having a build step is allowed; being Node is not.
 //
 // # What it deliberately does not do
 //

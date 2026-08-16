@@ -13,8 +13,7 @@ import (
 // What differs from the usual shape is how the command becomes reachable.
 // Discovery scans app/Console/Commands, instantiates what it finds and reads a
 // signature string at run time. Here the command is a value returned by
-// Console() in routes/console.go, because discovery by reflection is what ADR
-// 0001 exists to refuse.
+// Console() in routes/console.go, because nothing is discovered by reflection.
 //
 // The cost is one line pasted by hand, which this command prints. What it buys
 // is that the console listing and the compiler read the same slice: a command

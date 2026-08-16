@@ -1,12 +1,12 @@
 // Package toolchain downloads and caches the one binary the view layer needs.
 //
 // The promise is `git clone && aru dev`: no Node, no node_modules, no package
-// manager. Having a build step is allowed; being Node is not (RULE 13). So the
-// Tailwind standalone CLI is fetched as a single binary, pinned to a version,
-// and cached in ~/.arandu/bin -- the same shape the Go toolchain uses for itself.
+// manager. Having a build step is allowed; being Node is not. So the Tailwind
+// standalone CLI is fetched as a single binary, pinned to a version, and cached
+// in ~/.arandu/bin -- the same shape the Go toolchain uses for itself.
 //
-// One binary, not two. templ used to be the other, and ADR 0020 replaced it with
-// kyse, which is part of `aru` rather than something to download.
+// One binary, not two: the view compiler is kyse, which is part of `aru` rather
+// than something to download.
 //
 // Nothing here reaches npm, and nothing here is optional at runtime: the built
 // artifacts are committed to the project, so a deploy still needs only `go build`.
@@ -51,7 +51,7 @@ type Tool struct {
 // Standalone is the whole point: Tailwind publishes this binary precisely for
 // people who do not want Node in the project, and it is the only form of
 // Tailwind this project will ever use. Never `npx tailwindcss`, never the npm
-// package (doc 14).
+// package.
 func Tailwind(version string) Tool {
 	if version == "" {
 		version = DefaultTailwindVersion
@@ -196,8 +196,7 @@ func (t Tool) Ensure(w io.Writer) (string, error) {
 	}
 
 	// The asset is the binary itself. Tailwind publishes it that way, and it is
-	// the only tool this package fetches -- the tar extraction that used to live
-	// here existed for templ alone, which ADR 0020 retired.
+	// the only tool this package fetches, so there is no archive to extract.
 	binary := body
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

@@ -10,10 +10,10 @@ import (
 
 // makeMail writes one mailable and the two views it renders.
 //
-// A mailable is an Envelope and a Content and nothing else, which is Laravel's
-// shape. What is different is what it does not have: no ShouldQueue. Sending on
-// the queue here is a job that calls Send, and the difference is visible at the
-// call site rather than in an interface the type opts into at a distance.
+// A mailable is an Envelope and a Content and nothing else. There is no
+// ShouldQueue: sending on the queue here is a job that calls Send, and the
+// difference is visible at the call site rather than in an interface the type
+// opts into at a distance.
 //
 // Two views, not one. A message with no plain-text part is filed as spam more
 // often and shows nothing at all in a client that does not render HTML, and the

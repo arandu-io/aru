@@ -14,12 +14,9 @@ import (
 // TestEveryRuleFiresOnAFixture walks the rule set and demands that each one
 // produce at least one finding across the fixtures.
 //
-// It exists because of a failure that happened six times in one day, always the
-// same shape: a document states that something is checked, and nobody checks
-// that the check exists. ADR 0024 asserted that sql-built-with-sprintf had been
-// widened to concatenation -- in the paragraph arguing the project does not need
-// sqlc -- and it had not. A mutation run found two other rules that could be
-// deleted whole with the suite still green.
+// It guards against one shape of failure: a rule is believed to cover something
+// it never covered, and nobody checks that the check exists. Without this, a
+// rule can be deleted whole and the suite stays green.
 //
 // A rule that fires on nothing is indistinguishable from a rule that was
 // deleted, and the only difference is how long it takes to find out.
@@ -48,13 +45,13 @@ func TestEveryRuleFiresOnAFixture(t *testing.T) {
 		}
 	}
 
-	// E a direcao inversa, que e a que o harness de mutacao achou: uma regra
-	// APAGADA da slice nao aparece no laco acima, entao some sem deixar rastro.
-	// Duas ja podiam ser deletadas inteiras com o CI verde.
+	// And the other direction: a rule DELETED from the slice does not appear in
+	// the loop above, so it disappears without leaving a trace.
 	//
-	// O mapa emits e a lista do que tem que existir. Tirar uma regra da slice sem
-	// tirar do mapa reprova aqui, e tirar das duas e uma decisao explicita, que e
-	// como uma remocao de regra de seguranca deve parecer num diff.
+	// The emits map is the list of what has to exist. Removing a rule from the
+	// slice without removing it from the map fails here, and removing it from
+	// both is an explicit decision -- which is what deleting a security rule
+	// should look like in a diff.
 	declared := map[string]bool{}
 	for _, rule := range rules {
 		name := runtime.FuncForPC(reflect.ValueOf(rule).Pointer()).Name()

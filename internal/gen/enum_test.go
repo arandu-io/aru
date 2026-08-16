@@ -8,10 +8,10 @@ import (
 
 // An --int enum is stored as an integer, so its numbers are the meaning of every
 // row already written. Re-running the command to add a value -- which is what
-// --force is for -- used to renumber by position: adding "sent" between "draft"
-// and "paid" moved paid from 2 to 3, and every row holding 2 silently became
-// "sent". Nothing failed, nothing logged, and the report would come months later
-// as "some invoices changed status by themselves".
+// --force is for -- must not renumber by position: inserting "sent" between
+// "draft" and "paid" would move paid from 2 to 3, and every row holding 2 would
+// silently become "sent". Nothing fails, nothing logs, and the report arrives
+// months later as "some invoices changed status by themselves".
 func TestANumberCanBePinnedSoAddingAValueDoesNotRepointTheRows(t *testing.T) {
 	got, err := gen.ParseEnumValues("draft=1,paid=2,sent=3", "Status", true)
 	if err != nil {

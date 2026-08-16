@@ -30,8 +30,8 @@ func Generate(m Module) ([]File, error) {
 	}
 
 	// The conventional tree, directory by directory. Each file lands where
-	// somebody would look for it, and the file name is CamelCase for
-	// the same reason -- it is what makes the project recognizable (ADR 0019).
+	// somebody would look for it, and the file name is CamelCase for the same
+	// reason -- it is what makes the project recognizable.
 	var out []File
 
 	for _, t := range []struct {
@@ -46,14 +46,13 @@ func Generate(m Module) ([]File, error) {
 		{filepath.Join("app", "Http", "Requests", m.Entity()+"Request.go"), requestTemplate + requestRulesTemplate},
 		// The test goes to tests/Unit, not beside the controller.
 		//
-		// It is the Laravel arrangement: tests/Unit for what is checked without
-		// booting, tests/Feature for what boots the application and makes a
-		// request. What this one checks -- that every repository method demands
-		// its Grant, and that the policy denies an action nobody defined -- needs
-		// neither a server nor a database.
+		// tests/Unit is for what is checked without booting, tests/Feature for
+		// what boots the application and makes a request. What this one checks
+		// -- that every repository method demands its Grant, and that the policy
+		// denies an action nobody defined -- needs neither a server nor a
+		// database.
 		//
-		// The name is <Entity>_test.go, not <Entity>Test.go. Laravel's convention
-		// is the second and Go's rule is the first, and Go's is not a
+		// The name is <Entity>_test.go, not <Entity>Test.go, and that is not a
 		// convention: a file that does not end in _test.go is compiled into the
 		// package, so the "test" would ship in the binary and its Test functions
 		// would never run.
@@ -68,7 +67,7 @@ func Generate(m Module) ([]File, error) {
 
 	// The migration goes through MigrationSpec, which is also what
 	// `aru make:migration` and `aru make:model --migration` render: one shape of
-	// migration file, whichever command asked for it (RULE 9).
+	// migration file, whichever command asked for it.
 	migration, err := RenderMigration(m.MigrationSpec())
 	if err != nil {
 		return nil, err
@@ -108,7 +107,7 @@ type ModelParts struct{ Migration, Factory bool }
 //
 // It renders the same templates Generate does: a model written by make:model and
 // a model written by make:module are the same bytes, because they are the same
-// file. A second template would be a second shape of one thing (RULE 9).
+// file. A second template would be a second shape of one thing.
 //
 // What it never writes is a repository. A repository pulls a policy with it --
 // `aru doctor` reports repository-without-policy as an Error -- and the generated
@@ -159,11 +158,11 @@ var errModulePath = fmt.Errorf("the project module path is required")
 
 // render turns a template into a file.
 //
-// One function, not two. There used to be a render with the FuncMap and a
-// renderRaw without it, and every caller used renderRaw -- so `quote`, the
-// second lock on anything from a specification that lands inside a Go string
-// literal, was defined on a function nobody called. Found by audit; the first
-// lock in the spec validator was carrying it alone.
+// One function, not two. A second renderer without the FuncMap would leave
+// `quote` -- the second lock on anything from a specification that lands inside
+// a Go string literal -- defined on a function nobody calls, with the first lock
+// in the spec validator carrying it alone.
+//
 // The data is `any` rather than Module because the granular commands --
 // make:controller, make:middleware, make:request, make:migration, make:factory,
 // make:seeder, make:enum -- render their own specifications through this exact
@@ -218,8 +217,8 @@ func render(name, tmpl string, data any) ([]byte, error) {
 
 // customBlock matches the region a regeneration must preserve.
 //
-// This is the escape hatch of doc 19: whatever is outside the standard shape is
-// written in Go, inside the markers, and survives regeneration. Without it the
+// This is the escape hatch: whatever is outside the standard shape is written in
+// Go, inside the markers, and survives regeneration. Without it the
 // generator is a one-time tool -- nobody regenerates a file that eats their work.
 var customBlock = regexp.MustCompile(`(?s)// arandu:begin custom\n(.*?)// arandu:end custom`)
 

@@ -2,19 +2,19 @@ package gen
 
 // The templates below emit into the conventional tree: app/Models, app/Policies,
 // app/Repositories, app/Services, app/Http/Requests, app/Http/Controllers,
-// database/migrations and resources/views. There is no modules/<name>/ any
-// more -- ADR 0019 -- and the reason is recognition: the developer this
-// framework is for opens a project and looks for app/Http/Controllers.
+// database/migrations and resources/views. There is no modules/<name>/, and the
+// reason is recognition: the developer this framework is for opens a project and
+// looks for app/Http/Controllers.
 //
 // Every one of them emits the mandatory path: Validate, Authorize, Grant,
 // Repository. There is no template that reaches a repository without a Grant,
 // because there is no way to write one that compiles.
 //
-// One consequence of the flat tree runs through all of them: a package now
-// holds every module's files, so no unexported package-level name can be
-// generic. What used to be `columns`, `sortable` and `NewID` in a package of
-// its own is now `invoiceColumns`, `invoiceSortable` and a method on the
-// repository -- or, where the framework already has it, `data.NewID`.
+// One consequence of the flat tree runs through all of them: a package holds
+// every module's files, so no unexported package-level name can be generic. What
+// would otherwise be `columns`, `sortable` and `NewID` is `invoiceColumns`,
+// `invoiceSortable` and a method on the repository -- or, where the framework
+// already has it, `data.NewID`.
 
 const modelTemplate = `package models
 
@@ -28,10 +28,10 @@ import (
 // Record, and a type that can save itself can save itself from anywhere.
 //
 // Coming from an ORM, this is the difference that costs the most to find late:
-// there is no {{.Entity}}::find, no ->save() and no query builder on this type.
-// The table is reached by {{.Entity}}Repository, and every method of a repository
-// -- Find and List included -- takes a security.Grant that only a Policy can
-// issue (RULE 17). The model is data; the Policy is the door.
+// there is no finder, no save and no query builder on this type. The table is
+// reached by {{.Entity}}Repository, and every method of a repository -- Find and
+// List included -- takes a security.Grant that only a Policy can issue. The
+// model is data; the Policy is the door.
 type {{.Entity}} struct {
 	ID        string
 {{- if .Tenant}}
@@ -625,7 +625,7 @@ var _ = time.Time{}
 // `aru make:module` emits a Store/Update pair and `aru make:request` emits one
 // type, and the rules inside them are the same bytes because it is the same
 // template. Copying it would have been shorter to write and would have diverged
-// on the first correction nobody remembered to make twice (RULE 9).
+// on the first correction nobody remembered to make twice.
 //
 // It renders against anything with a Fields slice, which both gen.Module and
 // gen.Stub have.
@@ -1052,9 +1052,9 @@ func (c *{{.Controller}}) moment(ctx *fhttp.Context, field, layout string, e val
 //
 // `aru make:module` and `aru make:controller` both emit these three methods, and
 // they emit the same bytes because it is the same template -- two ways to write
-// one thing is the rule this generator is not allowed to break inside itself
-// (RULE 9). They are methods rather than package functions, so two controllers in
-// the package do not collide.
+// one thing is what this generator is not allowed to create inside itself. They
+// are methods rather than package functions, so two controllers in the package
+// do not collide.
 //
 // The data it renders against needs a Controller field or method naming the type,
 // which both gen.Module and gen.Stub have.

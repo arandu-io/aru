@@ -21,16 +21,15 @@ import (
 // usually a previous run of this same command that outlived its parent, still
 // serving the browser. So the developer sees a working site, edits a file,
 // nothing changes, and the terminal repeats a line that names the symptom and
-// not the cause. It cost an afternoon and two wrong diagnoses before anybody
-// looked at `lsof`.
+// not the cause. Nothing points at `lsof`.
 
 // bindFailure matches what the Go runtime prints when a listener cannot bind,
 // and captures the address the APPLICATION named.
 //
 // Read out of the child's own output rather than from configuration: `aru` does
 // not know HTTP_ADDR and must not learn it, because that would be a second
-// source of truth for something the application owns (RULE 9). What the
-// application printed is the application speaking.
+// source of truth for something the application owns. What the application
+// printed is the application speaking.
 var bindFailure = regexp.MustCompile(`listen tcp (\S*?):(\d+): bind: address already in use`)
 
 // diagnoseExit turns the application's last words into something actionable, and

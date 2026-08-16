@@ -11,8 +11,8 @@
 //
 // # The tree it reads
 //
-// The project layout is conventional, directory by directory (ADR 0019), so a file
-// is placed by the app/ subtree it sits in rather than by a module directory:
+// The project layout is conventional, directory by directory, so a file is
+// placed by the app/ subtree it sits in rather than by a module directory:
 // app/Policies/InvoicePolicy.go is the Policies of Invoice, and
 // app/Repositories/InvoiceRepository.go is the Repositories of the same entity.
 // The rules reason about the ENTITY, which is the thing a policy protects -- the
@@ -80,10 +80,10 @@ type project struct {
 	files []*file
 	// manifest is the arandu.mod.toml at the root, or nil.
 	//
-	// It sits at the root because the unit of distribution is the Go module
-	// (doc 18): `aru add github.com/fulano/crm` resolves through the Go proxy,
-	// so the thing that declares permissions is the repository, not a directory
-	// inside it.
+	// It sits at the root because the unit of distribution is the Go module:
+	// `aru add github.com/fulano/crm` resolves through the Go proxy, so the
+	// thing that declares permissions is the repository, not a directory inside
+	// it.
 	manifest *manifest.Module
 	// views are the `.kyse.go` sources. They are not Go -- the build tag keeps
 	// the compiler away from the markup -- so they are kept as text, and the
@@ -200,11 +200,9 @@ var appCategories = map[string]string{
 
 // classify derives the category and the entity of a file from its path.
 //
-// This is the whole translation from ADR 0019: the old tree said
-// modules/billing/billing.policy.go and every rule asked which module a file was
-// in. The new one says app/Policies/InvoicePolicy.go, and the question is which
-// ENTITY the file is about -- because that is what a policy protects and what a
-// repository reaches.
+// The tree says app/Policies/InvoicePolicy.go, and the question every rule asks
+// is which ENTITY the file is about -- because that is what a policy protects
+// and what a repository reaches.
 //
 // The deepest known directory wins, so app/Http/Controllers/Auth/Login.go is a
 // Controller and Auth is a grouping the developer chose. A directory outside the
@@ -345,7 +343,7 @@ func parseProject(dir string) ([]*file, []unreadable, error) {
 			// Recorded, not dropped. The compiler reports the syntax error
 			// better than this ever could -- but every rule reasons over the
 			// file set, so a file missing from it makes the rules wrong rather
-			// than merely incomplete. Found by audit.
+			// than merely incomplete.
 			line := 1
 			reason := err.Error()
 			if list, ok := err.(scanner.ErrorList); ok && len(list) > 0 {
@@ -442,12 +440,10 @@ func (f *file) calls(fn func(call *ast.CallExpr, name string)) {
 // callName renders the called function as written: "security.SystemGrant",
 // "g.Check", "r.Header.Get", "r.URL.Query().Get".
 //
-// The whole chain, not the last two segments. It used to give up at the first
-// selector whose left side was not a plain identifier and return only the final
-// name -- so `r.Header.Get("X-Tenant")` rendered as "Get", and the rule looking
-// for "r.Header.Get" never matched anything. That rule's own comment calls the
-// header "the form that looks harmless"; it had never once fired. Found by
-// audit.
+// The whole chain, not the last two segments. Giving up at the first selector
+// whose left side is not a plain identifier would return only the final name --
+// so `r.Header.Get("X-Tenant")` would render as "Get", and the rule looking for
+// "r.Header.Get" would never match anything.
 //
 // A call in the middle of the chain becomes "()", which is what distinguishes
 // r.URL.Query().Get from a field access.

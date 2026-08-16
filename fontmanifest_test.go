@@ -11,13 +11,13 @@ import (
 
 // TestTheManifestIsRewrittenAndNotAppendedTo.
 //
-// `aru font:add` writes a comment and the sections under it. The removal used to
-// be section-shaped, so it took the sections and left the comment -- and every
-// run appended a second copy. A project whose font was changed four times had
-// four copies of the same nine-line note in arandu.toml.
+// `aru font:add` writes a comment and the sections under it. A section-shaped
+// removal takes the sections and leaves the comment, so every run appends a
+// second copy: a project whose font was changed four times ends up with four
+// copies of the same nine-line note in arandu.toml.
 //
-// The files themselves were always identical; it was only the manifest that
-// drifted, which is the kind of thing nobody notices until a diff is unreadable.
+// The files themselves stay identical; only the manifest drifts, which is the
+// kind of thing nobody notices until a diff is unreadable.
 func TestTheManifestIsRewrittenAndNotAppendedTo(t *testing.T) {
 	root := t.TempDir()
 	writeManifestFile(t, root, `# The build tools this project downloads, pinned.

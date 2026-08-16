@@ -192,9 +192,9 @@ func (e Errors) Error() string {
 //
 // These two maps are the whole set kyse knows, and the parser reads them
 // directly -- there is no second answer to "is this a directive". The set is
-// closed, and that is RULE 15 applied to the view: a directive that grows on
-// demand becomes a language, and a language has to be maintained forever. What
-// does not fit is written in Go, inside `@go`.
+// closed: a directive set that grows on demand becomes a language, and a
+// language has to be maintained forever. What does not fit is written in Go,
+// inside `@go`.
 var blockDirectives = map[string]string{
 	"section": "endsection",
 	"if":      "endif",
@@ -226,8 +226,8 @@ var inlineDirectives = map[string]bool{
 // and @while emitted the loop with an empty body. The build stays green, the
 // command reports success, and the page is simply missing what the author wrote.
 //
-// A closed set (RULE 15) is only a promise if something checks that every member
-// of it does something.
+// A closed set is only a promise if something checks that every member of it
+// does something.
 func Directives() []string {
 	out := make([]string, 0, len(blockDirectives)*2+len(inlineDirectives))
 	for open, end := range blockDirectives {
@@ -249,23 +249,15 @@ func Directives() []string {
 // `aru view:build` would put 28 files nobody wrote into `git status`, and a
 // reviewer would have to skip them in every review.
 //
-// This comment used to say "beside its source" and showed the wrong example. It
-// has been wrong since the Laravel tree landed and it is published on
-// pkg.go.dev, so it was the copy of this mistake that reached people outside the
-// project. Corrected 10/08/2026, with docs/09 and RULE 13.
-//
 // Each directory of views is its own Go package, named by the person in the
 // source's package clause and copied verbatim into the output. That is the
 // ordinary arrangement of a Go tree, and it is what keeps `resources/views/`
 // readable: opening `auth/` shows the four screens of `auth/` and nothing else.
 //
-// It used to land flat -- `auth/login.kyse.go` compiled to `auth_login.go` one
-// directory up -- and the reason recorded here was that Go has one package per
-// directory, so a nested page could not see the chrome the layout declares. The
-// first half is true and the second does not follow: a nested package imports
-// what it needs like any other. What made the flattening look necessary was that
-// the chrome lived in the views package itself; it lives in `framework/view`
-// now, which every generated file already imports.
+// The output does not land flat. Go has one package per directory, which is what
+// makes flattening look necessary -- but a nested package imports what it needs
+// like any other, and the chrome a layout declares lives in `framework/view`,
+// which every generated file already imports.
 //
 // The cost is one blank import per directory of views in bootstrap, next to the
 // one that was already there. That is the registration the whole design is built
@@ -277,7 +269,7 @@ func OutputPath(source string) string {
 		// A library keeps its views at its own root and has no resources/views
 		// to mirror, nor a storage to mirror it into. It compiles in place,
 		// because the output is what `go get` serves rather than build output
-		// somebody regenerates -- see arandu-io/kyse.
+		// somebody regenerates.
 		return strings.TrimSuffix(source, ".kyse.go") + ".go"
 	}
 	return source[:at] + compiledPath + strings.TrimSuffix(source[at+len(viewsPath):], ".kyse.go") + ".go"
@@ -287,8 +279,7 @@ func OutputPath(source string) string {
 //
 // The tree under compiledPath mirrors the tree under viewsPath, so
 // `resources/views/posts/index.kyse.go` compiles to
-// `storage/framework/views/posts/index.go` -- the same arrangement Laravel has,
-// at the same address, for the same reason.
+// `storage/framework/views/posts/index.go`.
 const (
 	viewsPath    = "resources/views/"
 	compiledPath = "storage/framework/views/"

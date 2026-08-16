@@ -6,11 +6,11 @@ import (
 	"testing"
 )
 
-// The loop kept saying "the application exited: exit status 1" and restarting,
-// forever, while a previous `aru dev` that had outlived its parent went on
-// answering the browser from the same port. So the site looked like it worked
-// and ignored every change, and the terminal repeated a line naming the symptom
-// and not the cause. It cost an afternoon and two wrong diagnoses.
+// Without this, the loop says "the application exited: exit status 1" and
+// restarts forever, while a previous `aru dev` that outlived its parent goes on
+// answering the browser from the same port. The site looks like it works and
+// ignores every change, and the terminal repeats a line naming the symptom and
+// not the cause.
 func TestAPortAlreadyTakenStopsTheLoopAndSaysWhy(t *testing.T) {
 	const said = `time=2026-08-10T12:15:55.761-03:00 level=INFO msg="server listening" addr=:8080 env=dev
 2026/08/10 12:15:55 listen tcp :8080: bind: address already in use
@@ -28,7 +28,7 @@ exit status 1
 }
 
 // The address the application named is read out of what it printed, not from
-// configuration -- aru does not know HTTP_ADDR and must not learn it (RULE 9).
+// configuration -- aru does not know HTTP_ADDR and must not learn it.
 func TestThePortComesFromWhatTheApplicationSaid(t *testing.T) {
 	for _, c := range []struct{ said, port string }{
 		{"listen tcp :8080: bind: address already in use", "8080"},

@@ -8,8 +8,8 @@ import (
 	"github.com/arandu-io/aru/internal/kyse"
 )
 
-// O layout, escrito como um dev Laravel escreveria — só que a extensão termina
-// em .go e o arquivo abre com a tag de build.
+// The layout, written the way a view is written: the extension ends in .go and
+// the file opens with the build tag.
 const layoutSource = `//go:build kyse
 
 package views
@@ -90,15 +90,15 @@ func TestTheGeneratedGoParses(t *testing.T) {
 	src := string(out)
 	for _, want := range []string{
 		"package views",
-		"type HomeData struct",              // o bloco @go veio junto
-		`view.Register("home", renderHome)`, // registrado pelo nome
-		"d, ok := data.(HomeData)",          // dado tipado
+		"type HomeData struct",              // the @go block came through
+		`view.Register("home", renderHome)`, // registered by name
+		"d, ok := data.(HomeData)",          // typed data
 		"view.WrongData",                    // the error when the type does not match
-		"template.HTMLEscapeString",         // {{ }} escapa
+		"template.HTMLEscapeString",         // {{ }} escapes
 		`view.RenderInto(w, "layouts.app"`,  // @extends
 		"for _, item := range d.Itens",      // @foreach
 		"if d.Ativo {",                      // @if
-		"DO NOT EDIT",                       // gerado
+		"DO NOT EDIT",                       // generated
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("o Go gerado nao tem %q", want)
@@ -127,9 +127,9 @@ func TestTheLayoutYields(t *testing.T) {
 
 // TestTheErrorNamesTheFileAndTheLine is kyse's exit criterion.
 //
-// Laravel solves this with a heuristic: BladeMapper recompiles the template with
-// markers inserted, looks for the nearest one above the compiled line, and gives
-// up after twenty. We emit the Go, so the position is exact.
+// A heuristic would recompile the template with markers inserted and look for
+// the nearest one above the compiled line. We emit the Go, so the position is
+// exact.
 func TestTheErrorNamesTheFileAndTheLine(t *testing.T) {
 	cases := []struct {
 		nome   string
@@ -227,8 +227,8 @@ package views
 	}
 }
 
-// TestMarkupForaDeSection: numa view que estende layout, markup solto seria
-// escrito antes do layout e sairia fora do <html>.
+// TestMarkupForaDeSection: in a view that extends a layout, loose markup would
+// be written before the layout and would land outside the <html>.
 func TestMarkupForaDeSection(t *testing.T) {
 	source := `//go:build kyse
 
@@ -406,7 +406,7 @@ func TestElseOutsideIfDoesNotCompile(t *testing.T) {
 // what the author wrote -- which is the failure that takes longest to find,
 // because nothing anywhere says a word.
 //
-// A closed set (RULE 15) is only a promise if something walks it.
+// A closed set is only a promise if something walks it.
 func TestEveryDirectiveEmitsSomething(t *testing.T) {
 	// The ones that only make sense in a position of their own, and are covered
 	// by their own tests: the pairing halves, the layout pair, and @go, whose
@@ -465,10 +465,10 @@ func TestEveryDirectiveEmitsSomething(t *testing.T) {
 // TestForelseTakesOneBranchAndCommentsDoNotReachThePage reads the generated Go
 // instead of trusting that a case ran.
 //
-// Both are Blade's, and both were missing. @forelse is the one directive of the
-// set that earns its keep in every generated index page: a list and its empty
-// state are one thought, and writing them as @foreach beside @if(len(…) == 0)
-// states the condition twice, in two places that can drift.
+// @forelse is the one directive of the set that earns its keep in every
+// generated index page: a list and its empty state are one thought, and writing
+// them as @foreach beside @if(len(…) == 0) states the condition twice, in two
+// places that can drift.
 //
 // {{-- --}} is the other half of the same gap: a view language with no way to
 // write a note is one whose notes go in an HTML comment, visible in the page
@@ -538,17 +538,16 @@ func mappedLine(generated string, contains string) (file string, line int, ok bo
 	return "", 0, false
 }
 
-// TestTheCompilerIsToldWhichLineOfTheViewEachExpressionCameFrom is the exit
-// criterion of ADR 0020, which says it in one sentence: "se o erro apontar para
-// o `.go` gerado, o motor não está pronto".
+// TestTheCompilerIsToldWhichLineOfTheViewEachExpressionCameFrom: if the error
+// points at the generated `.go`, the engine is not ready.
 //
 // A type error inside {{ }} is the most common mistake in a view and the one
 // the whole compiler exists to catch. Reporting it against generated Go -- a
 // file whose header says DO NOT EDIT -- hands the person a position they cannot
-// act on, which is the failure this project measures itself by.
+// act on.
 //
-// Laravel needs a heuristic here: its BladeMapper recompiles the template with
-// markers and gives up after twenty lines. We emit the Go, so we know.
+// A heuristic would recompile the template with markers and give up after a
+// bounded number of lines. We emit the Go, so we know.
 func TestTheCompilerIsToldWhichLineOfTheViewEachExpressionCameFrom(t *testing.T) {
 	// Written with the line numbers visible, because they are the assertion.
 	src := strings.Join([]string{
@@ -622,13 +621,9 @@ func TestTheCompilerIsToldWhichLineOfTheViewEachExpressionCameFrom(t *testing.T)
 
 // The compiled view goes under storage, mirroring the tree it came from.
 //
-// It is where Laravel puts a compiled Blade template. A compiled view is build
-// output, and build output next to its source is a file people read diffs of and
-// eventually edit -- this one opens with DO NOT EDIT and is overwritten on the
-// next build.
-//
-// This had no test at all through two earlier arrangements, so the rule every
-// project's tree depends on was resting on a comment.
+// A compiled view is build output, and build output next to its source is a file
+// people read diffs of and eventually edit -- this one opens with DO NOT EDIT
+// and is overwritten on the next build.
 func TestTheCompiledViewGoesUnderStorage(t *testing.T) {
 	for _, c := range []struct{ source, want string }{
 		{"resources/views/home.kyse.go", "storage/framework/views/home.go"},
@@ -653,8 +648,8 @@ func TestTheCompiledViewGoesUnderStorage(t *testing.T) {
 // contract the framework publishes.
 //
 // Without the default a layout whose @go block is empty -- which is every layout
-// now that the chrome moved to framework/view -- would assert the data to the
-// empty string and generate Go that does not parse.
+// whose chrome comes from framework/view -- would assert the data to the empty
+// string and generate Go that does not parse.
 func TestALayoutWithoutAnInterfaceUsesTheFrameworkContract(t *testing.T) {
 	const source = `//go:build kyse
 
@@ -745,10 +740,10 @@ package components
 
 // A comment spans lines, and none of it reaches the page.
 //
-// It used to have to fit on one, because the interpolator reads a line at a
-// time and could not see the closing delimiter on the next -- so a three-line
-// note about why the markup is the way it is was reported as never closed. The
-// note that runs to three lines is the one worth writing.
+// An interpolator that reads a line at a time cannot see the closing delimiter
+// on the next, so a three-line note about why the markup is the way it is comes
+// back reported as never closed. The note that runs to three lines is the one
+// worth writing.
 func TestACommentSpansLines(t *testing.T) {
 	const source = `//go:build kyse
 

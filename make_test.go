@@ -162,9 +162,8 @@ func TestTheNameIsReadTheWayItIsTyped(t *testing.T) {
 	}
 }
 
-// TestANestedNameIsRefused. artisan accepts Admin/UserController and creates a
-// nested namespace; here that would be a second package, a second import alias
-// and a second shape of wiring.
+// TestANestedNameIsRefused. A nested name such as Admin/UserController would
+// mean a second package, a second import alias and a second shape of wiring.
 func TestANestedNameIsRefused(t *testing.T) {
 	for _, name := range []string{"Admin/UserController", `Admin\UserController`} {
 		if err := checkFlatTree("make:controller", name); err == nil {
@@ -173,8 +172,8 @@ func TestANestedNameIsRefused(t *testing.T) {
 	}
 }
 
-// TestGuessTableIsArtisansTableGuesser: it is copied because it is real parity
-// of gesture -- it is the way the name is typed.
+// TestGuessTableIsArtisansTableGuesser: the table and whether the migration
+// creates it are read out of the migration name exactly as it is typed.
 func TestGuessTableIsArtisansTableGuesser(t *testing.T) {
 	for _, c := range []struct {
 		name   string

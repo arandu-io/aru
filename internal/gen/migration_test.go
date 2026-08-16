@@ -6,11 +6,11 @@ import "testing"
 // the scan this same generator emits reads every column straight into its Go
 // type -- there is no sql.NullInt64 anywhere in it.
 //
-// Shipped without this: `ALTER TABLE posts ADD COLUMN views INTEGER`, nullable,
-// no default, no backfill, while PostRepository.scan read it into a plain int.
-// During exactly the rollout RULE 16 is written for, every replica still on the
-// old binary answered "converting NULL to int is unsupported" on every read of
-// that table -- and so did the new one, until something wrote each row.
+// Without this: `ALTER TABLE posts ADD COLUMN views INTEGER`, nullable, no
+// default, no backfill, while PostRepository.scan reads it into a plain int.
+// During the rollout, every replica still on the old binary answers "converting
+// NULL to int is unsupported" on every read of that table -- and so does the new
+// one, until something writes each row.
 func TestAnAddedColumnIsNeverNull(t *testing.T) {
 	for typ := range types {
 		if (Field{Name: "probe", Type: typ}).SQLZero() == "" {

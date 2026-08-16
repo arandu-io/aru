@@ -37,7 +37,7 @@ func (l Listener) EventOrAny() string {
 // The shape differs from the usual one where the delivery does. In process, an
 // event object is dispatched and a listener subscribes to its class; here the
 // event was written to the outbox in the same transaction as the row it is
-// about (doc 27), and the relay hands it over after the commit.
+// about, and the relay hands it over after the commit.
 //
 // So a listener implements events.Publisher and answers a NAME, not a type.
 // That is what lets the producer and the consumer live in different binaries

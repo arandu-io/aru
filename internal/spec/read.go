@@ -16,7 +16,7 @@ import (
 //
 // It is under database/ because a specification is mostly the entity and its
 // columns, and that is where the tree already keeps factories, migrations and
-// seeders. There is no modules/<name>/ to put it beside any more (ADR 0019).
+// seeders. There is no modules/<name>/ to put it beside.
 const Dir = "database/specs"
 
 // Read parses a specification file and validates it.

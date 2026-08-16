@@ -31,7 +31,7 @@ const pollInterval = 500 * time.Millisecond
 
 // dev runs the application and rebuilds it when a file changes.
 //
-// This is the command RULE 13 promises: `git clone && aru dev`, with no Node
+// It is the whole development loop: `git clone && aru dev`, with no Node
 // installed and no package manager involved. It builds the views, starts the
 // server, and restarts it on every change -- one command, one terminal.
 //
@@ -223,7 +223,7 @@ func startServer(root string, args []string, stdout, stderr io.Writer) (*serverP
 	// A process group, so stopping kills `go run` and the binary it spawned.
 	// Without this the compiled application survives every restart and the next
 	// one fails to bind the port -- which reads as "the port is in use" and
-	// costs an afternoon.
+	// names nothing that can be acted on.
 	cmd.SysProcAttr = processGroup()
 
 	if err := cmd.Start(); err != nil {

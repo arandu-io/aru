@@ -7,8 +7,8 @@ import (
 	"github.com/arandu-io/aru/internal/doctor"
 )
 
-// TestPlantedViolationsAreCaught is exit criterion 2 of phase 2: doctor has to
-// fail on violations planted on purpose. The fixture under testdata contains one
+// TestPlantedViolationsAreCaught: doctor has to fail on violations planted on
+// purpose. The fixture under testdata contains one
 // of each, written the way each mistake is actually written -- and every rule
 // here corresponds to a real way to lose data or bypass a policy.
 func TestPlantedViolationsAreCaught(t *testing.T) {
@@ -26,10 +26,9 @@ func TestPlantedViolationsAreCaught(t *testing.T) {
 		"session-not-rotated":          "session fixation",
 		"repository-without-policy":    "an entity nobody decided who may reach",
 		"sensitive-field-not-redacted": "a password one Dump away from the debug page",
-		// This one had never fired: callName gave up on a nested selector, so
-		// `r.Header.Get` rendered as "Get" and the rule matched nothing. Found
-		// by audit -- and its own comment calls the header "the form that looks
-		// harmless".
+		// This one needs the whole call chain: a callName that gives up on a
+		// nested selector renders `r.Header.Get` as "Get" and the rule matches
+		// nothing.
 		"tenant-from-header": "any client can send the header",
 	}
 
@@ -181,9 +180,9 @@ func TestADeclaredPermissionThatIsUsedIsSilent(t *testing.T) {
 	}
 }
 
-// TestAlpineReachingTheServerIsCaught: without this check, RULE 9's "Alpine only
-// where HTMX cannot reach" is opinion, and opinion does not survive a code
-// review at 6pm.
+// TestAlpineReachingTheServerIsCaught: without this check, "Alpine only where
+// HTMX cannot reach" is opinion, and opinion does not survive a code review at
+// 6pm.
 func TestAlpineReachingTheServerIsCaught(t *testing.T) {
 	findings, err := doctor.Run("testdata/violations")
 	if err != nil {
@@ -203,9 +202,8 @@ func TestAlpineReachingTheServerIsCaught(t *testing.T) {
 	if caught.Severity != doctor.Error {
 		t.Error("Alpine fetching from the server is a warning: it is a second data path")
 	}
-	// The view file, whatever the engine spells it. It was ".templ"; kyse
-	// spells it ".kyse.go", and hardcoding one of the two makes this test about
-	// the engine rather than about the rule.
+	// The view file, whatever the engine spells it: hardcoding an extension
+	// makes this test about the engine rather than about the rule.
 	if !strings.Contains(caught.File, "resources/views/") {
 		t.Errorf("the finding does not point at the view: %s", caught.File)
 	}
@@ -214,7 +212,7 @@ func TestAlpineReachingTheServerIsCaught(t *testing.T) {
 	}
 }
 
-// TestAlpineWithinItsLimitIsSilent: a dropdown is exactly what doc 14 permits,
+// TestAlpineWithinItsLimitIsSilent: a dropdown is exactly what the rule permits,
 // and firing on it would teach people to ignore the rule.
 func TestAlpineWithinItsLimitIsSilent(t *testing.T) {
 	findings, err := doctor.Run("testdata/clean")
@@ -228,16 +226,16 @@ func TestAlpineWithinItsLimitIsSilent(t *testing.T) {
 	}
 }
 
-// TestATenantIsFoundByWhereItGoesNotByItsName is a gap an audit found.
+// TestATenantIsFoundByWhereItGoesNotByItsName.
 //
-// The rule asked whether a header was CALLED something with "tenant" in it:
+// A rule that asks whether a header is CALLED something with "tenant" in it lets
+// this through:
 //
 //	org := r.Header.Get("X-Org")
 //	g := security.SystemGrant(ActionView, org)
 //
-// passed, and it is exactly the hole RULE 14 exists to close. Whoever writes the
-// client picks the header name, so the name proves nothing; what makes a value a
-// tenant is that it scopes SQL.
+// Whoever writes the client picks the header name, so the name proves nothing;
+// what makes a value a tenant is that it scopes SQL.
 func TestATenantIsFoundByWhereItGoesNotByItsName(t *testing.T) {
 	findings, err := doctor.Run("testdata/violations")
 	if err != nil {
@@ -257,13 +255,13 @@ func TestATenantIsFoundByWhereItGoesNotByItsName(t *testing.T) {
 	t.Fatalf("a header named X-Org reaching the tenant of a Grant was not caught:\n%v", findings)
 }
 
-// TestAFileThatDoesNotParseIsReportedNotSwallowed is a bug an audit found, and
-// the worst kind: doctor did not merely miss something, it invented a finding.
+// TestAFileThatDoesNotParseIsReportedNotSwallowed covers the worst failure this
+// tool has: doctor does not merely miss something, it invents a finding.
 //
-// An unparsable file was skipped silently. Every rule reasons over the whole
-// file set, so a module whose policy.go does not parse looks exactly like a
-// module with no policy -- and doctor told the author to write one they had
-// already written, pointing at the wrong file.
+// Skipping an unparsable file silently is enough to cause it. Every rule reasons
+// over the whole file set, so a module whose policy.go does not parse looks
+// exactly like a module with no policy -- and doctor tells the author to write
+// one they had already written, pointing at the wrong file.
 func TestAFileThatDoesNotParseIsReportedNotSwallowed(t *testing.T) {
 	findings, err := doctor.Run("testdata/broken")
 	if err != nil {
@@ -302,14 +300,12 @@ func findRule(findings []doctor.Finding, rule string) *doctor.Finding {
 	return nil
 }
 
-// TestTheTreeIsLaravels is what ADR 0019 asks for by name: a test that fails if
-// the path detection changes again.
+// TestTheTreeIsLaravels fails if the path detection changes.
 //
-// The doctor was written against modules/<name>/, and file.module was filled
-// only for paths starting with "modules/". With the Laravel tree it was empty
-// for every file, so six rules stopped reporting -- and a rule that concludes
-// from an absence does not fail when it goes blind, it passes. A doctor that is
-// green because it did not look is worse than no doctor.
+// A rule that concludes from an absence does not fail when it goes blind, it
+// passes: path detection that matches no file makes six rules stop reporting and
+// the run come back green. A doctor that is green because it did not look is
+// worse than no doctor.
 func TestTheTreeIsLaravels(t *testing.T) {
 	findings, err := doctor.Run("testdata/violations")
 	if err != nil {
@@ -343,13 +339,12 @@ func TestTheTreeIsLaravels(t *testing.T) {
 	}
 }
 
-// TestAControllerReachingTheRepositoryIsCaught is the boundary ADR 0019 calls
-// the other 20%.
+// TestAControllerReachingTheRepositoryIsCaught covers the boundary between the
+// request path and the data.
 //
-// In Laravel, Service and Repository are the convention of an organized team. A
-// controller that holds the repository would have to issue the Grant itself,
-// which is the controller authorizing itself -- and the compiler cannot see it,
-// because the signature is satisfied.
+// A controller that holds the repository has to issue the Grant itself, which is
+// the controller authorizing itself -- and the compiler cannot see it, because
+// the signature is satisfied.
 func TestAControllerReachingTheRepositoryIsCaught(t *testing.T) {
 	findings, err := doctor.Run("testdata/violations")
 	if err != nil {
@@ -365,8 +360,8 @@ func TestAControllerReachingTheRepositoryIsCaught(t *testing.T) {
 	}
 }
 
-// TestAMapAsViewDataIsCaught is what doc 14 asks for: the data of a view is a
-// typed struct, and a map defeats the only thing the view layer buys.
+// TestAMapAsViewDataIsCaught: the data of a view is a typed struct, and a map
+// defeats the only thing the view layer buys.
 //
 // With a struct, a renamed field does not compile. With map[string]any, a typo
 // in a key renders as an empty string -- the page comes up, the total is blank,
@@ -443,8 +438,8 @@ func TestTheViewRulesAreSilentOnCorrectCode(t *testing.T) {
 
 // TestAViewNameIsResolvedLikeLaravel: "invoices.index" is
 // resources/views/invoices/index.kyse.go, and a controller that renders a
-// fragment from a nested directory has to resolve the same way. Getting this
-// wrong would make view-does-not-exist fire on every correct project.
+// fragment from a nested directory resolves the same way. Getting this wrong
+// would make view-does-not-exist fire on every correct project.
 func TestAViewNameIsResolvedLikeLaravel(t *testing.T) {
 	findings, err := doctor.Run("testdata/clean")
 	if err != nil {
@@ -457,13 +452,12 @@ func TestAViewNameIsResolvedLikeLaravel(t *testing.T) {
 	}
 }
 
-// gaps runs doctor over testdata/gaps, the fixture of the shapes that used to
-// pass.
+// gaps runs doctor over testdata/gaps, the fixture of the shapes that pass every
+// other rule.
 //
-// Every file in it was written by planting code in a generated project and
-// watching doctor come back green. They are kept apart from testdata/violations
-// so that the difference between "doctor never checked this" and "doctor checks
-// this" stays legible in one directory.
+// They are kept apart from testdata/violations so that the difference between
+// "doctor never checked this" and "doctor checks this" stays legible in one
+// directory.
 func gaps(t *testing.T) []doctor.Finding {
 	t.Helper()
 	findings, err := doctor.Run("testdata/gaps")
@@ -494,14 +488,13 @@ func mentions(findings []doctor.Finding, rule, needle string) bool {
 	return false
 }
 
-// TestARepositoryMethodThatTakesNoGrantIsCaught is RULE 17 where it is most
-// often broken.
+// TestARepositoryMethodThatTakesNoGrantIsCaught covers authorization on the read
+// path, where it is most often broken.
 //
-// The audit began by skipping every method that did not take a Grant, on the
-// assumption that the signature was the enforcement. It is not: a method that
-// never declares the parameter has nothing to satisfy, so a report, a projection
-// or an export reaches the database with no policy anywhere on the path -- and
-// passed --strict.
+// Skipping every method that does not take a Grant assumes the signature is the
+// enforcement. It is not: a method that never declares the parameter has nothing
+// to satisfy, so a report, a projection or an export reaches the database with
+// no policy anywhere on the path -- and passes --strict.
 func TestARepositoryMethodThatTakesNoGrantIsCaught(t *testing.T) {
 	findings := gaps(t)
 
@@ -515,8 +508,8 @@ func TestARepositoryMethodThatTakesNoGrantIsCaught(t *testing.T) {
 	if !mentions(findings, "grant-not-received", "Totals") {
 		t.Errorf("the finding does not name the method: %q", caught.Message)
 	}
-	if !strings.Contains(caught.Why, "RULE 17") || !strings.Contains(caught.Why, "doc 26") {
-		t.Errorf("the explanation cites neither RULE 17 nor doc 26: %q", caught.Why)
+	if !strings.Contains(caught.Why, "security.Grant") || !strings.Contains(caught.Why, "reading is authorized exactly like writing") {
+		t.Errorf("the explanation does not say that a read needs a Grant, or what to write: %q", caught.Why)
 	}
 	// The method that does take a Grant and checks it is the control: firing on
 	// it would make the rule useless.
@@ -525,8 +518,8 @@ func TestARepositoryMethodThatTakesNoGrantIsCaught(t *testing.T) {
 	}
 }
 
-// TestADiscardedGrantCheckIsCaught: `_ = g.Check(...)` used to satisfy the
-// audit, because it only asked whether a call to Check appeared in the body.
+// TestADiscardedGrantCheckIsCaught: `_ = g.Check(...)` satisfies any check that
+// only asks whether a call to Check appears in the body.
 //
 // A method that asks the question and throws the answer away is a method with no
 // authorization, spelled to look like one that has it -- which is worse than
@@ -546,12 +539,11 @@ func TestADiscardedGrantCheckIsCaught(t *testing.T) {
 	}
 }
 
-// TestASystemGrantIsNotExcusedByItsName: the check used to switch itself off for
-// any function whose name contained ensure, seed, job, worker, migrate or
-// backfill.
-//
-// `ensureGrant` passed and `issueGrant`, identical in every other character,
-// fired. A rule a rename defeats is a spelling convention, not a check.
+// TestASystemGrantIsNotExcusedByItsName: a check that switches itself off for
+// any function whose name contains ensure, seed, job, worker, migrate or
+// backfill lets `ensureGrant` past and fires on `issueGrant`, identical in every
+// other character. A rule a rename defeats is a spelling convention, not a
+// check.
 func TestASystemGrantIsNotExcusedByItsName(t *testing.T) {
 	findings := gaps(t)
 
@@ -594,9 +586,8 @@ func TestTheRequestBoundaryCoversRoutesAndMiddleware(t *testing.T) {
 	}
 }
 
-// TestSQLThatLostItsTenantPredicateIsCaught is what doc 15 promises as an error
-// and nothing enforced: a module generated with --tenant whose `AND tenant_id =
-// ?` somebody deleted.
+// TestSQLThatLostItsTenantPredicateIsCaught: a module generated with --tenant
+// whose `AND tenant_id = ?` somebody deleted.
 //
 // It is a leak between customers in its most direct form, and every other rule
 // stays green -- the Grant is taken, the Grant is checked, and the query returns
@@ -609,7 +600,7 @@ func TestSQLThatLostItsTenantPredicateIsCaught(t *testing.T) {
 		t.Fatalf("an UPDATE with no tenant predicate was not caught:\n%v", findings)
 	}
 	if caught.Severity != doctor.Error {
-		t.Error("SQL that reaches every tenant is a warning: doc 15 says error")
+		t.Error("SQL that reaches every tenant is reported as a warning, and it is an error")
 	}
 	// The UPDATE is the one that matters most: it writes.
 	if !mentions(findings, "sql-without-tenant-scope", "Archive") {
@@ -781,12 +772,9 @@ func TestTheNearMissesAreStillQuiet(t *testing.T) {
 	}
 }
 
-// TestConcatenatedSQLIsCaught: the rule named sql-built-with-sprintf only ever
-// read fmt.Sprintf, while ADR 0024 stated as fact that it had been widened to
-// concatenation -- in the paragraph that argues the project does not need sqlc.
-//
-// So the one barrier against hand-built SQL had a hole exactly where a decision
-// document leaned on it, and the hole was the easier form to write:
+// TestConcatenatedSQLIsCaught: the rule named sql-built-with-sprintf reads
+// fmt.Sprintf alone, which leaves the one barrier against hand-built SQL open to
+// the easier form to write:
 //
 //	"SELECT id FROM invoices WHERE reference LIKE '%" + term + "%'"
 func TestConcatenatedSQLIsCaught(t *testing.T) {

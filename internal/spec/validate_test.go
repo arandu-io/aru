@@ -7,10 +7,10 @@ import (
 	"github.com/arandu-io/aru/internal/spec"
 )
 
-// TestANameThatWouldNotCompileIsRefused collects the names that used to reach
-// the generator and fail somewhere else -- in the SQL engine, in the Go
+// TestANameThatWouldNotCompileIsRefused collects the names that would otherwise
+// reach the generator and fail somewhere else -- in the SQL engine, in the Go
 // compiler, or as "bug in the template", which sends the author looking in the
-// wrong file entirely. Found by audit.
+// wrong file entirely.
 func TestANameThatWouldNotCompileIsRefused(t *testing.T) {
 	cases := []struct {
 		what   string

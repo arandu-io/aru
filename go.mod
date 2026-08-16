@@ -4,7 +4,7 @@ go 1.25
 
 // The CLI lives in its own module on purpose. If it lived inside the framework,
 // every project that imports the framework would drag the CLI's dependencies
-// along -- see docs/05-repositorios.md and docs/adr/0006.
+// along -- see 00-meta/DOC-repositories.md and 10-adr/ADR-0006-cli-in-separate-module.md.
 //
 // One dependency, and it is the DSL's: YAML has no parser in the standard
 // library, and writing one would be a subset that a model eventually writes

@@ -16,7 +16,7 @@ import (
 
 // Type is a field type. The set is closed by decision, not by omission: a
 // generator whose type list grows on demand becomes a language, and a language
-// has to be maintained forever. See docs/19-dsl-e-geracao.md.
+// has to be maintained forever. See 00-meta/DOC-dsl-and-generation.md.
 type Type string
 
 // The closed set.

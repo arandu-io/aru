@@ -12,7 +12,7 @@ import (
 //
 // It writes a domain event, and there is no broadcast hook: there is no broadcasting
 // layer, and websockets are a later decision with a written trigger
-// (docs/06-escopo.md). What is left is the shape that matters -- a constructor
+// (00-meta/DOC-scope.md). What is left is the shape that matters -- a constructor
 // of events.Event, and the constant that names it.
 func makeEvent(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("make:event", flag.ContinueOnError)

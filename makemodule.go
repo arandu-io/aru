@@ -110,7 +110,7 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 		}
 	}
 
-	// The tone is in docs/04-marca.md: say what happened and what is required
+	// The tone is in 00-meta/DOC-brand.md: say what happened and what is required
 	// next, without congratulating anyone.
 	//
 	// Four steps, and none of them is optional: the code is written, the wiring

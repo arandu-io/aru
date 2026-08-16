@@ -276,7 +276,7 @@ func lookup(name string) (command, bool) {
 }
 
 // usage prints the command list. No emoji and no exclamation marks: the tone is
-// in docs/04-marca.md, and it is sober everywhere, including here.
+// in 00-meta/DOC-brand.md, and it is sober everywhere, including here.
 func usage(w io.Writer) {
 	fmt.Fprint(w, "arandu — a Go framework for SaaS\n\nusage: aru <command> [arguments]\n\n")
 

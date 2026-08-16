@@ -1,1 +1,6 @@
 bin/
+
+# Configuracao do harness. Vive na raiz do diretorio de trabalho, nao aqui:
+# um arquivo por repositorio ja divergiu, e o hook de commit-msg em .githooks/
+# e a camada que de fato reprova atribuicao de IA.
+.claude/

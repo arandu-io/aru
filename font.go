@@ -293,8 +293,9 @@ func writeFontFiles(root string, all map[fonts.Role]fonts.Installed) error {
 
 // writeFontGo generates the file that hands the bytes to the view layer.
 //
-// go:embed and one call per file, which is the same shape assets/app.css
-// already has. Deleting the import in bootstrap is what turns it off.
+// The generated file embeds one call per font, which is the same shape
+// assets/app.css already has. Deleting the import in bootstrap is what turns it
+// off.
 func writeFontGo(root string, list []fonts.Installed) error {
 	path := filepath.Join(root, fontGoGen)
 	if len(list) == 0 {

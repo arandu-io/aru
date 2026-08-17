@@ -1,0 +1,3 @@
+go test fuzz v1
+string("//go:build kyse\n\npackage mail\n\nimport appmail \"example.test/project/app/Mail\"\n\n@go\n// The plain-text part, rendering from the same data as the HTML one.\ntype PasswordResetTextData = appmail.PasswordReset\n@endgo\n\nReset your password\n\n{{-- arandu:begin custom --}}\nSomebody asked to reset the password for this address. If it was not you,\nnothing has happened and you can ignore this.\n\nChoose a new password:\n{{ .Link }}\n\nThe link works once and stops working in an hour.\n{{-- arandu:end custom --}}\n\n--\nYou are receiving this because of an action on your account.\n")
+bool(false)

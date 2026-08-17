@@ -2,6 +2,7 @@ package kyse
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -202,8 +203,8 @@ func (p *parser) nodes(goBlocks *[]Block, depth int) []Node {
 		// those lines is an unterminated {!! and the view is refused.
 		line = p.joinInterpolation(line, lineNo)
 
-		name, args, ok := directiveOn(trimmed)
-		if !ok {
+		name, args, closed := directiveOn(trimmed)
+		if name == "" {
 			// Ordinary markup, with the interpolations inside it.
 			flush()
 			out = append(out, p.interpolate(line, lineNo)...)
@@ -215,6 +216,17 @@ func (p *parser) nodes(goBlocks *[]Block, depth int) []Node {
 
 		flush()
 		p.i++
+
+		// A directive whose arguments are not the end of the line is refused
+		// here rather than emitted without them. The name is checked first, so
+		// that markup beginning with an @ that is nothing of ours -- an event
+		// handler on a line of its own -- is still answered with what it is.
+		if !closed && isDirective(name) {
+			p.fail(lineNo, fmt.Sprintf("@%s takes its arguments in parentheses that end the line", name),
+				"close them with ) as the last thing on the line. A directive takes the whole line, and markup goes on the next one.")
+			textLine = p.i + 1
+			continue
+		}
 
 		switch {
 		case name == "go":
@@ -383,7 +395,16 @@ func (p *parser) interpolate(line string, lineNo int) []Node {
 			if rawAt > 0 {
 				out = append(out, Node{Kind: Text, Body: rest[:rawAt], Line: lineNo})
 			}
-			out = append(out, Node{Kind: Raw, Body: strings.TrimSpace(rest[rawAt+3 : rawAt+end]), Line: lineNo})
+			expr := strings.TrimSpace(rest[rawAt+3 : rawAt+end])
+			// Empty is refused in both forms, and for the same reason: the
+			// generator emits the call around the expression either way, so
+			// nothing between the delimiters is a call with nothing in its
+			// parentheses -- Go that parses and does not compile, reported
+			// against a generated file whose header says not to edit it.
+			if expr == "" {
+				p.fail(lineNo, "{!! !!} with nothing inside", "put the expression between the delimiters, as in {!! .Body !!}.")
+			}
+			out = append(out, Node{Kind: Raw, Body: expr, Line: lineNo})
 			rest = rest[rawAt+end+3:]
 
 		case escAt >= 0:
@@ -483,7 +504,16 @@ func isClosing(trimmed string) bool {
 }
 
 // directiveOn reads `@name(args)` or `@name` at the start of a trimmed line.
-func directiveOn(trimmed string) (name, args string, ok bool) {
+//
+// An empty name means the line is not a directive at all. closed reports whether
+// the arguments are the end of the line, which is the only shape there is: the
+// parentheses open and close on one line, and nothing follows them.
+//
+// A line that did not have that shape used to come back as a directive with no
+// arguments, and the arguments were lost with it. `@if(.Ok` -- the closing
+// parenthesis left off, or a comment written after it -- became `if {`, and the
+// generator reported its own output as a bug in itself.
+func directiveOn(trimmed string) (name, args string, closed bool) {
 	if !strings.HasPrefix(trimmed, "@") || len(trimmed) < 2 {
 		return "", "", false
 	}
@@ -502,10 +532,18 @@ func directiveOn(trimmed string) (name, args string, ok bool) {
 	}
 
 	rest = strings.TrimSpace(rest[end:])
-	if strings.HasPrefix(rest, "(") && strings.HasSuffix(rest, ")") {
-		args = rest[1 : len(rest)-1]
+	switch {
+	case rest == "":
+		return name, "", true
+	case strings.HasPrefix(rest, "(") && strings.HasSuffix(rest, ")"):
+		return name, rest[1 : len(rest)-1], true
 	}
-	return name, args, true
+	return name, "", false
+}
+
+// isDirective reports whether the name is one kyse knows, block or inline.
+func isDirective(name string) bool {
+	return blockDirectives[name] != "" || inlineDirectives[name]
 }
 
 func isNameRune(r rune) bool {
@@ -527,6 +565,12 @@ func truncate(s string) string {
 
 // suggest names the near miss, because a typo in a directive is the most common
 // mistake and the alphabet is small.
+//
+// The candidates are sorted, and that is not presentation. They are collected by
+// walking two maps, whose order Go randomises per run, so `@f` answered "did you
+// mean @for or @foreach or @forelse?" and then, for the same file, "@foreach or
+// @forelse or @for". One build, two sentences: nothing downstream can be
+// compared, matched or diffed.
 func suggest(name string) string {
 	var known []string
 	for d := range blockDirectives {
@@ -543,6 +587,7 @@ func suggest(name string) string {
 		}
 	}
 	if len(near) > 0 {
+		sort.Strings(near)
 		return "did you mean " + strings.Join(near, " or ") + "?"
 	}
 	return "what does not fit a directive is written in Go, inside @go … @endgo."

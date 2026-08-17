@@ -1,0 +1,103 @@
+# golangci-lint reads this repository. `aru doctor` reads the application this
+# repository generates. They never see the same file, so they cannot duplicate
+# each other -- run doctor in this directory and it answers "this is not an
+# Arandu project: no go.mod, main.go and arandu.toml together" and stops.
+#
+# That is the line, and it decides where a new check goes:
+#
+#   here                       the check is about aru's own source. Which also
+#                              means it is a check about Go -- an error
+#                              dropped, a weak hash, a value never used --
+#                              because an off-the-shelf linter cannot be taught
+#                              what a Grant is
+#
+#   internal/doctor/rules.go   the check is about the generated application,
+#                              whatever its topic. That includes checks a
+#                              linter also knows, such as SQL assembled by
+#                              hand: whoever runs `aru doctor` is not required
+#                              to run anything else, and a framework that
+#                              verified authorization and left injection to a
+#                              second tool would have shipped half an answer
+#
+# What must not happen: a rule here that matches Grant, tenant_id or a policy
+# by regexp. It would be a second and weaker copy of one that already exists in
+# internal/doctor/rules.go, decided by spelling instead of by position in the
+# architecture -- and the copy is the one that goes stale.
+#
+# testdata/ needs no exclusion. `go` never matches a testdata directory from
+# ./..., so the doctor fixture that does not parse on purpose is out of reach.
+# gofmt is the one tool in this chain that does not know that, which is why the
+# gofmt step in ci.yml carries a filter and this step does not.
+
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - gosec
+    - staticcheck
+
+  # govet is deliberately absent. `go vet ./...` is already a step of ci.yml, is
+  # what CONTRIBUTING tells a contributor to run before opening a pull request,
+  # and ships with the toolchain. Enabling it here would be a second way to run
+  # the same analyzers, and the two would answer differently the day one of them
+  # is configured.
+
+  settings:
+    gosec:
+      # Six rules off, and one reason for all six: each assumes a privilege
+      # boundary that a developer CLI does not have. aru runs as the developer,
+      # on the developer's machine, over paths the developer typed. All 87
+      # findings these produced were that fact restated.
+      #
+      #   G101  a local named `token` holding "--font-display", which is a CSS
+      #         custom property and not a credential
+      #   G115  the hhea metrics are signed 16-bit and encoding/binary has no
+      #         Uint16-to-int16 helper, so uint16 -> int16 is the font format
+      #         being read correctly
+      #   G204  running go, git, docker and lsof with computed arguments is
+      #         what this program is
+      #   G301  reading and writing the developer's own project tree. Generated
+      #   G304  Go source is 0644 in a 0755 directory because source is what it
+      #   G306  is; the one secret aru handles, the APP_KEY, is printed rather
+      #         than written, and the .env it does write is already 0600
+      #
+      # What stays on does not depend on a boundary, and it guards the two
+      # places aru is security-relevant: G404 over the crypto/rand behind
+      # key:generate, and G401/G501/G505 over the sha256 that verifies every
+      # downloaded font and the Tailwind binary. Swapping either for a weak one
+      # compiles, vets clean, and leaves every test passing.
+      excludes: [G101, G115, G204, G301, G304, G306]
+
+  exclusions:
+    presets:
+      # The upstream list of errors nobody checks -- fmt.Fprint to a terminal,
+      # Close in a defer. Inheriting the maintained list rather than writing our
+      # own is why it will still be right when the standard library moves.
+      - std-error-handling
+
+    # By text rather than through staticcheck's `checks`, because setting
+    # `checks` replaces the default set instead of adding to it: the copy would
+    # be frozen here and diverge from upstream without anyone noticing.
+    rules:
+      # ST1005 wants no trailing punctuation in an error string, because it
+      # assumes the string gets wrapped into a longer sentence. These are the
+      # last thing printed before the process exits, and several are
+      # paragraphs -- see the --as message in font.go. Asking a paragraph to
+      # drop its final period asks for worse prose.
+      - linters: [staticcheck]
+        text: "^ST1005:"
+
+      # QF1001 rewrites !(a < x && x < b) through De Morgan's law. On a range
+      # check the rewrite is the harder half to read, and QF is the refactoring
+      # category rather than the defect one.
+      - linters: [staticcheck]
+        text: "^QF1001:"
+
+issues:
+  # Report all of it. The defaults stop at 3 repeats of one finding and 50 per
+  # linter, which turned 91 findings into 34 the first time this ran. A report
+  # that hides two thirds of itself is one nobody can act on.
+  max-issues-per-linter: 0
+  max-same-issues: 0

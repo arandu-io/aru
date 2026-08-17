@@ -19,6 +19,18 @@ import (
 //
 // Adding a rule that rejects existing code is a breaking change: it enters as a
 // warning in a minor and becomes an error in the next major.
+//
+// What belongs in this slice is a check about the application aru generates:
+// the tree with app/, routes/ and resources/views/ in it. A check about aru's
+// own source belongs in .golangci.yml at the root instead, and the two cannot
+// be confused by accident -- doctor refuses a directory that is not an Arandu
+// project, and the linter never sees one.
+//
+// The tree decides that, not the topic. Two rules below find SQL assembled by
+// hand, which an off-the-shelf linter also finds, and they stay here: whoever
+// runs `aru doctor` is not required to run anything else, so a report that
+// verified authorization and left injection to a second tool would be half an
+// answer.
 var rules = []func(*project) []Finding{
 	unreadableFiles,
 	repositoryNeedsPolicy,

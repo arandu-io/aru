@@ -75,6 +75,27 @@ jobs:
       - name: build
         run: go build -o /tmp/aru .
 
+      # golangci-lint reads this repository. `aru doctor` reads the application
+      # this repository generates, and refuses to run on anything else -- see
+      # the header of .golangci.yml for the line between them, and for why three
+      # linters are on rather than thirty.
+      #
+      # Pinned to an exact version while govulncheck below is not, because the
+      # two go red for different reasons. A linter release adds checks, so an
+      # unpinned one turns CI red on a commit that changed nothing, and a CI
+      # that fails for reasons nobody caused is one people learn to re-run
+      # rather than read. govulncheck going red on a newly published
+      # vulnerability is the point of it, and it reads its database at run time,
+      # so pinning the binary would not hold the answer still anyway.
+      #
+      # go install rather than the golangci-lint action: setup-go above has
+      # already provided the toolchain, and this keeps what CI trusts to the
+      # module proxy instead of adding a third-party action to it.
+      - name: lint
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.6.2
+          golangci-lint run ./...
+
       # Required by doc 24: a known vulnerability blocks the merge rather than
       # showing up in a report nobody reads.
       - name: govulncheck

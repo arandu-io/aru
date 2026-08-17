@@ -12,8 +12,8 @@ import (
 //
 // The shape differs from the usual one where the delivery does. In process, an
 // event object is dispatched and a listener subscribes to its class; here the
-// event went to the outbox in the same transaction as the row it is about (doc
-// 27), and the relay hands it over after the commit.
+// event went to the outbox in the same transaction as the row it is about, and
+// the relay hands it over after the commit.
 //
 // So a listener answers a NAME rather than a type, which is what lets the
 // producer and the consumer end up in different binaries without either

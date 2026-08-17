@@ -33,22 +33,22 @@ func TestGoldenStubs(t *testing.T) {
 		golden string
 		build  func() (gen.File, error)
 	}{
-		{"InvoiceController.plain.go", oneOf(func() ([]gen.File, error) {
+		{"InvoiceController.plain.go", fileAt(0, func() ([]gen.File, error) {
 			return gen.GenerateController(controllerStub(gen.KindPlain))
 		})},
-		{"InvoiceController.resource.go", oneOf(func() ([]gen.File, error) {
+		{"InvoiceController.resource.go", fileAt(0, func() ([]gen.File, error) {
 			return gen.GenerateController(controllerStub(gen.KindResource))
 		})},
-		{"InvoiceController.invokable.go", oneOf(func() ([]gen.File, error) {
+		{"InvoiceController.invokable.go", fileAt(0, func() ([]gen.File, error) {
 			return gen.GenerateController(controllerStub(gen.KindInvokable))
 		})},
-		{"EnsureAccountIsActive.go", oneOf(func() ([]gen.File, error) {
+		{"EnsureAccountIsActive.go", fileAt(0, func() ([]gen.File, error) {
 			return gen.GenerateMiddleware(gen.Stub{Type: "EnsureAccountIsActive", ModulePath: "example.test/project"})
 		})},
-		{"StoreInvoice.go", oneOf(func() ([]gen.File, error) {
+		{"StoreInvoice.go", fileAt(0, func() ([]gen.File, error) {
 			return gen.GenerateRequest(gen.Stub{Type: "StoreInvoice", ModulePath: "example.test/project", Fields: stubFields()})
 		})},
-		{"StoreReport.go", oneOf(func() ([]gen.File, error) {
+		{"StoreReport.go", fileAt(0, func() ([]gen.File, error) {
 			return gen.GenerateRequest(gen.Stub{Type: "StoreReport", ModulePath: "example.test/project"})
 		})},
 		{"add_status_to_invoices.go", func() (gen.File, error) {
@@ -81,6 +81,26 @@ func TestGoldenStubs(t *testing.T) {
 		}},
 		{"InvoiceStatus.go", func() (gen.File, error) { return gen.RenderEnum(enumSpec(false)) }},
 		{"PaymentKind.go", func() (gen.File, error) { return gen.RenderEnum(enumSpec(true)) }},
+		// Both branches of the listener, because the difference between them is
+		// a conditional inside a doc comment: the one place a template can be
+		// broken by a reflow that touches nothing else.
+		{"NotifyAccounting.go", fileAt(0, func() ([]gen.File, error) {
+			return gen.GenerateListener(gen.Listener{
+				Name: "NotifyAccounting", Event: "invoice.paid", ModulePath: "example.test/project",
+			})
+		})},
+		{"AuditTrail.go", fileAt(0, func() ([]gen.File, error) {
+			return gen.GenerateListener(gen.Listener{Name: "AuditTrail", ModulePath: "example.test/project"})
+		})},
+		{"CloseInvoices.go", fileAt(0, func() ([]gen.File, error) {
+			return gen.GenerateCommand(gen.Command{
+				Name: "CloseInvoices", Signature: "invoice:close",
+				Description: "Close the invoices past their due date", ModulePath: "example.test/project",
+			})
+		})},
+		{"WelcomeEmail.go", fileAt(0, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
+		{"welcome-email.kyse.go", fileAt(1, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
+		{"welcome-email-text.kyse.go", fileAt(2, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
 	} {
 		t.Run(c.golden, func(t *testing.T) {
 			file, err := c.build()
@@ -88,11 +108,14 @@ func TestGoldenStubs(t *testing.T) {
 				t.Fatalf("generate: %v", err)
 			}
 
-			// Every generated file has to parse. A generator that emits Go that
-			// does not compile is worse than no generator at all, and this is the
-			// cheapest half of that guarantee.
-			if _, err := parser.ParseFile(token.NewFileSet(), file.Path, file.Content, parser.AllErrors); err != nil {
-				t.Fatalf("%s does not parse: %v", file.Path, err)
+			// Every generated Go file has to parse. A generator that emits Go
+			// that does not compile is worse than no generator at all, and this
+			// is the cheapest half of that guarantee. A .kyse.go is a template
+			// rather than Go, and the parser that reads it is aru view:build.
+			if !strings.HasSuffix(file.Path, ".kyse.go") {
+				if _, err := parser.ParseFile(token.NewFileSet(), file.Path, file.Content, parser.AllErrors); err != nil {
+					t.Fatalf("%s does not parse: %v", file.Path, err)
+				}
 			}
 
 			path := filepath.Join("testdata", "stubs", c.golden+".golden")
@@ -151,16 +174,25 @@ func enumSpec(asInt bool) gen.EnumSpec {
 	return gen.EnumSpec{Type: name, Values: values, Int: asInt}
 }
 
-// oneOf adapts the generators that return a slice, which they do because a
-// command may one day write more than one file and the caller should not have to
-// change shape when it does.
-func oneOf(f func() ([]gen.File, error)) func() (gen.File, error) {
+func mailSpec() gen.MailSpec {
+	return gen.MailSpec{
+		Type:       "WelcomeEmail",
+		ModulePath: "example.test/project",
+		Subject:    "Welcome aboard",
+		Fields:     []gen.Field{{Name: "name", Type: gen.TypeString}, {Name: "link", Type: gen.TypeString}},
+	}
+}
+
+// fileAt adapts the generators that return a slice, which they do because a
+// command may write more than one file and the caller should not have to change
+// shape when it does, and picks the one the case is about.
+func fileAt(n int, f func() ([]gen.File, error)) func() (gen.File, error) {
 	return func() (gen.File, error) {
 		files, err := f()
 		if err != nil {
 			return gen.File{}, err
 		}
-		return files[0], nil
+		return files[n], nil
 	}
 }
 

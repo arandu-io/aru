@@ -1,0 +1,45 @@
+// Package commands holds this application's console commands.
+//
+// The directory is app/Console/Commands, where people look for it. The package
+// name follows Go and stays lowercase.
+package commands
+
+import (
+	"context"
+	"fmt"
+)
+
+// CloseInvoices is the `invoice:close` command.
+//
+// # Close the invoices past their due date
+//
+// It is reached by returning it from Console() in routes/console.go. Nothing
+// scans this directory: a command that is not in that slice does not exist, and
+// one that is in it with a broken signature does not build.
+type CloseInvoices struct {
+	// The collaborators this command needs are fields, set by whoever builds it
+	// in routes/console.go. A command that reaches for a global is a command no
+	// test can pin.
+}
+
+// NewCloseInvoices returns the command.
+func NewCloseInvoices() *CloseInvoices {
+	return &CloseInvoices{}
+}
+
+// Run does the work.
+//
+// It receives whatever followed the command name, unparsed. Use the flag package
+// on it if the command takes options -- there is no signature string to parse
+// here, because the compiler already checked this function.
+//
+// A command runs outside a request, so there is no session and no Grant from a
+// signed-in person. Work that touches tenant data takes security.SystemGrant
+// with the tenant named explicitly, and `aru doctor` checks that it is
+// scoped.
+func (cl *CloseInvoices) Run(ctx context.Context, args []string) error {
+	// arandu:begin custom
+	fmt.Println("invoice:close: not implemented")
+	return nil
+	// arandu:end custom
+}

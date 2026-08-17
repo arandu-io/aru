@@ -1,0 +1,60 @@
+// Package listeners holds what this application does after a write commits.
+//
+// The directory is app/Listeners, where people look for it. The package name
+// follows Go and stays lowercase.
+package listeners
+
+import (
+	"context"
+
+	"github.com/arandu-io/framework/events"
+	"github.com/arandu-io/framework/observability"
+)
+
+// AuditTrail answers every event.
+//
+// It implements events.Publisher: the relay calls Publish once the event is
+// committed and readable, never inside the transaction that wrote it.
+type AuditTrail struct {
+	// The collaborators this listener needs are fields, set where it is wired in
+	// bootstrap/app.go. A listener that reaches for a global is a listener no
+	// test can pin.
+}
+
+// NewAuditTrail returns the listener.
+func NewAuditTrail() *AuditTrail {
+	return &AuditTrail{}
+}
+
+// Compile-time proof that this satisfies what the relay calls.
+var _ events.Publisher = (*AuditTrail)(nil)
+
+// Publish handles one committed event.
+//
+// # Delivery is at-least-once
+//
+// The relay can hand the same event twice: a publish that succeeded and an
+// acknowledgement that did not is indistinguishable from a publish that failed.
+// Whatever this does has to be safe to do again -- an upsert keyed by e.ID, a
+// row that records what was already sent, an API call with an idempotency key.
+//
+// Nothing checks this for you. `aru doctor` reads the AST and never runs
+// code, so it cannot see whether an effect repeats.
+//
+// # Returning an error
+//
+// An error means "not delivered": the relay keeps the event and tries again,
+// backing off, and parks it in the dead letter after the attempts run out.
+// Returning nil on a failure loses the event silently, which is the one outcome
+// the outbox exists to prevent.
+func (au *AuditTrail) Publish(ctx context.Context, e events.Stored) error {
+
+	// The payload is the JSON the producer stored. Unmarshal it into a struct
+	// declared HERE, not shared with the producer: a consumer that compiles
+	// against the producer's type is a consumer that has to be deployed with it.
+	observability.Log(ctx).Info("event received", "event", e.Name, "id", e.ID)
+
+	// arandu:begin custom
+	return nil
+	// arandu:end custom
+}

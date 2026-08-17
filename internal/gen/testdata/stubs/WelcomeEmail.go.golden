@@ -1,0 +1,56 @@
+package mail
+
+import (
+	"github.com/arandu-io/framework/mail"
+)
+
+// WelcomeEmail is one message this application sends.
+//
+// An Envelope and a Content, and nothing else. There is no ShouldQueue: sending
+// on the queue is a job that calls Send, and having it decided by an interface
+// the type implements somewhere else is how a call that sometimes blocks for two
+// seconds becomes impossible to reason about from the line you are reading.
+type WelcomeEmail struct {
+	// Name is the Name this message carries.
+	Name string
+	// Link is the Link this message carries.
+	Link string
+}
+
+// Envelope is who it is from and what it says it is.
+//
+// From is left empty on purpose: the Mailer fills in the application's address,
+// so the one place it is configured is config/mail.go. A message that names its
+// own sender is one that keeps sending from the old domain after a migration.
+func (m WelcomeEmail) Envelope() mail.Envelope {
+	return mail.Envelope{
+		Subject: "Welcome aboard",
+
+		// arandu:begin custom
+		// Tags and Metadata reach the providers that support them, and are how a
+		// dashboard tells password resets apart from invoices.
+		// arandu:end custom
+	}
+}
+
+// Content is what the body is made of.
+//
+// Two views, because a message with no plain-text part is filed as spam more
+// often and shows nothing at all in a client that does not render HTML. Both
+// render from this struct, so a field that does not exist is a compile error at
+// the line of the .kyse.go rather than a blank space in somebody's inbox.
+func (m WelcomeEmail) Content() mail.Content {
+	return mail.Content{
+		View: "mail.welcome-email",
+		// The plain-text part, which this command writes beside the HTML one.
+		// Without this line the text view self-registered, sat in the tree
+		// looking wired, and could never be sent: every message went out
+		// HTML-only, which is a spam score and nothing at all in a client that
+		// does not render HTML.
+		TextView: "mail.welcome-email-text",
+		Data:     m,
+	}
+}
+
+// Compile-time proof that this is a mailable.
+var _ mail.Mailable = WelcomeEmail{}

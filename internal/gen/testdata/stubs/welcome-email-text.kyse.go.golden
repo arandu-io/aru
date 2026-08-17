@@ -1,0 +1,19 @@
+//go:build kyse
+
+package mail
+
+import appmail "example.test/project/app/Mail"
+
+@go
+// The plain-text part, rendering from the same data as the HTML one.
+type WelcomeEmailTextData = appmail.WelcomeEmail
+@endgo
+
+Welcome aboard
+
+{{-- arandu:begin custom --}}
+Write the message here, in words. It survives regeneration.
+{{-- arandu:end custom --}}
+
+--
+You are receiving this because of an action on your account.

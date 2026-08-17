@@ -32,6 +32,20 @@ func (l Listener) EventOrAny() string {
 	return l.Event
 }
 
+// Answers is the phrase the generated doc comment reads: the quoted event name,
+// or "every event" when the listener was written without one.
+//
+// It is a method rather than a conditional in the template because the template
+// is a Go string literal, and the conditional sat in a comment line that a
+// reflow later split in half -- putting a comment marker inside the action and
+// leaving the template unparseable for every run of the command.
+func (l Listener) Answers() string {
+	if l.EventOrAny() == "" {
+		return "every event"
+	}
+	return "`" + l.EventOrAny() + "`"
+}
+
 // GenerateListener writes app/Listeners/<Name>.go.
 //
 // The shape differs from the usual one where the delivery does. In process, an
@@ -78,8 +92,7 @@ import (
 	"github.com/arandu-io/framework/observability"
 )
 
-// {{ .Type }} answers {{ if .EventOrAny }}` + "`{{ .EventOrAny }}`" + `{{ else
-// }}every event{{ end }}.
+// {{ .Type }} answers {{ .Answers }}.
 //
 // It implements events.Publisher: the relay calls Publish once the event is
 // committed and readable, never inside the transaction that wrote it.
@@ -107,8 +120,7 @@ var _ events.Publisher = (*{{ .Type }})(nil)
 // row that records what was already sent, an API call with an idempotency key.
 //
 // Nothing checks this for you. ` + "`aru doctor`" + ` reads the AST and never runs
-// code, so it cannot see whether an effect repeats; the doc 27 says so and this
-// comment repeats it where the decision is made.
+// code, so it cannot see whether an effect repeats.
 //
 // # Returning an error
 //

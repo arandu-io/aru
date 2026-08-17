@@ -1,0 +1,44 @@
+//go:build kyse
+
+package mail
+
+import appmail "example.test/project/app/Mail"
+
+@go
+// The data this message renders from, named rather than declared: it is
+// app/Mail/WelcomeEmail.go that owns it, because that is where it is filled in.
+type WelcomeEmailData = appmail.WelcomeEmail
+@endgo
+
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Welcome aboard</title>
+</head>
+{{-- Inline styles, and that is not laziness.
+     A mail client strips <style> and ignores an external stylesheet, so the
+     class names the rest of this application uses reach nothing here. This is
+     the one place in the project where a hex value belongs in the markup. --}}
+<body style="margin:0;padding:24px;background:#f6f6f6;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#111">
+	<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto">
+		<tr>
+			<td style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:32px">
+				<h1 style="margin:0 0 16px;font-size:20px;font-weight:600">Welcome aboard</h1>
+
+				{{-- arandu:begin custom --}}
+				<p style="margin:0 0 16px;font-size:15px;line-height:1.6">
+					Write the message here. It survives regeneration.
+				</p>
+				{{-- arandu:end custom --}}
+			</td>
+		</tr>
+		<tr>
+			<td style="padding:16px 8px;font-size:12px;color:#777">
+				You are receiving this because of an action on your account.
+			</td>
+		</tr>
+	</table>
+</body>
+</html>

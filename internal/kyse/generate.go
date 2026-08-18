@@ -3,6 +3,7 @@ package kyse
 import (
 	"fmt"
 	"go/format"
+	goparser "go/parser"
 	"path"
 	"strconv"
 	"strings"
@@ -57,6 +58,11 @@ func Generate(f *File, name, dataType, output string) ([]byte, error) {
 	}
 
 	g := &generator{file: f, name: name, dataType: dataType}
+
+	if err := validateExpressions(f, g); err != nil {
+		return nil, err
+	}
+
 	g.emit()
 
 	src := g.out.String()
@@ -1001,6 +1007,46 @@ func goExpressions(n Node) []string {
 		case "foreach":
 			subject, _ := splitAs(n.Body)
 			return []string{subject}
+		}
+	}
+	return nil
+}
+
+// validateExpressions checks that every interpolation expression in the file is
+// valid Go after translation. The generator calls g.expr to turn a DSL expression
+// into a Go one, and what comes out must parse -- or the Go the generator writes
+// would be a compile error in a file whose header says DO NOT EDIT.
+func validateExpressions(f *File, g *generator) *Error {
+	var walk func([]Node) *Error
+	walk = func(nodes []Node) *Error {
+		for _, n := range nodes {
+			for _, raw := range goExpressions(n) {
+				if strings.TrimSpace(raw) == "" {
+					continue
+				}
+				translated := g.expr(raw)
+				if _, err := goparser.ParseExpr(translated); err != nil {
+					return &Error{
+						Path:    f.Path,
+						Line:    n.Line,
+						Message: fmt.Sprintf("%q is not a Go expression", translated),
+						Hint: fmt.Sprintf("the interpolation reads %q, and after translation it becomes %q, which is not valid Go: %s",
+							raw, translated, err),
+					}
+				}
+			}
+			if err := walk(n.Children); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := walk(f.Body); err != nil {
+		return err
+	}
+	for _, s := range f.Sections {
+		if err := walk(s.Nodes); err != nil {
+			return err
 		}
 	}
 	return nil

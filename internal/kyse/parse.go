@@ -64,6 +64,7 @@ func (p *parser) header(file *File) error {
 		case strings.HasPrefix(line, "//"):
 			continue
 		case strings.HasPrefix(line, "package "):
+			lineNo := p.i + 1
 			file.Package = strings.TrimSpace(strings.TrimPrefix(line, "package "))
 			p.i++
 			if !sawTag {
@@ -71,6 +72,15 @@ func (p *parser) header(file *File) error {
 					Message: "this view has no `//go:build kyse` on the first line",
 					Hint: "without it the Go compiler reads the markup below as Go and fails.\n" +
 						"    Add it, followed by a blank line, before the package clause."}
+			}
+			// What follows `package` is copied into the generated file as it is
+			// written, so anything that is not a name lands in a clause the Go
+			// compiler refuses -- in a file whose header says not to edit it.
+			if !validGoIdent(file.Package) {
+				return &Error{Path: p.path, Line: lineNo,
+					Message: fmt.Sprintf("%q is not a package name", truncate(file.Package)),
+					Hint: "the generated file opens with this clause, so it is a Go identifier and nothing else:\n" +
+						"    a letter or _ first, then letters, digits or _, and not a keyword."}
 			}
 			p.imports(file)
 			return nil

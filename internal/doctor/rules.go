@@ -49,6 +49,7 @@ var rules = []func(*project) []Finding{
 	alpineHoldsClientStateOnly,
 	tenantMustScopeTheSQL,
 	theOutboxTableTravelsWithWhatWritesToIt,
+	resourceNotReauthorized,
 }
 
 // 0. A file doctor could not read makes every other rule unreliable.
@@ -1900,4 +1901,75 @@ func tenantIsInThePredicate(text string) bool {
 		return false
 	}
 	return strings.Contains(lower[where:], "tenant_id")
+}
+
+// resourceNotReauthorized checks that the row read from the database is
+// re-authorized before being returned.
+//
+// The first Authorize produces a Grant from a zero value, and the repository
+// call uses it. The second Authorize, with the row that was read, is the
+// object-level authorization. A method that skips it compiles and passes all
+// other rules -- the Grant was received, checked, and the policy exists -- but
+// returns data any user of the same tenant may read.
+//
+// The rule looks for methods that call Authorize and a repository data method
+// (Find, Get, List, Paginate) in the same body, and warns if the Authorize
+// calls all come before the last repository call.
+func resourceNotReauthorized(p *project) []Finding {
+	var out []Finding
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+		for _, decl := range f.ast.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv == nil || fn.Body == nil {
+				continue
+			}
+			file, line := f.at(fn)
+
+			callsAuthorize := funcBodyContains(fn, func(name string) bool {
+				return name == "security.Authorize"
+			})
+			if !callsAuthorize {
+				continue
+			}
+
+			callsRepoData := funcBodyContains(fn, func(name string) bool {
+				return strings.HasSuffix(name, ".Find") ||
+					strings.HasSuffix(name, ".Get")
+			})
+			if !callsRepoData {
+				continue
+			}
+
+			lastAuthorize, lastRepo := -1, -1
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				name := callName(call)
+				pos := f.fset.Position(call.Pos()).Offset
+				if name == "security.Authorize" {
+					lastAuthorize = pos
+				}
+				if strings.HasSuffix(name, ".Find") ||
+					strings.HasSuffix(name, ".Get") {
+					lastRepo = pos
+				}
+				return true
+			})
+
+			if lastAuthorize < lastRepo {
+				out = append(out, Finding{
+					Rule: "resource-not-reauthorized", Severity: Warning,
+					File: file, Line: line,
+					Message: fn.Name.Name + " reads a row and does not re-authorize it",
+					Why:     "the first Authorize tells whether the caller may look at all. The second, with the row that was read, is the object-level decision: the caller may read this row, and nobody else's. Skipping it means any user of the same tenant sees the row. Call security.Authorize with the entity after the read.",
+				})
+			}
+		}
+	}
+	return out
 }

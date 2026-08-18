@@ -116,6 +116,7 @@ func emitsByRule() map[string][]string {
 		"alpineHoldsClientStateOnly":              {"alpine-reaches-the-server"},
 		"tenantMustScopeTheSQL":                   {"sql-without-tenant-scope"},
 		"theOutboxTableTravelsWithWhatWritesToIt": {"outbox-not-registered"},
+		"resourceNotReauthorized":                 {"resource-not-reauthorized"},
 	}
 }
 

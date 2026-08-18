@@ -29,7 +29,8 @@ func TestPlantedViolationsAreCaught(t *testing.T) {
 		// This one needs the whole call chain: a callName that gives up on a
 		// nested selector renders `r.Header.Get` as "Get" and the rule matches
 		// nothing.
-		"tenant-from-header": "any client can send the header",
+		"tenant-from-header":        "any client can send the header",
+		"resource-not-reauthorized": "the row was read and not re-authorized",
 	}
 
 	found := map[string]bool{}

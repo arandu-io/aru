@@ -92,7 +92,7 @@ var commands = []command{
 	},
 	{
 		name:  "db:seed",
-		usage: "aru db:seed [--class=<name>]",
+		usage: "aru db:seed [<Name>] [flags for the seeder]",
 		desc:  "run the seeders in database/seeders (DatabaseSeeder by default)",
 		run:   delegate("db:seed"),
 	},

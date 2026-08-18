@@ -124,10 +124,15 @@ func TestTheSeederWiringNamesTheDeclaredType(t *testing.T) {
 		t.Error("the generated seeder does not declare the type the message registers")
 	}
 	message := wiringSeeder(spec)
-	for _, want := range []string{"InvoiceSeeder{},", "Invoices *repositories.InvoiceRepository", "--class=InvoiceSeeder"} {
+	for _, want := range []string{"InvoiceSeeder{},", "Invoices *repositories.InvoiceRepository", "aru db:seed InvoiceSeeder"} {
 		if !strings.Contains(message, want) {
 			t.Errorf("the message does not say %q:\n%s", want, message)
 		}
+	}
+	// db:seed refuses --class= with the word to type instead, so a message that
+	// printed the flag would send the reader to a command that answers an error.
+	if strings.Contains(message, "--class") {
+		t.Errorf("the message still names the seeder with the flag db:seed refuses:\n%s", message)
 	}
 }
 

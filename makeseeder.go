@@ -8,11 +8,10 @@ import (
 	"github.com/arandu-io/aru/internal/gen"
 )
 
-// makeSeeder writes one seeder.
+// makeSeeder writes one seeder into database/seeders.
 //
-// It writes one seeder. DatabaseSeeder is
-// the entry point, the others are called by it, and --class runs one -- and the
-// vocabulary is identical on purpose.
+// DatabaseSeeder is the entry point, the others are called by it, and a name on
+// the command line runs one of them.
 func makeSeeder(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("make:seeder", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -56,9 +55,14 @@ func makeSeeder(args []string, stdout, stderr io.Writer) error {
 
 // wiringSeeder prints the registration, and does not perform it: seeders.go has
 // no custom block, so a patch would edit code somebody wrote by hand.
+//
+// The seeder is named positionally, because that is the only spelling db:seed
+// accepts: it refuses `--class=` with the word to type instead. A message that
+// printed the flag would end by sending the reader to a command that answers an
+// error rather than running what was just written.
 func wiringSeeder(s gen.SeederSpec) string {
 	return fmt.Sprintf(`
-It runs nothing yet, and it is not addressable: `+"`aru db:seed --class=%s`"+`
+It runs nothing yet, and it is not addressable: `+"`aru db:seed %s`"+`
 answers "unknown seeder" until it is listed. Two lines, by hand:
 
   database/seeders/seeders.go -- in the registry
@@ -84,6 +88,6 @@ through Deps, which is explicit for the same reason the rest of the wiring is:
 
 Then:
 
-    aru db:seed --class=%s
+    aru db:seed %s
 `, s.Type(), s.Type(), s.Type(), s.Plural(), s.Entity, s.Plural(), s.Entity, s.Type())
 }

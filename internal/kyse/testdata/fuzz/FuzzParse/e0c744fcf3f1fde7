@@ -1,0 +1,3 @@
+go test fuzz v1
+string("//go:buildkyse\npackage A\n000000000000000000\n@go\n//0000000000000000\n@endgo\n{!!0//!!}")
+bool(false)

@@ -1006,10 +1006,10 @@ func goExpressions(n Node) []string {
 		case "if", "elseif":
 			return []string{n.Body}
 		case "foreach", "forelse":
-			subject, binding := splitAs(n.Body)
-			if binding != "" && !validGoIdent(binding) {
-				return []string{binding}
-			}
+			// Only the subject. The binding is a variable name rather than an
+			// expression, and checking it here would ask the wrong question: `0`
+			// parses as an expression and is still not a name.
+			subject, _ := splitAs(n.Body)
 			return []string{subject}
 		case "for":
 			parts := strings.Split(strings.TrimSpace(n.Body), ";")
@@ -1069,6 +1069,34 @@ func validGoIdent(s string) bool {
 	return !token.Lookup(s).IsKeyword()
 }
 
+// loopBinding checks the variable a loop binds, which is a name and not an
+// expression.
+//
+// The generator writes it out as a local variable -- `for _, it := range …` --
+// so anything Go does not accept as an identifier produces a file that does not
+// parse, reported against generated output whose header says not to edit it.
+// Validating it as an expression is the wrong question and used to let `0`
+// through, because a literal is an expression and is still not a name.
+//
+// An empty binding is not a mistake: @foreach(.Items) is written that way, and
+// the generator names the variable itself.
+func loopBinding(f *File, n Node) *Error {
+	if n.Kind != Directive || (n.Name != "foreach" && n.Name != "forelse") {
+		return nil
+	}
+	_, binding := splitAs(n.Body)
+	if binding == "" || validGoIdent(binding) {
+		return nil
+	}
+	return &Error{
+		Path:    f.Path,
+		Line:    n.Line,
+		Message: fmt.Sprintf("@%s binds %q, which is not a name", n.Name, binding),
+		Hint: "the loop variable becomes a Go identifier: a letter or _ first, then letters, digits or _, and not a keyword.\n" +
+			"    Write it as @" + n.Name + "(.Items as item).",
+	}
+}
+
 // validateExpressions checks that every interpolation expression in the file is
 // valid Go after translation. The generator calls g.expr to turn a DSL expression
 // into a Go one, and what comes out must parse -- or the Go the generator writes
@@ -1082,6 +1110,9 @@ func validateExpressions(f *File, g *generator) *Error {
 	var walk func([]Node) *Error
 	walk = func(nodes []Node) *Error {
 		for _, n := range nodes {
+			if err := loopBinding(f, n); err != nil {
+				return err
+			}
 			for _, raw := range goExpressions(n) {
 				translated := g.expr(raw)
 				if _, err := goparser.ParseExpr(translated); err != nil {
@@ -1091,6 +1122,19 @@ func validateExpressions(f *File, g *generator) *Error {
 						Message: fmt.Sprintf("%q is not a Go expression", translated),
 						Hint: fmt.Sprintf("the interpolation reads %q, and after translation it becomes %q, which is not valid Go: %s",
 							raw, translated, err),
+					}
+				}
+				// Again with something after it on the line, which is how the
+				// generator writes it: inside a call, followed by the closing
+				// parenthesis. An expression that parses alone and not there
+				// swallowed what comes next -- `0//` is the shape.
+				if _, err := goparser.ParseExpr("(" + translated + ")"); err != nil {
+					return &Error{
+						Path:    f.Path,
+						Line:    n.Line,
+						Message: fmt.Sprintf("%q does not end where it is written", translated),
+						Hint: "the generator writes the expression inside a call, on one line, so a line comment in it comments out the rest of that line.\n" +
+							"    Take the // out, or write /* */ instead.",
 					}
 				}
 			}

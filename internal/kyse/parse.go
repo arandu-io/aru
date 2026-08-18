@@ -386,7 +386,7 @@ func (p *parser) interpolate(line string, lineNo int) []Node {
 
 		switch {
 		case rawAt >= 0 && (escAt < 0 || rawAt < escAt):
-			end := strings.Index(rest[rawAt:], "!!}")
+			end := strings.Index(rest[rawAt+3:], "!!}")
 			if end < 0 {
 				p.fail(lineNo, "{!! was never closed", "close it with !!} on the same line.")
 				out = append(out, Node{Kind: Text, Body: rest + "\n", Line: lineNo})
@@ -395,7 +395,7 @@ func (p *parser) interpolate(line string, lineNo int) []Node {
 			if rawAt > 0 {
 				out = append(out, Node{Kind: Text, Body: rest[:rawAt], Line: lineNo})
 			}
-			expr := strings.TrimSpace(rest[rawAt+3 : rawAt+end])
+			expr := strings.TrimSpace(rest[rawAt+3 : rawAt+3+end])
 			// Empty is refused in both forms, and for the same reason: the
 			// generator emits the call around the expression either way, so
 			// nothing between the delimiters is a call with nothing in its
@@ -405,7 +405,7 @@ func (p *parser) interpolate(line string, lineNo int) []Node {
 				p.fail(lineNo, "{!! !!} with nothing inside", "put the expression between the delimiters, as in {!! .Body !!}.")
 			}
 			out = append(out, Node{Kind: Raw, Body: expr, Line: lineNo})
-			rest = rest[rawAt+end+3:]
+			rest = rest[rawAt+3+end+3:]
 
 		case escAt >= 0:
 			end := strings.Index(rest[escAt:], "}}")

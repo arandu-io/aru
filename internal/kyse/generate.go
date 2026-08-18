@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/format"
 	goparser "go/parser"
+	"go/token"
 	"path"
 	"strconv"
 	"strings"
@@ -1004,26 +1005,84 @@ func goExpressions(n Node) []string {
 		switch n.Name {
 		case "if", "elseif":
 			return []string{n.Body}
-		case "foreach":
-			subject, _ := splitAs(n.Body)
+		case "foreach", "forelse":
+			subject, binding := splitAs(n.Body)
+			if binding != "" && !validGoIdent(binding) {
+				return []string{binding}
+			}
 			return []string{subject}
+		case "for":
+			parts := strings.Split(strings.TrimSpace(n.Body), ";")
+			if len(parts) == 3 {
+				// The condition (middle) is an expression. The init and post
+				// are simple statements that may or may not be expressions;
+				// only validate the ones that pass ParseExpr.
+				var out []string
+				if s := strings.TrimSpace(parts[1]); s != "" {
+					out = append(out, s)
+				}
+				if s := strings.TrimSpace(parts[0]); s != "" {
+					if _, err := goparser.ParseExpr(s); err == nil {
+						out = append(out, s)
+					}
+				}
+				if s := strings.TrimSpace(parts[2]); s != "" {
+					if _, err := goparser.ParseExpr(s); err == nil {
+						out = append(out, s)
+					}
+				}
+				return out
+			}
+			// A part header that does not have exactly three parts is passed
+			// through unchanged, so the full body must be valid Go.
+			if s := strings.TrimSpace(n.Body); s != "" {
+				return []string{s}
+			}
+			return nil
+		case "while":
+			return []string{n.Body}
 		}
 	}
 	return nil
+}
+
+// validGoIdent reports whether s is a valid Go identifier.
+//
+// A view's @foreach binding must be a Go identifier, because the generator
+// writes it as a local variable name. Bindings like "000" would produce Go
+// that does not parse.
+func validGoIdent(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		if i == 0 {
+			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_') {
+				return false
+			}
+		} else {
+			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_') {
+				return false
+			}
+		}
+	}
+	return !token.Lookup(s).IsKeyword()
 }
 
 // validateExpressions checks that every interpolation expression in the file is
 // valid Go after translation. The generator calls g.expr to turn a DSL expression
 // into a Go one, and what comes out must parse -- or the Go the generator writes
 // would be a compile error in a file whose header says DO NOT EDIT.
+//
+// Expressions inside @for and @while headers are checked too, because the
+// generator passes them through the same expr translation before they reach the
+// Go compiler -- a header that is passed through unchanged (no semicolons) still
+// arrives as-is in the generated Go.
 func validateExpressions(f *File, g *generator) *Error {
 	var walk func([]Node) *Error
 	walk = func(nodes []Node) *Error {
 		for _, n := range nodes {
 			for _, raw := range goExpressions(n) {
-				if strings.TrimSpace(raw) == "" {
-					continue
-				}
 				translated := g.expr(raw)
 				if _, err := goparser.ParseExpr(translated); err != nil {
 					return &Error{
@@ -1037,6 +1096,24 @@ func validateExpressions(f *File, g *generator) *Error {
 			}
 			if err := walk(n.Children); err != nil {
 				return err
+			}
+			// For @for directives, validate the full clause output as a Go for
+			// header. Individual clause checks miss cases where the init or post
+			// is a statement (not an expression) that Go rejects.
+			if n.Kind == Directive && n.Name == "for" {
+				full := g.clauses(n.Body)
+				if full == "" {
+					full = ";;"
+				}
+				src := "package p\nfunc f() {\nfor " + full + " {}\n}"
+				if _, err := goparser.ParseFile(token.NewFileSet(), "", src, goparser.SkipObjectResolution); err != nil {
+					return &Error{
+						Path:    f.Path,
+						Line:    n.Line,
+						Message: fmt.Sprintf("@for(%s) does not produce a valid Go for loop", n.Body),
+						Hint:    fmt.Sprintf("the header becomes %q, which is not valid: %s", full, err),
+					}
+				}
 			}
 		}
 		return nil

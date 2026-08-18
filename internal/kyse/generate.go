@@ -462,7 +462,7 @@ func (g *generator) node(n Node) {
 		if g.scan.state != stateText {
 			g.scan = htmlScanner{state: stateLost}
 		}
-		g.guarded(n.Line, "_, err = io.WriteString(w, view.Text(%s))", g.expr(n.Body))
+		g.guarded(n.Line, "_, err = io.WriteString(w, view.UnsafeText(%s))", g.expr(n.Body))
 
 	case Directive:
 		g.directive(n)
@@ -1181,6 +1181,7 @@ func (g *generator) silenceUnused() {
 	// because deciding per file would mean predicting which directives emit a
 	// call, and being wrong in the other direction is a build that fails.
 	g.out.WriteString("\t_ = view.Text\n")
+	g.out.WriteString("\t_ = view.UnsafeText\n")
 	// strings is only imported by a component, and only used by one that writes
 	// something.
 	if g.isComponent() {

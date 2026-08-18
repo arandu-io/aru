@@ -597,7 +597,7 @@ func TestTheCompilerIsToldWhichLineOfTheViewEachExpressionCameFrom(t *testing.T)
 		{"the condition of @if", "if d.Name !=", 14},
 		// Matched without the escape around it: the escaped form on line 13
 		// ends in `view.Text(d.Name)))` and would be found first.
-		{"the raw interpolation", "io.WriteString(w, view.Text(", 15},
+		{"the raw interpolation", "io.WriteString(w, view.UnsafeText(", 15},
 		{"the subject of @foreach", "range d.Items", 17},
 	} {
 		file, line, ok := mappedLine(generated, want.mark)

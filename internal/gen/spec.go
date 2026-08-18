@@ -460,9 +460,9 @@ func (m Module) seq() int {
 	return m.Sequence
 }
 
-// MigrationVar is the name of the migration value, which database/migrations
-// lists in All(). It is unexported: nothing outside that package names it.
-func (m Module) MigrationVar() string { return "create" + m.Plural() + "Table" }
+// MigrationType is the name of the migration type: CreatePurchaseOrdersTable.
+// It is the name the migration registers itself under in its own init.
+func (m Module) MigrationType() string { return "Create" + m.Plural() + "Table" }
 
 // ModelsImport is the import path of app/Models.
 //

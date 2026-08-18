@@ -116,15 +116,15 @@ denies everything as a warning. Both are on purpose.
 
 	if migration {
 		out += fmt.Sprintf(`
-The migration is written and not applied: it has to be listed in All(), in
-database/migrations/migrations.go, inside the custom block:
-
-    %s,
+The migration is written and not applied. Nothing has to list it: %s registers
+itself in its own init, in database/migrations. What it needs is to be linked --
+something has to import that package, or Go leaves it, and its init, out of the
+binary.
 
 Then:
 
     aru migrate
-`, m.MigrationVar())
+`, m.MigrationType())
 	}
 	return out
 }

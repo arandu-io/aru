@@ -54,7 +54,7 @@ func TestGoldenStubs(t *testing.T) {
 		{"add_status_to_invoices.go", func() (gen.File, error) {
 			return gen.RenderMigration(gen.MigrationSpec{
 				ID:    "2026_08_07_000002_add_status_to_invoices",
-				Var:   "addStatusToInvoices",
+				Type:  "AddStatusToInvoices",
 				Table: "invoices",
 				Fields: []gen.Field{
 					{Name: "status", Type: gen.TypeString},
@@ -324,7 +324,7 @@ func TestTheGeneratedRequestHasNoAuthorize(t *testing.T) {
 // previous binary does not fill it in.
 func TestAnAlteringMigrationAddsNothingNotNull(t *testing.T) {
 	file, err := gen.RenderMigration(gen.MigrationSpec{
-		ID: "2026_08_07_000002_add_status_to_invoices", Var: "addStatusToInvoices", Table: "invoices",
+		ID: "2026_08_07_000002_add_status_to_invoices", Type: "AddStatusToInvoices", Table: "invoices",
 		Fields: []gen.Field{{Name: "status", Type: gen.TypeString, Required: true}},
 	})
 	if err != nil {
@@ -351,7 +351,7 @@ func withoutComments(s string) string {
 // Up applied zero statements, and the id is immutable -- so an empty skeleton is
 // a migration that is marked as applied and can never run.
 func TestAMigrationWithNoColumnsIsRefused(t *testing.T) {
-	_, err := gen.RenderMigration(gen.MigrationSpec{ID: "x", Var: "x", Table: "invoices", Create: true})
+	_, err := gen.RenderMigration(gen.MigrationSpec{ID: "x", Type: "X", Table: "invoices", Create: true})
 	if err == nil {
 		t.Fatal("a migration with no columns was generated")
 	}

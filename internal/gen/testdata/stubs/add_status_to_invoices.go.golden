@@ -1,13 +1,17 @@
 package migrations
 
-import "github.com/arandu-io/framework/kernel"
+import (
+	"context"
 
-// addStatusToInvoices adds columns to the invoices table.
+	"github.com/arandu-io/hesape/database/migrations"
+)
+
+// AddStatusToInvoices adds columns to the invoices table.
 //
-// It is unexported and listed in All(), which is what the kernel collects. A
-// migration nobody lists is a migration nobody applies, and nothing anywhere
-// fails: Go does not report an unused package-level variable, so the schema is
-// simply never changed.
+// The init below registers it, so nothing lists it and no list can fall out of
+// date. What still has to be true is that this package reaches the binary: Go
+// leaves out a package nobody imports, and an init that is not linked never
+// runs.
 //
 // Every column is added nullable, with no NOT NULL. During a rollout the
 // previous binary is still inserting rows and knows nothing about these columns,
@@ -15,17 +19,48 @@ import "github.com/arandu-io/framework/kernel"
 // already in the table. Backfill, then tighten it in a later migration.
 //
 // A migration is immutable once published. Changing this one after it has been
-// applied anywhere leaves two schemas in the world under one id -- alter it with
-// a new migration instead.
-var addStatusToInvoices = kernel.Migration{
-	ID: "2026_08_07_000002_add_status_to_invoices",
-	Up: `ALTER TABLE invoices ADD COLUMN status VARCHAR(255) DEFAULT '';
-ALTER TABLE invoices ADD COLUMN paid_at TIMESTAMP DEFAULT '1970-01-01 00:00:01';
-`,
-	// Dropping the column drops the index with it on all three engines, which is
-	// why there is no DROP INDEX here: its spelling is the one thing SQLite,
-	// PostgreSQL and MySQL do not agree about.
-	Down: `ALTER TABLE invoices DROP COLUMN status;
-ALTER TABLE invoices DROP COLUMN paid_at;
-`,
+// applied anywhere leaves two schemas in the world under one name -- alter it
+// with a new migration instead.
+type AddStatusToInvoices struct{ migrations.BaseMigration }
+
+func init() { migrations.Register(AddStatusToInvoices{}) }
+
+// GetName is the migration's identity, and its order. It is immutable: this
+// string is what the applied-migrations table records.
+func (AddStatusToInvoices) GetName() string { return "2026_08_07_000002_add_status_to_invoices" }
+
+// Up adds the columns.
+//
+// One element per statement, because a connection sends one statement per call.
+// Two of them separated by a semicolon in a single string is refused by every
+// engine here except MySQL with multi-statement turned on.
+func (AddStatusToInvoices) Up(ctx context.Context, conn migrations.Connection) error {
+	statements := []string{
+		`ALTER TABLE invoices ADD COLUMN status VARCHAR(255) DEFAULT ''`,
+		`ALTER TABLE invoices ADD COLUMN paid_at TIMESTAMP DEFAULT '1970-01-01 00:00:01'`,
+	}
+	for _, statement := range statements {
+		if _, err := conn.Statement(ctx, statement, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Down drops the columns.
+//
+// Dropping the column drops the index with it on all three engines, which is
+// why there is no DROP INDEX here: its spelling is the one thing SQLite,
+// PostgreSQL and MySQL do not agree about.
+func (AddStatusToInvoices) Down(ctx context.Context, conn migrations.Connection) error {
+	statements := []string{
+		`ALTER TABLE invoices DROP COLUMN status`,
+		`ALTER TABLE invoices DROP COLUMN paid_at`,
+	}
+	for _, statement := range statements {
+		if _, err := conn.Statement(ctx, statement, nil); err != nil {
+			return err
+		}
+	}
+	return nil
 }

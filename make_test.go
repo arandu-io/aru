@@ -76,20 +76,41 @@ func TestTheMiddlewareWiringNamesTheConstructor(t *testing.T) {
 	}
 }
 
-func TestTheMigrationWiringNamesTheDeclaredValue(t *testing.T) {
+func TestTheMigrationWiringNamesTheDeclaredType(t *testing.T) {
 	spec := gen.MigrationSpec{
-		ID: "2026_08_07_000002_add_status_to_invoices", Var: "addStatusToInvoices", Table: "invoices",
+		ID: "2026_08_07_000002_add_status_to_invoices", Type: "AddStatusToInvoices", Table: "invoices",
 		Fields: []gen.Field{{Name: "status", Type: gen.TypeString}},
 	}
 	file, err := gen.RenderMigration(spec)
 	if err != nil {
 		t.Fatalf("RenderMigration: %v", err)
 	}
-	if !strings.Contains(string(file.Content), "var addStatusToInvoices = kernel.Migration{") {
-		t.Error("the generated migration does not declare the value the message registers")
+	source := string(file.Content)
+	for _, want := range []string{
+		"type AddStatusToInvoices struct{ migrations.BaseMigration }",
+		"func init() { migrations.Register(AddStatusToInvoices{}) }",
+		`func (AddStatusToInvoices) GetName() string { return "2026_08_07_000002_add_status_to_invoices" }`,
+		"func (AddStatusToInvoices) Up(ctx context.Context, conn migrations.Connection) error {",
+		"func (AddStatusToInvoices) Down(ctx context.Context, conn migrations.Connection) error {",
+	} {
+		if !strings.Contains(source, want) {
+			t.Errorf("the generated migration does not declare %q:\n%s", want, source)
+		}
 	}
-	if !strings.Contains(wiringMigration(spec), "      addStatusToInvoices,") {
-		t.Error("the message does not register the declared value")
+
+	message := wiringMigration(spec, "example.test/project")
+	if !strings.Contains(message, "AddStatusToInvoices is written") {
+		t.Errorf("the message does not name the declared type:\n%s", message)
+	}
+	// The message sends you to a blank import, so the path it prints has to be
+	// the one the package actually has.
+	if !strings.Contains(message, `_ "example.test/project/database/migrations"`) {
+		t.Errorf("the message does not print the import that links the package:\n%s", message)
+	}
+	// Nothing lists a migration any more, so a message that told you to add one
+	// to a list would send you to write a line that does not compile.
+	if strings.Contains(message, "All()") {
+		t.Errorf("the message still registers the migration in a list:\n%s", message)
 	}
 }
 
@@ -115,16 +136,15 @@ func TestTheModelMessageNamesTheTwoCommandsThatReachTheTable(t *testing.T) {
 		ModulePath: "example.test/project", Date: "2026_08_07"}
 	message := modelWiring(m, true)
 
-	for _, want := range []string{"aru make:module invoice", "aru make:policy Invoice", "createInvoicesTable,"} {
+	for _, want := range []string{"aru make:module invoice", "aru make:policy Invoice", "CreateInvoicesTable registers"} {
 		if !strings.Contains(message, want) {
 			t.Errorf("the message does not say %q:\n%s", want, message)
 		}
 	}
-	// Without --migration there is no migration to register, and a message that
-	// told you to register one would send you looking for a file that is not
-	// there.
-	if strings.Contains(modelWiring(m, false), "createInvoicesTable,") {
-		t.Error("the message registers a migration the command did not write")
+	// Without --migration there is no migration, and a message that talked about
+	// one would send you looking for a file that is not there.
+	if strings.Contains(modelWiring(m, false), "CreateInvoicesTable") {
+		t.Error("the message names a migration the command did not write")
 	}
 }
 

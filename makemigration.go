@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/arandu-io/aru/internal/gen"
@@ -90,9 +89,14 @@ func makeMigration(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
+	modulePath, err := readModulePath(root)
+	if err != nil {
+		return fmt.Errorf("make:migration: %w", err)
+	}
+
 	spec := gen.MigrationSpec{
 		ID:     fmt.Sprintf("%s_%06d_%s", date, seq, name),
-		Var:    migrationVar(name),
+		Type:   migrationType(name),
 		Table:  target,
 		Tenant: *tenant,
 		Fields: parsed,
@@ -101,15 +105,15 @@ func makeMigration(args []string, stdout, stderr io.Writer) error {
 
 	// A specification error must never become broken code, so both collisions are
 	// checked before anything is written. The second one matters more than it
-	// looks: two package-level values of one name in database/migrations simply do
-	// not compile, and the error would name a file the developer did not touch.
+	// looks: two types of one name in database/migrations simply do not compile,
+	// and the error would name a file the developer did not touch.
 	if !*force {
 		if _, err := os.Stat(filepath.Join(root, spec.Path())); err == nil {
 			return fmt.Errorf("make:migration: %s already exists", spec.Path())
 		}
 	}
-	if where, taken := migrationVarAlreadyDeclared(filepath.Join(root, "database", "migrations"), spec.Var, spec.ID); taken {
-		return fmt.Errorf("make:migration: database/migrations already declares %s, in %s -- pick another name", spec.Var, where)
+	if where, taken := migrationTypeAlreadyDeclared(filepath.Join(root, "database", "migrations"), spec.Type, spec.ID); taken {
+		return fmt.Errorf("make:migration: database/migrations already declares %s, in %s -- pick another name", spec.Type, where)
 	}
 
 	file, err := gen.RenderMigration(spec)
@@ -123,25 +127,28 @@ func makeMigration(args []string, stdout, stderr io.Writer) error {
 		return nil
 	}
 
-	fmt.Fprint(stdout, wiringMigration(spec))
+	fmt.Fprint(stdout, wiringMigration(spec, modulePath))
 	return nil
 }
 
 // wiringMigration says the one thing that fails silently.
-func wiringMigration(s gen.MigrationSpec) string {
+func wiringMigration(s gen.MigrationSpec, modulePath string) string {
 	return fmt.Sprintf(`
-It is not applied and it is not registered. A migration nobody lists is a
-migration nobody applies, and nothing fails to compile: Go does not report an
-unused package-level variable.
+%s is written and not applied. Nothing has to list it: the init in the file
+registers it, under the name GetName returns, and that name is also its order.
 
-  database/migrations/migrations.go -- inside the custom block of All()
+What still fails silently is linking. Go leaves a package nobody imports out of
+the binary, and an init that is not in the binary never runs -- so something has
+to import database/migrations. A blank import is enough where nothing else does:
 
-      %s,
+  main.go
+
+      _ %q
 
 Then:
 
     aru migrate
-`, s.Var)
+`, s.Type, modulePath+"/database/migrations")
 }
 
 // migrationName is the conventional shape: snake_case, describing the change.
@@ -149,16 +156,9 @@ var migrationName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 func isMigrationName(s string) bool { return migrationName.MatchString(s) }
 
-// migrationVar turns the file name into the value name: add_status_to_invoices
-// becomes addStatusToInvoices. Unexported, because nothing outside
-// database/migrations names it.
-func migrationVar(name string) string {
-	e := gen.Exported(name)
-	if e == "" {
-		return e
-	}
-	return strings.ToLower(e[:1]) + e[1:]
-}
+// migrationType turns the file name into the type name: add_status_to_invoices
+// becomes AddStatusToInvoices.
+func migrationType(name string) string { return gen.Exported(name) }
 
 // createPattern and changePattern guess the table from the name, which is kept
 // because it is real parity of gesture: it is the way the name is typed.
@@ -217,10 +217,15 @@ func nextMigrationSequence(root, date string) (int, error) {
 	return highest + 1, nil
 }
 
-// migrationVarAlreadyDeclared reports which file of database/migrations already
-// binds a package-level value of that name. The file being written is skipped,
-// so regenerating with --force is not a collision with itself.
-func migrationVarAlreadyDeclared(dir, name, self string) (string, bool) {
+// migrationTypeAlreadyDeclared reports which file of database/migrations already
+// declares a package-level name of that spelling. The file being written is
+// skipped, so regenerating with --force is not a collision with itself.
+//
+// Both type and value declarations are read. The migration is a type now, and a
+// type is what collides with it -- but a project that still holds a value of the
+// name from the shape before it would otherwise be told to write a file that
+// does not compile, and the error would name neither file.
+func migrationTypeAlreadyDeclared(dir, name, self string) (string, bool) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", false
@@ -235,17 +240,20 @@ func migrationVarAlreadyDeclared(dir, name, self string) (string, bool) {
 		}
 		for _, decl := range file.Decls {
 			gd, ok := decl.(*ast.GenDecl)
-			if !ok || gd.Tok != token.VAR {
+			if !ok {
 				continue
 			}
 			for _, spec := range gd.Specs {
-				vs, ok := spec.(*ast.ValueSpec)
-				if !ok {
-					continue
-				}
-				for _, ident := range vs.Names {
-					if ident.Name == name {
+				switch s := spec.(type) {
+				case *ast.TypeSpec:
+					if s.Name.Name == name {
 						return e.Name(), true
+					}
+				case *ast.ValueSpec:
+					for _, ident := range s.Names {
+						if ident.Name == name {
+							return e.Name(), true
+						}
 					}
 				}
 			}

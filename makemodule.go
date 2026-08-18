@@ -133,7 +133,7 @@ The policy denies every action. Open what this module needs in
 app/Policies/%s.go, inside the custom block, and nothing else -- that is what
 makes the default safe.
 
-Then three lines, by hand, because the wiring is meant to be readable:
+Then two lines, by hand, because the wiring is meant to be readable:
 
   routes/web.go -- the field, and the routes inside the custom block
 
@@ -146,9 +146,9 @@ Then three lines, by hand, because the wiring is meant to be readable:
       %s: controllers.New%s(
           services.New%s(repositories.New%s(db)), sessions, csrf),
 
-  database/migrations/migrations.go -- inside the custom block of All()
-
-      %s,
+The migration is not one of them: %s registers itself in its own init, and
+nothing lists it. What it needs is to be linked -- something has to import
+database/migrations, or Go leaves the package, and its init, out of the binary.
 
 Then:
 
@@ -161,7 +161,7 @@ Then:
 		m.Resource(), m.Entity(),
 		m.Entity(), m.Controller(),
 		m.ServiceType(), m.RepositoryType(),
-		m.MigrationVar())
+		m.MigrationType())
 }
 
 // readModulePath reads the module path from the project's go.mod, because the

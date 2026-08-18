@@ -16,9 +16,10 @@ import (
 // BillingIndexData is the data of this page.
 type BillingIndexData struct {
 	Title string
+	Note  string
 }
 
-//line internal/doctor/testdata/violations/storage/framework/views/billing/index.go:22
+//line internal/doctor/testdata/violations/storage/framework/views/billing/index.go:23
 
 func init() {
 	view.Register("internal.doctor.testdata.violations.resources.views.billing.index", renderInternalDoctorTestdataViolationsResourcesViewsBillingIndex)
@@ -39,12 +40,38 @@ func renderInternalDoctorTestdataViolationsResourcesViewsBillingIndex(w io.Write
 		_, err = io.WriteString(w, "<h1>")
 	}
 	if err == nil {
-//line internal/doctor/testdata/violations/resources/views/billing/index.kyse.go:12
+//line internal/doctor/testdata/violations/resources/views/billing/index.kyse.go:13
 		_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(d.Title)))
-//line internal/doctor/testdata/violations/storage/framework/views/billing/index.go:45
+//line internal/doctor/testdata/violations/storage/framework/views/billing/index.go:46
 	}
 	if err == nil {
 		_, err = io.WriteString(w, "</h1>\n")
+	}
+	if err == nil {
+		_, err = io.WriteString(w, "\n")
+	}
+	if err == nil {
+		_, err = io.WriteString(w, "<!-- Violation: the raw form writes a value to the page with no escaping. Note\n")
+	}
+	if err == nil {
+		_, err = io.WriteString(w, "     is a string, it is rendered as markup, and the day it holds something a\n")
+	}
+	if err == nil {
+		_, err = io.WriteString(w, "     customer typed the page runs it. The escaped form is three characters\n")
+	}
+	if err == nil {
+		_, err = io.WriteString(w, "     away. -->\n")
+	}
+	if err == nil {
+		_, err = io.WriteString(w, "<div class=\"note\">")
+	}
+	if err == nil {
+//line internal/doctor/testdata/violations/resources/views/billing/index.kyse.go:19
+		_, err = io.WriteString(w, view.UnsafeText(d.Note))
+//line internal/doctor/testdata/violations/storage/framework/views/billing/index.go:72
+	}
+	if err == nil {
+		_, err = io.WriteString(w, "</div>\n")
 	}
 	if err == nil {
 		_, err = io.WriteString(w, "\n")

@@ -78,12 +78,32 @@ func renderInternalDoctorTestdataCleanResourcesViewsInvoicesIndex(w io.Writer, d
 				_ = invoice
 //line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:80
 				if err == nil {
+					_, err = io.WriteString(w, "\t\t\t<!-- The raw form, used the one way it is entitled to be: a component\n")
+				}
+				if err == nil {
+					_, err = io.WriteString(w, "\t\t\t     is a function returning template.HTML, and what it interpolated\n")
+				}
+				if err == nil {
+					_, err = io.WriteString(w, "\t\t\t     was escaped when it was generated. -->\n")
+				}
+				if err == nil {
 					_, err = io.WriteString(w, "\t\t\t<li class=\"py-2\">")
 				}
 				if err == nil {
-//line internal/doctor/testdata/clean/resources/views/invoices/index.kyse.go:27
+//line internal/doctor/testdata/clean/resources/views/invoices/index.kyse.go:30
 					_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(invoice.Reference)))
-//line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:87
+//line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:96
+				}
+				if err == nil {
+					_, err = io.WriteString(w, "\n")
+				}
+				if err == nil {
+					_, err = io.WriteString(w, "\t\t\t\t")
+				}
+				if err == nil {
+//line internal/doctor/testdata/clean/resources/views/invoices/index.kyse.go:31
+					_, err = io.WriteString(w, view.UnsafeText(components.Badge(components.BadgeProps{Label: invoice.State})))
+//line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:107
 				}
 				if err == nil {
 					_, err = io.WriteString(w, "</li>\n")

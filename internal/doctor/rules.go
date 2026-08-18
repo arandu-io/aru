@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/arandu-io/aru/internal/kyse"
 	"github.com/arandu-io/aru/internal/manifest"
 )
 
@@ -50,6 +51,7 @@ var rules = []func(*project) []Finding{
 	tenantMustScopeTheSQL,
 	theOutboxTableTravelsWithWhatWritesToIt,
 	resourceNotReauthorized,
+	rawOutputIsAComponent,
 }
 
 // 0. A file doctor could not read makes every other rule unreliable.
@@ -1972,4 +1974,166 @@ func resourceNotReauthorized(p *project) []Finding {
 		}
 	}
 	return out
+}
+
+// 17. What a raw interpolation writes goes to the page as markup.
+//
+// A view has two interpolation forms and they look almost the same. `{{ }}`
+// escapes; `{!! !!}` does not, and is the one place in a view where a string
+// becomes HTML. The difference is three characters, and nothing in the source
+// says which of the two a given line is entitled to.
+//
+// A component call is entitled to it. A component is an exported Go function
+// that returns template.HTML, and every interpolation inside it was escaped when
+// it was generated -- so the markup it returns is markup somebody wrote, not
+// markup somebody typed into a form.
+//
+// An expression that is not a call is a value, and a value here is stored
+// cross-site scripting the first time one of them comes from a person. The shape
+// is not hypothetical: rendering Markdown produces a string with raw HTML left
+// in it, and the line that puts it on the page is `{!! .Body !!}`.
+//
+// What it cannot see, and it is worth knowing before trusting the report: this
+// reads the markup, never the types. A call whose function returns a plain
+// string -- Markdown rendered in the view itself -- has the shape of a component
+// and passes. A field that already holds template.HTML is a value and does not.
+// Separating those two needs the type of the expression, which is why this
+// warns rather than fails: it is the shape that is wrong, and the shape is
+// evidence, not proof.
+func rawOutputIsAComponent(p *project) []Finding {
+	var out []Finding
+	for _, v := range p.views {
+		parsed, err := kyse.Parse(v.rel, v.body)
+		if err != nil {
+			// A view that does not parse is `aru view:build`'s report, and it
+			// makes a better one. Reading the markup of a broken view here would
+			// put this rule's name on somebody's syntax error.
+			continue
+		}
+		for _, n := range rawInterpolations(parsed) {
+			if isNamedCall(n.Body) {
+				continue
+			}
+			out = append(out, Finding{
+				Rule: "raw-output-is-not-a-component", Severity: Warning,
+				File: v.rel, Line: n.Line,
+				Message: "{!! " + n.Body + " !!} writes a value to the page, not a component",
+				Why:     "the raw form escapes nothing, so whatever the expression holds arrives as markup. A component earns that: it is a function returning template.HTML, and what it interpolated was escaped when it was generated. A value has not been through anything -- a bio, a comment or a rendered Markdown body written here is stored cross-site scripting, and it runs for every reader of the page. Write it as {{ " + n.Body + " }}, which escapes, or return it from a component.",
+			})
+		}
+	}
+	return out
+}
+
+// rawInterpolations collects every `{!! !!}` in a view, wherever it sits.
+//
+// Sections and the bodies of blocks are walked too: a raw interpolation inside
+// @foreach is the one most likely to be a row of somebody's data.
+func rawInterpolations(f *kyse.File) []kyse.Node {
+	var out []kyse.Node
+
+	var walk func(nodes []kyse.Node)
+	walk = func(nodes []kyse.Node) {
+		for _, n := range nodes {
+			if n.Kind == kyse.Raw {
+				out = append(out, n)
+			}
+			walk(n.Children)
+		}
+	}
+
+	walk(f.Body)
+	for _, s := range f.Sections {
+		walk(s.Nodes)
+	}
+	return out
+}
+
+// isNamedCall reports whether the whole expression is a call to a named
+// function: a name, optionally qualified by a package, whose argument list opens
+// right after it and closes at the end of the expression.
+//
+// Closing at the END is what makes it the whole expression rather than the start
+// of one. `components.Alert(x) + .Body` opens a call and does not end with it,
+// and the half that would reach the page unescaped is the half after the plus.
+func isNamedCall(expr string) bool {
+	expr = strings.TrimSpace(expr)
+
+	i := 0
+	for {
+		start := i
+		for i < len(expr) && isNameByte(expr[i], i > start) {
+			i++
+		}
+		if i == start {
+			return false
+		}
+		if i < len(expr) && expr[i] == '.' {
+			i++
+			continue
+		}
+		break
+	}
+	if i >= len(expr) || expr[i] != '(' {
+		return false
+	}
+	return callClosesAtEnd(expr, i)
+}
+
+// isNameByte reports whether a byte may appear in a Go name. A digit is allowed
+// everywhere except the first position.
+func isNameByte(c byte, inside bool) bool {
+	switch {
+	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c == '_':
+		return true
+	case c >= '0' && c <= '9':
+		return inside
+	}
+	return false
+}
+
+// callClosesAtEnd reports whether the parenthesis at open is closed by the last
+// byte of the expression.
+//
+// String and rune literals are skipped rather than scanned, because a component
+// is very often given a label with a parenthesis in it -- "Close (esc)" -- and
+// counting that one would read the call as ending three characters early.
+func callClosesAtEnd(expr string, open int) bool {
+	depth := 0
+	for i := open; i < len(expr); i++ {
+		switch c := expr[i]; c {
+		case '"', '\'', '`':
+			end := endOfLiteral(expr, i)
+			if end < 0 {
+				return false
+			}
+			i = end
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i == len(expr)-1
+			}
+		}
+	}
+	return false
+}
+
+// endOfLiteral returns the index of the byte that closes the literal opening at
+// start, or -1 when nothing does.
+func endOfLiteral(s string, start int) int {
+	quote := s[start]
+	for i := start + 1; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			// A raw string has no escapes: the backslash in it is a backslash.
+			if quote != '`' {
+				i++
+			}
+		case quote:
+			return i
+		}
+	}
+	return -1
 }

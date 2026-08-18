@@ -117,6 +117,7 @@ func emitsByRule() map[string][]string {
 		"tenantMustScopeTheSQL":                   {"sql-without-tenant-scope"},
 		"theOutboxTableTravelsWithWhatWritesToIt": {"outbox-not-registered"},
 		"resourceNotReauthorized":                 {"resource-not-reauthorized"},
+		"rawOutputIsAComponent":                   {"raw-output-is-not-a-component"},
 	}
 }
 
@@ -198,6 +199,42 @@ func TestEveryGrantConstructorIsGuarded(t *testing.T) {
 		if !guarded[symbol] {
 			t.Errorf("%s (%s) hands back a security.Grant and no rule watches it: add it to grantConstructors, "+
 				"and give tenantArg the shape it spells the tenant in", symbol, path)
+		}
+	}
+}
+
+// TestIsNamedCallSeparatesAComponentFromAValue pins the one decision the raw
+// interpolation rule makes.
+//
+// The passing shapes are the ones measured across the views that exist: a
+// package-qualified component, a component from the same package, and a call
+// with no arguments. The failing ones are what the rule exists to find, plus the
+// two ways a reader would expect it to be fooled -- a parenthesis inside a
+// label, and an expression that opens with a call and does not end with one.
+func TestIsNamedCallSeparatesAComponentFromAValue(t *testing.T) {
+	for _, c := range []struct {
+		expr string
+		want bool
+		why  string
+	}{
+		{"components.ThemeToggle()", true, "a component with no arguments"},
+		{"components.Field(components.FieldProps{Name: \"email\"})", true, "the shape most raw interpolations have"},
+		{"Badge(BadgeProps{Label: x})", true, "a component from the same package"},
+		{"icons.Tag(icons.Props{Label: \"Close (esc)\"})", true, "a parenthesis inside a string literal is not a parenthesis"},
+		{"mailui.Layout(mailui.LayoutProps{\n\tBrand: .BrandName,\n})", true, "a call the parser joined from several lines"},
+
+		{".Body", false, "a field of the page data, which is a value"},
+		{".Invoice.Notes", false, "a field one level down is still a value"},
+		{"body", false, "a local variable is a value"},
+		{"\"<b>x</b>\"", false, "a string literal is a value, however it was written"},
+		{"", false, "nothing at all"},
+		{"components.Alert(x) + .Body", false, "it opens with a call and the page gets the half after the plus"},
+		{".Body + components.Alert(x)", false, "the same, with the halves swapped"},
+		{"components.Alert(x", false, "an argument list that never closes"},
+		{"icons.Tag(\"unterminated", false, "a literal that never closes"},
+	} {
+		if got := isNamedCall(c.expr); got != c.want {
+			t.Errorf("isNamedCall(%q) = %t, want %t: %s", c.expr, got, c.want, c.why)
 		}
 	}
 }

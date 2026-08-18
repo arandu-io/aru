@@ -437,6 +437,68 @@ func TestTheViewRulesAreSilentOnCorrectCode(t *testing.T) {
 	}
 }
 
+// TestAValueInTheRawFormIsCaught: `{{ }}` escapes and `{!! !!}` does not, and
+// three characters separate them in the source.
+//
+// The raw form is entitled to a component -- a function returning
+// template.HTML, whose own interpolations were escaped when it was generated.
+// It is not entitled to a value: a string written there arrives as markup, and
+// the day it holds something a person typed, the page runs it for every reader.
+//
+// The assertions are the three things that make the finding usable: it landed on
+// the raw line and not on the escaped one above it, it quotes the expression so
+// the reader knows which of several on the page it means, and it names the
+// escaped form as the fix.
+func TestAValueInTheRawFormIsCaught(t *testing.T) {
+	findings, err := doctor.Run("testdata/violations")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	caught := findRule(findings, "raw-output-is-not-a-component")
+	if caught == nil {
+		t.Fatal("a raw interpolation of a plain field was not caught: it reaches the page as markup, unescaped")
+	}
+	if !strings.Contains(caught.Message, ".Note") {
+		t.Errorf("the message does not say which interpolation it means: %q", caught.Message)
+	}
+	if !strings.Contains(caught.Why, "{{ .Note }}") {
+		t.Errorf("the explanation does not name the escaped form as the fix: %q", caught.Why)
+	}
+	// A warning, because the shape is evidence and not proof: doctor reads the
+	// markup and never the types, so a field already holding template.HTML has
+	// the same shape and is correct code.
+	if caught.Severity != doctor.Warning {
+		t.Error("the raw form is an error, and doctor cannot see the type of the expression: a field that already holds template.HTML has this shape and is correct")
+	}
+
+	// The escaped interpolation on the line above is not this rule's business,
+	// and a rule that fired on both would be a rule nobody could act on.
+	for _, f := range findings {
+		if f.Rule == "raw-output-is-not-a-component" && strings.Contains(f.Message, ".Title") {
+			t.Errorf("the escaped form was reported: %s", f.Message)
+		}
+	}
+}
+
+// TestAComponentInTheRawFormIsAllowed is the other half, and without it the rule
+// above is satisfied by a rule that fires on everything.
+//
+// The clean fixture calls a component from inside a @foreach in a @section,
+// which is also the walk: a rule that only looked at the top level would find
+// nothing there and pass this test by never running.
+func TestAComponentInTheRawFormIsAllowed(t *testing.T) {
+	findings, err := doctor.Run("testdata/clean")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, f := range findings {
+		if f.Rule == "raw-output-is-not-a-component" {
+			t.Errorf("a component call in the raw form was reported: %s", f.Message)
+		}
+	}
+}
+
 // TestAViewNameIsResolvedLikeLaravel: "invoices.index" is
 // resources/views/invoices/index.kyse.go, and a controller that renders a
 // fragment from a nested directory resolves the same way. Getting this wrong

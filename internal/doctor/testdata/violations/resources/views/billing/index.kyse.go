@@ -6,10 +6,17 @@ package views
 // BillingIndexData is the data of this page.
 type BillingIndexData struct {
 	Title string
+	Note  string
 }
 @endgo
 
 <h1>{{ .Title }}</h1>
+
+<!-- Violation: the raw form writes a value to the page with no escaping. Note
+     is a string, it is rendered as markup, and the day it holds something a
+     customer typed the page runs it. The escaped form is three characters
+     away. -->
+<div class="note">{!! .Note !!}</div>
 
 <!-- Violation: Alpine reaching the server. This should be an HTMX fragment --
      x-data holds client state, and the moment it fetches, the application has

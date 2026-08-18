@@ -24,7 +24,11 @@ type InvoicesIndexData struct {
 
 	<ul class="mt-4 divide-y">
 		@foreach(.Invoices as invoice)
-			<li class="py-2">{{ invoice.Reference }}</li>
+			<!-- The raw form, used the one way it is entitled to be: a component
+			     is a function returning template.HTML, and what it interpolated
+			     was escaped when it was generated. -->
+			<li class="py-2">{{ invoice.Reference }}
+				{!! components.Badge(components.BadgeProps{Label: invoice.State}) !!}</li>
 		@endforeach
 	</ul>
 @endsection

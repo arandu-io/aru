@@ -66,6 +66,15 @@ func Generate(f *File, name, dataType, output string) ([]byte, error) {
 
 	g.emit()
 
+	// A value written where no escape holds is refused here rather than
+	// emitted, because no call would make it safe: the position takes text and
+	// the value would arrive as syntax. Unlike the positions that refuse at
+	// render time, these refuse whatever the value is, so the build is where it
+	// belongs.
+	if len(g.errs) > 0 {
+		return nil, g.errs
+	}
+
 	src := g.out.String()
 	formatted, err := format.Source([]byte(src))
 	if err != nil {
@@ -126,6 +135,12 @@ type generator struct {
 	// checks records that at least one value is examined at render time, which
 	// the import block has to know before it is written.
 	checks bool
+	// wraps records that at least one escaper reports a refusal, whose message
+	// is given the view's own position before it travels.
+	wraps bool
+	// errs are the interpolations written where no escape holds, collected
+	// rather than returned at the first, so a view is fixed in one pass.
+	errs Errors
 }
 
 // at says that what comes next was written on this line of the view.
@@ -161,10 +176,11 @@ func (g *generator) guarded(line int, format string, args ...any) {
 // the page, and refuses it when the position will not hold it.
 //
 // The build knows the position and never the value, so this is the half that
-// has to happen at render time. It refuses rather than repairing because the
-// positions that reach here have no escape at all: an attribute name carries no
-// entities, and a quote inside a JSON attribute is decoded by the HTML parser
-// before the JSON is read. Rewriting the value would change what the page says
+// has to happen at render time. It is where an attribute name goes, and it is
+// the one position with no escape whose values a page still writes: what goes
+// there today is a name a helper returns, so refusing every value would refuse
+// the pages that work. Refusing the value rather than repairing it is the
+// choice everywhere else too -- rewriting would change what the page says
 // without saying so.
 //
 // The refusal stops the render and names the view's own file and line. Dropping
@@ -189,6 +205,44 @@ func (g *generator) checked(line int, expr, denied, write, reason string) {
 	g.out.WriteString("\t\t} else {\n")
 	fmt.Fprintf(&g.out, "\t\t\t_, err = io.WriteString(w, %s)\n", write)
 	g.out.WriteString("\t\t}\n\t}\n")
+}
+
+// refusable writes one interpolation whose escaper may refuse the value, and
+// gives the refusal the view's own position.
+//
+// Two of the escapers answer with an error instead of a string, and it is the
+// difference between the two kinds of mistake. A method interpolated without
+// its parentheses is a mistake in the view and stops the render wherever it is
+// read; a URL with a scheme a browser acts on, or a style value carrying a rule
+// of its own, is data, and data that stopped the process would let any visitor
+// take the page down with what they typed.
+//
+// The refused value comes back as the empty string, so what reaches the page is
+// nothing rather than the value -- and the error says which view and which line
+// asked for it, which is the whole of what somebody needs to act on it.
+func (g *generator) refusable(line int, escaper, expr string) {
+	g.wraps = true
+	g.out.WriteString("\tif err == nil {\n")
+	g.out.WriteString("\t\tvar s string\n")
+	g.at(line)
+	fmt.Fprintf(&g.out, "\t\ts, err = %s(%s)\n", escaper, expr)
+	g.self()
+	// The position is a separate argument rather than part of the format, so a
+	// path holding a percent sign stays a path.
+	fmt.Fprintf(&g.out, "\t\tif err != nil {\n\t\t\terr = fmt.Errorf(\"%%s: %%w\", %s, err)\n\t\t} else {\n",
+		strconv.Quote(fmt.Sprintf("%s:%d", g.file.Path, line)))
+	g.out.WriteString("\t\t\t_, err = io.WriteString(w, s)\n")
+	g.out.WriteString("\t\t}\n\t}\n")
+}
+
+// refuse records that an interpolation landed where nothing can be written
+// safely, whatever the value turns out to be.
+//
+// It is collected rather than returned so that a view with three of them is
+// answered once. Nothing is emitted for the node: the build does not produce a
+// file, so what the body would have held does not matter.
+func (g *generator) refuse(line int, message, hint string) {
+	g.errs = append(g.errs, &Error{Path: g.file.Path, Line: line, Message: message, Hint: hint})
 }
 
 // self hands the position back to the generated file.
@@ -230,6 +284,11 @@ func (g *generator) emitHeader() {
 	// nothing else in a generated view returns an error of its own.
 	if g.checks {
 		g.out.WriteString("\t\"errors\"\n")
+	}
+	// fmt gives the refusal an escaper returns the view's own file and line
+	// before it travels, and is written only by a view that has one.
+	if g.wraps {
+		g.out.WriteString("\t\"fmt\"\n")
 	}
 	// strings is needed by two shapes: a component builds its markup into one
 	// and returns it, and a checked interpolation examines the value before
@@ -418,11 +477,23 @@ func (g *generator) emitSections() {
 	for _, s := range g.file.Sections {
 		fmt.Fprintf(&g.out, "\t\t%s: func(w io.Writer) error {\n\t\t\tvar err error\n", strconv.Quote(s.Name))
 		// A section is written into the layout where its @yield is, which is the
-		// body of an element. Carrying the position from the section above would
-		// be reading one file's markup as the continuation of another's.
+		// body of an element -- a @yield anywhere else is refused, so this is
+		// the position a section begins in and not a guess. Carrying the
+		// position from the section above would be reading one file's markup as
+		// the continuation of another's.
 		g.scan = htmlScanner{}
 		for _, n := range s.Nodes {
 			g.node(n)
+		}
+		// And the other half of the same contract. The layout goes on reading
+		// the document after the @yield, which it can only do if the section
+		// ended where it began: a section that leaves a tag open moves the
+		// layout's position by whatever a page put in it, and the layout is
+		// compiled without ever seeing which page that is.
+		if g.scan.state != stateText {
+			g.refuse(s.Line, fmt.Sprintf("@section('%s') leaves a tag open where it ends", s.Name),
+				"the layout goes on reading the document after the @yield that writes this section, so a tag left open here decides which escape the layout's own values get -- in a file that cannot see this one.\n"+
+					"    Close inside the section whatever it opens.")
 		}
 		g.out.WriteString("\t\t\treturn err\n\t\t},\n")
 	}
@@ -441,18 +512,7 @@ func (g *generator) node(n Node) {
 		g.scan.feed(n.Body)
 
 	case Echo:
-		// Which escape a value needs is decided by where it lands, not by what
-		// it holds: the same six characters that make a value inert in the body
-		// of an element leave it able to end an attribute name.
-		switch g.scan.position() {
-		case posAttributeName:
-			g.checked(n.Line, g.expr(n.Body), deniedInAttributeName, "v", reasonAttributeName)
-		default:
-			// template.HTMLEscapeString is the escape every template engine applies, and it
-			// is not optional: a view that interpolates without escaping is the XSS
-			// this framework refuses to make easy.
-			g.guarded(n.Line, "_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(%s)))", g.expr(n.Body))
-		}
+		g.echo(n)
 
 	case Raw:
 		// What the raw form writes is markup, and this generator cannot read it:
@@ -460,14 +520,114 @@ func (g *generator) node(n Node) {
 		// costs nothing, because a component returns markup that closes what it
 		// opens. Anywhere else the position of everything after it would be a
 		// guess, so there is none.
-		if g.scan.state != stateText {
-			g.scan = htmlScanner{state: stateLost}
-		}
+		g.opaque()
 		g.guarded(n.Line, "_, err = io.WriteString(w, view.UnsafeText(%s))", g.expr(n.Body))
 
 	case Directive:
 		g.directive(n)
 	}
+}
+
+// echo writes one escaped interpolation, with the escape its position takes.
+//
+// There is no default escape and no way for a view to ask for a different one.
+// The same six characters that make a value inert in the body of an element
+// leave it able to end an attribute name; a space, which no escape touches,
+// ends an unquoted value on its own; and a scheme is dangerous for what it
+// means rather than for how it is written, so no escape reaches it at all.
+// Which one a value needs is read off the markup around it, which is why a view
+// writes {{ }} and says nothing about escaping.
+//
+// Five of the cases refuse rather than escape. Three are positions with no
+// escape at all, and a fourth is not a position but the absence of one; all
+// four are refused here, because no value would be safe in them. The fifth --
+// where the name of an attribute goes -- is refused at render time instead,
+// because a page writes a name there today and only the value decides.
+func (g *generator) echo(n Node) {
+	expr := g.expr(n.Body)
+
+	switch g.scan.position() {
+	case posAttributeName:
+		g.checked(n.Line, expr, deniedInAttributeName, "v", reasonAttributeName)
+
+	case posAttributeValue:
+		g.guarded(n.Line, "_, err = io.WriteString(w, view.TextAttr(%s))", expr)
+
+	case posURL:
+		g.refusable(n.Line, "view.TextURL", expr)
+
+	case posScript:
+		g.guarded(n.Line, "_, err = io.WriteString(w, view.TextJS(%s))", expr)
+
+	case posStyle:
+		g.refusable(n.Line, "view.TextCSS", expr)
+
+	case posUnquotedValue:
+		g.refuse(n.Line, "this value is written into an attribute value that has no quotes around it",
+			"an unquoted value ends at the first space, and no escape puts a space back inside it -- what follows the space is markup of its own.\n"+
+				"    Put the value in quotes.")
+
+	case posCode:
+		g.refuse(n.Line, fmt.Sprintf("this value is written into %q, whose value is a script rather than text", g.scan.attr),
+			"a character reference in an attribute is decoded before the script is read, so an escaped quote arrives as the quote it started as and closes the string it was meant to sit in.\n"+
+				"    Write the value into an ordinary attribute and have the script read it from there.")
+
+	case posElementName:
+		g.refuse(n.Line, "this value is written where the name of an element goes",
+			"an element name carries no character references, so a character that ends the name cannot be written as anything else.\n"+
+				"    Write the elements out and choose between them with @if.")
+
+	case posUnknown:
+		g.refuse(n.Line, "where this value lands in the document is not known here",
+			"the markup before it left the position open: a block that opens a tag in one branch and closes it in another, or a {!! !!}, an @include or a @yield written inside a tag.\n"+
+				"    Open and close a tag in the same block, and keep those three out of a tag.")
+
+	default:
+		// The body of an element, and the escape every template engine applies
+		// there. It is not optional: a view that interpolates without escaping
+		// is the XSS this framework refuses to make easy.
+		g.guarded(n.Line, "_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(%s)))", expr)
+	}
+
+	// Inside an attribute value the value written here is part of it from now
+	// on, so a second interpolation beside it is no longer at the front -- and
+	// the front is the only place a scheme can be introduced.
+	switch g.scan.state {
+	case stateAttrValueDouble, stateAttrValueSingle, stateAttrValueUnquoted:
+		g.scan.valueBegun = true
+	}
+}
+
+// opaque records markup this file writes and cannot read.
+//
+// A component returns markup, a partial is another file and a section comes
+// from the view that extends this one. In the body of an element that costs
+// nothing, because each of them closes what it opens. Inside a tag the position
+// of everything after it would be a guess.
+func (g *generator) opaque() {
+	if g.scan.state != stateText {
+		g.scan = htmlScanner{state: stateLost}
+	}
+}
+
+// callsOut is opaque for a directive, which is refused rather than followed
+// when it is written inside a tag.
+//
+// The difference from an interpolation is which file pays. What a @yield writes
+// is a section of a view this one is compiled without ever seeing, so a @yield
+// inside a tag moves that view's position by markup neither file can read --
+// and the view whose escapes come out wrong is the other one, which contains no
+// mistake and shows nothing on being read. Refusing here is what lets a section
+// be compiled as what it looks like: markup that begins in the body of an
+// element.
+func (g *generator) callsOut(n Node) {
+	if g.scan.state == stateText {
+		return
+	}
+	g.refuse(n.Line, fmt.Sprintf("@%s is written inside a tag", n.Name),
+		"what it writes is markup this compiler does not read, so where the document goes from here -- and which escape every value after it needs -- would be a guess.\n"+
+			"    Write it between tags rather than inside one.")
+	g.scan = htmlScanner{state: stateLost}
 }
 
 func (g *generator) directive(n Node) {
@@ -602,6 +762,7 @@ func (g *generator) directive(n Node) {
 	case "yield":
 		// Only meaningful inside a layout: it renders the section the child view
 		// declared, or nothing when it declared none.
+		g.callsOut(n)
 		fmt.Fprintf(&g.out, "\tif err == nil { err = view.Yield(w, sections, %s) }\n",
 			strconv.Quote(unquote(n.Body)))
 
@@ -614,10 +775,12 @@ func (g *generator) directive(n Node) {
 		// string one is the worse of the two by exactly the measure this project
 		// is built on: a typo in the name reaches production. The
 		// compiler-checked one is the one that stays.
+		g.callsOut(n)
 		fmt.Fprintf(&g.out, "\tif err == nil { err = view.Include(w, %s, data) }\n",
 			strconv.Quote(unquote(n.Body)))
 
 	case "csrf":
+		g.callsOut(n)
 		g.out.WriteString("\tif err == nil { err = view.CSRF(w, data) }\n")
 	}
 }
@@ -632,10 +795,10 @@ func (g *generator) directive(n Node) {
 // everything after the block depend on data, and there is no answer to give at
 // build time.
 //
-// Giving up costs the escape of a position this generator would otherwise treat
-// apart, and falls back to the escape of the body of a document. It is never the
-// other way round: nothing here can turn a position that needs a check into one
-// that does not.
+// Giving up refuses every interpolation from there on, at build time. Choosing
+// an escape for a position nobody knows is choosing one that is wrong for some
+// of the data, which is the failure this whole table exists to remove -- and it
+// is the one failure that is silent, because the page renders either way.
 func (g *generator) rejoin(opened htmlScanner) {
 	settled := opened.settled()
 	if g.scan.settled() != settled {
@@ -652,18 +815,53 @@ func (g *generator) rejoin(opened htmlScanner) {
 // able to end an attribute name, and a space -- which no escape touches --
 // ends one on its own.
 //
-// Only the positions this generator treats apart are named. Every other one is
-// posEscaped, which is what the body of an element and an ordinary quoted
-// attribute value both take.
+// The set is closed at ten: five positions with an escape of their own, four
+// with none at all, and one that is not a position but the absence of one. An
+// eleventh would mean a sixth escape, and a position answered with the escape
+// of a different one is the hole this exists to remove.
 type htmlPosition int
 
 const (
-	// posEscaped is the body of an element and the ordinary attribute value.
-	posEscaped htmlPosition = iota
-	// posAttributeName is where the name of an attribute goes. It is the one
-	// position with no escape at all: an attribute name carries no entities, so
-	// a character that ends the name cannot be written as anything else.
+	// posBody is the body of an element, where the escape is the one every
+	// template engine applies.
+	posBody htmlPosition = iota
+	// posAttributeValue is an attribute value between quotes. The quotes bound
+	// the value, so the escape only has to keep it from ending them.
+	//
+	// An attribute whose value is JSON the view wrote by hand is this position
+	// and is not answered by it: the HTML parser decodes the escaped quote back
+	// into a quote before whatever reads the JSON ever sees it. Closing that
+	// one means deciding how a view writes such an attribute, which is a
+	// question about the view rather than about the escape.
+	posAttributeValue
+	// posURL is the front of an attribute a browser resolves as an address.
+	// What decides safety there is the scheme, which is dangerous for what it
+	// means rather than for how it is written, so no escape reaches it.
+	posURL
+	// posScript is the body of a script element, where the value has to arrive
+	// as a literal rather than as source.
+	posScript
+	// posStyle is a style attribute, or the body of a style element.
+	posStyle
+	// posAttributeName is where the name of an attribute goes. An attribute
+	// name carries no character references, so a character that ends the name
+	// cannot be written as anything else.
 	posAttributeName
+	// posUnquotedValue is an attribute value with no quotes around it, which
+	// ends at the first space -- and a space is not one of the six.
+	posUnquotedValue
+	// posCode is an attribute whose value is a script rather than text. The
+	// HTML parser decodes a character reference there before the script engine
+	// reads it, so escaping hands the character back.
+	posCode
+	// posElementName is where the name of an element goes, which carries no
+	// character references either.
+	posElementName
+	// posUnknown is the position no longer being known, which is the absence of
+	// a position rather than one of them. It is refused for the same reason the
+	// four above are: an escape chosen for a position nobody knows is one that
+	// is wrong for some of the data, and the page renders either way.
+	posUnknown
 )
 
 // controlCharacters is U+0000 through U+001F.
@@ -740,6 +938,14 @@ type htmlScanner struct {
 	// closing records that the tag being read is an end tag, which opens no
 	// element.
 	closing bool
+	// valueBegun records that the attribute value being read already holds a
+	// character. It separates the front of a value from the rest of it, which
+	// is the whole of the difference between a URL whose scheme is still open
+	// and one the view has already settled.
+	//
+	// Leading space does not begin a value: a browser strips it off an address
+	// before resolving it, so a scheme can still arrive after it.
+	valueBegun bool
 }
 
 // settled is the scanner as the next delimiter inside a tag would leave it.
@@ -765,10 +971,96 @@ func (s htmlScanner) settled() htmlScanner {
 // position answers where an interpolation written now would land.
 func (s *htmlScanner) position() htmlPosition {
 	switch s.state {
+	case stateLost:
+		return posUnknown
+
+	case stateTagOpen, stateTagName:
+		return posElementName
+
 	case stateBeforeAttrName, stateAttrName, stateAfterAttrName:
 		return posAttributeName
+
+	// Before the value is where the quotes would be, so a value written there
+	// has none: what follows an `=` and is not a quote is an unquoted value.
+	case stateBeforeAttrValue, stateAttrValueUnquoted:
+		return posUnquotedValue
+
+	case stateAttrValueDouble, stateAttrValueSingle:
+		switch {
+		case attributeHoldsCode(s.attr):
+			return posCode
+		case s.attr == "style":
+			return posStyle
+		// Only at the front. Once the view has written a character of its own
+		// into the value, the scheme is settled by what the view wrote, and a
+		// colon further along belongs to a path or a query -- where refusing it
+		// would refuse a search for `time: 10am`.
+		case attributeHoldsURL(s.attr) && !s.valueBegun:
+			return posURL
+		}
+		return posAttributeValue
+
+	case stateRawText:
+		if s.raw == "style" {
+			return posStyle
+		}
+		return posScript
 	}
-	return posEscaped
+	return posBody
+}
+
+// attributeHoldsURL reports whether a browser resolves this attribute's value
+// as an address and acts on it.
+//
+// The list is of the attributes that are a single URL. srcset is not one: it
+// holds several with a descriptor after each, and checking the scheme of the
+// first would report a protection over the rest that is not there.
+//
+// The comparison is exact, so `data` is the address an object element loads and
+// `data-id` is an ordinary attribute that happens to start with the same four
+// letters.
+func attributeHoldsURL(name string) bool {
+	switch name {
+	case "action", "background", "cite", "data", "formaction", "href",
+		"manifest", "ping", "poster", "src", "xlink:href":
+		return true
+	// The verbs that make a request. They are the reason the escape cannot be
+	// chosen by the runtime alone: to the HTML parser these are attributes like
+	// any other, and only the compiler knows the value is fetched.
+	case "hx-delete", "hx-get", "hx-patch", "hx-post", "hx-put":
+		return true
+	}
+	return false
+}
+
+// attributeHoldsCode reports whether this attribute's value is a script rather
+// than text.
+//
+// They are grouped by prefix rather than listed, because each family is open on
+// purpose: an event handler exists for every event, and the two client
+// libraries name theirs after whatever event the page listens for. A list would
+// be one name short of every page that used a new one.
+func attributeHoldsCode(name string) bool {
+	switch {
+	// Every HTML attribute beginning with `on` is an event handler.
+	case strings.HasPrefix(name, "on"):
+		return true
+	// The same, in the two forms the client libraries spell it.
+	case strings.HasPrefix(name, "hx-on"), strings.HasPrefix(name, "x-on:"), strings.HasPrefix(name, "@"):
+		return true
+	// A binding, whose value is the expression whose result becomes the
+	// attribute. The bare colon is the shorthand for the long form.
+	case strings.HasPrefix(name, "x-bind:"), strings.HasPrefix(name, ":"):
+		return true
+	}
+	// The rest of the directives whose value is an expression. This family is
+	// closed, which is why it is written out.
+	switch name {
+	case "x-data", "x-effect", "x-for", "x-html", "x-if", "x-init",
+		"x-model", "x-modelable", "x-show", "x-text":
+		return true
+	}
+	return false
 }
 
 // feed reads the markup a text node writes.
@@ -872,35 +1164,43 @@ func (s *htmlScanner) feed(text string) {
 			case isHTMLSpace(c):
 				// Still before the value.
 			case c == '"':
-				s.state = stateAttrValueDouble
+				s.state, s.valueBegun = stateAttrValueDouble, false
 			case c == '\'':
-				s.state = stateAttrValueSingle
+				s.state, s.valueBegun = stateAttrValueSingle, false
 			case c == '>':
 				s.closeTag()
 			default:
-				s.state = stateAttrValueUnquoted
+				s.state, s.valueBegun = stateAttrValueUnquoted, false
 				i--
 			}
 
 		case stateAttrValueDouble:
-			if c == '"' {
-				s.attr = ""
+			switch {
+			case c == '"':
+				s.attr, s.valueBegun = "", false
 				s.state = stateBeforeAttrName
+			case !isHTMLSpace(c):
+				s.valueBegun = true
 			}
 
 		case stateAttrValueSingle:
-			if c == '\'' {
-				s.attr = ""
+			switch {
+			case c == '\'':
+				s.attr, s.valueBegun = "", false
 				s.state = stateBeforeAttrName
+			case !isHTMLSpace(c):
+				s.valueBegun = true
 			}
 
 		case stateAttrValueUnquoted:
 			switch {
 			case isHTMLSpace(c):
-				s.attr = ""
+				s.attr, s.valueBegun = "", false
 				s.state = stateBeforeAttrName
 			case c == '>':
 				s.closeTag()
+			default:
+				s.valueBegun = true
 			}
 
 		case stateComment:
@@ -938,7 +1238,7 @@ func (s *htmlScanner) closeTag() {
 	if !s.closing && (s.tag == "script" || s.tag == "style") {
 		s.raw, s.state = s.tag, stateRawText
 	}
-	s.closing, s.tag, s.attr = false, "", ""
+	s.closing, s.tag, s.attr, s.valueBegun = false, "", "", false
 }
 
 func isASCIILetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }

@@ -1,6 +1,8 @@
 package kyse_test
 
 import (
+	"errors"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -917,4 +919,313 @@ package views
 	if !strings.Contains(err.Error(), "outside any @section") {
 		t.Errorf("the error does not say what is wrong: %v", err)
 	}
+}
+
+// The escape a value gets is chosen by where the value lands in the document.
+//
+// One escape everywhere is what this replaces, and it is wrong in both
+// directions at once. The six characters that make a value inert in the body of
+// an element do nothing to a scheme, which is dangerous for what it means; and
+// inside an attribute whose value is a script they are decoded back into the
+// characters they escaped before the script is read, so the escape hands the
+// quote to the string it was meant to sit inside.
+//
+// The order is the assertion. A test that only asked whether each name appears
+// somewhere would pass on a generator that chose them by counting.
+func TestTheEscapeIsChosenByPosition(t *testing.T) {
+	const source = `//go:build kyse
+
+package views
+
+@go
+type D struct{ V string }
+@endgo
+
+<p>{{ .V }}</p>
+<div class="{{ .V }}">x</div>
+<a href="{{ .V }}">x</a>
+<a href="/posts/{{ .V }}">x</a>
+<button hx-get="{{ .V }}">x</button>
+<div style="color: {{ .V }}">x</div>
+<style>.a { color: {{ .V }} }</style>
+<script>var n = {{ .V }};</script>
+<input type="checkbox" {{ .V }}>
+`
+	file, err := kyse.Parse("resources/views/home.kyse.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := kyse.Generate(file, "home", "D", "storage/framework/views/home.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{
+		"body", // <p>{{ }}</p>
+		"attr", // class="{{ }}"
+		"url",  // href="{{ }}" -- the front of the value, where a scheme goes
+		"attr", // href="/posts/{{ }}" -- the view already settled the scheme
+		"url",  // hx-get="{{ }}" -- an address to the HTML parser is an attribute
+		"css",  // style="color: {{ }}"
+		"css",  // inside <style>
+		"js",   // inside <script>
+		"name", // where the name of an attribute goes
+	}
+	if got := escapersIn(string(out)); !reflect.DeepEqual(got, want) {
+		t.Errorf("the escapes chosen are\n%v\nand the positions ask for\n%v\n%s", got, want, out)
+	}
+}
+
+// escapersIn reads back which escape the generator chose, in the order it wrote
+// them.
+func escapersIn(generated string) []string {
+	marks := []struct{ call, name string }{
+		{"template.HTMLEscapeString(view.Text(", "body"},
+		{"view.TextAttr(", "attr"},
+		{"view.TextURL(", "url"},
+		{"view.TextJS(", "js"},
+		{"view.TextCSS(", "css"},
+		// The one position with no escape: the value is examined instead.
+		{"strings.ContainsAny(v,", "name"},
+	}
+
+	var out []string
+	for at := 0; at < len(generated); {
+		next, name := len(generated), ""
+		for _, m := range marks {
+			if i := strings.Index(generated[at:], m.call); i >= 0 && at+i < next {
+				next, name = at+i+len(m.call), m.name
+			}
+		}
+		if name == "" {
+			return out
+		}
+		out = append(out, name)
+		at = next
+	}
+	return out
+}
+
+// A position with no escape at all refuses the view, and says which position.
+//
+// Refusing at build time rather than at render time is the difference between
+// these and the name of an attribute: there the value decides, and a page
+// writing `checked` there works. In these four no value is safe, so waiting for
+// one is waiting for nothing.
+func TestAPositionWithNoEscapeRefusesTheView(t *testing.T) {
+	for _, c := range []struct {
+		what, markup, says string
+		line               int
+	}{
+		{
+			"an attribute value with no quotes",
+			`<input value={{ .V }}>`,
+			"has no quotes around it", 9,
+		},
+		{
+			"an attribute whose value is a script",
+			`<button onclick="f({{ .V }})">x</button>`,
+			"is a script rather than text", 9,
+		},
+		{
+			"an attribute of the client library, whose value is an expression",
+			`<span x-text="{{ .V }}"></span>`,
+			"is a script rather than text", 9,
+		},
+		{
+			"the name of an element",
+			`<{{ .V }} class="a">x`,
+			"the name of an element goes", 9,
+		},
+		{
+			"a tag left open by one branch of a block",
+			"@if(.V != \"\")\n<span title=\"\n@endif\n{{ .V }}",
+			"is not known here", 12,
+		},
+		{
+			"markup this compiler cannot read, written inside a tag",
+			`<div class="{!! .V !!}">{{ .V }}</div>`,
+			"is not known here", 9,
+		},
+	} {
+		t.Run(c.what, func(t *testing.T) {
+			source := "//go:build kyse\n\npackage views\n\n@go\ntype D struct{ V string }\n@endgo\n\n" + c.markup + "\n"
+			file, err := kyse.Parse("resources/views/home.kyse.go", source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := kyse.Generate(file, "home", "D", "storage/framework/views/home.go")
+			if err == nil {
+				t.Fatalf("the view compiled, and the position it writes into has no escape:\n%s", out)
+			}
+			if !strings.Contains(err.Error(), c.says) {
+				t.Errorf("the refusal does not say which position: %v", err)
+			}
+
+			// A refusal nobody can act on is a refusal nobody acts on.
+			var positioned *kyse.Error
+			if !errors.As(err, &positioned) {
+				t.Fatalf("the refusal carries no position: %v", err)
+			}
+			if positioned.Path != "resources/views/home.kyse.go" || positioned.Line != c.line {
+				t.Errorf("the refusal points at %s:%d, and the view wrote it at resources/views/home.kyse.go:%d",
+					positioned.Path, positioned.Line, c.line)
+			}
+			if positioned.Hint == "" {
+				t.Error("the refusal says what is wrong and not what to do about it")
+			}
+		})
+	}
+}
+
+// A refusal that happens at render time names the view that asked for the value.
+//
+// Two of the escapes answer with an error rather than a string, because what
+// they refuse is data: a URL whose scheme a browser acts on, and a style value
+// carrying a rule of its own. Neither can be decided at build time, and neither
+// may stop the process -- a visitor would take the page down with what they
+// typed. What is left is an error, and an error that does not name the view
+// leaves somebody grepping a tree of generated files.
+func TestARefusedValueNamesTheViewAndTheLine(t *testing.T) {
+	const source = `//go:build kyse
+
+package views
+
+@go
+type D struct{ V string }
+@endgo
+
+<a href="{{ .V }}">x</a>
+`
+	file, err := kyse.Parse("resources/views/home.kyse.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := kyse.Generate(file, "home", "D", "storage/framework/views/home.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(out)
+
+	if !strings.Contains(got, `"resources/views/home.kyse.go:9"`) {
+		t.Errorf("the refusal does not carry the view's position:\n%s", got)
+	}
+	// The value is written only when it was not refused. Writing it either way
+	// is how an escape that refuses becomes an escape that reports.
+	if !strings.Contains(got, "if err != nil {") || !strings.Contains(got, "_, err = io.WriteString(w, s)") {
+		t.Errorf("the refused value is written anyway:\n%s", got)
+	}
+}
+
+// Markup that balances inside a block leaves the position where it found it.
+//
+// Without this every component that writes a bare attribute inside an @if would
+// give up the position for the rest of the file, and a file that has given up
+// refuses every interpolation after it. The block has to be read, not feared.
+func TestABalancedBlockKeepsThePosition(t *testing.T) {
+	const source = `//go:build kyse
+
+package views
+
+@go
+type D struct{ V string }
+@endgo
+
+<a class="btn @if(.V != "")on@endif" href="{{ .V }}">x</a>
+@foreach(.V as row)
+	<li>{{ row }}</li>
+@endforeach
+<p>{{ .V }}</p>
+`
+	file, err := kyse.Parse("resources/views/home.kyse.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := kyse.Generate(file, "home", "D", "storage/framework/views/home.go")
+	if err != nil {
+		t.Fatalf("a view whose markup balances was refused: %v", err)
+	}
+
+	want := []string{"url", "body", "body"}
+	if got := escapersIn(string(out)); !reflect.DeepEqual(got, want) {
+		t.Errorf("the escapes chosen are\n%v\nand the positions ask for\n%v\n%s", got, want, out)
+	}
+}
+
+// What a directive writes is another file's markup, and it is refused inside a
+// tag rather than followed.
+//
+// The two together are one contract, and it is what lets a section be compiled
+// on its own: a @yield writes a section into the body of an element, and the
+// section gives the position back where it found it. Broken from either side,
+// the file that renders wrong is the other one -- which contains no mistake and
+// shows nothing on being read, because the two are compiled separately and
+// neither ever sees the other.
+func TestASectionAndItsYieldMeetInTheBodyOfAnElement(t *testing.T) {
+	t.Run("a @yield inside a tag", func(t *testing.T) {
+		const source = `//go:build kyse
+
+package views
+
+<body
+@yield('attributes')
+>
+</body>
+`
+		file, err := kyse.Parse("resources/views/layouts/app.kyse.go", source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = kyse.Generate(file, "layouts.app", kyse.RenderType(file), "storage/framework/views/layouts/app.go")
+		if err == nil {
+			t.Fatal("a @yield inside a tag was accepted: it decides the position of a file it never sees")
+		}
+		if !strings.Contains(err.Error(), "@yield is written inside a tag") {
+			t.Errorf("the refusal does not say what is wrong: %v", err)
+		}
+	})
+
+	t.Run("a section that leaves a tag open", func(t *testing.T) {
+		const source = `//go:build kyse
+
+package views
+
+@extends('layouts.app')
+
+@section('content')
+	<div class="
+@endsection
+`
+		file, err := kyse.Parse("resources/views/home.kyse.go", source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = kyse.Generate(file, "home", "view.Page", "storage/framework/views/home.go")
+		if err == nil {
+			t.Fatal("a section that leaves a tag open was accepted: it moves the layout's position by markup the layout never sees")
+		}
+		if !strings.Contains(err.Error(), "leaves a tag open") {
+			t.Errorf("the refusal does not say what is wrong: %v", err)
+		}
+	})
+
+	t.Run("a section that closes what it opens", func(t *testing.T) {
+		const source = `//go:build kyse
+
+package views
+
+@extends('layouts.app')
+
+@section('content')
+	<div class="a"><p>x</p></div>
+@endsection
+`
+		file, err := kyse.Parse("resources/views/home.kyse.go", source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := kyse.Generate(file, "home", "view.Page", "storage/framework/views/home.go"); err != nil {
+			t.Fatalf("a section whose markup balances was refused: %v", err)
+		}
+	})
 }

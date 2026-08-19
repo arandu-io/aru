@@ -40,7 +40,7 @@ func renderInternalDoctorTestdataCleanResourcesViewsInvoicesRow(w io.Writer, dat
 	}
 	if err == nil {
 //line internal/doctor/testdata/clean/resources/views/invoices/row.kyse.go:12
-		_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(d.Invoice.ID)))
+		_, err = io.WriteString(w, view.TextAttr(d.Invoice.ID))
 //line internal/doctor/testdata/clean/storage/framework/views/invoices/row.go:45
 	}
 	if err == nil {

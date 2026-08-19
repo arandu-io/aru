@@ -42,6 +42,8 @@ import (
 //     interpolation form
 //   - what the generator writes parses as Go, whenever the Go the view wrote
 //     does
+//   - a value the generator refuses is refused at a line the view has, the same
+//     as a problem the parser reports
 //
 // The last one is the generator's own claim about itself: output that does not
 // parse is its bug, never the view's. It is checked only when the verbatim
@@ -96,7 +98,7 @@ func FuzzParse(f *testing.F) {
 		}
 
 		checkTree(t, file, lines)
-		checkGeneratedGoParses(t, file, component)
+		checkGeneratedGoParses(t, file, component, lines)
 	})
 }
 
@@ -190,11 +192,14 @@ func checkTree(t *testing.T, file *kyse.File, lines int) {
 // checkGeneratedGoParses holds the generator to its claim: Go it wrote that does
 // not parse is its own bug.
 //
-// Two refusals are the view's and are let through. A view that reads a field
-// with no type to read it from is refused by name, with a position. A misplaced
-// @else, @elseif or @empty is written out as Go that does not compile on
-// purpose -- emitting nothing is what hid the mistake for as long as it lived.
-func checkGeneratedGoParses(t *testing.T, file *kyse.File, component bool) {
+// Three refusals are the view's and are let through. A view that reads a field
+// with no type to read it from is refused by name, with a position. A value
+// written where the document has no escape that holds it -- an unquoted
+// attribute value, an attribute whose value is a script, the name of an element,
+// or a position the markup before it left open -- is refused the same way. A
+// misplaced @else, @elseif or @empty is written out as Go that does not compile
+// on purpose: emitting nothing is what hid the mistake for as long as it lived.
+func checkGeneratedGoParses(t *testing.T, file *kyse.File, component bool, lines int) {
 	t.Helper()
 
 	if !verbatimGoParses(file) {
@@ -209,7 +214,17 @@ func checkGeneratedGoParses(t *testing.T, file *kyse.File, component bool) {
 	out, err := kyse.Generate(file, name, kyse.RenderType(file), "storage/framework/views/fuzz.go")
 	if err != nil {
 		var positioned *kyse.Error
-		if errors.As(err, &positioned) || misplacedInline(file) {
+		if errors.As(err, &positioned) {
+			// A refusal is acted on by opening the view at the line it names,
+			// so a line the view does not have is a refusal nobody can act on.
+			for _, p := range diagnoses(err) {
+				if p.Line < 1 || p.Line > lines {
+					t.Errorf("the generator refused an interpolation at line %d of a view that has %d: %s", p.Line, lines, p.Message)
+				}
+			}
+			return
+		}
+		if misplacedInline(file) {
 			return
 		}
 		t.Fatalf("Generate refused a view whose own Go parses: %v", err)

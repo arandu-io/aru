@@ -39,3 +39,14 @@ func (u User) LogValue() slog.Value {
 func (u User) MarshalJSON() ([]byte, error) {
 	return []byte(`{"id":"` + u.ID + `"}`), nil
 }
+
+// Payment is the entity of the second aggregate, and the reason it is here is
+// the transaction that settles an invoice: it writes two of them at once, which
+// is ordinary SQL and has no equivalent on the performance profile.
+type Payment struct {
+	ID        string
+	TenantID  string
+	InvoiceID string
+	Amount    int64
+	CreatedAt time.Time
+}

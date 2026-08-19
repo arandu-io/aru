@@ -16,13 +16,15 @@ import (
 
 // InvoiceService is the only caller of the invoice repository.
 type InvoiceService struct {
-	repo   *repositories.InvoiceRepository
-	policy policies.InvoicePolicy
+	db       *data.DB
+	repo     *repositories.InvoiceRepository
+	payments *repositories.PaymentRepository
+	policy   policies.InvoicePolicy
 }
 
 // NewInvoiceService wires the service. Explicit constructor, no container.
-func NewInvoiceService(repo *repositories.InvoiceRepository) *InvoiceService {
-	return &InvoiceService{repo: repo}
+func NewInvoiceService(db *data.DB, repo *repositories.InvoiceRepository, payments *repositories.PaymentRepository) *InvoiceService {
+	return &InvoiceService{db: db, repo: repo, payments: payments}
 }
 
 // List returns a page of invoices.
@@ -56,4 +58,26 @@ func (s *InvoiceService) Create(ctx context.Context, actor security.Subject, in 
 		return models.Invoice{}, err
 	}
 	return s.repo.Create(ctx, g, candidate)
+}
+
+// Settle records the payment and stores the invoice, in one transaction.
+//
+// Two aggregates in one commit: correct on a relational database, and a finding
+// on the performance profile, where the two live in different partitions and
+// nothing commits them together. The SQL is one level down, in the repositories,
+// which is the shape a service has -- and the reason the check reads the
+// repository fields when the transaction holds no statement of its own.
+func (s *InvoiceService) Settle(ctx context.Context, actor security.Subject, invoice models.Invoice, p models.Payment) error {
+	g, err := security.Authorize(ctx, s.policy, actor, policies.ActionUpdateInvoice, invoice)
+	if err != nil {
+		return err
+	}
+
+	return data.Transaction(ctx, s.db, func(ctx context.Context) error {
+		if _, err := s.repo.Create(ctx, g, invoice); err != nil {
+			return err
+		}
+		_, err := s.payments.Create(ctx, g, p)
+		return err
+	})
 }

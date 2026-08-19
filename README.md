@@ -47,11 +47,13 @@ plus `help` and `version`.
   moment it lands.
 - **`aru generate`** — the same output, from a written specification: the
   model writes the spec, never the Go.
-- **`aru doctor`** — 23 named rules read the AST of a project, without
+- **`aru doctor`** — 28 named rules read the AST of a project, without
   running it, and fail CI on the first error. Among them:
   `repository-without-policy`, `grant-not-checked`, `sql-without-tenant-scope`,
   `tenant-from-request`, `tenant-from-header`, `sql-built-by-concatenation`,
-  `view-does-not-exist`, `session-not-rotated`.
+  `view-does-not-exist`, `session-not-rotated`. Three more answer only to
+  `--profile=performance`, where a join and a transaction across two aggregates
+  stop being ordinary SQL and become findings.
 - **`aru trace`** — a request reconstructed in the terminal, from the running
   application.
 - **`aru font:add`** — vendors a font into the project: the unicode range and

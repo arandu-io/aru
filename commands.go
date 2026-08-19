@@ -259,7 +259,7 @@ var commands = []command{
 	},
 	{
 		name:  "doctor",
-		usage: "aru doctor [--strict]",
+		usage: "aru doctor [--strict] [--profile=performance]",
 		desc:  "check that the project honors the framework contracts",
 		run:   runDoctor,
 	},

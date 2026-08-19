@@ -18,7 +18,15 @@ func runDoctor(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	strict := fs.Bool("strict", false, "treat warnings as errors")
+	// One spelling, in English like every other flag, and the two values are the
+	// ones arandu.mod.toml already uses. Naming the default explicitly is how a
+	// pipeline says which profile it meant.
+	name := fs.String("profile", string(doctor.Conventional), "check against a deployment profile: conventional or performance")
 	if err := fs.Parse(args); err != nil {
+		return fmt.Errorf("doctor: %w", err)
+	}
+	profile, err := doctor.ParseProfile(*name)
+	if err != nil {
 		return fmt.Errorf("doctor: %w", err)
 	}
 
@@ -27,7 +35,7 @@ func runDoctor(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	findings, err := doctor.Run(root)
+	findings, err := doctor.Run(root, profile)
 	if err != nil {
 		return fmt.Errorf("doctor: %w", err)
 	}
@@ -43,9 +51,17 @@ func runDoctor(args []string, stdout, stderr io.Writer) error {
 		}
 	}
 
+	// The profile is named on a clean run and only then. A report that says
+	// nothing about which profile produced it reads as an answer about both, and
+	// the performance one is the answer somebody would act on.
+	on := ""
+	if profile != doctor.Conventional {
+		on = " on the " + string(profile) + " profile"
+	}
+
 	switch {
 	case errors == 0 && warnings == 0:
-		fmt.Fprintln(stdout, "no findings")
+		fmt.Fprintln(stdout, "no findings"+on)
 		return nil
 	case errors == 0 && !*strict:
 		fmt.Fprintf(stdout, "%d warning(s), no errors\n", warnings)

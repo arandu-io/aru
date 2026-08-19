@@ -38,6 +38,37 @@ import (
 // viewsDir is where a project keeps its views.
 const viewsDir = "resources/views"
 
+// Profile is the deployment profile a project is checked against.
+//
+// The two labels are the ones arandu.mod.toml already spells in its profiles
+// list, so a project asks for the check in the same word it declares support in.
+type Profile string
+
+// The two profiles. There is no third, and no "auto": a profile that is guessed
+// from the code is a profile nobody can put in a pipeline.
+const (
+	// Conventional is the SQL profile, and what Run checks when nothing else is
+	// asked for.
+	Conventional Profile = "conventional"
+	// Performance is the wide-column profile. It stores one aggregate per
+	// partition, which is why a statement reaching two tables and a transaction
+	// spanning two aggregates are findings here and correct code elsewhere.
+	Performance Profile = "performance"
+)
+
+// ParseProfile reads what was passed to the profile flag.
+//
+// An unknown value is an error rather than a fallback to Conventional: a typo
+// that silently checks less than was asked for is the failure this returns an
+// error to prevent.
+func ParseProfile(s string) (Profile, error) {
+	switch p := Profile(s); p {
+	case Conventional, Performance:
+		return p, nil
+	}
+	return "", fmt.Errorf("unknown profile %q, want %s or %s", s, Conventional, Performance)
+}
+
 // Severity says whether a finding blocks CI.
 type Severity int
 
@@ -76,8 +107,14 @@ func (f Finding) String() string {
 // project is everything a rule can look at: the parsed Go, the views, and what
 // the project declares about itself.
 type project struct {
-	root  string
-	files []*file
+	root string
+	// profile is what the project is being checked against.
+	//
+	// It reaches the rules rather than selecting them, so `rules` stays the whole
+	// check surface and a profile rule says in its own first lines when it does
+	// not apply -- which is where somebody reading it will look.
+	profile Profile
+	files   []*file
 	// manifest is the arandu.mod.toml at the root, or nil.
 	//
 	// It sits at the root because the unit of distribution is the Go module:
@@ -225,11 +262,14 @@ func classify(rel string) (category, entity string) {
 	return parts[len(parts)-2], base
 }
 
-// Run analyzes the project rooted at dir.
+// Run analyzes the project rooted at dir against one profile.
+//
+// Every rule runs on both profiles except the three that only make sense on
+// Performance, so asking for a profile adds checks and never removes any.
 //
 // Findings come back sorted by file and line, so the output is stable and a diff
 // between two runs means something.
-func Run(dir string) ([]Finding, error) {
+func Run(dir string, profile Profile) ([]Finding, error) {
 	files, unreadable, err := parseProject(dir)
 	if err != nil {
 		return nil, err
@@ -243,7 +283,7 @@ func Run(dir string) ([]Finding, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &project{root: dir, files: files, manifest: declared, views: views, unreadable: unreadable}
+	p := &project{root: dir, profile: profile, files: files, manifest: declared, views: views, unreadable: unreadable}
 
 	var findings []Finding
 	for _, rule := range rules {

@@ -232,6 +232,46 @@ func TestProjectRootIsFoundFromASubdirectory(t *testing.T) {
 	}
 }
 
+// TestDoctorTakesAProfile pins the flag at the level a pipeline uses it.
+//
+// A rule test proves the checks work; this proves they are reachable. A check
+// nobody can ask for is a check nobody runs.
+func TestDoctorTakesAProfile(t *testing.T) {
+	root := t.TempDir()
+	for name, body := range map[string]string{
+		"go.mod":      "module example\n",
+		"main.go":     "package main\n\nfunc main() {}\n",
+		"arandu.toml": "name = \"test\"\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(root)
+
+	code, stdout, stderr := exercise(t, "doctor", "--profile=performance")
+	if code != 0 {
+		t.Fatalf("doctor --profile=performance exited %d: %s", code, stderr)
+	}
+	// The profile is in the summary, so a clean report cannot be mistaken for the
+	// other profile's clean report.
+	if !strings.Contains(stdout, "performance") {
+		t.Errorf("a clean run does not say which profile produced it: %q", stdout)
+	}
+
+	if code, _, _ := exercise(t, "doctor", "--profile=conventional"); code != 0 {
+		t.Error("the default profile is not accepted by name, so a pipeline cannot say which one it meant")
+	}
+
+	code, _, stderr = exercise(t, "doctor", "--profile=fast")
+	if code == 0 {
+		t.Error("an unknown profile exited 0: a typo would check less than was asked for and say nothing")
+	}
+	if !strings.Contains(stderr, "performance") {
+		t.Errorf("the error does not name the values that exist: %q", stderr)
+	}
+}
+
 // TestCommandNamesAreUnique guards the dispatch table itself.
 func TestCommandNamesAreUnique(t *testing.T) {
 	seen := map[string]bool{}

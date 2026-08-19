@@ -23,13 +23,24 @@ import (
 func TestEveryRuleFiresOnAFixture(t *testing.T) {
 	fired := map[string]bool{}
 	for _, dir := range []string{"testdata/violations", "testdata/gaps", "testdata/broken"} {
-		findings, err := Run(dir)
+		findings, err := Run(dir, Conventional)
 		if err != nil {
 			continue // a fixture that does not load is the other tests' problem
 		}
 		for _, f := range findings {
 			fired[f.Rule] = true
 		}
+	}
+	// The performance profile has to be walked too, or the three rules that only
+	// run there are indistinguishable from three rules somebody deleted. The
+	// fixture is the clean one on purpose: what it holds is correct code with a
+	// join in it, which is exactly what the profile turns into a finding.
+	performance, err := Run("testdata/clean", Performance)
+	if err != nil {
+		t.Fatalf("Run on the performance profile: %v", err)
+	}
+	for _, f := range performance {
+		fired[f.Rule] = true
 	}
 
 	// A rule reached by no fixture is named by its function, which is what the
@@ -118,6 +129,9 @@ func emitsByRule() map[string][]string {
 		"theOutboxTableTravelsWithWhatWritesToIt": {"outbox-not-registered"},
 		"resourceNotReauthorized":                 {"resource-not-reauthorized"},
 		"rawOutputIsAComponent":                   {"raw-output-is-not-a-component"},
+		"theProfileIsDeclared":                    {"profile-not-declared"},
+		"queriesReachOneAggregate":                {"join-across-aggregates"},
+		"transactionsStayInsideOneAggregate":      {"transaction-across-aggregates"},
 	}
 }
 
@@ -235,6 +249,51 @@ func TestIsNamedCallSeparatesAComponentFromAValue(t *testing.T) {
 	} {
 		if got := isNamedCall(c.expr); got != c.want {
 			t.Errorf("isNamedCall(%q) = %t, want %t: %s", c.expr, got, c.want, c.why)
+		}
+	}
+}
+
+// TestTablesNamedSeparatesAJoinFromASubquery pins the one decision the aggregate
+// rules make.
+//
+// Everything else about the performance profile follows from this function: a
+// statement that names two tables is a join and cannot be spelled on a
+// wide-column store, and a statement that names one is the shape the generator
+// emits. Getting it wrong in the noisy direction is worse than having no rule,
+// because whoever trusts it redesigns a write that was already correct.
+func TestTablesNamedSeparatesAJoinFromASubquery(t *testing.T) {
+	for _, c := range []struct {
+		sql  string
+		want []string
+		why  string
+	}{
+		{"SELECT id FROM invoices WHERE tenant_id = ?", []string{"invoices"}, "the ordinary read"},
+		{"UPDATE invoices SET total = ? WHERE id = ?", []string{"invoices"}, "the ordinary write"},
+		{"DELETE FROM invoices WHERE id = ?", []string{"invoices"}, "the ordinary delete"},
+		{"INSERT INTO invoices (id, total) VALUES (?, ?)", []string{"invoices"}, "the column list is not a table"},
+
+		// The generated List, as sqlStatements sees it: the columns constant is
+		// not a literal and drops out, and the cursor predicate reads the
+		// repository's own table twice.
+		{"SELECT  FROM invoices WHERE tenant_id = ?", []string{"invoices"}, "the generated List"},
+		{"AND ( created_at > (SELECT created_at FROM invoices WHERE id = ? AND tenant_id = ?) OR (created_at = (SELECT created_at FROM invoices WHERE id = ? AND tenant_id = ?) AND id > ?))",
+			[]string{"invoices"}, "the keyset cursor: a subquery over one aggregate, which every generated module carries"},
+
+		{"SELECT i.id FROM invoices i JOIN customers c ON c.id = i.customer_id", []string{"invoices", "customers"}, "the join, with aliases"},
+		{"SELECT id FROM invoices, lines WHERE lines.invoice_id = invoices.id", []string{"invoices", "lines"}, "a join written without the word"},
+		{"SELECT id FROM invoices LEFT OUTER JOIN lines ON lines.invoice_id = invoices.id", []string{"invoices", "lines"}, "the word is still JOIN however it is qualified"},
+		{"INSERT INTO summaries (id) SELECT id FROM invoices", []string{"summaries", "invoices"}, "a write fed by another table"},
+
+		{"INSERT INTO invoices (id) VALUES (?) ON CONFLICT (id) DO UPDATE SET total = ?",
+			[]string{"invoices"}, "an upsert names one table: what follows the second UPDATE is SET, and reading it as a table invents a join"},
+
+		{"SELECT id FROM public.invoices WHERE public.invoices.tenant_id = ?", []string{"invoices"}, "a schema qualifier is not a second table"},
+		{"SELECT count(*) FROM (SELECT id FROM invoices) t", []string{"invoices"}, "a derived table names nothing of its own"},
+		{"SELECT id FROM invoices ORDER BY created_at LIMIT ?", []string{"invoices"}, "a clause keyword is not a table"},
+	} {
+		got := tablesNamed(c.sql)
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("tablesNamed(%q) = %v, want %v: %s", c.sql, got, c.want, c.why)
 		}
 	}
 }

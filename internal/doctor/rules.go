@@ -32,6 +32,11 @@ import (
 // runs `aru doctor` is not required to run anything else, so a report that
 // verified authorization and left injection to a second tool would be half an
 // answer.
+//
+// The last three run only on the performance profile, and they say so in their
+// own first lines rather than being kept in a second slice: what they report is
+// correct code on the conventional profile, which is a fact about each rule and
+// not about how the set is assembled.
 var rules = []func(*project) []Finding{
 	unreadableFiles,
 	repositoryNeedsPolicy,
@@ -52,6 +57,9 @@ var rules = []func(*project) []Finding{
 	theOutboxTableTravelsWithWhatWritesToIt,
 	resourceNotReauthorized,
 	rawOutputIsAComponent,
+	theProfileIsDeclared,
+	queriesReachOneAggregate,
+	transactionsStayInsideOneAggregate,
 }
 
 // 0. A file doctor could not read makes every other rule unreliable.
@@ -1827,15 +1835,24 @@ func sqlStatements(fn *ast.FuncDecl) []sqlStatement {
 	if fn.Body == nil {
 		return nil
 	}
+	return sqlStatementsIn(fn.Body, scopedVerb)
+}
 
+// sqlStatementsIn is sqlStatements over any node and any set of verbs.
+//
+// Both parameters exist for the same reason: a rule about the WHERE clause wants
+// the whole body and only the statements that carry a predicate, and a rule about
+// the aggregate boundary wants the inside of one transaction and the INSERT too.
+// One reader, asked two different questions.
+func sqlStatementsIn(node ast.Node, verb func(string) (string, bool)) []sqlStatement {
 	var out []sqlStatement
 	record := func(text string, n ast.Node) {
-		if verb, ok := scopedVerb(text); ok {
-			out = append(out, sqlStatement{verb: verb, text: text, node: n})
+		if v, ok := verb(text); ok {
+			out = append(out, sqlStatement{verb: v, text: text, node: n})
 		}
 	}
 
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
+	ast.Inspect(node, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.BinaryExpr:
 			if x.Op != token.ADD {
@@ -1879,9 +1896,24 @@ func concatenatedString(e ast.Expr) string {
 // scopedVerb reports which of the three statements that carry a predicate this
 // text is.
 func scopedVerb(text string) (string, bool) {
+	return firstVerb(text, "SELECT ", "UPDATE ", "DELETE ")
+}
+
+// statementVerb reports which statement this text is, INSERT included.
+//
+// The aggregate rules need the fourth verb and the tenant rule must not have it:
+// the tenant of a row being written is a value in the column list and not a
+// predicate, so an INSERT reaching scopedVerb would be reported for a WHERE it
+// never had.
+func statementVerb(text string) (string, bool) {
+	return firstVerb(text, "SELECT ", "INSERT ", "UPDATE ", "DELETE ")
+}
+
+// firstVerb returns whichever of the verbs appears earliest in the text.
+func firstVerb(text string, verbs ...string) (string, bool) {
 	upper := strings.ToUpper(text)
 	found, at := "", -1
-	for _, verb := range []string{"SELECT ", "UPDATE ", "DELETE "} {
+	for _, verb := range verbs {
 		i := strings.Index(upper, verb)
 		if i < 0 || (at >= 0 && i >= at) {
 			continue
@@ -2136,4 +2168,376 @@ func endOfLiteral(s string, start int) int {
 		}
 	}
 	return -1
+}
+
+// 19. The performance profile is asked for and the project says it does not run
+// there.
+//
+// The profiles list is what the registry shows and the only thing an installer
+// reads before choosing a module, so a module that passes every check below and
+// still declares one profile is telling people the opposite of what it does.
+//
+// A warning, not an error, and the reason is the order the two things happen in:
+// running this check is how somebody finds out whether the declaration can be
+// made, so failing for the missing declaration would refuse to answer the
+// question it was asked. A project with no manifest at all is silent -- an
+// application is not published, and demanding the file from every `aru new` is a
+// finding on correct code.
+func theProfileIsDeclared(p *project) []Finding {
+	if p.profile != Performance || p.manifest == nil || len(p.manifest.Profiles) == 0 {
+		return nil
+	}
+	for _, declared := range p.manifest.Profiles {
+		if declared == string(Performance) {
+			return nil
+		}
+	}
+
+	name := p.manifest.Name
+	if name == "" {
+		name = "this project"
+	}
+	return []Finding{{
+		Rule: "profile-not-declared", Severity: Warning,
+		File: relativeTo(p.root, p.manifest.Path), Line: 1,
+		Message: name + " declares profiles = [" + strings.Join(p.manifest.Profiles, ", ") + "] and is being checked against " + string(Performance),
+		Why: "the profiles list is what an installer reads before choosing a module, and it currently says this one does not run here. " +
+			"Add \"" + string(Performance) + "\" to it once the rest of this report is clean.",
+	}}
+}
+
+// 20. A statement that names two tables has no equivalent on the performance
+// profile.
+//
+// A wide-column store keeps one aggregate per partition and has no join, so the
+// query has to become one read per entity with the result assembled in Go. That
+// is a different repository, not a different dialect, which is why it is worth
+// knowing before the module declares it supports the profile rather than after.
+//
+// It counts TABLES rather than looking for the word JOIN, and the difference is
+// what keeps it off correct code: the List the generator emits carries a keyset
+// cursor written as a subquery over its own table, which is one aggregate and
+// runs on both profiles. Counting tables reads that as one and reads
+// `FROM invoices, lines` -- a join with no JOIN in it -- as two.
+//
+// # What it does not see
+//
+// The same blind spots sqlStatements has, and they are the honest limit of the
+// answer: a statement held entirely in a package-level constant, and one
+// assembled from a variable. Both are invisible here, so a clean report on the
+// performance profile means no join was found, not that none exists.
+func queriesReachOneAggregate(p *project) []Finding {
+	if p.profile != Performance {
+		return nil
+	}
+
+	var out []Finding
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+		f.functions(func(fn *ast.FuncDecl) {
+			if fn.Body == nil {
+				return
+			}
+			for _, sql := range sqlStatementsIn(fn.Body, statementVerb) {
+				tables := tablesNamed(sql.text)
+				if len(tables) < 2 {
+					continue
+				}
+				file, line := f.at(sql.node)
+				out = append(out, Finding{
+					Rule: "join-across-aggregates", Severity: Error,
+					File: file, Line: line,
+					Message: "the " + sql.verb + " in " + fn.Name.Name + " reads " + strings.Join(tables, " and "),
+					Why: "the performance profile stores one aggregate per partition and has no join, so this statement has no equivalent there: it becomes one query per entity, joined in Go. " +
+						"On the conventional profile it is correct, which is why it is reported only when the performance profile is asked for.",
+				})
+			}
+		})
+	}
+	return out
+}
+
+// 21. A transaction that spans two aggregates has no equivalent either.
+//
+// A wide-column store has no transaction across partitions, so a write that
+// needs two of them to succeed or fail together cannot be expressed: it becomes
+// two writes and something that reconciles them, which is a design decision and
+// not a port.
+//
+// # The two shapes it reads, and the one it does not
+//
+// data.Transaction with a function literal is the framework's transaction, and
+// the region is the literal's body. A raw Begin or BeginTx on the handle is the
+// other, and there the region runs from the call to the end of the enclosing
+// function, because nothing marks where such a transaction ends.
+//
+// Inside a region it counts aggregates two ways and never mixes them: the tables
+// of the SQL written there, or -- when there is none -- the repository fields the
+// region calls, which is the shape a service has, with the SQL one level down in
+// the repositories. Mixing them would count `invoices` and InvoiceRepository as
+// two aggregates when they are one.
+//
+// A transaction whose repositories arrive as locals rather than fields, or whose
+// work sits in a function called from inside it, is not seen. Under-reporting is
+// the direction to be wrong in: a rule that invents a cross-aggregate
+// transaction sends somebody to redesign a write that was already fine.
+func transactionsStayInsideOneAggregate(p *project) []Finding {
+	if p.profile != Performance {
+		return nil
+	}
+
+	var out []Finding
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+		fields := repositoryFields(f)
+		f.functions(func(fn *ast.FuncDecl) {
+			for _, region := range transactionRegions(fn) {
+				touched, kind := aggregatesTouched(region, fields)
+				if len(touched) < 2 {
+					continue
+				}
+				file, line := f.at(region.opened)
+				out = append(out, Finding{
+					Rule: "transaction-across-aggregates", Severity: Error,
+					File: file, Line: line,
+					Message: "the transaction in " + fn.Name.Name + " writes " + kind + " " + strings.Join(touched, " and "),
+					Why: "the performance profile has no transaction across partitions, so these writes cannot commit or roll back together there: one succeeds and the other does not, and something has to reconcile them. " +
+						"On the conventional profile it is correct, which is why it is reported only when the performance profile is asked for.",
+				})
+			}
+		})
+	}
+	return out
+}
+
+// transactionRegion is the part of a body that runs inside a transaction.
+type transactionRegion struct {
+	// opened is the call that started it, which is where the finding points.
+	opened ast.Node
+	// node is what to read for the work: the literal's body, or the whole
+	// enclosing body when the transaction has no literal to bound it.
+	node ast.Node
+	// from and to bound the region inside node.
+	from, to token.Pos
+}
+
+// transactionRegions finds the transactions a function opens.
+func transactionRegions(fn *ast.FuncDecl) []transactionRegion {
+	if fn.Body == nil {
+		return nil
+	}
+
+	var out []transactionRegion
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		switch name := callName(call); {
+		case name == "data.Transaction":
+			// The work is the literal, whatever position it was passed in.
+			for _, arg := range call.Args {
+				lit, ok := arg.(*ast.FuncLit)
+				if !ok || lit.Body == nil {
+					continue
+				}
+				out = append(out, transactionRegion{
+					opened: call, node: lit.Body,
+					from: lit.Body.Pos(), to: lit.Body.End(),
+				})
+			}
+		case strings.HasSuffix(name, ".Begin"), strings.HasSuffix(name, ".BeginTx"):
+			out = append(out, transactionRegion{
+				opened: call, node: fn.Body,
+				from: call.Pos(), to: fn.Body.End(),
+			})
+		}
+		return true
+	})
+	return out
+}
+
+// aggregatesTouched names what the region writes, and says which of the two
+// signals answered.
+//
+// The SQL comes first because it names the table, which is what the person
+// reading the finding has to go and look at. The repository fields answer for the
+// service that opens the transaction and calls down, where there is no SQL to
+// read at this level at all.
+func aggregatesTouched(region transactionRegion, fields map[string]string) ([]string, string) {
+	var tables []string
+	seen := map[string]bool{}
+	for _, sql := range sqlStatementsIn(region.node, statementVerb) {
+		if sql.node.Pos() < region.from || sql.node.Pos() >= region.to {
+			continue
+		}
+		for _, table := range tablesNamed(sql.text) {
+			if !seen[table] {
+				seen[table] = true
+				tables = append(tables, table)
+			}
+		}
+	}
+	if len(tables) > 0 {
+		return tables, "the tables"
+	}
+
+	var repositories []string
+	called := map[string]bool{}
+	ast.Inspect(region.node, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || call.Pos() < region.from || call.Pos() >= region.to {
+			return true
+		}
+		// s.invoices.Create: the field is the segment before the method.
+		parts := strings.Split(callName(call), ".")
+		if len(parts) < 2 {
+			return true
+		}
+		repository, known := fields[parts[len(parts)-2]]
+		if !known || called[repository] {
+			return true
+		}
+		called[repository] = true
+		repositories = append(repositories, repository)
+		return true
+	})
+	return repositories, "through"
+}
+
+// repositoryFields maps a field name to the repository type it holds, for every
+// struct the file declares.
+//
+// The file, not the project: doctor never resolves types across files, and the
+// struct that holds the repositories is declared next to the method that uses
+// them in every tree the generator emits.
+func repositoryFields(f *file) map[string]string {
+	out := map[string]string{}
+	f.types(func(ts *ast.TypeSpec) {
+		st, ok := ts.Type.(*ast.StructType)
+		if !ok || st.Fields == nil {
+			return
+		}
+		for _, field := range st.Fields.List {
+			name := exprName(field.Type)
+			if i := strings.LastIndex(name, "."); i >= 0 {
+				name = name[i+1:]
+			}
+			if !looksLikeRepository(name) {
+				continue
+			}
+			for _, ident := range field.Names {
+				out[ident.Name] = name
+			}
+		}
+	})
+	return out
+}
+
+// tablesNamed returns the tables a statement reads or writes, lowercased, in the
+// order they appear and without repeats.
+//
+// It reads the four words a table name can follow -- FROM, JOIN, INTO and UPDATE
+// -- and the comma list after FROM, which is a join written without the word. A
+// name qualified by a schema is reduced to the table, so `public.invoices` and
+// `invoices` are one table and not two.
+//
+// A keyword where a name was expected ends the list rather than being taken for
+// a table: `FROM (SELECT ...` names nothing here, and the subquery's own FROM is
+// read on its own.
+func tablesNamed(text string) []string {
+	tokens := sqlTokens(text)
+
+	var out []string
+	seen := map[string]bool{}
+	add := func(name string) {
+		if i := strings.LastIndex(name, "."); i >= 0 {
+			name = name[i+1:]
+		}
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	name := func(i int) (string, bool) {
+		if i >= len(tokens) {
+			return "", false
+		}
+		if t := tokens[i]; t == "," || t == "(" || t == ")" || sqlKeywords[t] {
+			return "", false
+		}
+		return tokens[i], true
+	}
+
+	for i := 0; i < len(tokens); i++ {
+		switch tokens[i] {
+		case "from", "join", "into", "update":
+		default:
+			continue
+		}
+		for {
+			table, ok := name(i + 1)
+			if !ok {
+				break
+			}
+			add(table)
+			i++
+			// An alias sits between the table and the comma, and is not a table.
+			if _, alias := name(i + 1); alias {
+				i++
+			}
+			if i+1 < len(tokens) && tokens[i+1] == "," {
+				i++
+				continue
+			}
+			break
+		}
+	}
+	return out
+}
+
+// sqlTokens splits a statement into names and the three characters that carry
+// structure. A dot stays inside a name, so a schema-qualified table arrives whole.
+func sqlTokens(text string) []string {
+	var out []string
+	var word strings.Builder
+	flush := func() {
+		if word.Len() > 0 {
+			out = append(out, strings.ToLower(word.String()))
+			word.Reset()
+		}
+	}
+	for _, r := range text {
+		switch {
+		case r == '_' || r == '.' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9':
+			word.WriteRune(r)
+		default:
+			flush()
+			if r == ',' || r == '(' || r == ')' {
+				out = append(out, string(r))
+			}
+		}
+	}
+	flush()
+	return out
+}
+
+// sqlKeywords is what may not be mistaken for a table name.
+//
+// It only has to hold the words that can follow FROM, JOIN, INTO or UPDATE, which
+// is why it is this short: everything else in a statement is never read as a name.
+var sqlKeywords = map[string]bool{
+	"all": true, "and": true, "as": true, "asc": true, "by": true, "cross": true,
+	"delete": true, "desc": true, "distinct": true, "except": true, "for": true,
+	"from": true, "full": true, "group": true, "having": true, "inner": true,
+	"insert": true, "intersect": true, "into": true, "join": true, "lateral": true,
+	"left": true, "limit": true, "natural": true, "offset": true, "on": true,
+	"or": true, "order": true, "outer": true, "returning": true, "right": true,
+	"select": true, "set": true, "union": true, "update": true, "using": true,
+	"values": true, "where": true, "window": true, "with": true,
 }

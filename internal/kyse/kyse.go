@@ -188,6 +188,20 @@ func (e Errors) Error() string {
 	return strings.Join(parts, "\n")
 }
 
+// Unwrap exposes the problems one at a time, so errors.As reaches a position
+// through the group.
+//
+// Without it a caller asking whether a failure names a line got no for an
+// answer whenever there was more than one problem, which is the case where the
+// answer matters most.
+func (e Errors) Unwrap() []error {
+	out := make([]error, len(e))
+	for i, err := range e {
+		out[i] = err
+	}
+	return out
+}
+
 // blockDirectives are the ones that open a region and need a matching end.
 //
 // These two maps are the whole set kyse knows, and the parser reads them

@@ -1557,8 +1557,8 @@ func lineOf(body string, offset int) int {
 	return strings.Count(body[:offset], "\n") + 1
 }
 
-// 15. A multi-tenant repository whose SQL lost its tenant predicate reads and
-// writes every customer's rows.
+// 15. A statement against a multi-tenant table with no tenant in its predicate
+// reads and writes every customer's rows.
 //
 // It is the leak in its most direct form, and the reason it survives review is
 // that everything else about the method is right: the Grant is taken, the Grant
@@ -1566,60 +1566,137 @@ func lineOf(body string, offset int) int {
 // while debugging never came back. The tenant comes from the Grant, and it has
 // to reach the WHERE.
 //
+// # What decides is the table, not the type holding the handle
+//
+// This rule used to start by asking whether the receiver was a repository, and
+// that made it silent everywhere else. The same SELECT, moved into a type called
+// InvoiceService, read every tenant and produced no finding -- not from this rule
+// and not from any other, because the rules that guard the request path stop at
+// controllers, middleware and routes/. The blind spot sat exactly where rule 4
+// sends people: its own sentence says to move the call into app/Services.
+//
+// So every function is read, method or not, wherever it was written, and what
+// answers is whether the statement names a table the project itself shows to be
+// multi-tenant. See multiTenantTables.
+//
 // INSERT is not checked here. The tenant of a row being written is a value in
 // the column list, not a predicate, and it comes from data.Tenant(g) -- a
 // different mistake, with a different shape.
+//
+// # Two escapes, and no third
+//
+// A migration carries no Grant at all: it runs once per database, from the
+// pipeline, with no request behind it, so data.Tenant is not missing there -- it
+// has nothing to read. A backfill that sets a default on every row is what the
+// directory is for.
+//
+// Anywhere else the escape is written on the line, `//arandu:system-grant
+// <reason>`, which is the marker rule 7 already uses. One mechanism, so an
+// escape is deliberate, stays in the diff and is read in review.
 func tenantMustScopeTheSQL(p *project) []Finding {
-	multiTenant := multiTenantRepositories(p)
+	multiTenant := multiTenantTables(p)
 	if len(multiTenant) == 0 {
 		return nil
 	}
 
 	var out []Finding
 	for _, f := range p.files {
-		if f.isTest {
+		if f.isTest || inAMigration(f.rel) {
 			continue
 		}
-		for _, decl := range f.ast.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Recv == nil || !isRepository(f, fn) {
-				continue
-			}
-			if !multiTenant[receiverType(fn)] {
-				continue
-			}
+		escapes := systemGrantEscapes(f)
+
+		f.functions(func(fn *ast.FuncDecl) {
 			for _, sql := range sqlStatements(fn) {
 				if tenantIsInThePredicate(sql.text) {
 					continue
 				}
+				table, scoped := firstMultiTenantTable(sql.text, multiTenant)
+				if !scoped {
+					continue
+				}
 				file, line := f.at(sql.node)
+				if escapes[line] || escapes[line-1] {
+					continue
+				}
 				out = append(out, Finding{
 					Rule: "sql-without-tenant-scope", Severity: Error,
 					File: file, Line: line,
-					Message: "the " + sql.verb + " in " + fn.Name.Name + " does not filter by tenant_id",
-					Why:     "this repository scopes its other queries by tenant, so the table has the column and this statement reaches every customer's rows -- reading them, or writing them. Add `AND tenant_id = ?` to the WHERE and pass data.Tenant(g), which is the only source of a tenant for SQL.",
+					Message: "the " + sql.verb + " in " + fn.Name.Name + " reaches " + table + " and does not filter by tenant_id",
+					Why: "other statements on " + table + " in this project scope it by tenant, so the table has the column and this one reaches every customer's rows -- reading them, or writing them. " +
+						"Add `AND tenant_id = ?` to the WHERE and pass data.Tenant(g), which is the only source of a tenant for SQL. " +
+						"If this statement is meant to cross tenants, write `//arandu:system-grant <reason>` on the line, so the reason is read in review.",
 				})
 			}
-		}
+		})
 	}
 	return out
 }
 
-// multiTenantRepositories reports which repository types hold a tenant column,
-// keyed by receiver type.
+// inAMigration reports whether the file is a migration.
 //
-// Nothing in the AST says an entity is multi-tenant -- there is no type to
-// inspect and doctor never type-checks -- so it is inferred from three things
-// the code does say, any one of which is enough:
+// By path segment, for the reason inASystemScope is: a substring match would
+// take app/Services/MigrationsService.go for a migration, which is the rename
+// hole one level up.
+func inAMigration(rel string) bool {
+	for _, segment := range strings.Split(path.Dir(strings.ToLower(filepath.ToSlash(rel))), "/") {
+		if segment == "migrations" {
+			return true
+		}
+	}
+	return false
+}
+
+// firstMultiTenantTable returns the first table of a statement that is known to
+// carry the tenant column.
 //
-//   - a method of the type calls data.Tenant, which is the only source of a
-//     tenant for SQL;
-//   - a query of the type names tenant_id, which is the column;
+// The first and not all of them: one statement is one finding, and the person
+// reading it goes and looks at one WHERE.
+func firstMultiTenantTable(text string, multiTenant map[string]bool) (string, bool) {
+	for _, table := range tablesNamed(text) {
+		if multiTenant[table] {
+			return table, true
+		}
+	}
+	return "", false
+}
+
+// multiTenantTables reports which tables hold a tenant column, keyed by table
+// name.
+//
+// Nothing in the AST says a table is multi-tenant -- there is no type to inspect
+// and doctor never type-checks -- so it is inferred from three things the code
+// does say, any one of which is enough:
+//
+//   - a statement names tenant_id, so the tables it reads have the column;
+//   - a repository method calls data.Tenant, which is the only source of a
+//     tenant for SQL, so the tables it names are scoped by one;
 //   - the entity the repository is named after has a TenantID field.
 //
 // The third is what catches the worst case: a repository whose every query lost
 // the predicate, where the first two signals are gone with it.
-func multiTenantRepositories(p *project) map[string]bool {
+//
+// # Why the table and not the receiver
+//
+// Keyed by receiver type, the answer existed only for repositories, so the rule
+// above could be widened to read a statement anywhere and would still have known
+// nothing outside app/Repositories -- a rule that runs everywhere and answers in
+// one directory. The table is what the SQL names, so it is an answer wherever
+// the SQL was written.
+//
+// A repository reaches its tables through its own statements, so no table name is
+// ever derived from an entity name: `Invoice` is not turned into `invoices` here,
+// and a project that pluralizes differently reads correctly.
+//
+// # The limit, stated rather than implied
+//
+// A join is read as evidence about every table it names, so
+// `FROM invoices JOIN customers ... WHERE i.tenant_id = ?` marks customers too.
+// Both sides of a join inside one repository are one aggregate in every tree the
+// generator emits, and on the performance profile the join is already a finding
+// of its own -- so the alternative is a narrower signal that costs coverage of
+// the column on the joined table and buys nothing back.
+func multiTenantTables(p *project) map[string]bool {
 	entities := map[string]bool{}
 	for _, f := range p.files {
 		if f.isTest {
@@ -1641,30 +1718,51 @@ func multiTenantRepositories(p *project) map[string]bool {
 	}
 
 	out := map[string]bool{}
+	mark := func(text string) {
+		for _, table := range tablesNamed(text) {
+			out[table] = true
+		}
+	}
+
 	for _, f := range p.files {
 		if f.isTest {
 			continue
 		}
-		for _, decl := range f.ast.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Recv == nil || !isRepository(f, fn) {
-				continue
+		f.functions(func(fn *ast.FuncDecl) {
+			if fn.Body == nil {
+				return
 			}
-			receiver := receiverType(fn)
-			if receiver == "" {
-				continue
+			// INSERT counts as evidence and is not checked by the rule above:
+			// listing tenant_id among the columns says the table holds it just as
+			// well as a WHERE does.
+			statements := sqlStatementsIn(fn.Body, statementVerb)
+			if len(statements) == 0 {
+				return
 			}
-			entity := strings.TrimSuffix(receiver, "Repository")
-			if entities[entity] || funcBodyContains(fn, func(n string) bool { return n == "data.Tenant" }) {
-				out[receiver] = true
-				continue
-			}
-			for _, sql := range sqlStatements(fn) {
+
+			for _, sql := range statements {
 				if strings.Contains(strings.ToLower(sql.text), "tenant_id") {
-					out[receiver] = true
+					mark(sql.text)
 				}
 			}
-		}
+
+			// The two signals that need a repository to be read: one is the
+			// entity it is named after, and the other is the tenant it takes off
+			// the Grant.
+			if fn.Recv == nil || !isRepository(f, fn) {
+				return
+			}
+			entity := strings.TrimSuffix(strings.TrimSuffix(receiverType(fn), "Repository"), "Repo")
+			if entity == "" {
+				return
+			}
+			if !entities[entity] && !funcBodyContains(fn, func(n string) bool { return n == "data.Tenant" }) {
+				return
+			}
+			for _, sql := range statements {
+				mark(sql.text)
+			}
+		})
 	}
 	return out
 }

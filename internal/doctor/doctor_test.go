@@ -675,6 +675,80 @@ func TestSQLThatLostItsTenantPredicateIsCaught(t *testing.T) {
 	}
 }
 
+// TestSQLIsScopedByTheTableNotByTheReceiver covers the hole the rule above left
+// open everywhere outside app/Repositories.
+//
+// The check began by asking whether the receiver was a repository, so the same
+// statement in a type ending in Service was read by nothing: not by this rule,
+// which had stopped, and not by the rules that guard the request path, which end
+// at controllers, middleware and routes/. A SELECT with no tenant predicate sat
+// in app/Services and every one of the checks came back silent.
+//
+// The directory is the part that matters. handler-reaches-data tells people, in
+// its own sentence, to move the call into app/Services -- so the blind spot was
+// the destination the report was sending them to.
+//
+// This test fails the moment the gate goes back to the receiver, in either of the
+// two places it lived: the rule's own loop, and the map of what is multi-tenant,
+// which was keyed by receiver type and therefore had no answer for a service.
+func TestSQLIsScopedByTheTableNotByTheReceiver(t *testing.T) {
+	findings := gaps(t)
+
+	caught := findAt(findings, "sql-without-tenant-scope", "app/Services/ExportService.go")
+	if caught == nil {
+		t.Fatalf("a SELECT with no tenant predicate outside app/Repositories was not caught:\n%v", findings)
+	}
+	if caught.Severity != doctor.Error {
+		t.Error("SQL that reaches every tenant is reported as a warning, and it is an error wherever it was written")
+	}
+	if !strings.Contains(caught.Message, "Export") {
+		t.Errorf("the finding does not name the method: %q", caught.Message)
+	}
+	// The table is what answered, so the finding says which one: it is where the
+	// reader goes to look, and naming the receiver instead would point at the
+	// type that happens to hold the handle.
+	if !strings.Contains(caught.Message, "reports") {
+		t.Errorf("the finding does not name the table: %q", caught.Message)
+	}
+	// The sibling method reads the same table from the same type with the tenant
+	// taken off the Grant. Reporting it would mean the rule fires on its own fix.
+	if mentions(findings, "sql-without-tenant-scope", "Monthly") {
+		t.Error("a query outside app/Repositories that filters by tenant_id was reported")
+	}
+}
+
+// TestTheTenantRuleHasExactlyTwoEscapes pins what the widened rule is allowed to
+// stay quiet about, because a gate that answers everywhere needs its exceptions
+// written down rather than discovered.
+//
+// A migration is structural: it runs once per database, from the pipeline, with
+// no request and no Grant behind it, so data.Tenant is not missing there -- it
+// has nothing to read. Everything else is the marker rule 7 already uses, on the
+// line, with a reason.
+//
+// Both fixtures live in testdata/clean, so a broken escape is an error on code
+// that is correct -- which is the failure that makes people stop reading a tool.
+func TestTheTenantRuleHasExactlyTwoEscapes(t *testing.T) {
+	findings, err := doctor.Run("testdata/clean", doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, escape := range []struct {
+		file string
+		what string
+	}{
+		{"database/migrations/0001_01_01_000001_backfill_invoice_totals.go",
+			"a migration backfill, which has no Grant to take a tenant off"},
+		{"database/seeders/DatabaseSeeder.go",
+			"a statement marked //arandu:system-grant with a reason"},
+	} {
+		if caught := findAt(findings, "sql-without-tenant-scope", escape.file); caught != nil {
+			t.Errorf("%s was reported: %s", escape.what, caught)
+		}
+	}
+}
+
 // TestATypeThatMerelyStartsWithRepoIsNotARepository: the classifier asked
 // whether the receiver contained "Repo", so ReportPolicy, Reporter and
 // Reposition were all repositories.

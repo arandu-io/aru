@@ -46,10 +46,10 @@ linters:
 
   settings:
     gosec:
-      # Seven rules off, and one reason for all seven: each assumes a privilege
-      # boundary that a developer CLI does not have. aru runs as the developer,
-      # on the developer's machine, over paths the developer typed. All 87
-      # findings these produced were that fact restated.
+      # Eleven rules off, and one reason for all eleven: each assumes a
+      # privilege boundary that a developer CLI does not have. aru runs as the
+      # developer, on the developer's machine, over paths the developer typed.
+      # All 87 findings these produced were that fact restated.
       #
       #   G101  a local named `token` holding "--font-display", which is a CSS
       #         custom property and not a credential
@@ -68,12 +68,32 @@ linters:
       #         CreateTemp rather than passed to WriteFile -- the temporary is
       #         unique per download, and CreateTemp opens at 0600
       #
+      # The last four arrived together with a taint engine, and they are the
+      # first three above asked a second time rather than anything new. Each was
+      # read at every site it named before it was turned off:
+      #
+      #   G702  G204 followed to its source. All four sites pass a string
+      #         literal as the program -- go, git, lsof -- and the developer's
+      #         own arguments after it. `aru new` validates its one interpolated
+      #         argument before the clone, rejecting a separator or a space
+      #   G703  G304, G301 and G306 followed to their source: ten reads and
+      #         writes under the project directory the developer named
+      #   G704  the two requests in `aru trace`, which point at --host, or at
+      #         APP_URL, or at 127.0.0.1:8080. SSRF is a server reaching
+      #         somewhere its caller could not reach alone; here the caller and
+      #         the process are one person
+      #   G122  a symlink swapped between the walk and the operation, in the
+      #         tree being walked. Three of the five sites are test files, and
+      #         the other two walk the project the developer is building
+      #
       # What stays on does not depend on a boundary, and it guards the two
       # places aru is security-relevant: G404 over the crypto/rand behind
       # key:generate, and G401/G501/G505 over the sha256 that verifies every
       # downloaded font and the Tailwind binary. Swapping either for a weak one
-      # compiles, vets clean, and leaves every test passing.
-      excludes: [G101, G115, G204, G301, G302, G304, G306]
+      # compiles, vets clean, and leaves every test passing. G704 does not
+      # weaken that pair: what makes those downloads safe is the checksum, not
+      # the address they came from.
+      excludes: [G101, G115, G122, G204, G301, G302, G304, G306, G702, G703, G704]
 
   exclusions:
     presets:

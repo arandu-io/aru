@@ -90,12 +90,22 @@ jobs:
       # vulnerability is the point of it, and it reads its database at run time,
       # so pinning the binary would not hold the answer still anyway.
       #
+      # The pin has one obligation the reasoning above does not cover: it has to
+      # move when the toolchain does. setup-go asks for `stable`, so the runner
+      # takes each new Go release the day it ships, and a linter reads the
+      # standard library through its own copy of go/types. v2.6.2 was pinned
+      # against Go 1.26 and stopped being able to load the standard library at
+      # all the day the runner became 1.27 -- "cannot decode internal/cpu,
+      # export data version 4 is greater than maximum supported version 2", on
+      # every file, with nothing wrong in any of them. Raising the floor of Go
+      # here means raising this line in the same commit.
+      #
       # go install rather than the golangci-lint action: setup-go above has
       # already provided the toolchain, and this keeps what CI trusts to the
       # module proxy instead of adding a third-party action to it.
       - name: lint
         run: |
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.6.2
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
           golangci-lint run ./...
 
       # Required by doc 24: a known vulnerability blocks the merge rather than

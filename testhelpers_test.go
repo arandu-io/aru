@@ -4,13 +4,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
-// The helpers below are shared by build_test.go, new_test.go and the rest, so
-// they live on their own instead of inside whichever test file happened to be
-// written first.
+// The helpers below are shared across the test files of this package, so they
+// live on their own instead of inside whichever one happened to be written
+// first.
 
 // frameworkCheckout is the sibling framework repository, which the generated
 // project builds against. Without it the module resolves to the published
@@ -35,18 +34,6 @@ func goTool(t *testing.T) string {
 		t.Skip("go is not on PATH")
 	}
 	return path
-}
-
-func runInDir(t *testing.T, dir, name string, args ...string) {
-	t.Helper()
-	cmd := exec.Command(name, args...)
-	cmd.Dir = dir
-	// The generated project resolves its dependencies for real, so the module
-	// cache and the network settings of the machine apply.
-	cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("%s %s: %v\n%s", filepath.Base(name), strings.Join(args, " "), err, out)
-	}
 }
 
 func writeFile(t *testing.T, path, content string) {

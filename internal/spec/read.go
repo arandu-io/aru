@@ -52,23 +52,11 @@ func Parse(body []byte, name string) (Module, error) {
 	return m, nil
 }
 
-// Write saves a specification, formatted.
-//
-// Two-space indent, which is what every YAML example anyone has read uses --
-// including the ones a model was trained on. A file that comes back formatted
-// differently than it went in makes the round trip look broken when it is not.
-func Write(path string, m Module) error {
-	body, err := Marshal(m)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, body, 0o644); err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	return nil
-}
-
 // Marshal renders a specification as YAML.
+//
+// Two-space indent, which is what every YAML example anyone has read uses. A
+// file that comes back formatted differently than it went in makes the round
+// trip look broken when it is not.
 func Marshal(m Module) ([]byte, error) {
 	var b strings.Builder
 	encoder := yaml.NewEncoder(&b)

@@ -76,45 +76,6 @@ func TestTheNameIsRequired(t *testing.T) {
 	}
 }
 
-func TestReadAllFindsEveryModule(t *testing.T) {
-	root := t.TempDir()
-	for _, name := range []string{"crm", "billing"} {
-		dir := filepath.Join(root, "modules", name)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, manifest.Name), []byte("name = \"acme/"+name+"\"\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// A module with no manifest is simply absent from the map, which is what
-	// lets the doctor report it rather than the reader failing.
-	if err := os.MkdirAll(filepath.Join(root, "modules", "legacy"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	all, err := manifest.ReadAll(root)
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
-	if len(all) != 2 {
-		t.Fatalf("found %d manifests, want 2", len(all))
-	}
-	if all["crm"].Name != "acme/crm" {
-		t.Errorf("crm = %+v", all["crm"])
-	}
-}
-
-func TestReadAllOnAProjectWithNoModules(t *testing.T) {
-	all, err := manifest.ReadAll(t.TempDir())
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
-	if len(all) != 0 {
-		t.Fatalf("found %d manifests", len(all))
-	}
-}
-
 func write(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()

@@ -128,36 +128,6 @@ func Read(dir string) (*Module, error) {
 	return m, nil
 }
 
-// ReadAll loads the manifest of every module under root/modules.
-//
-// The key is the module directory name, which is how the doctor's findings refer
-// to a module everywhere else.
-func ReadAll(root string) (map[string]*Module, error) {
-	out := map[string]*Module{}
-
-	entries, err := os.ReadDir(filepath.Join(root, "modules"))
-	if errors.Is(err, fs.ErrNotExist) {
-		return out, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		m, err := Read(filepath.Join(root, "modules", e.Name()))
-		if err != nil {
-			return nil, err
-		}
-		if m != nil {
-			out[e.Name()] = m
-		}
-	}
-	return out, nil
-}
-
 func unquote(v string) string {
 	return strings.Trim(v, `"`)
 }

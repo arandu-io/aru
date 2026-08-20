@@ -15,8 +15,10 @@ package toolchain
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -199,19 +201,92 @@ func (t Tool) Ensure(w io.Writer) (string, error) {
 	// the only tool this package fetches, so there is no archive to extract.
 	binary := body
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return "", err
-	}
-	// Write to a temporary name and rename, so two `aru dev` running at once
-	// never observe a half-written binary.
-	tmp := path + ".partial"
-	if err := os.WriteFile(tmp, binary, 0o755); err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := install(path, binary); err != nil {
 		return "", err
 	}
 	return path, nil
+}
+
+// install writes the binary at path, executable, and either completely or not at
+// all.
+//
+// The write goes to a temporary in the same directory and is renamed into place,
+// so two `aru dev` running at once never observe a half-written binary. The
+// temporary is named for this call rather than a fixed "<path>.partial": a fixed
+// one is the same file for both of them, so they interleave their bytes into it
+// and one renames what the other is still writing, which is the outcome the
+// rename exists to prevent.
+//
+// Nothing is left behind on the way out. A temporary named for one call is a
+// file nothing will ever look at again -- the next run writes its own -- so a
+// failed rename used to leave it in the cache directory for good.
+func install(path string, binary []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".partial-*")
+	if err != nil {
+		return err
+	}
+	// After a successful rename there is nothing left to remove, and saying so
+	// is not a failure worth reporting.
+	defer func() { _ = os.Remove(tmp.Name()) }()
+
+	if _, err := tmp.Write(binary); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	// CreateTemp opens at 0o600 and this file is executed, so the mode is set
+	// before the rename rather than after: the cached path is never a binary
+	// somebody could find and be unable to run.
+	if err := os.Chmod(tmp.Name(), 0o755); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
+// Sweep deletes cached binaries for tools that no longer exist, naming each one
+// it removed on w.
+//
+// Nothing else ever deletes them. The cached file name carries the version
+// ([Tool.Path]), so a new pin writes a new file instead of replacing the old
+// one, and a tool that stops being asked for is never asked for again -- templ's
+// binary is 13 MB and was last useful before kyse existed.
+//
+// It touches only what this package recognises as retired. A tool still in use
+// is left alone, and so is any other file: the message for an unpublished
+// platform tells people to put their own binary in this directory, and a sweep
+// that deleted it would be answering one problem by causing another.
+func Sweep(w io.Writer) error {
+	dir, err := Dir()
+	if err != nil {
+		return err
+	}
+	return sweep(dir, w)
+}
+
+func sweep(dir string, w io.Writer) error {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		// Nothing has been downloaded on this machine yet.
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", dir, err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || !isRetiredBinary(e.Name()) {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+			return fmt.Errorf("removing the cached binary for a retired tool: %w", err)
+		}
+		fmt.Fprintf(w, "removed %s from %s: it is no longer a tool aru uses\n", e.Name(), dir)
+	}
+	return nil
 }
 
 func fetch(url string) ([]byte, error) {

@@ -65,6 +65,17 @@ func buildViews(root string, stdout, stderr io.Writer) error {
 	// it and out of what the command produced.
 	pins.Warn(stderr)
 
+	// The warning above asks the reader to remove the line; this removes the
+	// bytes that line used to download. Nothing else does: the cached name
+	// carries the version, so a tool nobody pins any more is never overwritten.
+	//
+	// Reported and not fatal. A stale binary that will not delete is untidy, and
+	// refusing to build the project over it would trade a real failure for a
+	// cosmetic one.
+	if err := toolchain.Sweep(stderr); err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+	}
+
 	// Before anything is compiled. An old CLI refuses correct views one message
 	// per line, and none of those messages says the CLI is what is old -- so
 	// this has to be the first thing the person reads, not the sixty-first.

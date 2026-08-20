@@ -46,7 +46,7 @@ linters:
 
   settings:
     gosec:
-      # Six rules off, and one reason for all six: each assumes a privilege
+      # Seven rules off, and one reason for all seven: each assumes a privilege
       # boundary that a developer CLI does not have. aru runs as the developer,
       # on the developer's machine, over paths the developer typed. All 87
       # findings these produced were that fact restated.
@@ -62,13 +62,18 @@ linters:
       #   G304  Go source is 0644 in a 0755 directory because source is what it
       #   G306  is; the one secret aru handles, the APP_KEY, is printed rather
       #         than written, and the .env it does write is already 0600
+      #   G302  the cached Tailwind binary is chmod 0755 because it is executed.
+      #         It is the same file and the same fact as G306 above, reported
+      #         under a second number because the mode is now set by Chmod after
+      #         CreateTemp rather than passed to WriteFile -- the temporary is
+      #         unique per download, and CreateTemp opens at 0600
       #
       # What stays on does not depend on a boundary, and it guards the two
       # places aru is security-relevant: G404 over the crypto/rand behind
       # key:generate, and G401/G501/G505 over the sha256 that verifies every
       # downloaded font and the Tailwind binary. Swapping either for a weak one
       # compiles, vets clean, and leaves every test passing.
-      excludes: [G101, G115, G204, G301, G304, G306]
+      excludes: [G101, G115, G204, G301, G302, G304, G306]
 
   exclusions:
     presets:

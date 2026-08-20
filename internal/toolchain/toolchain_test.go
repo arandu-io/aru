@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -209,5 +210,180 @@ func TestATypoIsStillRefused(t *testing.T) {
 
 	if _, err := ReadPins(root); err == nil {
 		t.Fatal("a misspelled tool was accepted")
+	}
+}
+
+// TestSweepRemovesRetiredBinariesAndNothingElse guards both halves of the sweep.
+//
+// The cached name carries the version, so a tool that stops being pinned is
+// never overwritten and nothing else deletes it: templ's binary sat in the cache
+// at 13 MB long after kyse replaced it. And the directory is not owned by this
+// package alone -- the message for an unpublished platform tells people to put
+// their own binary here, so a sweep that took anything it did not recognise
+// would answer one problem by causing a worse one.
+func TestSweepRemovesRetiredBinariesAndNothingElse(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]bool{
+		// Retired: every version of it, and the Windows spelling.
+		"templ-v0.3.1020":     true,
+		"templ-v0.2.793":      true,
+		"templ-v0.3.1020.exe": true,
+
+		// Still in use.
+		"tailwindcss-v4.3.3": false,
+		"tailwindcss-v4.0.0": false,
+
+		// Not this package's to delete: a hand-installed binary, and a name that
+		// starts with a retired one without being it.
+		"tailwindcss":  false,
+		"templates-v1": false,
+		"templ":        false,
+	}
+	for name := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var out strings.Builder
+	if err := sweep(dir, &out); err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+
+	for name, wantGone := range files {
+		_, err := os.Stat(filepath.Join(dir, name))
+		gone := os.IsNotExist(err)
+		if gone != wantGone {
+			if wantGone {
+				t.Errorf("%s is still cached", name)
+			} else {
+				t.Errorf("%s was swept and is not this package's to delete", name)
+			}
+		}
+		if wantGone && !strings.Contains(out.String(), name) {
+			t.Errorf("the sweep removed %s without saying so: %s", name, out.String())
+		}
+	}
+}
+
+// TestSweepOnAMachineThatNeverDownloaded: the cache directory is created by the
+// first download, so a sweep before one has to be silent rather than an error.
+func TestSweepOnAMachineThatNeverDownloaded(t *testing.T) {
+	var out strings.Builder
+	if err := sweep(filepath.Join(t.TempDir(), "never-created"), &out); err != nil {
+		t.Fatalf("sweep on a cache that does not exist: %v", err)
+	}
+	if out.String() != "" {
+		t.Errorf("sweep said something about an empty cache: %q", out.String())
+	}
+}
+
+// TestInstallWritesTheWholeBinaryAndNothingElse: what lands in the cache is the
+// bytes that were verified, executable, with no working file beside it.
+func TestInstallWritesTheWholeBinaryAndNothingElse(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "bin")
+	path := filepath.Join(dir, "tailwindcss-v4.3.3")
+	binary := []byte("#!/bin/sh\nexit 0\n")
+
+	if err := install(path, binary); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(binary) {
+		t.Errorf("the cached file is %q, want %q", got, binary)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The file is executed, and CreateTemp opens at 0o600.
+	if fi.Mode().Perm()&0o111 == 0 {
+		t.Errorf("the cached binary is not executable: %v", fi.Mode())
+	}
+	if left := leftovers(t, dir); len(left) != 0 {
+		t.Errorf("install left working files behind: %v", left)
+	}
+}
+
+// TestAFailedInstallLeavesNothingBehind is the regression guard for the leak.
+//
+// The temporary used to be a fixed "<path>.partial", and nothing ever looked at
+// it again -- the next run writes its own -- so a rename that failed left it in
+// the cache directory for good. Renaming onto a non-empty directory is the
+// cheapest way to make the rename fail without touching permissions.
+func TestAFailedInstallLeavesNothingBehind(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "bin")
+	path := filepath.Join(dir, "tailwindcss-v4.3.3")
+	if err := os.MkdirAll(filepath.Join(path, "occupied"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := install(path, []byte("x")); err == nil {
+		t.Fatal("install reported success with the rename blocked")
+	}
+	if left := leftovers(t, dir); len(left) != 0 {
+		t.Errorf("a failed install left %v in the cache directory", left)
+	}
+}
+
+// TestTwoInstallsDoNotShareATemporary: a fixed temporary name is the same file
+// for both of them, so they interleave their bytes into it and one renames what
+// the other is still writing.
+func TestTwoInstallsDoNotShareATemporary(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "bin")
+	first := strings.Repeat("a", 4096)
+	second := strings.Repeat("b", 4096)
+
+	var wg sync.WaitGroup
+	for _, content := range []string{first, second} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := install(filepath.Join(dir, "tailwindcss-v4.3.3"), []byte(content)); err != nil {
+				t.Errorf("install: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	got, err := os.ReadFile(filepath.Join(dir, "tailwindcss-v4.3.3"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Either writer may win. What must not happen is a blend of the two, which
+	// is what one fixed temporary produces.
+	if string(got) != first && string(got) != second {
+		t.Errorf("the cached binary is neither of the two that were installed: %d bytes, %q...", len(got), got[:min(len(got), 32)])
+	}
+	if left := leftovers(t, dir); len(left) != 0 {
+		t.Errorf("concurrent installs left %v behind", left)
+	}
+}
+
+// leftovers lists everything in the cache directory that is not a cached binary.
+func leftovers(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found []string
+	for _, e := range entries {
+		if strings.Contains(e.Name(), ".partial") {
+			found = append(found, e.Name())
+		}
+	}
+	return found
+}
+
+// TestALiveDownloadIsNotSweptFromUnderIt: the sweep decides by tool name, and a
+// temporary belongs to whoever is downloading.
+func TestALiveDownloadIsNotSweptFromUnderIt(t *testing.T) {
+	if isRetiredBinary("tailwindcss-v4.3.3.partial-1234") {
+		t.Error("a live download's temporary is swept from under it")
 	}
 }

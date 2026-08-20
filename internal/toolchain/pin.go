@@ -42,6 +42,46 @@ type retired struct {
 	because string
 }
 
+// retiredTools are the tools that were pinned once and no longer exist.
+//
+// One list, read by both halves of retirement: ReadPins accepts the key and
+// says so, and Sweep deletes the binary that key used to download. Kept apart
+// they drift, and a tool retired in one half stays current in the other -- the
+// warning tells the reader the tool is gone while its binary stays on disk.
+var retiredTools = []struct {
+	name    string
+	because string
+}{
+	{"templ", "kyse replaced templ; the view compiler is part of aru and needs no download"},
+}
+
+// retiredBecause reports why a tool was retired, and whether it was.
+func retiredBecause(name string) (string, bool) {
+	for _, r := range retiredTools {
+		if r.name == name {
+			return r.because, true
+		}
+	}
+	return "", false
+}
+
+// isRetiredBinary reports whether a file in the cache directory belongs to a tool
+// that no longer exists.
+//
+// The match is on the "<name>-" prefix, because the cached file name carries the
+// version ([Tool.Path]) and every version of a retired tool is equally retired.
+// The dash is required so a tool whose name merely starts with a retired one is
+// not swept along with it, and so is something after it: a file called exactly
+// "templ-" is not a binary this package ever wrote.
+func isRetiredBinary(file string) bool {
+	for _, r := range retiredTools {
+		if prefix := r.name + "-"; strings.HasPrefix(file, prefix) && len(file) > len(prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // Warn writes one line per retired pin, naming the file, the line and the fix.
 //
 // It takes a writer rather than logging, so `aru view:build` can put it on
@@ -94,14 +134,21 @@ func ReadPins(root string) (Pins, error) {
 			return Pins{}, fmt.Errorf("arandu.toml:%d: expected key = \"value\"", i+1)
 		}
 		value = strings.Trim(strings.TrimSpace(value), `"`)
-		switch strings.TrimSpace(key) {
+		name := strings.TrimSpace(key)
+		switch name {
 		case "aru":
 			pins.Aru = value
 
 		case "tailwindcss":
 			pins.Tailwind = value
 
-		case "templ":
+		default:
+			because, ok := retiredBecause(name)
+			if !ok {
+				// A key that was never a tool is a typo, and a typo that is
+				// ignored is a version that silently does not apply.
+				return Pins{}, fmt.Errorf("arandu.toml:%d: unknown tool %q, want tailwindcss", i+1, name)
+			}
 			// Retired, not wrong. kyse replaced templ, and every project
 			// generated before that has this line -- including the published
 			// skeleton, which is what `aru new` clones today.
@@ -112,13 +159,7 @@ func ReadPins(root string) (Pins, error) {
 			// build tool is the worst place to skip that: the first thing the
 			// reader sees is a project that stopped compiling for a reason they
 			// did not cause.
-			pins.Retired = append(pins.Retired, retired{line: i + 1, key: "templ",
-				because: "kyse replaced templ; the view compiler is part of aru and needs no download"})
-
-		default:
-			// A key that was never a tool is a typo, and a typo that is ignored
-			// is a version that silently does not apply.
-			return Pins{}, fmt.Errorf("arandu.toml:%d: unknown tool %q, want tailwindcss", i+1, strings.TrimSpace(key))
+			pins.Retired = append(pins.Retired, retired{line: i + 1, key: name, because: because})
 		}
 	}
 	return pins, nil

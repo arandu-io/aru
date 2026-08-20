@@ -1,6 +1,6 @@
 module github.com/arandu-io/aru
 
-go 1.25
+go 1.26
 
 // The CLI lives in its own module on purpose. If it lived inside the framework,
 // every project that imports the framework would drag the CLI's dependencies

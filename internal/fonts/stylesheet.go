@@ -246,18 +246,6 @@ func Format(file string) string {
 	}
 }
 
-// ContentType is what the framework serves a vendored face as.
-func ContentType(file string) string {
-	switch {
-	case strings.HasSuffix(file, ".ttf"):
-		return "font/ttf"
-	case strings.HasSuffix(file, ".otf"):
-		return "font/otf"
-	default:
-		return "font/woff2"
-	}
-}
-
 // assetURL is where the framework serves a file with that content hash.
 //
 // The path shape is view.AssetPath + hash + "/" + name, and it is spelled out

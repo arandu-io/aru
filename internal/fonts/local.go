@@ -51,8 +51,7 @@ produce a CSS family called Arandu-Regular-v3.
 	}
 
 	ext := strings.ToLower(filepath.Ext(path))
-	contentType, ok := formats[ext]
-	if !ok {
+	if _, ok := formats[ext]; !ok {
 		return Family{}, fmt.Errorf("%s is not a font this can vendor: want .woff2, .ttf or .otf", ext)
 	}
 
@@ -75,9 +74,8 @@ produce a CSS family called Arandu-Regular-v3.
 			// No unicode-range. The source published none, and inventing one is
 			// how a font stops drawing a character it can draw: a range narrower
 			// than the file is a glyph the browser refuses to ask for.
-			File:        localFileName(family, weight, ext),
-			ContentType: contentType,
-			Body:        body,
+			File: localFileName(family, weight, ext),
+			Body: body,
 		}},
 	}
 

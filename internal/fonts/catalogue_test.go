@@ -120,9 +120,9 @@ func TestALocalFileNeedsAFamilyName(t *testing.T) {
 
 // TestALocalFileKeepsItsExtension.
 //
-// The extension decides the content type and the format() in the src:. A .ttf
-// renamed .woff2 is a font every browser fetches and then refuses, with an error
-// that names neither the file nor the declaration.
+// The extension decides the format() in the src:. A .ttf renamed .woff2 is a
+// font every browser fetches and then refuses, with an error that names neither
+// the file nor the declaration.
 func TestALocalFileKeepsItsExtension(t *testing.T) {
 	path := write(t, "Own.ttf", []byte("not really a font"))
 
@@ -135,9 +135,6 @@ func TestALocalFileKeepsItsExtension(t *testing.T) {
 	}
 	if fonts.Format(got.Faces[0].File) != "truetype" {
 		t.Error("the src: would declare woff2 for a TrueType")
-	}
-	if fonts.ContentType(got.Faces[0].File) != "font/ttf" {
-		t.Error("it would be served as woff2")
 	}
 	// No unicode-range: nothing published one, and a range narrower than the
 	// file is a glyph the browser refuses to ask for.

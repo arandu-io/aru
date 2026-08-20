@@ -717,6 +717,66 @@ func TestSQLIsScopedByTheTableNotByTheReceiver(t *testing.T) {
 	}
 }
 
+// TestSQLIsReadInAFunctionThatWasNeverDeclared closes the last cheap way out of
+// the rule: hold the body in a package-level var instead of declaring it.
+//
+// Reading only func declarations meant the same SELECT over the same table was
+// an error in ExportService and silent four lines away in HandlerVars. Nothing
+// about the shape is exotic -- a handler in a var is how a table of them gets
+// built -- and the body runs like any other.
+//
+// The finding names the var, because that is what the reader opens. Reporting a
+// line and no name is what a rule that reads bodies anywhere may not do.
+func TestSQLIsReadInAFunctionThatWasNeverDeclared(t *testing.T) {
+	findings := gaps(t)
+
+	caught := findAt(findings, "sql-without-tenant-scope", "app/Services/HandlerVars.go")
+	if caught == nil {
+		t.Fatalf("a SELECT with no tenant predicate inside a package-level var was not caught:\n%v", findings)
+	}
+	if caught.Severity != doctor.Error {
+		t.Error("SQL that reaches every tenant is reported as a warning, and it is an error however the function was written")
+	}
+
+	// Three bodies, three shapes, each named by the var that holds it: a bare
+	// literal, one inside a struct inside a slice, and one nested in another.
+	for _, name := range []string{"ExportAll", "exportHandlers", "nestedExport"} {
+		if !mentions(findings, "sql-without-tenant-scope", name) {
+			t.Errorf("the statement in %s was not reported, or the finding does not name it:\n%v", name, findings)
+		}
+	}
+
+	// A literal nested in another is reached once. Reading the outer body and
+	// then the inner one again would report the same statement twice, and a
+	// report that repeats itself is one people learn to skim.
+	nested := 0
+	for _, f := range findings {
+		if f.Rule == "sql-without-tenant-scope" && strings.Contains(f.Message, "nestedExport") {
+			nested++
+		}
+	}
+	if nested != 1 {
+		t.Errorf("the statement inside a nested literal produced %d findings, want 1", nested)
+	}
+
+	// The sibling var reads the same table with the tenant taken off the Grant.
+	// Reporting it would mean the rule fires on the fix it asks for.
+	if mentions(findings, "sql-without-tenant-scope", "ExportScoped") {
+		t.Error("a var-held query that filters by tenant_id was reported")
+	}
+
+	// And the same control in the fixture that has to stay silent altogether. A
+	// widening pays for itself only if it finds nothing in correct code, and the
+	// place that proves it is the project with nothing wrong in it.
+	clean, err := doctor.Run("testdata/clean", doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if caught := findRule(clean, "sql-without-tenant-scope"); caught != nil {
+		t.Errorf("the widened rule reported correct code: %s", caught)
+	}
+}
+
 // TestTheTenantRuleHasExactlyTwoEscapes pins what the widened rule is allowed to
 // stay quiet about, because a gate that answers everywhere needs its exceptions
 // written down rather than discovered.

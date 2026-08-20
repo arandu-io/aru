@@ -889,20 +889,61 @@ func systemGrantEscapes(f *file) map[int]bool {
 
 // enclosingFuncs maps every line of the file to the function that contains it,
 // so a finding can be judged by where it sits.
+//
+// A function literal held by a package-level var answers with the name of the
+// var. It is what the reader has to go and open, and it is the only name the
+// code gives it -- without this a finding inside `var Export = func(...)` would
+// name no function at all, which is the one thing a report may not do when the
+// rule it comes from reads bodies wherever they are written.
 func enclosingFuncs(f *file) map[int]string {
 	out := map[int]string{}
-	for _, decl := range f.ast.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Body == nil {
-			continue
-		}
-		from := f.fset.Position(fn.Pos()).Line
-		to := f.fset.Position(fn.End()).Line
+	mark := func(node ast.Node, name string) {
+		from := f.fset.Position(node.Pos()).Line
+		to := f.fset.Position(node.End()).Line
 		for l := from; l <= to; l++ {
-			out[l] = fn.Name.Name
+			out[l] = name
+		}
+	}
+	for _, decl := range f.ast.Decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if d.Body != nil {
+				mark(d, d.Name.Name)
+			}
+		case *ast.GenDecl:
+			for _, spec := range d.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				// Paired by position, so `var a, b = func(){}, func(){}` names
+				// each half rather than calling both of them a.
+				for i, value := range vs.Values {
+					if i >= len(vs.Names) || !holdsAFunc(value) {
+						continue
+					}
+					if name := vs.Names[i].Name; name != "" && name != "_" {
+						mark(value, name)
+					}
+				}
+			}
 		}
 	}
 	return out
+}
+
+// holdsAFunc reports whether the expression contains a function literal, at any
+// depth: a bare `func(){}`, and one inside the struct or slice a var is built
+// from.
+func holdsAFunc(e ast.Expr) bool {
+	found := false
+	ast.Inspect(e, func(n ast.Node) bool {
+		if _, ok := n.(*ast.FuncLit); ok {
+			found = true
+		}
+		return !found
+	})
+	return found
 }
 
 // 8. SQL built with Sprintf or concatenation of a variable is injection, whatever
@@ -1579,6 +1620,21 @@ func lineOf(body string, offset int) int {
 // answers is whether the statement names a table the project itself shows to be
 // multi-tenant. See multiTenantTables.
 //
+// Wherever it was written includes a function that was never declared. A body
+// held by a package-level var runs like any other and reaches the same table:
+//
+//	var Export = func(ctx context.Context, db *sql.DB) error {
+//		_, err := db.QueryContext(ctx, "SELECT total FROM invoices")
+//		return err
+//	}
+//
+// Reading declarations alone left that silent, and the finding named no function
+// because there was none to name -- the var is what the reader opens, so it is
+// what the message says. See file.functionBodies and enclosingFuncs.
+//
+// What is still outside: a statement written entirely in a package-level const.
+// The reader takes bodies, and a const is not one.
+//
 // INSERT is not checked here. The tenant of a row being written is a value in
 // the column list, not a predicate, and it comes from data.Tenant(g) -- a
 // different mistake, with a different shape.
@@ -1605,9 +1661,10 @@ func tenantMustScopeTheSQL(p *project) []Finding {
 			continue
 		}
 		escapes := systemGrantEscapes(f)
+		enclosing := enclosingFuncs(f)
 
-		f.functions(func(fn *ast.FuncDecl) {
-			for _, sql := range sqlStatements(fn) {
+		f.functionBodies(func(body *ast.BlockStmt) {
+			for _, sql := range sqlStatementsIn(body, scopedVerb) {
 				if tenantIsInThePredicate(sql.text) {
 					continue
 				}
@@ -1619,10 +1676,14 @@ func tenantMustScopeTheSQL(p *project) []Finding {
 				if escapes[line] || escapes[line-1] {
 					continue
 				}
+				where := sql.verb
+				if fn := enclosing[line]; fn != "" {
+					where += " in " + fn
+				}
 				out = append(out, Finding{
 					Rule: "sql-without-tenant-scope", Severity: Error,
 					File: file, Line: line,
-					Message: "the " + sql.verb + " in " + fn.Name.Name + " reaches " + table + " and does not filter by tenant_id",
+					Message: "the " + where + " reaches " + table + " and does not filter by tenant_id",
 					Why: "other statements on " + table + " in this project scope it by tenant, so the table has the column and this one reaches every customer's rows -- reading them, or writing them. " +
 						"Add `AND tenant_id = ?` to the WHERE and pass data.Tenant(g), which is the only source of a tenant for SQL. " +
 						"If this statement is meant to cross tenants, write `//arandu:system-grant <reason>` on the line, so the reason is read in review.",
@@ -1918,7 +1979,13 @@ type sqlStatement struct {
 	node ast.Node
 }
 
-// sqlStatements reads the SQL literals of a body.
+// sqlStatementsIn reads the SQL literals of a node, keeping the statements whose
+// verb the caller asks for.
+//
+// Both parameters exist for the same reason: a rule about the WHERE clause wants
+// a whole body and only the statements that carry a predicate, and a rule about
+// the aggregate boundary wants the inside of one transaction and the INSERT too.
+// One reader, asked two different questions.
 //
 // A query is usually a literal concatenated with a constant holding the column
 // list, so the concatenation is flattened and the parts doctor cannot see are
@@ -1928,20 +1995,8 @@ type sqlStatement struct {
 // message says what it saw.
 //
 // A statement written entirely in a package-level constant is outside what this
-// reads, and saying so is better than implying coverage it does not have.
-func sqlStatements(fn *ast.FuncDecl) []sqlStatement {
-	if fn.Body == nil {
-		return nil
-	}
-	return sqlStatementsIn(fn.Body, scopedVerb)
-}
-
-// sqlStatementsIn is sqlStatements over any node and any set of verbs.
-//
-// Both parameters exist for the same reason: a rule about the WHERE clause wants
-// the whole body and only the statements that carry a predicate, and a rule about
-// the aggregate boundary wants the inside of one transaction and the INSERT too.
-// One reader, asked two different questions.
+// reads, because the callers pass bodies. Saying so is better than implying
+// coverage it does not have.
 func sqlStatementsIn(node ast.Node, verb func(string) (string, bool)) []sqlStatement {
 	var out []sqlStatement
 	record := func(text string, n ast.Node) {

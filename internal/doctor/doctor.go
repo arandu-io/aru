@@ -465,6 +465,60 @@ func (f *file) functions(visit func(fn *ast.FuncDecl)) {
 	}
 }
 
+// functionBodies walks every body the file declares, however it was written: the
+// body of a func declaration, and the body of a function literal held by a
+// package-level var or const.
+//
+// functions() sees only the first, which is what a rule reading a signature
+// needs and what a rule reading a body silently loses. A literal in a var is a
+// function in every sense such a rule cares about -- it has a body, it runs, and
+// the statements inside it reach the same tables:
+//
+//	var Export = func(ctx context.Context, db *sql.DB) error {
+//		_, err := db.QueryContext(ctx, "SELECT total FROM invoices")
+//		return err
+//	}
+//
+// A literal nested inside a declared function is reached through that function's
+// body and is not yielded again, so a rule that appends one finding per
+// statement still appends one.
+//
+// It reads bodies and not declarations. A statement written entirely in a
+// package-level const is still outside what any of this sees, and saying so is
+// better than implying coverage that is not there.
+func (f *file) functionBodies(visit func(body *ast.BlockStmt)) {
+	for _, decl := range f.ast.Decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if d.Body != nil {
+				visit(d.Body)
+			}
+		case *ast.GenDecl:
+			for _, spec := range d.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for _, value := range vs.Values {
+					ast.Inspect(value, func(n ast.Node) bool {
+						lit, ok := n.(*ast.FuncLit)
+						if !ok {
+							return true
+						}
+						if lit.Body != nil {
+							visit(lit.Body)
+						}
+						// Whatever this one nests is inside the body just
+						// visited, and visiting it again would double the
+						// findings.
+						return false
+					})
+				}
+			}
+		}
+	}
+}
+
 // calls walks every call expression in the file.
 func (f *file) calls(fn func(call *ast.CallExpr, name string)) {
 	ast.Inspect(f.ast, func(n ast.Node) bool {

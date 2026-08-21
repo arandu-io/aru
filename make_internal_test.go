@@ -269,3 +269,36 @@ func TestARequestThatCollidesIsRefusedByTypeAndNotByPath(t *testing.T) {
 		t.Error("a type nobody declared was reported as taken")
 	}
 }
+
+// TestTheModuleWiringNamesTheImportsItsSnippetNeeds.
+//
+// The snippet the message prints calls services and repositories, and the file
+// it says to paste into imports neither. Pasted as printed, the project stops
+// compiling with "undefined: services" -- an instruction that does not compile,
+// which is what the function's own comment says is worse than no instruction.
+func TestTheModuleWiringNamesTheImportsItsSnippetNeeds(t *testing.T) {
+	spec := gen.Module{
+		Name:       "invoice",
+		ModulePath: "example.test/project",
+		Fields:     []gen.Field{{Name: "title", Type: gen.TypeString}},
+	}
+	message := wiring(spec, 12)
+
+	// The snippet is what makes the imports necessary. If it stops calling the
+	// two packages, this test is measuring the wrong thing and should be read
+	// again rather than deleted.
+	for _, call := range []string{"services.New", "repositories.New"} {
+		if !strings.Contains(message, call) {
+			t.Fatalf("the snippet no longer calls %q, so this test no longer describes it:\n%s", call, message)
+		}
+	}
+
+	for _, want := range []string{
+		`"example.test/project/app/Repositories"`,
+		`"example.test/project/app/Services"`,
+	} {
+		if !strings.Contains(message, want) {
+			t.Errorf("the message does not print the import %s, which its own snippet needs:\n%s", want, message)
+		}
+	}
+}

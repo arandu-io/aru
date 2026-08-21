@@ -133,13 +133,18 @@ The policy denies every action. Open what this module needs in
 app/Policies/%s.go, inside the custom block, and nothing else -- that is what
 makes the default safe.
 
-Then two lines, by hand, because the wiring is meant to be readable:
+Then, by hand, because the wiring is meant to be readable:
 
   routes/web.go -- the field, and the routes inside the custom block
 
       %s *controllers.%s
 
       r.Resource(%q, d.%s)
+
+  bootstrap/app.go -- the two imports, which the file does not have yet
+
+      "%s/app/Repositories"
+      "%s/app/Services"
 
   bootstrap/app.go -- in the routes.Deps literal
 
@@ -159,6 +164,7 @@ Then:
 		m.PolicyType(),
 		m.Entity(), m.Controller(),
 		m.Resource(), m.Entity(),
+		m.ModulePath, m.ModulePath,
 		m.Entity(), m.Controller(),
 		m.ServiceType(), m.RepositoryType(),
 		m.MigrationType())

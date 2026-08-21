@@ -112,7 +112,7 @@ it. What makes it reachable:
 
 `+"`aru doctor`"+` reports a repository with no policy as an error, and a policy that
 denies everything as a warning. Both are on purpose.
-`, m.Name, m.Entity())
+`, m.Name, m.Name)
 
 	if migration {
 		out += fmt.Sprintf(`

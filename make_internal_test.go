@@ -157,10 +157,18 @@ func TestTheModelMessageNamesTheTwoCommandsThatReachTheTable(t *testing.T) {
 		ModulePath: "example.test/project", Date: "2026_08_07"}
 	message := modelWiring(m, true)
 
-	for _, want := range []string{"aru make:module invoice", "aru make:policy Invoice", "CreateInvoicesTable registers"} {
+	for _, want := range []string{"aru make:module invoice", "aru make:policy invoice", "CreateInvoicesTable registers"} {
 		if !strings.Contains(message, want) {
 			t.Errorf("the message does not say %q:\n%s", want, message)
 		}
+	}
+	// Both commands take the module name, which is lowercase. This line said
+	// "aru make:policy Invoice" and pinned it there: the entity name is what the
+	// message had, and make:policy refuses it with "module name must be
+	// lowercase letters, digits and underscore". A suggestion the tool rejects
+	// is a second error for whoever copies it.
+	if strings.Contains(message, "aru make:policy "+m.Entity()) {
+		t.Errorf("the message suggests make:policy with the entity name, which the command refuses:\n%s", message)
 	}
 	// Without --migration there is no migration, and a message that talked about
 	// one would send you looking for a file that is not there.
@@ -315,6 +323,25 @@ func TestTheModuleWiringNamesTheImportsItsSnippetNeeds(t *testing.T) {
 	} {
 		if !strings.Contains(message, want) {
 			t.Errorf("the message does not print the import %s, which its own snippet needs:\n%s", want, message)
+		}
+	}
+}
+
+// TestTheMissingEntityMessageSuggestsACommandThatRuns.
+//
+// make:policy refuses when the model is not there and prints how to create it.
+// The command it printed had no --fields, which make:module requires, and
+// echoed the argument as given, which make:module refuses when it is not
+// lowercase -- so the fix for one error produced two.
+func TestTheMissingEntityMessageSuggestsACommandThatRuns(t *testing.T) {
+	for _, given := range []string{"invoice", "Invoice", "PurchaseOrder"} {
+		message := missingEntity(gen.Module{Name: gen.Normalize(given)})
+
+		if !strings.Contains(message, "--fields") {
+			t.Errorf("%q: the suggested command omits --fields, which make:module requires:\n%s", given, message)
+		}
+		if !strings.Contains(message, "aru make:module "+gen.Normalize(given)+" ") {
+			t.Errorf("%q: the suggested command does not carry the normalized name:\n%s", given, message)
 		}
 	}
 }

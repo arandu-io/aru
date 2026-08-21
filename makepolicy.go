@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -44,15 +45,18 @@ func makePolicy(args []string, stdout, stderr io.Writer) error {
 	// The entity is what the policy is about, and app/Models is where it lives.
 	// Asking for a policy about something that does not exist is almost always a
 	// typo, and finding out here beats finding out from a file nobody references.
+	// Normalized here rather than left as given, because this name is echoed
+	// back in the suggestion below and make:module takes the lowercase form. The
+	// entity check runs before the name is validated, so an argument in any
+	// shape reaches that line.
 	spec := gen.Module{
-		Name:       name,
+		Name:       gen.Normalize(name),
 		Fields:     []gen.Field{{Name: "placeholder", Type: gen.TypeString}},
 		ModulePath: modulePath,
 	}
 	entity := filepath.Join(root, "app", "Models", spec.Entity()+".go")
 	if _, err := os.Stat(entity); err != nil {
-		return fmt.Errorf("app/Models/%s.go does not exist -- create the module with `aru make:module %s`",
-			spec.Entity(), name)
+		return errors.New(missingEntity(spec))
 	}
 
 	// The tenant is inferred from what the repository already does, rather than
@@ -97,4 +101,16 @@ func repositoryUsesTenant(path string) bool {
 		return false
 	}
 	return strings.Contains(string(b), "data.Tenant(g)")
+}
+
+// missingEntity is what make:policy says when the model it is about is not
+// there, and it is a function so it can be tested.
+//
+// The suggestion has to run as printed. It carries --fields because make:module
+// refuses without it, and the module name rather than the entity because
+// make:module takes the lowercase form. A fix printed in a shape the tool
+// rejects is a second error for whoever copies it.
+func missingEntity(m gen.Module) string {
+	return fmt.Sprintf("app/Models/%s.go does not exist -- create the module with `aru make:module %s --fields %q`",
+		m.Entity(), m.Name, "name:string!")
 }

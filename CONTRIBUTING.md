@@ -39,25 +39,55 @@ in an issue.
 
 ## Where a test goes
 
-Beside the code it tests, named `*_test.go`, in the same directory. There is no
-`tests/` directory, and that is not style: `go test` attributes coverage per
-directory, so a test filed elsewhere leaves the package under test reporting
-0% -- and it can only reach what the package exports.
+One question decides it, and it is technical rather than a matter of taste:
+**does the test read an identifier the package does not export?**
 
-Which package the test declares is a real choice, and it answers one question:
+If it does, the test cannot live anywhere but beside the code, because Go says
+so. Name it `<file>_internal_test.go`. The suffix is not decoration: it turns
+"this is next to the code" into a claim `tests/Unit/structure_test.go` can
+check, so a test that only uses the exported API and stayed beside the code is
+reported rather than tolerated.
 
-| declare | when |
-|---|---|
-| `package X_test` | this is the **contract**. The test sees what a caller sees, which is the point |
-| `package X` | this is the **implementation**, and the test genuinely needs something the package does not export |
+If it does not, it goes under `tests/`, in the suite that says what it does and
+the directory that says what it is about:
 
-Prefer the first. Take the second only when you use it -- `plans/testpackages.go`
-in the arandu-io working tree checks exactly that, by intersecting the
-identifiers a test names with what its package declares unexported, and the
-checklist runs it across every repository.
+```
+tests/
+  Unit/<package>/       one thing, with nothing running
+  Unit/structure_test.go the guard: it checks this layout by command
+  Fuzz/<package>/       arbitrary bytes at a target, with its corpus beside it
+  testcase.go           the base the suites share: tests.Root, tests.Fixture
+```
+
+`tests/Unit/gen` answers for `internal/gen`. The tree is mirrored rather than
+flat because a flat one is a single Go package, and two suites that each want a
+helper called `write` collide on a name that has nothing to do with either.
+
+Three things follow from Go and are not negotiable:
+
+- **the file name ends in `_test.go`.** `go test` runs nothing in a file called
+  `BrokerTest.go` -- or in `view_Test.go`, which is the one a pattern over names
+  gets wrong. Either compiles into the package as ordinary code, and every test
+  inside it is skipped with no error, no warning and a green build
+- **the `package` clause is lowercase**, whatever the directory above it is
+  called. A directory name is a label; an identifier is code
+- **`-coverpkg=./...` is not optional** when running a suite on its own. Without
+  it, `go test ./tests/...` reports the coverage of the test packages, which is
+  near zero, and somebody concludes the wrong thing
+
+The guard is four checks, and each of them is exercised against a tree with the
+mistake planted in it -- a guard accepted because it passed is a guard nobody
+measured. `testdata/` is out of its scope for the same reason it is out of the
+`gofmt` line above: the go command never compiles it, so the Go in there that
+does not parse on purpose is not a suite that silently does not run.
 
 A `package main` has no external form: it cannot be imported, so its tests are
-internal and that is the end of it.
+internal and that is the end of it. Every test at the root of this repository is
+one, which is why they all carry the suffix.
+
+`plans/testpackages.go` in the arandu-io working tree checks the same question
+from the other side, by intersecting the identifiers a test names with what its
+package declares unexported, and the checklist runs it across every repository.
 
 ## What the commit message says
 

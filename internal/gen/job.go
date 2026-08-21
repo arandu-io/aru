@@ -96,8 +96,9 @@ import (
 	"time"
 {{- end}}
 
-	fwjobs "github.com/arandu-io/framework/jobs"
 	"github.com/arandu-io/framework/security"
+	hqueue "github.com/arandu-io/hesape/queue"
+	hjobs "github.com/arandu-io/hesape/queue/jobs"
 )
 
 // {{.Const}} routes the job to its handler.
@@ -120,7 +121,7 @@ type {{.Type}} struct {
 
 // Dispatch{{.Type}} enqueues the job.
 //
-// The Grant is explicit, and fwjobs.New is the only constructor, so every job in
+// The Grant is explicit, and hjobs.New is the only constructor, so every job in
 // the system carries the tenant, an id and the Grant that authorized it -- there
 // is no shape of Job that skipped any of the three.
 //
@@ -128,8 +129,8 @@ type {{.Type}} struct {
 // as the row that produced it. That is the outbox guarantee applied to work
 // instead of to an event, and it is the reason the default queue is a table and
 // not Redis.
-func Dispatch{{.Type}}(ctx context.Context, q fwjobs.Queue, g security.Grant, in {{.Type}}) error {
-	j, err := fwjobs.New(g, fwjobs.DefaultQueue, {{.Const}}, in)
+func Dispatch{{.Type}}(ctx context.Context, q hqueue.Queue, g security.Grant, in {{.Type}}) error {
+	j, err := hjobs.New(g, hjobs.DefaultQueue, {{.Const}}, in)
 	if err != nil {
 		return err
 	}
@@ -153,19 +154,24 @@ func New{{.Handler}}() *{{.Handler}} {
 }
 
 // Compile-time proof that the worker can register it.
-var _ fwjobs.Handler = (*{{.Handler}})(nil)
+var _ hqueue.Handler = (*{{.Handler}})(nil)
 
 // Handle does the work.
 //
 // The Grant is rebuilt by the worker from the row -- the action and the tenant
 // the push was authorized under, and not one permission more -- so this reaches
-// repositories on exactly the same authorized path a request does.
+// repositories on exactly the same authorized path a request does. It is spelt
+// security.Grant here and auth.Grant in the queue's own signature, and they are
+// one type: the framework's name for it is an alias.
+//
+// The job arrives as a pointer because on this contract a job settles itself:
+// releasing it, or parking it, is a call on j rather than on the queue.
 //
 // Delivery is at-least-once. This body has to tolerate running twice: the
 // process can die between doing the work and acknowledging it, and no queue
-// anywhere solves that. j.ID is stable across retries and is the key to
+// anywhere solves that. j.UUID is stable across retries and is the key to
 // deduplicate on.
-func (h *{{.Handler}}) Handle(ctx context.Context, g security.Grant, j fwjobs.Job) error {
+func (h *{{.Handler}}) Handle(ctx context.Context, g security.Grant, j *hjobs.Job) error {
 	var in {{.Type}}
 	if err := j.Decode(&in); err != nil {
 		return err

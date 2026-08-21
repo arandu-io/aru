@@ -28,7 +28,9 @@ import (
 // Each check is a function over a root directory rather than a body of test
 // code, so the test below can point it at a tree with the mistake planted in it
 // and watch it be caught. A guard accepted because it passed is a guard nobody
-// measured, which is how four bugs got into the first version of this one.
+// measured, and six separate defects reached a shipped version of this guard
+// that way -- four of them the same defect wearing different clothes: a check
+// that read nothing, or read the wrong thing, and reported success.
 
 // problem is one thing a check found: where it is, and what breaks.
 type problem struct {
@@ -85,6 +87,39 @@ func goFiles(root string) ([]string, error) {
 	return found, nil
 }
 
+// subjects is the files one check examines, and it fails when there are none.
+//
+// Each check looks at a different part of the tree -- the files that ship, the
+// files that end in _test.go -- and an empty part is the failure this file was
+// written twice to refuse. Every statement here is of the form "every X is Y",
+// and every one of them is true of no X at all: a check whose subject set came
+// back empty reports no problem, and in a CI log "true of nothing" and "true"
+// are the same green.
+//
+// goFiles already refuses a walk that read nothing. This is the same refusal
+// one level in, because a walk can find nine hundred files and still hand a
+// check none of the kind it is about.
+func subjects(root, of string, keep func(rel string) bool) ([]string, error) {
+	files, err := goFiles(root)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, rel := range files {
+		if keep(rel) {
+			out = append(out, rel)
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no %s under %s: this check examined nothing, and a check that examined nothing has no problem to report", of, root)
+	}
+	return out, nil
+}
+
+// isTestFile reports whether go test would run the file rather than compile it
+// into the package.
+func isTestFile(rel string) bool { return strings.HasSuffix(rel, "_test.go") }
+
 // parsed reads one file as Go.
 //
 // A file that does not parse is returned as an error rather than skipped. The
@@ -120,16 +155,15 @@ func parsed(root, rel string) (*ast.File, error) {
 // it, and it is the one file in the repository where a test function in a
 // non-test file is exactly right.
 func invisibleTests(root string) ([]problem, error) {
-	files, err := goFiles(root)
+	files, err := subjects(root, "file that go test compiles rather than runs", func(rel string) bool {
+		return !isTestFile(rel)
+	})
 	if err != nil {
 		return nil, err
 	}
 
 	var out []problem
 	for _, rel := range files {
-		if strings.HasSuffix(rel, "_test.go") {
-			continue // go test runs it, which is the whole question
-		}
 		if strings.HasSuffix(rel, "Test.go") {
 			out = append(out, problem{rel, "is named Test.go and go test runs only files ending in _test.go, " +
 				"so whatever is inside it is compiled into the package and executed by nothing"})
@@ -219,14 +253,14 @@ func named(name, prefix string) bool {
 //	(^|/)tests/   anchored at any element. app/Services/tests/foo_test.go
 //	              passes, and it is nobody's suite
 func misplacedTests(root string) ([]problem, error) {
-	files, err := goFiles(root)
+	files, err := subjects(root, "_test.go file", isTestFile)
 	if err != nil {
 		return nil, err
 	}
 
 	var out []problem
 	for _, rel := range files {
-		if !strings.HasSuffix(rel, "_test.go") || strings.HasSuffix(rel, "_internal_test.go") {
+		if strings.HasSuffix(rel, "_internal_test.go") {
 			continue
 		}
 		inModule, err := relativeToModule(root, rel)
@@ -274,7 +308,7 @@ func relativeToModule(root, rel string) (string, error) {
 // reads as an exported name that is not one, and go vet has nothing to say
 // about it.
 func capitalisedPackages(root string) ([]problem, error) {
-	files, err := goFiles(root)
+	files, err := subjects(root, ".go file", func(string) bool { return true })
 	if err != nil {
 		return nil, err
 	}
@@ -301,10 +335,20 @@ func capitalisedPackages(root string) ([]problem, error) {
 // a command reaching for a helper that already does the thing -- and the
 // testing package and the fixture wiring are inside what gets deployed.
 //
-// It is asked of the files that ship, which is every .go file that is not a
-// _test.go one. Asking `go list -deps ./...` instead answers a different
-// question: that pattern matches tests/ itself, and -deps prints the packages
-// it was named along with everything they import, so the answer is always yes.
+// The whole subtree counts, not the base package alone. tests/Helpers is the
+// directory this rule is named after and the only case that is even reachable:
+// tests/Helpers holds ordinary packages, so importing one compiles, while the
+// base imports nothing of the application and cannot close a cycle either way.
+// A check matching the base path exactly is a check that cannot catch the one
+// import it exists for.
+//
+// Production is what is left after the suite: every .go file that is not a
+// _test.go one and does not itself live under tests/. Widening the match
+// without narrowing the subject makes the check report the suite for importing
+// its own helpers, which is what a suite is supposed to do. Asking
+// `go list -deps ./...` gets it wrong from the other end: that pattern matches
+// tests/ itself, and -deps prints the packages it was named along with
+// everything they import, so the answer is always yes.
 //
 // The module path is read from go.mod and a failure to read it is an error. A
 // check that cannot tell which imports are its own module's and reports nothing
@@ -314,7 +358,9 @@ func scaffoldingInProduction(root string) ([]problem, error) {
 	if err != nil {
 		return nil, err
 	}
-	files, err := goFiles(root)
+	files, err := subjects(root, "file that ships", func(rel string) bool {
+		return !isTestFile(rel) && rel != "tests" && !strings.HasPrefix(rel, "tests/")
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -322,9 +368,6 @@ func scaffoldingInProduction(root string) ([]problem, error) {
 	scaffolding := module + "/tests"
 	var out []problem
 	for _, rel := range files {
-		if strings.HasSuffix(rel, "_test.go") || rel == "tests" || strings.HasPrefix(rel, "tests/") {
-			continue
-		}
 		file, err := parsed(root, rel)
 		if err != nil {
 			return nil, err
@@ -389,10 +432,13 @@ func TestTheLayoutIsWhatItClaims(t *testing.T) {
 //
 // A guard is accepted because it passed, and a guard that passes on everything
 // passes too. Every check above was written against a tree that already
-// satisfied it, which is exactly how the first version of this file shipped with
-// a pattern that missed view_Test.go, a path anchor that let
-// app/Services/tests/ through, a fourth check asking a question whose answer was
-// always yes, and a walk that reported success when it read nothing.
+// satisfied it, which is how six defects shipped in a version of this guard: a
+// name pattern that missed view_Test.go, a path anchor that let
+// app/Services/tests/ through, a scaffolding check asking a question whose
+// answer was always yes, a scaffolding check that could not match the one
+// directory the rule is named after, a walk that reported success when it read
+// nothing, and a check that reported success when the walk read plenty and none
+// of it was its business.
 func TestTheGuardCatchesWhatItIsFor(t *testing.T) {
 	root := plant(t)
 
@@ -417,7 +463,9 @@ func TestTheGuardCatchesWhatItIsFor(t *testing.T) {
 			"app/Cap.go",
 		}},
 		{"test scaffolding reached by something that ships", scaffoldingInProduction, []string{
-			"app/wire.go",
+			"app/wire.go",   // the base package
+			"app/helped.go", // tests/Helpers, which is what the rule is named after
+			"cmd/serve.go",  // an aliased import is the same import
 		}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -443,13 +491,48 @@ func TestTheGuardCatchesWhatItIsFor(t *testing.T) {
 	}
 }
 
-// TestTheGuardFailsWhenItCannotRead is the bug that outlived three of the
-// others: every check answered "nothing wrong" when it had read nothing at all.
+// TestTheGuardFailsWhenItCannotRead is the bug that outlived all the others:
+// every check answered "nothing wrong" when it had read nothing at all.
+//
+// It came back a second time in a narrower form, which is why the middle case
+// below exists. Each check is about a different part of the tree, and a walk
+// that reads nine hundred files can still hand one of them none of the kind it
+// is about -- "every _test.go file is under tests/" is true of a tree with no
+// test in it, and reports the same green as a tree that passes.
 func TestTheGuardFailsWhenItCannotRead(t *testing.T) {
 	empty := t.TempDir()
 	for _, c := range checks {
 		if _, err := c.run(empty); err == nil {
 			t.Errorf("%s: a directory with no Go in it and no go.mod was reported clean", c.name)
+		}
+	}
+
+	// A tree with Go in it, and none of the kind a particular check examines.
+	// Named one by one, because "some check complained" would pass on a
+	// complaint from the wrong one.
+	for _, c := range []struct {
+		holds  string
+		body   string
+		silent []string
+	}{
+		{"app/service.go", "package app\n", []string{
+			"a test outside tests/ without the _internal suffix", // no test file to place
+		}},
+		{"tests/Unit/only_test.go", "package unit_test\n", []string{
+			"a test go test does not run",                      // nothing that ships
+			"test scaffolding reached by something that ships", // the same
+		}},
+	} {
+		lopsided := t.TempDir()
+		write(t, lopsided, "go.mod", "module example.test/lopsided\n")
+		write(t, lopsided, c.holds, c.body)
+
+		for _, check := range checks {
+			_, err := check.run(lopsided)
+			if contains(c.silent, check.name) && err == nil {
+				t.Errorf("a tree holding only %s was reported clean by %q, which had nothing of its own kind to examine",
+					c.holds, check.name)
+			}
 		}
 	}
 
@@ -460,9 +543,13 @@ func TestTheGuardFailsWhenItCannotRead(t *testing.T) {
 	// read contents have to fail, and the one that reasons about names and
 	// paths has to succeed, because a name is as readable in a file that does
 	// not compile as in one that does.
+	// The tree is whole apart from the one file, so each check has something of
+	// its own kind to look at and the emptiness refusal above is not what
+	// answers here.
 	broken := t.TempDir()
 	write(t, broken, "go.mod", "module example.test/broken\n")
 	write(t, broken, "app/half.go", "package app\n\nfunc Open( {\n")
+	write(t, broken, "tests/Unit/whole_test.go", "package unit_test\n")
 	for _, c := range checks {
 		if _, err := c.run(broken); c.reads != (err != nil) {
 			t.Errorf("%s: reads contents = %t, and the file that does not parse produced err = %v", c.name, c.reads, err)
@@ -513,9 +600,14 @@ func plant(t *testing.T) string {
 	// Check 3.
 	write(t, root, "app/Cap.go", "package App\n")
 
-	// Check 4. The second is the same import from inside the scaffolding,
-	// which is what scaffolding is allowed to do.
+	// Check 4, three ways in. The Helpers one is the case the rule is named
+	// after and the only one reachable in practice: tests/Helpers holds
+	// ordinary packages, so importing one compiles.
 	write(t, root, "app/wire.go", "package app\n\nimport _ \"example.test/probe/tests\"\n")
+	write(t, root, "app/helped.go", "package app\n\nimport _ \"example.test/probe/tests/Helpers\"\n")
+	write(t, root, "cmd/serve.go", "package main\n\nimport scaffold \"example.test/probe/tests/Helpers\"\n\nvar _ = scaffold.X\n")
+	// And what it must not report: the suite reaching for its own helpers,
+	// which is what a suite is for, from a file that is not a _test.go one.
 	write(t, root, "tests/Helpers/helpers.go", "package helpers\n\nimport _ \"example.test/probe/tests\"\n")
 	// A module whose path merely starts the same way is somebody else's.
 	write(t, root, "app/near.go", "package app\n\nimport _ \"example.test/probe/testsuite\"\n")

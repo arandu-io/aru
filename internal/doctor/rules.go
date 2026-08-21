@@ -584,59 +584,142 @@ func tenantMustComeFromTheGrant(p *project) []Finding {
 	return out
 }
 
-// grantConstructors are the exported functions that hand back a security.Grant
-// without a Policy having answered for it.
+// tenantShape is how a grant constructor spells the tenant it was handed.
+type tenantShape int
+
+const (
+	// tenantSecondArgument is SystemGrant(action, tenant).
+	tenantSecondArgument tenantShape = iota
+	// tenantOnAJobLiteral is GrantFor(Job{TenantID: ...}), by value or behind
+	// an ampersand.
+	tenantOnAJobLiteral
+)
+
+// grantConstructor is one exported function that hands back a Grant without a
+// Policy having answered for it.
+type grantConstructor struct {
+	// pkg is the import path of the package declaring it, and the import path
+	// is the whole point -- see grantConstructors.
+	pkg string
+	// name is the function.
+	name string
+	// tenant is where in the call the tenant is written.
+	tenant tenantShape
+}
+
+// grantConstructors are the exported functions that hand back a Grant without a
+// Policy having answered for it.
 //
-// security.Authorize is not here, and that is the point: it IS the policy check,
-// so a Grant that came from it was authorized by construction. What is listed is
-// the escape hatch and everything that wraps it.
+// Authorize is not here, and that is the point: it IS the policy check, so a
+// Grant that came from it was authorized by construction. What is listed is the
+// escape hatch and everything that wraps it.
 //
 // It is a list rather than one name because wrapping is what got past the rules
-// below. They matched the literal `security.SystemGrant`, and jobs.GrantFor
-// delegates to it with the action and the tenant read off a Job -- an ordinary
-// exported struct that any package can fill in:
+// below. They matched the literal `security.SystemGrant`, and GrantFor delegates
+// to it with the action and the tenant read off a Job -- an ordinary exported
+// struct that any package can fill in:
 //
 //	jobs.GrantFor(jobs.Job{Action: "customer.delete", TenantID: ctx.Query("org")})
 //
 // That reaches the database with permissions nobody granted, under a tenant the
 // caller chose, and a rule matching one literal name produces no finding at all.
 //
-// A new function returning a security.Grant has to be added here. Nothing makes
-// that automatic -- the doctor reads one package at a time and does not resolve
-// types across modules -- so TestEveryGrantConstructorIsGuarded compares this
-// list against what the framework actually exports.
-var grantConstructors = []string{
-	"security.SystemGrant",
-	"jobs.GrantFor",
+// Each entry is an import path and a function, and they are matched through the
+// file's import block rather than against the identifier written at the call
+// site. The identifier is the caller's to choose:
+//
+//	import hjobs "github.com/arandu-io/hesape/queue/jobs"
+//	g := hjobs.GrantFor(&hjobs.Job{Action: "customer.delete", TenantID: org})
+//
+// A list of strings like "jobs.GrantFor" matches nothing there, and an
+// authorization rule that a one-word alias switches off is not one. The same
+// spelling also matched by accident: the components moved into hesape under
+// packages whose last path element is unchanged, so `jobs.GrantFor` went on
+// matching a different module's function for as long as nobody aliased it.
+//
+// Four entries and two modules, because both spell the same two functions: the
+// framework re-exports what hesape declares, and a project can reach either.
+//
+// A new function returning a Grant has to be added here. Nothing makes that
+// automatic -- the doctor reads one package at a time and does not resolve types
+// across modules -- so TestEveryGrantConstructorIsGuarded reads both modules'
+// source and fails when one of them exports a constructor this list does not
+// name.
+var grantConstructors = []grantConstructor{
+	{"github.com/arandu-io/framework/security", "SystemGrant", tenantSecondArgument},
+	{"github.com/arandu-io/hesape/auth", "SystemGrant", tenantSecondArgument},
+	{"github.com/arandu-io/framework/jobs", "GrantFor", tenantOnAJobLiteral},
+	{"github.com/arandu-io/hesape/queue/jobs", "GrantFor", tenantOnAJobLiteral},
 }
 
-// isGrantConstructor reports whether a call hands back an unauthorized Grant.
-func isGrantConstructor(name string) bool {
+// grantConstructor resolves a call to the constructor it names, through this
+// file's imports.
+//
+// The name comes from callName, so it is the whole chain as written. A call on
+// a package is exactly two segments -- an identifier that has to be an import,
+// and the function -- and anything longer is a method on a value.
+func (f *file) grantConstructor(called string) (grantConstructor, bool) {
+	local, fn, qualified := strings.Cut(called, ".")
+	switch {
+	case !qualified:
+		// A dot import puts the function in this file's own namespace, so the
+		// call site qualifies nothing at all: `SystemGrant(a, tenant)`. Rare,
+		// and free to cover: parseProject records the dot as the local name.
+		local, fn = ".", called
+	case strings.Contains(fn, "."):
+		return grantConstructor{}, false
+	}
+
+	path, imported := f.importPath(local)
+	if !imported {
+		return grantConstructor{}, false
+	}
 	for _, c := range grantConstructors {
-		if name == c {
-			return true
+		if c.pkg == path && c.name == fn {
+			return c, true
 		}
 	}
-	return false
+	return grantConstructor{}, false
 }
 
-// tenantArg returns the expression that supplies the tenant to a grant
-// constructor.
+// importPath is the path this file imports under a local name.
 //
-// The two spell it differently: security.SystemGrant takes it as the second
-// positional argument, and jobs.GrantFor takes a Job whose TenantID field
-// carries it. Reading only the positional form is what let the wrapper through.
-func tenantArg(call *ast.CallExpr, name string) (ast.Expr, bool) {
-	switch name {
-	case "security.SystemGrant":
+// f.imports is keyed the other way round, by path, because most rules ask what
+// a file imports rather than what a name refers to. Two imports cannot share a
+// local name in one file, so the scan has one answer.
+func (f *file) importPath(local string) (string, bool) {
+	for path, name := range f.imports {
+		if name == local {
+			return path, true
+		}
+	}
+	return "", false
+}
+
+// tenantArg returns the expression that supplies the tenant to this call.
+//
+// The two shapes spell it differently: SystemGrant takes it as the second
+// positional argument, and GrantFor takes a Job whose TenantID field carries
+// it. Reading only the positional form is what let the wrapper through.
+//
+// The Job arrives by value in one module and behind an ampersand in the other,
+// which is a difference in the two signatures and not in what is being written:
+// unwrapping it here is what keeps one rule over both.
+func (c grantConstructor) tenantArg(call *ast.CallExpr) (ast.Expr, bool) {
+	switch c.tenant {
+	case tenantSecondArgument:
 		if len(call.Args) >= 2 {
 			return call.Args[1], true
 		}
-	case "jobs.GrantFor":
+	case tenantOnAJobLiteral:
 		if len(call.Args) != 1 {
 			return nil, false
 		}
-		lit, ok := call.Args[0].(*ast.CompositeLit)
+		arg := call.Args[0]
+		if unary, ok := arg.(*ast.UnaryExpr); ok && unary.Op == token.AND {
+			arg = unary.X
+		}
+		lit, ok := arg.(*ast.CompositeLit)
 		if !ok {
 			return nil, false
 		}
@@ -714,11 +797,11 @@ func requestValuesReachingAGrant(f *file) []Finding {
 			if !ok {
 				return true
 			}
-			name := callName(call)
-			if !isGrantConstructor(name) {
+			constructor, isGrant := f.grantConstructor(callName(call))
+			if !isGrant {
 				return true
 			}
-			arg, ok := tenantArg(call, name)
+			arg, ok := constructor.tenantArg(call)
 			if !ok {
 				return true
 			}
@@ -812,19 +895,25 @@ func systemGrantIsAudited(p *project) []Finding {
 		enclosing := enclosingFuncs(f)
 
 		f.calls(func(call *ast.CallExpr, name string) {
-			if !isGrantConstructor(name) {
+			constructor, isGrant := f.grantConstructor(name)
+			if !isGrant {
 				return
 			}
 			file, line := f.at(call)
 
 			// An empty tenant is refused by the framework at runtime; catching it
 			// here says so before anyone waits for the failure.
-			if arg, found := tenantArg(call, name); found {
+			//
+			// The message names the constructor that was called rather than
+			// SystemGrant always. GrantFor reaches here too, and telling
+			// somebody their SystemGrant is wrong when they wrote no such call
+			// sends them looking for a line that is not in the file.
+			if arg, found := constructor.tenantArg(call); found {
 				if lit, ok := arg.(*ast.BasicLit); ok && (lit.Value == `""` || lit.Value == "``") {
 					out = append(out, Finding{
 						Rule: "system-grant-without-tenant", Severity: Error,
 						File: file, Line: line,
-						Message: "SystemGrant with an empty tenant",
+						Message: constructor.name + " with an empty tenant",
 						Why:     "it returns the zero Grant, which fails Check -- so this call site is dead code. A system grant with no tenant would read across every customer, which is why it does not exist.",
 					})
 					return
@@ -834,9 +923,9 @@ func systemGrantIsAudited(p *project) []Finding {
 				return
 			}
 
-			where := "SystemGrant"
+			where := constructor.name
 			if fn := enclosing[line]; fn != "" {
-				where = "SystemGrant in " + fn
+				where = constructor.name + " in " + fn
 			}
 			out = append(out, Finding{
 				Rule: "system-grant-outside-scope", Severity: Warning,

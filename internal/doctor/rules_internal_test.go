@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -145,76 +146,184 @@ func keys(m map[string]bool) []string {
 }
 
 // TestEveryGrantConstructorIsGuarded compares grantConstructors against what the
-// framework actually exports.
+// two modules actually export.
 //
 // The list is written by hand because the doctor reads one package at a time and
-// does not resolve types across modules -- it cannot ask "what returns a
-// security.Grant" the way a compiler can. A hand-written list is exactly what
-// went wrong: the rules matched `security.SystemGrant` and `jobs.GrantFor`
-// wrapped it, so a Grant for an action and a tenant nobody authorized produced
-// no finding at all.
+// does not resolve types across modules -- it cannot ask "what returns a Grant"
+// the way a compiler can. A hand-written list is exactly what went wrong: the
+// rules matched `security.SystemGrant` and `jobs.GrantFor` wrapped it, so a Grant
+// for an action and a tenant nobody authorized produced no finding at all.
 //
-// So this reads the framework's source next door and fails when it exports a
-// Grant constructor the list does not name. security.Authorize is excluded on
-// purpose: it is the mandatory path, and a Grant that came from it was
-// authorized by construction.
+// Both modules are read, and that is the correction this test needed itself. It
+// looked only at the framework, and the framework re-exports two functions that
+// hesape declares -- so hesape/auth.SystemGrant and hesape/queue/jobs.GrantFor
+// were invisible to the check that exists to find exactly this. A project
+// reaches either module directly.
 //
-// If the framework is not on disk the test skips rather than passing quietly --
-// a guard that silently does nothing is the thing it exists to prevent.
+// Authorize is excluded on purpose, in both: it is the mandatory path, and a
+// Grant that came from it was authorized by a Policy.
+//
+// A module that is not on disk is skipped rather than passed over quietly, and
+// finding nothing anywhere is a failure -- a guard that silently does nothing is
+// the thing it exists to prevent.
 func TestEveryGrantConstructorIsGuarded(t *testing.T) {
-	root := filepath.Join("..", "..", "..", "framework")
-	if _, err := os.Stat(root); err != nil {
-		t.Skip("the framework is not checked out next to this repository")
+	// `func Name(...) [pkg.]Grant` and `... (Grant, error)`, exported only.
+	//
+	// The qualifier is any package and not `security.` alone. hesape spells the
+	// return type `auth.Grant`, and a regexp that knew one qualifier read every
+	// constructor in that module as no constructor at all.
+	decl := regexp.MustCompile(`^func ([A-Z]\w*)(\[[^]]*\])?\([^)]*\)\s*\(?([a-z]\w*\.)?Grant\b`)
+
+	found := map[string]string{} // import path + symbol -> file
+	var read int
+	for _, module := range []string{"framework", "hesape"} {
+		root := filepath.Join("..", "..", "..", module)
+		if _, err := os.Stat(root); err != nil {
+			t.Logf("%s is not checked out next to this repository", module)
+			continue
+		}
+		read++
+
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if d.IsDir() {
+				if d.Name() == ".git" || d.Name() == "testdata" {
+					return fs.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			pkg, err := importPathOf(filepath.Dir(path), root)
+			if err != nil {
+				return err
+			}
+			for _, line := range strings.Split(string(body), "\n") {
+				if m := decl.FindStringSubmatch(line); m != nil {
+					found[pkg+"."+m[1]] = path
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
-
-	// `func Name(...) [security.]Grant` and `... (Grant, error)`, exported only.
-	decl := regexp.MustCompile(`^func ([A-Z]\w*)(\[[^]]*\])?\([^)]*\)\s*\(?(security\.)?Grant\b`)
-
-	found := map[string]string{} // symbol -> package
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			if d.Name() == ".git" || d.Name() == "testdata" {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		body, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		pkg := filepath.Base(filepath.Dir(path))
-		for _, line := range strings.Split(string(body), "\n") {
-			if m := decl.FindStringSubmatch(line); m != nil {
-				found[pkg+"."+m[1]] = path
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
+	if read == 0 {
+		t.Skip("neither module is checked out next to this repository")
 	}
 	if len(found) == 0 {
-		t.Fatal("no Grant constructor found in the framework at all: this test stopped testing anything")
+		t.Fatal("no Grant constructor found in either module: this test stopped testing anything")
 	}
 
 	guarded := map[string]bool{}
 	for _, c := range grantConstructors {
-		guarded[c] = true
+		guarded[c.pkg+"."+c.name] = true
 	}
-	// The mandatory path. A Grant it returns was authorized by a Policy.
-	guarded["security.Authorize"] = true
+	// The mandatory path, in both modules. A Grant it returns was authorized.
+	guarded["github.com/arandu-io/framework/security.Authorize"] = true
+	guarded["github.com/arandu-io/hesape/auth.Authorize"] = true
 
 	for symbol, path := range found {
 		if !guarded[symbol] {
-			t.Errorf("%s (%s) hands back a security.Grant and no rule watches it: add it to grantConstructors, "+
-				"and give tenantArg the shape it spells the tenant in", symbol, path)
+			t.Errorf("%s (%s) hands back a Grant and no rule watches it: add it to grantConstructors, "+
+				"and give it the shape it spells the tenant in", symbol, path)
 		}
+	}
+}
+
+// TestAGrantConstructorIsResolvedThroughTheImportBlock pins the decision that
+// makes the rule survive an alias.
+//
+// The identifier at the call site belongs to whoever wrote the file. Matching it
+// as text means the rule is off for anyone who renames an import, and on by
+// coincidence for anyone who does not -- and the components moved into hesape
+// under packages whose last path element is unchanged, so the coincidence was
+// holding two of these four up.
+func TestAGrantConstructorIsResolvedThroughTheImportBlock(t *testing.T) {
+	const (
+		fwSecurity = "github.com/arandu-io/framework/security"
+		fwJobs     = "github.com/arandu-io/framework/jobs"
+		hAuth      = "github.com/arandu-io/hesape/auth"
+		hJobs      = "github.com/arandu-io/hesape/queue/jobs"
+	)
+
+	for _, c := range []struct {
+		imports map[string]string
+		called  string
+		want    string // the constructor's function name, or "" for no match
+		why     string
+	}{
+		{map[string]string{fwSecurity: "security"}, "security.SystemGrant", "SystemGrant", "the spelling everybody writes"},
+		{map[string]string{fwJobs: "jobs"}, "jobs.GrantFor", "GrantFor", "the wrapper, unaliased"},
+
+		{map[string]string{hJobs: "hjobs"}, "hjobs.GrantFor", "GrantFor", "the alias that switched the rule off"},
+		{map[string]string{hAuth: "auth"}, "auth.SystemGrant", "SystemGrant", "hesape declares it and the list did not name it"},
+		{map[string]string{hAuth: "a"}, "a.SystemGrant", "SystemGrant", "one letter is a legal import name"},
+		{map[string]string{hJobs: "jobs"}, "jobs.GrantFor", "GrantFor", "hesape under the name the framework's package also has"},
+		{map[string]string{fwSecurity: "."}, "SystemGrant", "SystemGrant", "a dot import qualifies nothing at all"},
+
+		{map[string]string{fwSecurity: "security"}, "security.Authorize", "", "the mandatory path is not an escape hatch"},
+		{map[string]string{"example.test/p/jobs": "jobs"}, "jobs.GrantFor", "", "the project's own package, sharing a name"},
+		{map[string]string{fwJobs: "jobs"}, "q.jobs.GrantFor", "", "a field chain is not a package call"},
+		{map[string]string{}, "jobs.GrantFor", "", "an identifier this file never imported"},
+		{map[string]string{fwSecurity: "security"}, "SystemGrant", "", "unqualified, and nothing was dot-imported"},
+	} {
+		f := &file{imports: c.imports}
+		got, matched := f.grantConstructor(c.called)
+		if matched != (c.want != "") {
+			t.Errorf("grantConstructor(%q) with imports %v matched = %t, want %t: %s",
+				c.called, c.imports, matched, c.want != "", c.why)
+			continue
+		}
+		if got.name != c.want {
+			t.Errorf("grantConstructor(%q) = %q, want %q: %s", c.called, got.name, c.want, c.why)
+		}
+	}
+}
+
+// importPathOf is the import path of a directory inside a checked-out module.
+//
+// The module path comes from the nearest go.mod at or above the directory, not
+// from the one at the root: hesape publishes six submodules of its own, and
+// naming a package of one of them after the root module produces a path that
+// resolves to nothing.
+func importPathOf(dir, root string) (string, error) {
+	at := dir
+	for {
+		body, err := os.ReadFile(filepath.Join(at, "go.mod"))
+		if err == nil {
+			module := ""
+			for _, line := range strings.Split(string(body), "\n") {
+				if rest, cut := strings.CutPrefix(strings.TrimSpace(line), "module "); cut {
+					module = strings.TrimSpace(rest)
+					break
+				}
+			}
+			if module == "" {
+				return "", fmt.Errorf("%s/go.mod declares no module path", at)
+			}
+			rel, err := filepath.Rel(at, dir)
+			if err != nil {
+				return "", err
+			}
+			if rel == "." {
+				return module, nil
+			}
+			return module + "/" + filepath.ToSlash(rel), nil
+		}
+		parent := filepath.Dir(at)
+		if at == root || parent == at {
+			return "", fmt.Errorf("no go.mod at or above %s", dir)
+		}
+		at = parent
 	}
 }
 

@@ -11,10 +11,22 @@ import (
 	"testing"
 
 	"github.com/arandu-io/aru/internal/gen"
+	"github.com/arandu-io/aru/tests"
 )
 
-// update rewrites the golden files: go test ./internal/gen -update
+// update rewrites the golden files: go test ./tests/Unit/gen -update
 var update = flag.Bool("update", false, "rewrite the golden files")
+
+// goldens is internal/gen/testdata, where the expected output of the generator
+// is kept.
+//
+// It stays beside the generator rather than moving here with this file: the
+// golden files are what internal/gen promises to emit, and a change to one of
+// them is a change to that package whichever suite happens to read it.
+func goldens(t *testing.T, parts ...string) string {
+	t.Helper()
+	return filepath.Join(append([]string{tests.Fixture(t, "gen")}, parts...)...)
+}
 
 // spec is the fixture every golden test generates from. The date is fixed rather
 // than time.Now(), or the migration id would change every day and the golden
@@ -58,7 +70,7 @@ func TestGolden(t *testing.T) {
 			}
 
 			for _, f := range files {
-				golden := filepath.Join("testdata", c.name, filepath.Base(f.Path)+".golden")
+				golden := filepath.Join(goldens(t, c.name), filepath.Base(f.Path)+".golden")
 				if *update {
 					if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
 						t.Fatal(err)
@@ -71,10 +83,10 @@ func TestGolden(t *testing.T) {
 
 				want, err := os.ReadFile(golden)
 				if err != nil {
-					t.Fatalf("%s: %v -- run: go test ./internal/gen -update", golden, err)
+					t.Fatalf("%s: %v -- run: go test ./tests/Unit/gen -update", golden, err)
 				}
 				if !bytes.Equal(want, f.Content) {
-					t.Errorf("%s differs from the golden file.\nRun `go test ./internal/gen -update` and review the diff.", f.Path)
+					t.Errorf("%s differs from the golden file.\nRun `go test ./tests/Unit/gen -update` and review the diff.", f.Path)
 				}
 			}
 		})

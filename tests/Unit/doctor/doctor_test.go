@@ -5,14 +5,29 @@ import (
 	"testing"
 
 	"github.com/arandu-io/aru/internal/doctor"
+	"github.com/arandu-io/aru/tests"
 )
+
+// fixture is one of the projects under internal/doctor/testdata.
+//
+// They stay there rather than moving here with this file, and it is not
+// deference to where they happened to be: internal/doctor/testdata/broken holds
+// Go that does not parse because the doctor has to answer honestly about a file
+// it could not read, which is a fact about the doctor. The rule set is also
+// enumerated by a test that reads the unexported rules slice and therefore
+// cannot leave internal/doctor, so the same four projects are read from two
+// packages whatever this file does.
+func fixture(t *testing.T, name string) string {
+	t.Helper()
+	return tests.Fixture(t, "doctor", name)
+}
 
 // TestPlantedViolationsAreCaught: doctor has to fail on violations planted on
 // purpose. The fixture under testdata contains one
 // of each, written the way each mistake is actually written -- and every rule
 // here corresponds to a real way to lose data or bypass a policy.
 func TestPlantedViolationsAreCaught(t *testing.T) {
-	findings, err := doctor.Run("testdata/violations", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -56,7 +71,7 @@ func TestPlantedViolationsAreCaught(t *testing.T) {
 // TestFindingsAreActionable: a finding that only names the rule teaches people
 // to suppress it. Each one has to say where it is and what breaks.
 func TestFindingsAreActionable(t *testing.T) {
-	findings, err := doctor.Run("testdata/violations", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -83,7 +98,7 @@ func TestFindingsAreActionable(t *testing.T) {
 // TestSeverityIsMeaningful: what blocks a merge has to be what actually breaks
 // something. If everything is an error, people stop reading.
 func TestSeverityIsMeaningful(t *testing.T) {
-	findings, err := doctor.Run("testdata/violations", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -108,11 +123,11 @@ func TestSeverityIsMeaningful(t *testing.T) {
 // TestOrderIsStable: the output feeds CI, and output that reorders between runs
 // produces diffs nobody can read.
 func TestOrderIsStable(t *testing.T) {
-	first, err := doctor.Run("testdata/violations", doctor.Conventional)
+	first, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	second, err := doctor.Run("testdata/violations", doctor.Conventional)
+	second, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -131,7 +146,7 @@ func TestOrderIsStable(t *testing.T) {
 // linter: firing on correct code. The fixture here is the shape the generator
 // emits, and it must come back silent.
 func TestCleanCodeProducesNothing(t *testing.T) {
-	findings, err := doctor.Run("testdata/clean", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -148,7 +163,7 @@ func TestCleanCodeProducesNothing(t *testing.T) {
 // verifies is a promise with the weight of a check and the reliability of a
 // comment.
 func TestAnUndeclaredPermissionIsCaught(t *testing.T) {
-	findings, err := doctor.Run("testdata/violations", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -174,7 +189,7 @@ func TestAnUndeclaredPermissionIsCaught(t *testing.T) {
 // TestADeclaredPermissionThatIsUsedIsSilent: the clean fixture owns tables and
 // says so. Firing there would train people to ignore the rule.
 func TestADeclaredPermissionThatIsUsedIsSilent(t *testing.T) {
-	findings, err := doctor.Run("testdata/clean", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -189,7 +204,7 @@ func TestADeclaredPermissionThatIsUsedIsSilent(t *testing.T) {
 // HTMX cannot reach" is opinion, and opinion does not survive a code review at
 // 6pm.
 func TestAlpineReachingTheServerIsCaught(t *testing.T) {
-	findings, err := doctor.Run("testdata/violations", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -220,7 +235,7 @@ func TestAlpineReachingTheServerIsCaught(t *testing.T) {
 // TestAlpineWithinItsLimitIsSilent: a dropdown is exactly what the rule permits,
 // and firing on it would teach people to ignore the rule.
 func TestAlpineWithinItsLimitIsSilent(t *testing.T) {
-	findings, err := doctor.Run("testdata/clean", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -242,7 +257,7 @@ func TestAlpineWithinItsLimitIsSilent(t *testing.T) {
 // Whoever writes the client picks the header name, so the name proves nothing;
 // what makes a value a tenant is that it scopes SQL.
 func TestATenantIsFoundByWhereItGoesNotByItsName(t *testing.T) {
-	findings, err := doctor.Run("testdata/violations", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -268,7 +283,7 @@ func TestATenantIsFoundByWhereItGoesNotByItsName(t *testing.T) {
 // exactly like a module with no policy -- and doctor tells the author to write
 // one they had already written, pointing at the wrong file.
 func TestAFileThatDoesNotParseIsReportedNotSwallowed(t *testing.T) {
-	findings, err := doctor.Run("testdata/broken", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "broken"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -312,7 +327,7 @@ func findRule(findings []doctor.Finding, rule string) *doctor.Finding {
 // the run come back green. A doctor that is green because it did not look is
 // worse than no doctor.
 func TestTheTreeIsLaravels(t *testing.T) {
-	findings, err := doctor.Run("testdata/violations", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -351,7 +366,7 @@ func TestTheTreeIsLaravels(t *testing.T) {
 // the controller authorizing itself -- and the compiler cannot see it, because
 // the signature is satisfied.
 func TestAControllerReachingTheRepositoryIsCaught(t *testing.T) {
-	findings, err := doctor.Run("testdata/violations", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -372,7 +387,7 @@ func TestAControllerReachingTheRepositoryIsCaught(t *testing.T) {
 // in a key renders as an empty string -- the page comes up, the total is blank,
 // and it is found by a customer.
 func TestAMapAsViewDataIsCaught(t *testing.T) {
-	findings, err := doctor.Run("testdata/violations", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -407,7 +422,7 @@ func TestAMapAsViewDataIsCaught(t *testing.T) {
 // the one thing in the view path the compiler cannot check. It builds, it
 // deploys, and the page answers 500 the first time somebody opens it.
 func TestAViewThatDoesNotExistIsCaught(t *testing.T) {
-	findings, err := doctor.Run("testdata/violations", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -430,7 +445,7 @@ func TestAViewThatDoesNotExistIsCaught(t *testing.T) {
 // linter. The clean fixture renders two views that exist, with the struct each
 // one declared in its @go block.
 func TestTheViewRulesAreSilentOnCorrectCode(t *testing.T) {
-	findings, err := doctor.Run("testdata/clean", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -454,7 +469,7 @@ func TestTheViewRulesAreSilentOnCorrectCode(t *testing.T) {
 // the reader knows which of several on the page it means, and it names the
 // escaped form as the fix.
 func TestAValueInTheRawFormIsCaught(t *testing.T) {
-	findings, err := doctor.Run("testdata/violations", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -492,7 +507,7 @@ func TestAValueInTheRawFormIsCaught(t *testing.T) {
 // which is also the walk: a rule that only looked at the top level would find
 // nothing there and pass this test by never running.
 func TestAComponentInTheRawFormIsAllowed(t *testing.T) {
-	findings, err := doctor.Run("testdata/clean", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -508,7 +523,7 @@ func TestAComponentInTheRawFormIsAllowed(t *testing.T) {
 // fragment from a nested directory resolves the same way. Getting this wrong
 // would make view-does-not-exist fire on every correct project.
 func TestAViewNameIsResolvedLikeLaravel(t *testing.T) {
-	findings, err := doctor.Run("testdata/clean", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -527,7 +542,7 @@ func TestAViewNameIsResolvedLikeLaravel(t *testing.T) {
 // directory.
 func gaps(t *testing.T) []doctor.Finding {
 	t.Helper()
-	findings, err := doctor.Run("testdata/gaps", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "gaps"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -627,7 +642,7 @@ func TestASystemGrantIsNotExcusedByItsName(t *testing.T) {
 	// The other half of removing an allowlist is not removing the one that was
 	// right. database/seeders is where the skeleton itself calls SystemGrant,
 	// and a rule that shouts at code the generator wrote is worse than no rule.
-	clean, err := doctor.Run("testdata/clean", doctor.Conventional)
+	clean, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -772,7 +787,7 @@ func TestSQLIsReadInAFunctionThatWasNeverDeclared(t *testing.T) {
 	// And the same control in the fixture that has to stay silent altogether. A
 	// widening pays for itself only if it finds nothing in correct code, and the
 	// place that proves it is the project with nothing wrong in it.
-	clean, err := doctor.Run("testdata/clean", doctor.Conventional)
+	clean, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -793,7 +808,7 @@ func TestSQLIsReadInAFunctionThatWasNeverDeclared(t *testing.T) {
 // Both fixtures live in testdata/clean, so a broken escape is an error on code
 // that is correct -- which is the failure that makes people stop reading a tool.
 func TestTheTenantRuleHasExactlyTwoEscapes(t *testing.T) {
-	findings, err := doctor.Run("testdata/clean", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -821,7 +836,7 @@ func TestTheTenantRuleHasExactlyTwoEscapes(t *testing.T) {
 // repository, which is correct code -- and it was reported for not calling
 // Check.
 func TestATypeThatMerelyStartsWithRepoIsNotARepository(t *testing.T) {
-	findings, err := doctor.Run("testdata/clean", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -939,7 +954,7 @@ func TestTheGapsFixtureReportsNothingElse(t *testing.T) {
 // The fixture is app/Reporting/InvoiceRepo.go: exported method, no Grant, a
 // SELECT with no tenant.
 func TestARepositoryIsSeenByEitherSpelling(t *testing.T) {
-	findings, err := doctor.Run("testdata/violations", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -962,7 +977,7 @@ func TestARepositoryIsSeenByEitherSpelling(t *testing.T) {
 // the substring match noisy have to stay out. A rule that fires on correct code
 // is how a tool teaches people to ignore it.
 func TestTheNearMissesAreStillQuiet(t *testing.T) {
-	findings, err := doctor.Run("testdata/clean", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -979,7 +994,7 @@ func TestTheNearMissesAreStillQuiet(t *testing.T) {
 //
 //	"SELECT id FROM invoices WHERE reference LIKE '%" + term + "%'"
 func TestConcatenatedSQLIsCaught(t *testing.T) {
-	findings, err := doctor.Run("testdata/violations", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -1002,7 +1017,7 @@ func TestConcatenatedSQLIsCaught(t *testing.T) {
 // carry a value from outside, and a rule that fired on them would fire on every
 // project on its first run -- which is how a tool teaches people to ignore it.
 func TestTheGeneratorsOwnConcatenationIsQuiet(t *testing.T) {
-	findings, err := doctor.Run("testdata/clean", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -1069,7 +1084,7 @@ func TestAModuleWhoseWritesNeedAnotherModulesTableIsCaught(t *testing.T) {
 // -- has to come back silent. A rule that fires on the correct wiring is how a
 // tool teaches people to ignore it.
 func TestRegisteringTheOutboxNextToWhatWritesToItIsSilent(t *testing.T) {
-	findings, err := doctor.Run("testdata/clean", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -1085,7 +1100,7 @@ func TestRegisteringTheOutboxNextToWhatWritesToItIsSilent(t *testing.T) {
 // correct SQL on a relational database, and reporting them by default would tell
 // every project in the world to redesign a write that works.
 func TestTheAggregateRulesAreSilentOnTheConventionalProfile(t *testing.T) {
-	findings, err := doctor.Run("testdata/clean", doctor.Conventional)
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -1104,7 +1119,7 @@ func TestTheAggregateRulesAreSilentOnTheConventionalProfile(t *testing.T) {
 // worse than not accepting it: a pipeline that passes `--profile=performance`
 // and gets a clean report reads it as a promise the module runs there.
 func TestTheProfileFlagAddsTheAggregateRules(t *testing.T) {
-	findings, err := doctor.Run("testdata/clean", doctor.Performance)
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Performance)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -1180,7 +1195,7 @@ func TestTheProfileFlagAddsTheAggregateRules(t *testing.T) {
 // wide-column store cannot spell, would fire on every module ever generated. The
 // subquery reads the repository's own table, which is one aggregate.
 func TestTheGeneratedRepositoryPassesThePerformanceProfile(t *testing.T) {
-	findings, err := doctor.Run("testdata/clean", doctor.Performance)
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Performance)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}

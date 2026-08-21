@@ -118,7 +118,7 @@ func TestGoldenStubs(t *testing.T) {
 				}
 			}
 
-			path := filepath.Join("testdata", "stubs", c.golden+".golden")
+			path := filepath.Join(goldens(t, "stubs"), c.golden+".golden")
 			if *update {
 				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 					t.Fatal(err)
@@ -130,10 +130,10 @@ func TestGoldenStubs(t *testing.T) {
 			}
 			want, err := os.ReadFile(path)
 			if err != nil {
-				t.Fatalf("%s: %v -- run: go test ./internal/gen -update", path, err)
+				t.Fatalf("%s: %v -- run: go test ./tests/Unit/gen -update", path, err)
 			}
 			if !bytes.Equal(want, file.Content) {
-				t.Errorf("%s differs from the golden file.\nRun `go test ./internal/gen -update` and review the diff.", file.Path)
+				t.Errorf("%s differs from the golden file.\nRun `go test ./tests/Unit/gen -update` and review the diff.", file.Path)
 			}
 		})
 	}

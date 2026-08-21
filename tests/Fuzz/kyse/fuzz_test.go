@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/arandu-io/aru/internal/kyse"
+	"github.com/arandu-io/aru/tests"
 )
 
 // FuzzParse feeds arbitrary bytes through the view compiler and checks what the
@@ -313,10 +314,15 @@ func diagnoses(err error) []*kyse.Error {
 // It fails rather than seeding nothing: a corpus that quietly emptied itself
 // leaves the fuzzer generating bytes that never reach the markup at all, and the
 // run reports success either way.
+//
+// The walk starts at the module root and not at a fixed number of parent
+// directories, which is the same failure one level down: "../.." was this
+// package's own way of naming the root, and it went on resolving to a real
+// directory after the file moved -- one that holds no view at all.
 func viewsInRepository(f *testing.F) []string {
 	var out []string
 
-	err := filepath.WalkDir("../..", func(path string, entry fs.DirEntry, err error) error {
+	err := filepath.WalkDir(tests.Root(f), func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() {
 			return err
 		}

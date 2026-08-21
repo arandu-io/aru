@@ -129,6 +129,7 @@ func emitsByRule() map[string][]string {
 		"theOutboxTableTravelsWithWhatWritesToIt": {"outbox-not-registered"},
 		"resourceNotReauthorized":                 {"resource-not-reauthorized"},
 		"rawOutputIsAComponent":                   {"raw-output-is-not-a-component"},
+		"noRetiredModuleIsImported":               {"retired-module"},
 		"theProfileIsDeclared":                    {"profile-not-declared"},
 		"queriesReachOneAggregate":                {"join-across-aggregates"},
 		"transactionsStayInsideOneAggregate":      {"transaction-across-aggregates"},
@@ -249,6 +250,45 @@ func TestIsNamedCallSeparatesAComponentFromAValue(t *testing.T) {
 	} {
 		if got := isNamedCall(c.expr); got != c.want {
 			t.Errorf("isNamedCall(%q) = %t, want %t: %s", c.expr, got, c.want, c.why)
+		}
+	}
+}
+
+// TestRetiredModuleForMatchesThePathElementAndNotThePrefix pins the one
+// decision the retired-module rule makes.
+//
+// Both ways of getting it wrong cost more than having no rule at all: matching
+// too little leaves the subpackages of a deleted repository unreported, which
+// is most of the imports anybody writes; matching too much tells somebody their
+// own module was deleted, and a report with an invented finding in it is a
+// report the next person skims.
+func TestRetiredModuleForMatchesThePathElementAndNotThePrefix(t *testing.T) {
+	for _, c := range []struct {
+		path  string
+		want  string
+		moved string
+		why   string
+	}{
+		{"github.com/arandu-io/queue", "github.com/arandu-io/queue", "github.com/arandu-io/hesape/queue", "the module root"},
+		{"github.com/arandu-io/queue/kv", "github.com/arandu-io/queue", "github.com/arandu-io/hesape/queue", "a subpackage is as gone as the root"},
+		{"github.com/arandu-io/database/postgres", "github.com/arandu-io/database", "github.com/arandu-io/hesape/database", "the same, one repository over"},
+		{"github.com/arandu-io/kv", "github.com/arandu-io/kv", "github.com/arandu-io/hesape/redis", "the destination is not named after the source"},
+		{"github.com/arandu-io/storage", "github.com/arandu-io/storage", "github.com/arandu-io/hesape/filesystem", "nor here"},
+
+		{"github.com/arandu-io/queuebase", "", "", "somebody else's module that starts with the same letters"},
+		{"github.com/arandu-io/framework/jobs", "", "", "the bridge has a removal date and is what make:job writes today"},
+		{"github.com/arandu-io/hesape/queue", "", "", "the destination is not the thing being reported"},
+		{"github.com/arandu-io/framework/data", "", "", "the framework did not move"},
+		{"database/sql", "", "", "the standard library shares a word with one of them"},
+		{"example.test/project/app/Repositories", "", "", "a package of the project under check"},
+	} {
+		retired, moved, ok := retiredModuleFor(c.path)
+		if ok != (c.want != "") {
+			t.Errorf("retiredModuleFor(%q) matched = %t, want %t: %s", c.path, ok, c.want != "", c.why)
+			continue
+		}
+		if retired != c.want || moved != c.moved {
+			t.Errorf("retiredModuleFor(%q) = %q, %q; want %q, %q: %s", c.path, retired, moved, c.want, c.moved, c.why)
 		}
 	}
 }

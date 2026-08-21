@@ -57,6 +57,7 @@ var rules = []func(*project) []Finding{
 	theOutboxTableTravelsWithWhatWritesToIt,
 	resourceNotReauthorized,
 	rawOutputIsAComponent,
+	noRetiredModuleIsImported,
 	theProfileIsDeclared,
 	queriesReachOneAggregate,
 	transactionsStayInsideOneAggregate,
@@ -2321,6 +2322,92 @@ func endOfLiteral(s string, start int) int {
 		}
 	}
 	return -1
+}
+
+// retiredModules maps a module whose repository was deleted to the one that
+// holds its contents now.
+//
+// A closed list, and a short one: these four were the adapter repositories, and
+// each of them moved into a package of github.com/arandu-io/hesape. The list
+// is not a deprecation mechanism and must not grow into one -- what belongs
+// here is a module whose repository is gone, which is a fact about the world
+// rather than an opinion about style.
+//
+// github.com/arandu-io/framework/jobs is deliberately absent. It is a bridge
+// with a removal date in its own package documentation, it is what
+// `aru make:job` writes today, and a check that reports the generator's own
+// output is a check people learn to scroll past.
+var retiredModules = map[string]string{
+	"github.com/arandu-io/database": "github.com/arandu-io/hesape/database",
+	"github.com/arandu-io/kv":       "github.com/arandu-io/hesape/redis",
+	"github.com/arandu-io/queue":    "github.com/arandu-io/hesape/queue",
+	"github.com/arandu-io/storage":  "github.com/arandu-io/hesape/filesystem",
+}
+
+// retiredModuleFor reports which retired module an import path belongs to, and
+// what answers for it now.
+//
+// The subpackages travel with the root: github.com/arandu-io/queue/kv is as
+// gone as github.com/arandu-io/queue. The prefix has to end at a path element,
+// or a project of somebody else's called github.com/arandu-io/queuebase would
+// be reported as retired.
+//
+// Only the module root is named in the answer, not a translated subpath. The
+// packages were rearranged on the way in -- the key-value adapter is under a
+// different name at the destination -- and a check that guessed the new
+// subpath would send people to an import that does not resolve.
+func retiredModuleFor(path string) (retired, moved string, ok bool) {
+	for module, destination := range retiredModules {
+		if path == module || strings.HasPrefix(path, module+"/") {
+			return module, destination, true
+		}
+	}
+	return "", "", false
+}
+
+// 18. An import of a repository that no longer exists.
+//
+// Nothing fails when this is written, and that is the whole reason to check it.
+// The Go module proxy keeps serving what was published, so the build is green,
+// the tests pass and `go mod tidy` resolves -- while the project is pinned to a
+// copy of code that has no repository behind it, no fix coming, and a second
+// answer to a question the framework already answers.
+//
+// It is checked by import path and not by symbol, because the import is the
+// commitment: a file that names the module has it in go.mod and go.sum whatever
+// it does with it afterwards.
+//
+// Test files are read too. A retired import in a test pins the module exactly
+// as hard as one in the application does, and the failure it leads to is the
+// same failure a year later.
+//
+// A warning rather than an error: it reports code that compiles and works
+// today, and a check that turns somebody's green pipeline red for a change they
+// did not make is one they disable rather than act on.
+func noRetiredModuleIsImported(p *project) []Finding {
+	var out []Finding
+	for _, f := range p.files {
+		// The imports are walked in source order rather than through f.imports,
+		// so the findings come out in the order the file declares them and each
+		// one can point at its own line instead of at the top of the file.
+		for _, imp := range f.ast.Imports {
+			path := strings.Trim(imp.Path.Value, `"`)
+			retired, moved, ok := retiredModuleFor(path)
+			if !ok {
+				continue
+			}
+			out = append(out, Finding{
+				Rule: "retired-module", Severity: Warning,
+				File: f.rel, Line: f.line(imp),
+				Message: "this file imports " + path + ", and the repository behind it was deleted",
+				Why: "what " + retired + " held now lives in " + moved + ", and the two are not kept in step. " +
+					"The proxy still serves the old module, so nothing breaks today -- which is why this is worth saying now: " +
+					"the project stays on a copy nobody maintains, and every fix and every new driver lands on the other one. " +
+					"Import " + moved + " instead.",
+			})
+		}
+	}
+	return out
 }
 
 // 19. The performance profile is asked for and the project says it does not run

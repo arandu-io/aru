@@ -98,7 +98,7 @@ func TestTheMigrationWiringNamesTheDeclaredType(t *testing.T) {
 		}
 	}
 
-	message := wiringMigration(spec, "example.test/project")
+	message := wiringMigration(spec, "example.test/project", false)
 	if !strings.Contains(message, "AddStatusToInvoices is written") {
 		t.Errorf("the message does not name the declared type:\n%s", message)
 	}
@@ -106,6 +106,22 @@ func TestTheMigrationWiringNamesTheDeclaredType(t *testing.T) {
 	// the one the package actually has.
 	if !strings.Contains(message, `_ "example.test/project/database/migrations"`) {
 		t.Errorf("the message does not print the import that links the package:\n%s", message)
+	}
+	// It also has to name a file this project has. It named main.go, which the
+	// skeleton does not put the import in -- and does not have at that path.
+	if strings.Contains(message, "main.go") {
+		t.Errorf("the message sends you to main.go, which is not where the import goes:\n%s", message)
+	}
+
+	// The other half: a project that already links the package is told so, and
+	// told to add nothing. Being sent to add an import you already have is how
+	// a project ends up with two.
+	linked := wiringMigration(spec, "example.test/project", true)
+	if !strings.Contains(linked, "already") {
+		t.Errorf("the message does not say the import is already there:\n%s", linked)
+	}
+	if strings.Contains(linked, "bootstrap/app.go") {
+		t.Errorf("the message still sends you to a file to edit:\n%s", linked)
 	}
 	// Nothing lists a migration any more, so a message that told you to add one
 	// to a list would send you to write a line that does not compile.

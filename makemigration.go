@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -127,28 +129,83 @@ func makeMigration(args []string, stdout, stderr io.Writer) error {
 		return nil
 	}
 
-	fmt.Fprint(stdout, wiringMigration(spec, modulePath))
+	fmt.Fprint(stdout, wiringMigration(spec, modulePath, migrationsAreLinked(root, modulePath)))
 	return nil
 }
 
 // wiringMigration says the one thing that fails silently.
-func wiringMigration(s gen.MigrationSpec, modulePath string) string {
+//
+// linked is whether the project already imports database/migrations somewhere.
+// It changes the message rather than being appended to it: a project generated
+// by `aru new` has the import already, and telling that developer to add one
+// sends them to write a line whose only effect is to be redundant.
+func wiringMigration(s gen.MigrationSpec, modulePath string, linked bool) string {
+	blank := fmt.Sprintf("_ %q", modulePath+"/database/migrations")
+
+	link := fmt.Sprintf(`What still fails silently is linking. Go leaves a package nobody imports out of
+the binary, and an init that is not in the binary never runs -- so something has
+to import database/migrations, and nothing in this project does:
+
+  bootstrap/app.go
+
+      %s
+`, blank)
+	if linked {
+		link = fmt.Sprintf(`Linking is already done: this project imports database/migrations, so the init
+runs and the migration is in the binary. Nothing to add.
+
+      %s
+`, blank)
+	}
+
 	return fmt.Sprintf(`
 %s is written and not applied. Nothing has to list it: the init in the file
 registers it, under the name GetName returns, and that name is also its order.
 
-What still fails silently is linking. Go leaves a package nobody imports out of
-the binary, and an init that is not in the binary never runs -- so something has
-to import database/migrations. A blank import is enough where nothing else does:
-
-  main.go
-
-      _ %q
-
+%s
 Then:
 
     aru migrate
-`, s.Type, modulePath+"/database/migrations")
+`, s.Type, link)
+}
+
+// migrationsAreLinked reports whether any Go file under root imports the
+// project's database/migrations package.
+//
+// It reads rather than assumes, because the answer differs per project: the
+// skeleton links it in bootstrap/app.go, and a project that grew from something
+// else may not link it at all. An instruction that guesses is one that sends
+// half its readers to add a line they already have.
+//
+// A file it cannot read is treated as not importing: the cost of asking for an
+// import that exists is a redundant line, and the cost of staying quiet when
+// none exists is `aru migrate` finding nothing and saying so only by creating
+// no tables.
+func migrationsAreLinked(root, modulePath string) bool {
+	want := []byte(strconv.Quote(modulePath + "/database/migrations"))
+	found := false
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || found {
+			return nil //nolint:nilerr // an unreadable entry is not an answer, and the default is to ask.
+		}
+		if d.IsDir() {
+			// The package that declares the migrations imports itself by no
+			// path, and vendored trees are not this project.
+			if d.Name() == "vendor" || d.Name() == ".git" {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".go" {
+			return nil
+		}
+		b, err := os.ReadFile(path)
+		if err == nil && bytes.Contains(b, want) {
+			found = true
+		}
+		return nil
+	})
+	return found
 }
 
 // migrationName is the conventional shape: snake_case, describing the change.

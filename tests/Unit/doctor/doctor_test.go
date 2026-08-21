@@ -50,6 +50,14 @@ func TestPlantedViolationsAreCaught(t *testing.T) {
 		// report it: the proxy still serves the deleted module, so the build is
 		// green over a dependency with no repository behind it.
 		"retired-module": "the project is pinned to a repository that was deleted",
+
+		// The four layout checks, borrowed from internal/testlayout. The first
+		// is the one worth a tool: a file named Test.go compiles into its
+		// package and go test runs nothing in it, with no error and no warning.
+		"test-is-not-run":               "a green build over tests that never ran",
+		"test-outside-the-tests-tree":   "a test beside the code that reads nothing unexported",
+		"package-clause-is-capitalised": "an import that reads as an exported name that is not one",
+		"scaffolding-ships":             "the testing package linked into the application",
 	}
 
 	found := map[string]bool{}

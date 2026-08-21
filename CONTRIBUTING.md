@@ -81,6 +81,11 @@ measured. `testdata/` is out of its scope for the same reason it is out of the
 `gofmt` line above: the go command never compiles it, so the Go in there that
 does not parse on purpose is not a suite that silently does not run.
 
+The checks themselves live in `internal/testlayout`, because `aru doctor` asks
+the same four questions of the application this repository generates. Change a
+check there and both subjects move together; a copy of one in either caller is
+how the two would come to disagree, and they would disagree in silence.
+
 A `package main` has no external form: it cannot be imported, so its tests are
 internal and that is the end of it. Every test at the root of this repository is
 one, which is why they all carry the suffix.

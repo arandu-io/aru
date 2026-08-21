@@ -131,9 +131,13 @@ func emitsByRule() map[string][]string {
 		"resourceNotReauthorized":                 {"resource-not-reauthorized"},
 		"rawOutputIsAComponent":                   {"raw-output-is-not-a-component"},
 		"noRetiredModuleIsImported":               {"retired-module"},
-		"theProfileIsDeclared":                    {"profile-not-declared"},
-		"queriesReachOneAggregate":                {"join-across-aggregates"},
-		"transactionsStayInsideOneAggregate":      {"transaction-across-aggregates"},
+		"testsAreWhereTheyCanRun": {
+			"test-is-not-run", "test-outside-the-tests-tree",
+			"package-clause-is-capitalised", "scaffolding-ships",
+		},
+		"theProfileIsDeclared":               {"profile-not-declared"},
+		"queriesReachOneAggregate":           {"join-across-aggregates"},
+		"transactionsStayInsideOneAggregate": {"transaction-across-aggregates"},
 	}
 }
 

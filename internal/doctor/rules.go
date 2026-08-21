@@ -12,6 +12,7 @@ import (
 
 	"github.com/arandu-io/aru/internal/kyse"
 	"github.com/arandu-io/aru/internal/manifest"
+	"github.com/arandu-io/aru/internal/testlayout"
 )
 
 // rules is the whole check surface. Each one exists because something real can
@@ -58,6 +59,7 @@ var rules = []func(*project) []Finding{
 	resourceNotReauthorized,
 	rawOutputIsAComponent,
 	noRetiredModuleIsImported,
+	testsAreWhereTheyCanRun,
 	theProfileIsDeclared,
 	queriesReachOneAggregate,
 	transactionsStayInsideOneAggregate,
@@ -2495,6 +2497,60 @@ func noRetiredModuleIsImported(p *project) []Finding {
 					"Import " + moved + " instead.",
 			})
 		}
+	}
+	return out
+}
+
+// 18b. A test the project cannot run, or scaffolding it ships.
+//
+// The four checks are the ones the test layout decision asks of every module,
+// and they are borrowed from internal/testlayout rather than written here. That
+// package answers about two trees: this repository's own suite, which its
+// tests/Unit/structure_test.go measures, and the application below. The same
+// four statements are true of both, and a second copy of them is how the two
+// would come to disagree -- silently, because both copies pass on a tree that
+// satisfies them.
+//
+// The first check is the one worth running a tool for. `go test` runs a file
+// only when its name ends in _test.go, so app/Jobs/InvoiceTest.go compiles into
+// the package as ordinary code and every test inside it is skipped: no error,
+// no warning, a green pipeline over a suite that never executed. The count of
+// tests executed is the only place it shows, and nobody reads that.
+//
+// A warning, not an error. All four report code that compiles and passes today,
+// and a check that turns somebody's pipeline red for a layout decision is one
+// they switch off rather than act on.
+//
+// Two things this deliberately does not do.
+//
+// A check that examined nothing is silent. Every statement here is of the form
+// "every X is Y", true of no X at all, and the suite that measures this
+// repository fails on it -- because a repository whose tests are not optional
+// reading zero test files means the walk broke. An application generated this
+// morning has not been given a test yet, and telling its author that a check
+// found nothing to check is noise.
+//
+// A file that does not parse is dropped here rather than reported. It is the
+// first rule in this list, as an error, with the syntax error in the message,
+// and saying it a second time in weaker words helps nobody.
+func testsAreWhereTheyCanRun(p *project) []Finding {
+	problems, _, err := testlayout.Run(p.root)
+	if err != nil {
+		// The walk itself failed -- an unreadable directory, or no go.mod where
+		// one has to be. Silent rather than invented: doctor already refuses a
+		// directory that is not an Arandu project, so what is left here is a
+		// permission problem the shell reports better.
+		return nil
+	}
+
+	out := make([]Finding, 0, len(problems))
+	for _, problem := range problems {
+		out = append(out, Finding{
+			Rule: problem.Rule, Severity: Warning,
+			File: problem.Path, Line: problem.Line,
+			Message: problem.Says,
+			Why:     problem.Why,
+		})
 	}
 	return out
 }

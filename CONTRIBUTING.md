@@ -94,7 +94,7 @@ one, which is why they all carry the suffix.
 
 `plans/testpackages.go` in the arandu-io working tree checks the same question
 from the other side, by intersecting the identifiers a test names with what its
-package declares unexported, and the checklist runs it across every repository.
+package declares unexported, and the checklist runs it across every Go repository in the project.
 
 ## What the commit message says
 

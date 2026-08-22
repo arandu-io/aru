@@ -49,6 +49,18 @@ jobs:
       - name: vet
         run: go vet ./...
 
+      # The layout of the test tree, checked by the thing that can check it.
+      # The first of its four rules is the one that costs the most to get wrong:
+      # a file named DiskTest.go or disk_Test.go compiles as ordinary code and
+      # none of its tests run, with no error and no warning.
+      #
+      # It skips testdata/ for the reason the gofmt step above does: the doctor
+      # fixtures are wrong on purpose. internal/doctor/testdata/violations holds
+      # a planted instance of three of these four rules, and it is the corpus
+      # the doctor is measured against rather than a defect in this repository.
+      - name: test layout
+        run: bash tests/test-layout-guard.sh
+
       - name: test
         run: go test -race ./...
 

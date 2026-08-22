@@ -22,17 +22,22 @@ fail=0
 #
 # internal/doctor/testdata/ holds four modules -- broken, clean, gaps and
 # violations -- read by internal/doctor/rules_internal_test.go and by
-# tests/Unit/doctor/doctor_test.go. The violations fixture contains exactly one
-# planted instance of each of the first three checks below:
+# tests/Unit/doctor/doctor_test.go. The violations fixture plants two of the
+# checks below:
 #
 #     app/Jobs/RetryInvoiceTest.go        the capital T of check 1
 #     app/Services/BillingService_test.go the misplaced test of check 2
-#     app/Ledger/Ledger.go                the capitalised clause of check 3
+#
+# app/Ledger/Ledger.go declares `package Ledger` and looks like a third, and it
+# is not: check 3 reads only paths that start with tests/ inside their module,
+# and that file is under app/. Running the framework's guard here verbatim
+# reports checks 1, 2 and 4, never 3 -- which is how the count was measured
+# rather than assumed.
 #
 # They are the corpus the doctor is measured against. Unfiltered, this guard
-# reports all three as violations of the repository, and satisfying it would
-# mean deleting the test the fixture exists for. Three of the four modules also
-# fail `go list` by design, which check 4 would report as unmeasurable.
+# reports them as violations of the repository, and satisfying it would mean
+# deleting the test the fixture exists for. Three of the four modules also fail
+# `go list` by design, which check 4 would report as unmeasurable.
 #
 # The exclusion is not a hole cut for convenience: the go tool ignores testdata/
 # everywhere for the same reason, so nothing under it is a package and no rule

@@ -1,5 +1,5 @@
-// Package policies decides who may do what, as app/Policies does in Laravel --
-// except that here it is not optional: no repository is reachable without one.
+// Package policies decides who may do what, and it is not optional: no
+// repository is reachable without one.
 package policies
 
 import (

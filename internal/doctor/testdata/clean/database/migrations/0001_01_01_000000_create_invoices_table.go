@@ -1,4 +1,4 @@
-// Package migrations owns the schema, as database/migrations does in Laravel.
+// Package migrations owns the schema.
 //
 // Its existence is what makes `migrations = true` in arandu.mod.toml true.
 package migrations

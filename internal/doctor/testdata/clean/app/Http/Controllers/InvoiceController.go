@@ -1,5 +1,4 @@
-// Package controllers holds the HTTP entry points, as app/Http/Controllers does
-// in Laravel.
+// Package controllers holds the HTTP entry points.
 package controllers
 
 import (

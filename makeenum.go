@@ -11,11 +11,9 @@ import (
 // makeEnum writes one enum.
 //
 // It carries the one inversion of behaviour in the whole granular family:
-// --values is required. The usual generator emits an empty enum
-// because in PHP the enum is a construct of the language and the empty body
-// already behaves correctly -- from(), cases(), type safety. Go has no such
-// construct, so the value of an enum is exactly the boilerplate, and emitting
-// `type InvoiceStatus string` alone would emit zero useful lines.
+// --values is required. The other generators emit a usable empty stub; Go has no
+// enum construct, so the value of an enum is exactly the boilerplate, and
+// emitting `type InvoiceStatus string` alone would emit zero useful lines.
 func makeEnum(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("make:enum", flag.ContinueOnError)
 	fs.SetOutput(stderr)

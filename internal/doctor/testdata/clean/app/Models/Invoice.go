@@ -1,6 +1,6 @@
-// Package models holds the entities, as app/Models does in Laravel. They have no
-// persistence methods: this is not Active Record, and a type that can save
-// itself can save itself from anywhere.
+// Package models holds the entities. They have no persistence methods: this is
+// not Active Record, and a type that can save itself can save itself from
+// anywhere.
 package models
 
 import (

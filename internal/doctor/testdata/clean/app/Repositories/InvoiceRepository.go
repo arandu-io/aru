@@ -1,5 +1,5 @@
-// Package repositories is the only door to the database, as nothing in Laravel
-// is: here every method takes a Grant, and every method checks it.
+// Package repositories is the only door to the database: every method takes a
+// Grant, and every method checks it.
 package repositories
 
 import (

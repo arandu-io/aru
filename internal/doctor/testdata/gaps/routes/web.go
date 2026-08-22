@@ -1,5 +1,4 @@
-// Package routes declares the routes of the application, as routes/web.php
-// does.
+// Package routes declares the routes of the application.
 package routes
 
 import (

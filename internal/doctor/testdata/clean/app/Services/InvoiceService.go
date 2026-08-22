@@ -1,6 +1,6 @@
-// Package services holds the business rules. It is the layer Laravel leaves to
-// an organized team and this framework requires: it is where security.Authorize
-// runs, which is the only place a Grant comes from.
+// Package services holds the business rules. The layer is required rather than a
+// matter of team discipline: it is where security.Authorize runs, which is the
+// only place a Grant comes from.
 package services
 
 import (

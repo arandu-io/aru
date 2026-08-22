@@ -1,5 +1,4 @@
-// Package seeders fills a database for development, as database/seeders does in
-// Laravel.
+// Package seeders fills a database for development.
 package seeders
 
 import (

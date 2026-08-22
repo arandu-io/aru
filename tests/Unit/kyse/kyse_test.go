@@ -56,7 +56,7 @@ type HomeData struct {
 @endsection
 `
 
-func TestParseReadsTheBladeShape(t *testing.T) {
+func TestParseReadsTheTemplateDirectives(t *testing.T) {
 	f, err := kyse.Parse("resources/views/home.kyse.go", homeSource)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)

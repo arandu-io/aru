@@ -328,13 +328,13 @@ func findRule(findings []doctor.Finding, rule string) *doctor.Finding {
 	return nil
 }
 
-// TestTheTreeIsLaravels fails if the path detection changes.
+// TestPathDetectionStillFindsTheAppTree fails if the path detection changes.
 //
 // A rule that concludes from an absence does not fail when it goes blind, it
 // passes: path detection that matches no file makes six rules stop reporting and
 // the run come back green. A doctor that is green because it did not look is
 // worse than no doctor.
-func TestTheTreeIsLaravels(t *testing.T) {
+func TestPathDetectionStillFindsTheAppTree(t *testing.T) {
 	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -355,7 +355,7 @@ func TestTheTreeIsLaravels(t *testing.T) {
 	} {
 		caught := findRule(findings, c.rule)
 		if caught == nil {
-			t.Errorf("%s did not fire anywhere in the Laravel tree", c.rule)
+			t.Errorf("%s did not fire anywhere in the app tree", c.rule)
 			continue
 		}
 		if !strings.HasPrefix(caught.File, c.dir) {
@@ -526,11 +526,11 @@ func TestAComponentInTheRawFormIsAllowed(t *testing.T) {
 	}
 }
 
-// TestAViewNameIsResolvedLikeLaravel: "invoices.index" is
+// TestADottedViewNameResolvesToItsFile: "invoices.index" is
 // resources/views/invoices/index.kyse.go, and a controller that renders a
 // fragment from a nested directory resolves the same way. Getting this wrong
 // would make view-does-not-exist fire on every correct project.
-func TestAViewNameIsResolvedLikeLaravel(t *testing.T) {
+func TestADottedViewNameResolvesToItsFile(t *testing.T) {
 	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)

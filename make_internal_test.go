@@ -221,9 +221,9 @@ func TestANestedNameIsRefused(t *testing.T) {
 	}
 }
 
-// TestGuessTableIsArtisansTableGuesser: the table and whether the migration
+// TestGuessTableReadsTheMigrationName: the table and whether the migration
 // creates it are read out of the migration name exactly as it is typed.
-func TestGuessTableIsArtisansTableGuesser(t *testing.T) {
+func TestGuessTableReadsTheMigrationName(t *testing.T) {
 	for _, c := range []struct {
 		name   string
 		table  string

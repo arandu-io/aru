@@ -1,4 +1,4 @@
-// Package bootstrap wires the application, as bootstrap/app.php does.
+// Package bootstrap wires the application.
 package bootstrap
 
 import (

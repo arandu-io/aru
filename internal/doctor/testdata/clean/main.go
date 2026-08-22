@@ -1,5 +1,5 @@
-// Command app is the whole application: in Go the binary is the server, so this
-// file is what public/index.php and artisan are in Laravel.
+// Command app is the whole application: in Go the binary is the server, so the
+// entry point and the command line are this one file.
 package main
 
 import (

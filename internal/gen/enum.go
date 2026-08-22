@@ -190,10 +190,9 @@ import (
 // so a value the application does not know about is an error at the read rather
 // than a zero value that silently behaves like the first case.
 //
-// That last part is the whole reason the file is longer than a PHP enum. In PHP
-// the backed enum refuses an unknown value at from(); here nothing refuses it
-// unless the type does, and a plain ` + "`" + `type {{.Type}} {{.Base}}` + "`" + ` accepts anything
-// the database hands it.
+// That last part is the whole reason the file is this long: nothing refuses an
+// unknown value unless the type does, and a plain ` + "`" + `type {{.Type}} {{.Base}}` + "`" + `
+// accepts anything the database hands it.
 type {{.Type}} {{.Base}}
 
 {{if .Int -}}
@@ -265,8 +264,8 @@ func (v {{.Type}}) Label() string {
 
 // Parse{{.Type}} turns request input into the type, or says why it cannot.
 //
-// This is PHP's from(). app/Http/Requests calls it, so a value outside the set
-// becomes a field error the form can show rather than a row.
+// app/Http/Requests calls it, so a value outside the set becomes a field error
+// the form can show rather than a row.
 func Parse{{.Type}}(s string) ({{.Type}}, error) {
 	for _, v := range {{.Type}}Values() {
 		if v.String() == s {

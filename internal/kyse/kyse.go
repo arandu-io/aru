@@ -126,7 +126,7 @@ type File struct {
 // It matters for the data type too. A layout renders with the interface it
 // declares, so any page that satisfies it can be drawn inside; a page renders
 // with its own struct, because it interpolates fields. Reading one type for both
-// is what made `aru make:auth` install a layout typed by the sign-in struct, and
+// is what made the starter kit install a layout typed by the sign-in struct, and
 // from then on every page `aru make:module` generated failed to render -- with a
 // green `go build`, because the disagreement is a type assertion at run time.
 func (f *File) IsLayout() bool {
@@ -318,7 +318,7 @@ func Name(viewsDir, source string) string {
 // RenderType is the type a view asserts the data to before drawing.
 //
 // For a layout that is the interface, when it declares one. That is the whole
-// fix for a defect that cost a full cycle: `aru make:auth` installs a layout
+// fix for a defect that cost a full cycle: the starter kit installs a layout
 // whose @go block declares the sign-in struct, and reading the first type for
 // both questions made the layout render with THAT struct. From then on every
 // page `aru make:module` generated answered

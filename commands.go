@@ -277,7 +277,7 @@ func lookup(name string) (command, bool) {
 // usage prints the command list. No emoji and no exclamation marks: the tone is
 // sober everywhere, including here.
 func usage(w io.Writer) {
-	fmt.Fprint(w, "arandu — a Go framework for SaaS\n\nusage: aru <command> [arguments]\n\n")
+	fmt.Fprint(w, "arandu — a Go framework for web applications, services and REST APIs\n\nusage: aru <command> [arguments]\n\n")
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, c := range commands {

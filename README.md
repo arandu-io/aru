@@ -35,7 +35,7 @@ against is still the one it is running.
 | group | commands |
 |---|---|
 | run the project | `serve` `dev` `build` `new` `doctor` `trace` `generate` `schema` |
-| generate a module | `make:module` `make:model` `make:migration` `make:controller` `make:middleware` `make:request` `make:factory` `make:seeder` `make:job` `make:command` `make:listener` `make:event` `make:enum` `make:policy` |
+| generate a module | `make:module` `make:model` `make:migration` `make:controller` `make:middleware` `make:request` `make:factory` `make:seeder` `make:job` `make:mail` `make:command` `make:listener` `make:event` `make:enum` `make:policy` |
 | migrations | `migrate` `migrate:rollback` `migrate:status` `migrate:fresh` |
 | fonts | `font:add` `font:search` `font:info` `font:list` `font:remove` |
 | everything else | `key:generate` `schedule:list` `schedule:run` `queue:work` `route:list` `db:seed` `view:build` |
@@ -43,11 +43,11 @@ against is still the one it is running.
 plus `help` and `version`.
 
 - **`aru make:module`** — an entity with its policy, repository, service,
-  request, migration, seeder and four screens, compiling and tested from the
-  moment it lands.
+  request, controller, migration and four screens, compiling and tested from
+  the moment it lands.
 - **`aru generate`** — the same output, from a written specification: the
   model writes the spec, never the Go.
-- **`aru doctor`** — 28 named rules read the AST of a project, without
+- **`aru doctor`** — 30 named rules read the AST of a project, without
   running it, and fail CI on the first error. Among them:
   `repository-without-policy`, `grant-not-checked`, `sql-without-tenant-scope`,
   `tenant-from-request`, `tenant-from-header`, `sql-built-by-concatenation`,
@@ -63,12 +63,12 @@ The view compiler is part of this binary rather than something it downloads:
 one fewer thing to pin, verify and cache.
 
 One direct dependency: `gopkg.in/yaml.v3`, for the specification format. CI
-refuses a second one. 18,522 lines of production code and 6,123 of test,
-across 27 test files.
+refuses a second one. 19,363 lines of production code and 8,115 of test,
+across 29 test files.
 
 The authentication screens are not here — `go run github.com/arandu-io/ui@latest auth`
-publishes 13 of them into your project, and they are yours to edit from the
-moment they land.
+publishes them into your project, and they are yours to edit from the moment
+they land.
 
 ## Install
 
@@ -79,7 +79,7 @@ brew install arandu-io/tap/aru
 ## The rest of Arandu
 
 `arandu` is the skeleton this CLI clones; `arandu-io/framework` is what a
-project runs on; `hesape` is the 47-package collection the framework is built
+project runs on; `hesape` is the collection of packages the framework is built
 from; `examples` is a complete application, generated the same way `aru
 make:module` generates one.
 
@@ -102,7 +102,8 @@ next phase, and it will be an Arandu application.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Before opening a pull request, the three
-commands at the top of that file have to pass, and CI runs exactly them.
+commands that file lists have to pass. CI runs them, and then four more: a
+dependency budget, the build, a linter and govulncheck.
 
 ## Security Vulnerabilities
 

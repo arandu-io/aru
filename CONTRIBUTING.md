@@ -32,10 +32,12 @@ which does not parse because that is the test, and the `*.kyse.go` sources,
 which the compiler excludes through their build tag. `gofmt` is the only tool in
 the chain that ignores build tags.
 
-CI runs exactly this, plus a check that no new dependency entered the core: the
-framework depends on the standard library and `golang.org/x/crypto`, and nothing
-else. A pull request that adds a dependency there needs to argue for it first,
-in an issue.
+CI runs these three and a handful of checks besides. `.github/workflows/ci.yml`
+is the list, and reading it beats trusting a summary here that goes stale the
+next time a step is added. One of those checks is a dependency budget: a
+dependency this repository does not already carry enters with an ADR rather than
+with a `go get`, so a pull request that adds one needs to argue for it first, in
+an issue.
 
 ## Where a test goes
 

@@ -65,9 +65,10 @@ func Generate(m Module) ([]File, error) {
 		// specification the Go was rendered from, so the two cannot disagree,
 		// and regenerating the module regenerates what says what it is.
 		//
-		// .agents/skills is the path the tools agree on rather than one
-		// vendor's, so the file is read by whatever the project is being written
-		// with.
+		// .agents/skills is the path the coding assistants read from -- Cursor,
+		// Codex, Cline, Copilot, Gemini CLI and the rest all look there -- so
+		// the file is read by whatever the project is being written with, and
+		// there is one directory rather than a file per vendor.
 		{filepath.Join(".agents", "skills", m.Resource(), "SKILL.md"), skillTemplate},
 	} {
 		content, err := render(filepath.Base(t.path), t.tmpl, m)

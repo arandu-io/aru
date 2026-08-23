@@ -5,10 +5,10 @@
 package views
 
 import (
-	"html/template"
-	"io"
+	kyse__template "html/template"
+	kyse__io "io"
 
-	"github.com/arandu-io/framework/view"
+	kyse__view "github.com/arandu-io/framework/view"
 )
 
 //line internal/doctor/testdata/violations/resources/views/billing/index.kyse.go:5
@@ -22,108 +22,110 @@ type BillingIndexData struct {
 //line internal/doctor/testdata/violations/storage/framework/views/billing/index.go:23
 
 func init() {
-	view.Register("internal.doctor.testdata.violations.resources.views.billing.index", renderInternalDoctorTestdataViolationsResourcesViewsBillingIndex)
+	kyse__view.Register("internal.doctor.testdata.violations.resources.views.billing.index", renderInternalDoctorTestdataViolationsResourcesViewsBillingIndex)
 }
 
 // renderInternalDoctorTestdataViolationsResourcesViewsBillingIndex renders internal.doctor.testdata.violations.resources.views.billing.index.
-func renderInternalDoctorTestdataViolationsResourcesViewsBillingIndex(w io.Writer, data any) error {
-	d, ok := data.(BillingIndexData)
-	if !ok {
-		return view.WrongData("internal.doctor.testdata.violations.resources.views.billing.index", "BillingIndexData", data)
+func renderInternalDoctorTestdataViolationsResourcesViewsBillingIndex(kyse__w kyse__io.Writer, kyse__data any) error {
+	kyse__d, kyse__ok := kyse__data.(BillingIndexData)
+	if !kyse__ok {
+		return kyse__view.WrongData("internal.doctor.testdata.violations.resources.views.billing.index", "BillingIndexData", kyse__data)
 	}
+	_ = kyse__d
+	d := kyse__d
 	_ = d
-	var err error
-	if err == nil {
-		_, err = io.WriteString(w, "\n")
+	var kyse__err error
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "<h1>")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<h1>")
 	}
-	if err == nil {
+	if kyse__err == nil {
 //line internal/doctor/testdata/violations/resources/views/billing/index.kyse.go:13
-		_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(d.Title)))
-//line internal/doctor/testdata/violations/storage/framework/views/billing/index.go:46
+		_, kyse__err = kyse__io.WriteString(kyse__w, kyse__template.HTMLEscapeString(kyse__view.Text(kyse__d.Title)))
+//line internal/doctor/testdata/violations/storage/framework/views/billing/index.go:48
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "</h1>\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "</h1>\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "<!-- Violation: the raw form writes a value to the page with no escaping. Note\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<!-- Violation: the raw form writes a value to the page with no escaping. Note\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "     is a string, it is rendered as markup, and the day it holds something a\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     is a string, it is rendered as markup, and the day it holds something a\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "     customer typed the page runs it. The escaped form is three characters\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     customer typed the page runs it. The escaped form is three characters\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "     away. -->\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     away. -->\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "<div class=\"note\">")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<div class=\"note\">")
 	}
-	if err == nil {
+	if kyse__err == nil {
 //line internal/doctor/testdata/violations/resources/views/billing/index.kyse.go:19
-		_, err = io.WriteString(w, view.UnsafeText(d.Note))
-//line internal/doctor/testdata/violations/storage/framework/views/billing/index.go:72
+		_, kyse__err = kyse__io.WriteString(kyse__w, kyse__view.UnsafeText(kyse__d.Note))
+//line internal/doctor/testdata/violations/storage/framework/views/billing/index.go:74
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "</div>\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "</div>\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "<!-- Violation: Alpine reaching the server. This should be an HTMX fragment --\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<!-- Violation: Alpine reaching the server. This should be an HTMX fragment --\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "     x-data holds client state, and the moment it fetches, the application has\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     x-data holds client state, and the moment it fetches, the application has\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "     two ways to load data with two loading states and two places to forget the\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     two ways to load data with two loading states and two places to forget the\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "     CSRF token. -->\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     CSRF token. -->\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "<div x-data=\"{ open: false, invoices: [], async load() { const r = await fetch('/api/invoices'); this.invoices = await r.json() } }\">\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<div x-data=\"{ open: false, invoices: [], async load() { const r = await fetch('/api/invoices'); this.invoices = await r.json() } }\">\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "\t<button @click=\"open = !open\">Toggle</button>\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\t<button @click=\"open = !open\">Toggle</button>\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "</div>\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "</div>\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "<!-- This one is fine: open/closed is client-only, ephemeral and invisible to\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<!-- This one is fine: open/closed is client-only, ephemeral and invisible to\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "     the server, which is exactly what doc 14 permits. -->\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     the server, which is exactly what doc 14 permits. -->\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "<div x-data=\"{ open: false }\">\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<div x-data=\"{ open: false }\">\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "\t<button @click=\"open = !open\">Menu</button>\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\t<button @click=\"open = !open\">Menu</button>\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "</div>\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "</div>\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 	}
-	return err
+	return kyse__err
 }
 
 var (
-	_ = template.HTMLEscapeString
-	_ = io.WriteString
-	_ = view.Text
-	_ = view.UnsafeText
+	_ = kyse__template.HTMLEscapeString
+	_ = kyse__io.WriteString
+	_ = kyse__view.Text
+	_ = kyse__view.UnsafeText
 )

@@ -2,6 +2,8 @@ package kyse
 
 import (
 	"fmt"
+	goparser "go/parser"
+	"go/token"
 	"sort"
 	"strings"
 )
@@ -40,6 +42,83 @@ type parser struct {
 }
 
 func (p *parser) split() { p.lines = strings.Split(p.src, "\n") }
+
+// refuseBuildConstraint refuses a second build constraint in the Go a view
+// contributes verbatim.
+//
+// A view already carries one, on its first line, and it is what makes the file
+// legal: Go reads the constraint, sees the file is excluded and stops at the
+// package clause. A second one written further down does not stay where it was
+// put. go/printer treats a build constraint as belonging above the package
+// clause and moves it there, and what it leaves behind is a line joined to the
+// one after it -- `expected ';', found kyse__view`, in a generated file, from a
+// comment the person wrote inside an import.
+//
+// Only build constraints. `//go:embed` and the rest stay where they are written
+// and are the view's business.
+func (p *parser) refuseBuildConstraint(first int, text string) {
+	for offset, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		at := strings.Index(trimmed, "//go:build")
+		if at < 0 {
+			at = strings.Index(trimmed, "// +build")
+		}
+		if at < 0 {
+			continue
+		}
+		p.fail(first+offset, "a build constraint here, where the view already carries one on its first line",
+			"Go's formatter moves a constraint above the package clause, and the line it was written on is joined to the next one in the generated file.\n"+
+				"    Take it out: the constraint at the top of the view is the one that makes the file legal.")
+		return
+	}
+}
+
+// refuseUnparsableImport refuses an import line that is not one.
+//
+// The line is copied into the generated file's import block unread -- that is
+// what "nothing here validates the paths" above means, and it is the right
+// treatment for a path that does not resolve, which the Go compiler reports at
+// the view's own line. A line that is not an import at all is a different
+// thing: it makes the block itself unparsable, and gofmt then refuses the whole
+// generated file with a position in a file nobody wrote. `import (\n.\n)` is
+// the shape.
+//
+// One line at a time, so the position is the line that is wrong rather than the
+// block that contains it.
+func (p *parser) refuseUnparsableImport(line int, spec string) {
+	src := "package p\nimport (\n" + spec + "\n)\n"
+	if _, err := goparser.ParseFile(token.NewFileSet(), "", src, goparser.SkipObjectResolution); err != nil {
+		p.fail(line, fmt.Sprintf("%q is not an import", spec),
+			"an import line is a quoted path, with a name before it when the package answers to another one.\n"+
+				"    Write it as \"example.com/app/resources/views/components\", or as components \"example.com/app/…\".")
+	}
+}
+
+// refuseFormatterBytes refuses a vertical tab or a form feed in Go the view
+// contributes verbatim -- an import line or an `@go` block.
+//
+// Those two bytes are how go/printer represents a column break and a section
+// break in the layout it is building, so a file that already contains one comes
+// back from gofmt with it written out as itself, outside whatever comment or
+// string it was typed in. The result is a generated file holding a character Go
+// does not accept anywhere: `illegal character U+000C`. gofmt reports nothing,
+// because gofmt succeeded.
+//
+// Only the verbatim regions are read. In markup the same byte is text, and the
+// generator writes text as a quoted string literal, where it is escaped and
+// harmless.
+func (p *parser) refuseFormatterBytes(first int, text string) {
+	for offset, line := range strings.Split(text, "\n") {
+		at := strings.IndexAny(line, "\v\f")
+		if at < 0 {
+			continue
+		}
+		p.fail(first+offset, fmt.Sprintf("this line carries %q, which Go's formatter uses as a layout character of its own", line[at:at+1]),
+			"gofmt writes it back as itself, outside the comment or string it was typed in, and the generated file then holds a character Go does not accept.\n"+
+				"    Remove it: a tab or a space is what it stands in for.")
+		return
+	}
+}
 
 func (p *parser) fail(line int, message, hint string) {
 	p.errs = append(p.errs, &Error{Path: p.path, Line: line, Message: message, Hint: hint})
@@ -128,6 +207,9 @@ func (p *parser) imports(file *File) {
 					break
 				}
 				if inner != "" {
+					p.refuseFormatterBytes(p.i+1, inner)
+					p.refuseBuildConstraint(p.i+1, inner)
+					p.refuseUnparsableImport(p.i+1, inner)
 					file.Imports = append(file.Imports, inner)
 				}
 			}
@@ -136,7 +218,11 @@ func (p *parser) imports(file *File) {
 			}
 
 		case strings.HasPrefix(line, "import "):
-			file.Imports = append(file.Imports, strings.TrimSpace(strings.TrimPrefix(line, "import")))
+			p.refuseFormatterBytes(p.i+1, line)
+			spec := strings.TrimSpace(strings.TrimPrefix(line, "import"))
+			p.refuseBuildConstraint(p.i+1, spec)
+			p.refuseUnparsableImport(p.i+1, spec)
+			file.Imports = append(file.Imports, spec)
 
 		default:
 			return
@@ -242,6 +328,8 @@ func (p *parser) nodes(goBlocks *[]Block, depth int) []Node {
 		case name == "go":
 			body := p.until("endgo", lineNo, "@go")
 			// lineNo is the `@go` itself; the body starts on the line below it.
+			p.refuseFormatterBytes(lineNo+1, body)
+			p.refuseBuildConstraint(lineNo+1, body)
 			*goBlocks = append(*goBlocks, Block{Body: body, Line: lineNo + 1})
 
 		case blockDirectives[name] != "":

@@ -5,10 +5,10 @@
 package views
 
 import (
-	"html/template"
-	"io"
+	kyse__template "html/template"
+	kyse__io "io"
 
-	"github.com/arandu-io/framework/view"
+	kyse__view "github.com/arandu-io/framework/view"
 )
 
 //line internal/doctor/testdata/clean/resources/views/invoices/row.kyse.go:5
@@ -21,65 +21,67 @@ type InvoiceRowData struct {
 //line internal/doctor/testdata/clean/storage/framework/views/invoices/row.go:22
 
 func init() {
-	view.Register("internal.doctor.testdata.clean.resources.views.invoices.row", renderInternalDoctorTestdataCleanResourcesViewsInvoicesRow)
+	kyse__view.Register("internal.doctor.testdata.clean.resources.views.invoices.row", renderInternalDoctorTestdataCleanResourcesViewsInvoicesRow)
 }
 
 // renderInternalDoctorTestdataCleanResourcesViewsInvoicesRow renders internal.doctor.testdata.clean.resources.views.invoices.row.
-func renderInternalDoctorTestdataCleanResourcesViewsInvoicesRow(w io.Writer, data any) error {
-	d, ok := data.(InvoiceRowData)
-	if !ok {
-		return view.WrongData("internal.doctor.testdata.clean.resources.views.invoices.row", "InvoiceRowData", data)
+func renderInternalDoctorTestdataCleanResourcesViewsInvoicesRow(kyse__w kyse__io.Writer, kyse__data any) error {
+	kyse__d, kyse__ok := kyse__data.(InvoiceRowData)
+	if !kyse__ok {
+		return kyse__view.WrongData("internal.doctor.testdata.clean.resources.views.invoices.row", "InvoiceRowData", kyse__data)
 	}
+	_ = kyse__d
+	d := kyse__d
 	_ = d
-	var err error
-	if err == nil {
-		_, err = io.WriteString(w, "\n")
+	var kyse__err error
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "<li class=\"py-2\" id=\"invoice-")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<li class=\"py-2\" id=\"invoice-")
 	}
-	if err == nil {
+	if kyse__err == nil {
 //line internal/doctor/testdata/clean/resources/views/invoices/row.kyse.go:12
-		_, err = io.WriteString(w, view.TextAttr(d.Invoice.ID))
-//line internal/doctor/testdata/clean/storage/framework/views/invoices/row.go:45
+		_, kyse__err = kyse__io.WriteString(kyse__w, kyse__view.TextAttr(kyse__d.Invoice.ID))
+//line internal/doctor/testdata/clean/storage/framework/views/invoices/row.go:47
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "\">\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\">\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "\t<span class=\"font-medium\">")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\t<span class=\"font-medium\">")
 	}
-	if err == nil {
+	if kyse__err == nil {
 //line internal/doctor/testdata/clean/resources/views/invoices/row.kyse.go:13
-		_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(d.Invoice.Reference)))
-//line internal/doctor/testdata/clean/storage/framework/views/invoices/row.go:56
+		_, kyse__err = kyse__io.WriteString(kyse__w, kyse__template.HTMLEscapeString(kyse__view.Text(kyse__d.Invoice.Reference)))
+//line internal/doctor/testdata/clean/storage/framework/views/invoices/row.go:58
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "</span>\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "</span>\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "\t<span class=\"text-slate-500\">")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\t<span class=\"text-slate-500\">")
 	}
-	if err == nil {
+	if kyse__err == nil {
 //line internal/doctor/testdata/clean/resources/views/invoices/row.kyse.go:14
-		_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(d.Invoice.Total)))
-//line internal/doctor/testdata/clean/storage/framework/views/invoices/row.go:67
+		_, kyse__err = kyse__io.WriteString(kyse__w, kyse__template.HTMLEscapeString(kyse__view.Text(kyse__d.Invoice.Total)))
+//line internal/doctor/testdata/clean/storage/framework/views/invoices/row.go:69
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "</span>\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "</span>\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "</li>\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "</li>\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 	}
-	return err
+	return kyse__err
 }
 
 var (
-	_ = template.HTMLEscapeString
-	_ = io.WriteString
-	_ = view.Text
-	_ = view.UnsafeText
+	_ = kyse__template.HTMLEscapeString
+	_ = kyse__io.WriteString
+	_ = kyse__view.Text
+	_ = kyse__view.UnsafeText
 )

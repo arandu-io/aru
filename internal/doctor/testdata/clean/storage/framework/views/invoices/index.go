@@ -5,10 +5,10 @@
 package views
 
 import (
-	"html/template"
-	"io"
+	kyse__template "html/template"
+	kyse__io "io"
 
-	"github.com/arandu-io/framework/view"
+	kyse__view "github.com/arandu-io/framework/view"
 )
 
 //line internal/doctor/testdata/clean/resources/views/invoices/index.kyse.go:5
@@ -22,105 +22,107 @@ type InvoicesIndexData struct {
 //line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:23
 
 func init() {
-	view.Register("internal.doctor.testdata.clean.resources.views.invoices.index", renderInternalDoctorTestdataCleanResourcesViewsInvoicesIndex)
+	kyse__view.Register("internal.doctor.testdata.clean.resources.views.invoices.index", renderInternalDoctorTestdataCleanResourcesViewsInvoicesIndex)
 }
 
 // renderInternalDoctorTestdataCleanResourcesViewsInvoicesIndex renders internal.doctor.testdata.clean.resources.views.invoices.index.
-func renderInternalDoctorTestdataCleanResourcesViewsInvoicesIndex(w io.Writer, data any) error {
-	d, ok := data.(InvoicesIndexData)
-	if !ok {
-		return view.WrongData("internal.doctor.testdata.clean.resources.views.invoices.index", "InvoicesIndexData", data)
+func renderInternalDoctorTestdataCleanResourcesViewsInvoicesIndex(kyse__w kyse__io.Writer, kyse__data any) error {
+	kyse__d, kyse__ok := kyse__data.(InvoicesIndexData)
+	if !kyse__ok {
+		return kyse__view.WrongData("internal.doctor.testdata.clean.resources.views.invoices.index", "InvoicesIndexData", kyse__data)
 	}
+	_ = kyse__d
+	d := kyse__d
 	_ = d
-	sections := map[string]func(io.Writer) error{
-		"content": func(w io.Writer) error {
-			var err error
-			if err == nil {
-				_, err = io.WriteString(w, "\t<h1 class=\"text-2xl font-semibold\">")
+	kyse__sections := map[string]func(kyse__io.Writer) error{
+		"content": func(kyse__w kyse__io.Writer) error {
+			var kyse__err error
+			if kyse__err == nil {
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t<h1 class=\"text-2xl font-semibold\">")
 			}
-			if err == nil {
+			if kyse__err == nil {
 //line internal/doctor/testdata/clean/resources/views/invoices/index.kyse.go:16
-				_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(d.Title)))
-//line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:45
+				_, kyse__err = kyse__io.WriteString(kyse__w, kyse__template.HTMLEscapeString(kyse__view.Text(kyse__d.Title)))
+//line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:47
 			}
-			if err == nil {
-				_, err = io.WriteString(w, "</h1>\n")
+			if kyse__err == nil {
+				_, kyse__err = kyse__io.WriteString(kyse__w, "</h1>\n")
 			}
-			if err == nil {
-				_, err = io.WriteString(w, "\n")
+			if kyse__err == nil {
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 			}
-			if err == nil {
-				_, err = io.WriteString(w, "\t<!-- Alpine within its limit: which tab is open is client state, it dies on\n")
+			if kyse__err == nil {
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t<!-- Alpine within its limit: which tab is open is client state, it dies on\n")
 			}
-			if err == nil {
-				_, err = io.WriteString(w, "\t     reload without loss, and the server never sees it. -->\n")
+			if kyse__err == nil {
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t     reload without loss, and the server never sees it. -->\n")
 			}
-			if err == nil {
-				_, err = io.WriteString(w, "\t<div x-data=\"{ tab: 0 }\" class=\"mt-4 flex gap-2\">\n")
+			if kyse__err == nil {
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t<div x-data=\"{ tab: 0 }\" class=\"mt-4 flex gap-2\">\n")
 			}
-			if err == nil {
-				_, err = io.WriteString(w, "\t\t<button @click=\"tab = 0\" class=\"rounded px-3 py-1\">All</button>\n")
+			if kyse__err == nil {
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t\t<button @click=\"tab = 0\" class=\"rounded px-3 py-1\">All</button>\n")
 			}
-			if err == nil {
-				_, err = io.WriteString(w, "\t\t<button @click=\"tab = 1\" class=\"rounded px-3 py-1\">Overdue</button>\n")
+			if kyse__err == nil {
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t\t<button @click=\"tab = 1\" class=\"rounded px-3 py-1\">Overdue</button>\n")
 			}
-			if err == nil {
-				_, err = io.WriteString(w, "\t</div>\n")
+			if kyse__err == nil {
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t</div>\n")
 			}
-			if err == nil {
-				_, err = io.WriteString(w, "\n")
+			if kyse__err == nil {
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 			}
-			if err == nil {
-				_, err = io.WriteString(w, "\t<ul class=\"mt-4 divide-y\">\n")
+			if kyse__err == nil {
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t<ul class=\"mt-4 divide-y\">\n")
 			}
 //line internal/doctor/testdata/clean/resources/views/invoices/index.kyse.go:26
-			for _, invoice := range d.Invoices {
+			for _, invoice := range kyse__d.Invoices {
 				_ = invoice
-//line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:80
-				if err == nil {
-					_, err = io.WriteString(w, "\t\t\t<!-- The raw form, used the one way it is entitled to be: a component\n")
+//line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:82
+				if kyse__err == nil {
+					_, kyse__err = kyse__io.WriteString(kyse__w, "\t\t\t<!-- The raw form, used the one way it is entitled to be: a component\n")
 				}
-				if err == nil {
-					_, err = io.WriteString(w, "\t\t\t     is a function returning template.HTML, and what it interpolated\n")
+				if kyse__err == nil {
+					_, kyse__err = kyse__io.WriteString(kyse__w, "\t\t\t     is a function returning template.HTML, and what it interpolated\n")
 				}
-				if err == nil {
-					_, err = io.WriteString(w, "\t\t\t     was escaped when it was generated. -->\n")
+				if kyse__err == nil {
+					_, kyse__err = kyse__io.WriteString(kyse__w, "\t\t\t     was escaped when it was generated. -->\n")
 				}
-				if err == nil {
-					_, err = io.WriteString(w, "\t\t\t<li class=\"py-2\">")
+				if kyse__err == nil {
+					_, kyse__err = kyse__io.WriteString(kyse__w, "\t\t\t<li class=\"py-2\">")
 				}
-				if err == nil {
+				if kyse__err == nil {
 //line internal/doctor/testdata/clean/resources/views/invoices/index.kyse.go:30
-					_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(invoice.Reference)))
-//line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:96
+					_, kyse__err = kyse__io.WriteString(kyse__w, kyse__template.HTMLEscapeString(kyse__view.Text(invoice.Reference)))
+//line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:98
 				}
-				if err == nil {
-					_, err = io.WriteString(w, "\n")
+				if kyse__err == nil {
+					_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 				}
-				if err == nil {
-					_, err = io.WriteString(w, "\t\t\t\t")
+				if kyse__err == nil {
+					_, kyse__err = kyse__io.WriteString(kyse__w, "\t\t\t\t")
 				}
-				if err == nil {
+				if kyse__err == nil {
 //line internal/doctor/testdata/clean/resources/views/invoices/index.kyse.go:31
-					_, err = io.WriteString(w, view.UnsafeText(components.Badge(components.BadgeProps{Label: invoice.State})))
-//line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:107
+					_, kyse__err = kyse__io.WriteString(kyse__w, kyse__view.UnsafeText(components.Badge(components.BadgeProps{Label: invoice.State})))
+//line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:109
 				}
-				if err == nil {
-					_, err = io.WriteString(w, "</li>\n")
+				if kyse__err == nil {
+					_, kyse__err = kyse__io.WriteString(kyse__w, "</li>\n")
 				}
 			}
-			if err == nil {
-				_, err = io.WriteString(w, "\t</ul>\n")
+			if kyse__err == nil {
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t</ul>\n")
 			}
-			return err
+			return kyse__err
 		},
 	}
-	return view.RenderInto(w, "layouts.app", data, sections)
+	return kyse__view.RenderInto(kyse__w, "layouts.app", kyse__data, kyse__sections)
 }
 
 var (
-	_ = template.HTMLEscapeString
-	_ = io.WriteString
-	_ = view.Text
-	_ = view.UnsafeText
+	_ = kyse__template.HTMLEscapeString
+	_ = kyse__io.WriteString
+	_ = kyse__view.Text
+	_ = kyse__view.UnsafeText
 )

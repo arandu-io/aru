@@ -92,15 +92,15 @@ func TestTheGeneratedGoParses(t *testing.T) {
 	src := string(out)
 	for _, want := range []string{
 		"package views",
-		"type HomeData struct",              // the @go block came through
-		`view.Register("home", renderHome)`, // registered by name
-		"d, ok := data.(HomeData)",          // typed data
-		"view.WrongData",                    // the error when the type does not match
-		"template.HTMLEscapeString",         // {{ }} escapes
-		`view.RenderInto(w, "layouts.app"`,  // @extends
-		"for _, item := range d.Itens",      // @foreach
-		"if d.Ativo {",                      // @if
-		"DO NOT EDIT",                       // generated
+		"type HomeData struct",                         // the @go block came through
+		`kyse__view.Register("home", renderHome)`,      // registered by name
+		"kyse__d, kyse__ok := kyse__data.(HomeData)",   // typed data
+		"kyse__view.WrongData",                         // the error when the type does not match
+		"kyse__template.HTMLEscapeString",              // {{ }} escapes
+		`kyse__view.RenderInto(kyse__w, "layouts.app"`, // @extends
+		"for _, item := range kyse__d.Itens",           // @foreach
+		"if kyse__d.Ativo {",                           // @if
+		"DO NOT EDIT",                                  // generated
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("o Go gerado nao tem %q", want)
@@ -122,7 +122,7 @@ func TestTheLayoutYields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	if !strings.Contains(string(out), `view.Yield(w, sections, "content")`) {
+	if !strings.Contains(string(out), `kyse__view.Yield(kyse__w, kyse__sections, "content")`) {
 		t.Errorf("o @yield nao virou Yield:\n%s", out)
 	}
 }
@@ -288,7 +288,7 @@ func TestElseTakesOnlyOneBranch(t *testing.T) {
 	}
 	// The literals are matched inside the WriteString call: a bare "NO"
 	// also appears in the "DO NOT EDIT" header.
-	yes, no := strings.Index(got, `WriteString(w, "YES`), strings.Index(got, `WriteString(w, "NO`)
+	yes, no := strings.Index(got, `WriteString(kyse__w, "YES`), strings.Index(got, `WriteString(kyse__w, "NO`)
 	if yes < 0 || no < 0 {
 		t.Fatalf("both branches must be emitted:\n%s", got)
 	}
@@ -430,7 +430,7 @@ func TestEveryDirectiveEmitsSomething(t *testing.T) {
 		"while":    {"@while(d.Ok)\nMARCADOR\n@endwhile\n", "MARCADOR"},
 		"yield":    {"@yield('MARCADOR')\n", "MARCADOR"},
 		"include":  {"@include('MARCADOR')\n", "MARCADOR"},
-		"csrf":     {"@csrf\n", "view.CSRF("},
+		"csrf":     {"@csrf\n", "kyse__view.CSRF("},
 		"forelse":  {"@forelse(.Items as it)\nMARCADOR\n@empty\nVAZIO\n@endforelse\n", "MARCADOR"},
 		"continue": {"@foreach(.Items as it)\n@continue\n@endforeach\n", "continue"},
 		"break":    {"@foreach(.Items as it)\n@break\n@endforeach\n", "break"},
@@ -503,7 +503,7 @@ func TestForelseTakesOneBranchAndCommentsDoNotReachThePage(t *testing.T) {
 	if elseAt < 0 || !(empty < elseAt && elseAt < loop) {
 		t.Errorf("the empty state and the loop are not exclusive:\n%s", got)
 	}
-	if !strings.Contains(got, "len(d.Items) == 0") {
+	if !strings.Contains(got, "len(kyse__d.Items) == 0") {
 		t.Errorf("the empty state is not decided by the length of the list:\n%s", got)
 	}
 }
@@ -595,12 +595,12 @@ func TestTheCompilerIsToldWhichLineOfTheViewEachExpressionCameFrom(t *testing.T)
 		// comment came out against the declaration and claimed the comment's
 		// first line for it.
 		{"the struct the @go block declares", "type D struct", 7},
-		{"the escaped interpolation", "template.HTMLEscapeString", 13},
-		{"the condition of @if", "if d.Name !=", 14},
+		{"the escaped interpolation", "kyse__template.HTMLEscapeString", 13},
+		{"the condition of @if", "if kyse__d.Name !=", 14},
 		// Matched without the escape around it: the escaped form on line 13
-		// ends in `view.Text(d.Name)))` and would be found first.
-		{"the raw interpolation", "io.WriteString(w, view.UnsafeText(", 15},
-		{"the subject of @foreach", "range d.Items", 17},
+		// ends in `kyse__view.Text(…)))` and would be found first.
+		{"the raw interpolation", "kyse__io.WriteString(kyse__w, kyse__view.UnsafeText(", 15},
+		{"the subject of @foreach", "range kyse__d.Items", 17},
 	} {
 		file, line, ok := mappedLine(generated, want.mark)
 		if !ok {
@@ -616,7 +616,7 @@ func TestTheCompilerIsToldWhichLineOfTheViewEachExpressionCameFrom(t *testing.T)
 	// And the other half: what this generator wrote itself has to be handed
 	// back, or one interpolation claims every line below it -- including lines
 	// the view does not have.
-	if file, _, ok := mappedLine(generated, "return err"); !ok || file != "resources/views/home.go" {
+	if file, _, ok := mappedLine(generated, "return kyse__err"); !ok || file != "resources/views/home.go" {
 		t.Errorf("the scaffolding still belongs to the view: %s", file)
 	}
 }
@@ -704,7 +704,7 @@ type ButtonProps struct {
 	got := string(out)
 
 	// Exported, taking its props, returning HTML that can be interpolated.
-	if !strings.Contains(got, "func Button(props ButtonProps) template.HTML {") {
+	if !strings.Contains(got, "func Button(kyse__props ButtonProps) kyse__template.HTML {") {
 		t.Errorf("a component is not an exported typed function:\n%s", got)
 	}
 	// Not registered: nothing looks a component up by name, so there is no name
@@ -712,8 +712,9 @@ type ButtonProps struct {
 	if strings.Contains(got, "view.Register") {
 		t.Error("a component registered itself by name, which is the string lookup this shape replaces")
 	}
-	// The props are still read through d, so every directive keeps working.
-	if !strings.Contains(got, "d.Label") {
+	// The props are still read as the page data is, so every directive keeps
+	// working.
+	if !strings.Contains(got, "kyse__d.Label") {
 		t.Errorf("the component does not read its props:\n%s", got)
 	}
 }
@@ -735,7 +736,7 @@ package components
 		t.Fatal(err)
 	}
 	// No props declared, so the function takes none rather than an empty struct.
-	if !strings.Contains(string(out), "func ThemeToggle() template.HTML {") {
+	if !strings.Contains(string(out), "func ThemeToggle() kyse__template.HTML {") {
 		t.Errorf("wrong function name or signature:\n%s", out)
 	}
 }
@@ -812,7 +813,7 @@ type LoginData = authhttp.LoginData
 		t.Fatal(err)
 	}
 	got := string(out)
-	if !strings.Contains(got, "d, ok := data.(LoginData)") {
+	if !strings.Contains(got, "kyse__d, kyse__ok := kyse__data.(LoginData)") {
 		t.Errorf("the view does not assert the aliased type:\n%s", got)
 	}
 	if !strings.Contains(got, `authhttp "example.com/app/Http/Controllers/Auth"`) {
@@ -853,7 +854,7 @@ type D struct{ Email string }
 	}
 	got := string(out)
 
-	if !strings.Contains(got, `components.Field(components.FieldProps{Name: "email", Value: d.Email})`) {
+	if !strings.Contains(got, `components.Field(components.FieldProps{Name: "email", Value: kyse__d.Email})`) {
 		t.Errorf("the component call was not folded into one expression:\n%s", got)
 	}
 	if !strings.Contains(got, "after") {
@@ -980,13 +981,13 @@ type D struct{ V string }
 // them.
 func escapersIn(generated string) []string {
 	marks := []struct{ call, name string }{
-		{"template.HTMLEscapeString(view.Text(", "body"},
-		{"view.TextAttr(", "attr"},
-		{"view.TextURL(", "url"},
-		{"view.TextJS(", "js"},
-		{"view.TextCSS(", "css"},
+		{"kyse__template.HTMLEscapeString(kyse__view.Text(", "body"},
+		{"kyse__view.TextAttr(", "attr"},
+		{"kyse__view.TextURL(", "url"},
+		{"kyse__view.TextJS(", "js"},
+		{"kyse__view.TextCSS(", "css"},
 		// The one position with no escape: the value is examined instead.
-		{"strings.ContainsAny(v,", "name"},
+		{"kyse__strings.ContainsAny(", "name"},
 	}
 
 	var out []string
@@ -1112,7 +1113,8 @@ type D struct{ V string }
 	}
 	// The value is written only when it was not refused. Writing it either way
 	// is how an escape that refuses becomes an escape that reports.
-	if !strings.Contains(got, "if err != nil {") || !strings.Contains(got, "_, err = io.WriteString(w, s)") {
+	if !strings.Contains(got, "if kyse__err != nil {") ||
+		!strings.Contains(got, "_, kyse__err = kyse__io.WriteString(kyse__w, kyse__v") {
 		t.Errorf("the refused value is written anyway:\n%s", got)
 	}
 }

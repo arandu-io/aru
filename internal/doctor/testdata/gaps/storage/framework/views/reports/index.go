@@ -5,10 +5,10 @@
 package views
 
 import (
-	"html/template"
-	"io"
+	kyse__template "html/template"
+	kyse__io "io"
 
-	"github.com/arandu-io/framework/view"
+	kyse__view "github.com/arandu-io/framework/view"
 )
 
 //line internal/doctor/testdata/gaps/resources/views/reports/index.kyse.go:5
@@ -21,94 +21,96 @@ type ReportsIndexData struct {
 //line internal/doctor/testdata/gaps/storage/framework/views/reports/index.go:22
 
 func init() {
-	view.Register("internal.doctor.testdata.gaps.resources.views.reports.index", renderInternalDoctorTestdataGapsResourcesViewsReportsIndex)
+	kyse__view.Register("internal.doctor.testdata.gaps.resources.views.reports.index", renderInternalDoctorTestdataGapsResourcesViewsReportsIndex)
 }
 
 // renderInternalDoctorTestdataGapsResourcesViewsReportsIndex renders internal.doctor.testdata.gaps.resources.views.reports.index.
-func renderInternalDoctorTestdataGapsResourcesViewsReportsIndex(w io.Writer, data any) error {
-	d, ok := data.(ReportsIndexData)
-	if !ok {
-		return view.WrongData("internal.doctor.testdata.gaps.resources.views.reports.index", "ReportsIndexData", data)
+func renderInternalDoctorTestdataGapsResourcesViewsReportsIndex(kyse__w kyse__io.Writer, kyse__data any) error {
+	kyse__d, kyse__ok := kyse__data.(ReportsIndexData)
+	if !kyse__ok {
+		return kyse__view.WrongData("internal.doctor.testdata.gaps.resources.views.reports.index", "ReportsIndexData", kyse__data)
 	}
+	_ = kyse__d
+	d := kyse__d
 	_ = d
-	var err error
-	if err == nil {
-		_, err = io.WriteString(w, "\n")
+	var kyse__err error
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "<h1>")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<h1>")
 	}
-	if err == nil {
+	if kyse__err == nil {
 //line internal/doctor/testdata/gaps/resources/views/reports/index.kyse.go:12
-		_, err = io.WriteString(w, template.HTMLEscapeString(view.Text(d.Title)))
-//line internal/doctor/testdata/gaps/storage/framework/views/reports/index.go:45
+		_, kyse__err = kyse__io.WriteString(kyse__w, kyse__template.HTMLEscapeString(kyse__view.Text(kyse__d.Title)))
+//line internal/doctor/testdata/gaps/storage/framework/views/reports/index.go:47
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "</h1>\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "</h1>\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "<!-- x-on: with double quotes. The audit matched x-data, x-init and x-effect\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<!-- x-on: with double quotes. The audit matched x-data, x-init and x-effect\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "     only, and an event handler is where a network call is actually written. -->\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     only, and an event handler is where a network call is actually written. -->\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "<div x-on:click=\"fetch('/api/totals')\">Load</div>\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<div x-on:click=\"fetch('/api/totals')\">Load</div>\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "<!-- The shorthand, with single quotes. Same directive, two spellings, and\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<!-- The shorthand, with single quotes. Same directive, two spellings, and\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "     neither one was matched. -->\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     neither one was matched. -->\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "<div @click='fetch(\"/api/totals\")'>Load</div>\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<div @click='fetch(\"/api/totals\")'>Load</div>\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "<!-- x-data with single quotes: the directive the audit did match, in the quote\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<!-- x-data with single quotes: the directive the audit did match, in the quote\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "     style it did not. -->\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     style it did not. -->\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "<div x-data='{ socket: new WebSocket(\"/ws\") }'>Live</div>\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<div x-data='{ socket: new WebSocket(\"/ws\") }'>Live</div>\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "<!-- Client-only, and it stays silent: which panel is open dies on reload\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<!-- Client-only, and it stays silent: which panel is open dies on reload\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "     without loss, and the server never sees it. -->\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     without loss, and the server never sees it. -->\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "<div x-data=\"{ open: false }\">\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<div x-data=\"{ open: false }\">\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "\t<button @click=\"open = !open\">Menu</button>\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\t<button @click=\"open = !open\">Menu</button>\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "</div>\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "</div>\n")
 	}
-	if err == nil {
-		_, err = io.WriteString(w, "\n")
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 	}
-	return err
+	return kyse__err
 }
 
 var (
-	_ = template.HTMLEscapeString
-	_ = io.WriteString
-	_ = view.Text
-	_ = view.UnsafeText
+	_ = kyse__template.HTMLEscapeString
+	_ = kyse__io.WriteString
+	_ = kyse__view.Text
+	_ = kyse__view.UnsafeText
 )

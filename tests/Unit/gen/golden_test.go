@@ -65,8 +65,13 @@ func TestGolden(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Generate: %v", err)
 			}
-			if len(files) != 12 {
-				t.Fatalf("generated %d files, want 12", len(files))
+			// The count is written down rather than derived, and it is checked
+			// before the goldens are, so a file appearing or disappearing stops
+			// the test rather than quietly rewriting the corpus. Adding one to
+			// the generator means changing this number by hand, which is the
+			// review the number exists to force.
+			if len(files) != 13 {
+				t.Fatalf("generated %d files, want 13", len(files))
 			}
 
 			for _, f := range files {

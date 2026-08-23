@@ -57,6 +57,18 @@ func Generate(m Module) ([]File, error) {
 		// package, so the "test" would ship in the binary and its Test functions
 		// would never run.
 		{filepath.Join("tests", "Unit", m.Entity()+"_test.go"), testTemplate},
+		// The skill an assistant reads when it meets this module.
+		//
+		// It is generated with the rest rather than written afterwards, and that
+		// is the point: a description of a module written by hand stops being
+		// true at the next field. This one is rendered from the same
+		// specification the Go was rendered from, so the two cannot disagree,
+		// and regenerating the module regenerates what says what it is.
+		//
+		// .agents/skills is the path the tools agree on rather than one
+		// vendor's, so the file is read by whatever the project is being written
+		// with.
+		{filepath.Join(".agents", "skills", m.Resource(), "SKILL.md"), skillTemplate},
 	} {
 		content, err := render(filepath.Base(t.path), t.tmpl, m)
 		if err != nil {

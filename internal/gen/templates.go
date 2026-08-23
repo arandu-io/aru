@@ -1184,3 +1184,87 @@ func Test{{.Entity}}ListRejectsSortOutsideTheAllowlist(t *testing.T) {
 // Tests for the rules you wrote go here, and survive regeneration.
 // arandu:end custom
 `
+
+// skillTemplate is what an assistant reads when it meets this module.
+//
+// It is generated with the rest because the alternative is a file somebody
+// writes afterwards, and a description of a module written by hand is a
+// description that stops being true at the next field. Everything in it is
+// rendered from the same specification the Go was rendered from, so the two
+// cannot disagree.
+//
+// It is Markdown rather than Go, and the frontmatter is the part that matters:
+// a tool reads the description to decide whether the skill is relevant, so it
+// names the situation rather than the subject.
+const skillTemplate = `---
+name: {{ .Resource }}
+description: Work with the {{ .Entity }} module of this Arandu application. Use when the request mentions {{ .Entity | lower }}s, when a route under /{{ .Resource }} is involved, or when reading or changing {{ .Entity | lower }} records. Covers what the module exposes, which roles may take which action, and the rule that a repository call here cannot be made without a Grant the policy issued.
+license: MIT
+---
+
+# The {{ .Entity }} module
+
+Generated from a specification. If it needs to change, change the specification
+and generate again rather than editing the files by hand -- what falls outside
+what the specification can say goes between the ` + "`" + `// arandu:begin custom` + "`" + ` and
+` + "`" + `// arandu:end custom` + "`" + ` markers, which survive regeneration.
+
+## What it is made of
+
+| file | what it holds |
+| --- | --- |
+| ` + "`" + `app/Models/{{ .Entity }}.go` + "`" + ` | the entity |
+| ` + "`" + `app/Policies/{{ .Entity }}Policy.go` + "`" + ` | who may do what, and the only thing that issues a Grant |
+| ` + "`" + `app/Repositories/{{ .Entity }}Repository.go` + "`" + ` | the queries. Every method takes a Grant before the id |
+| ` + "`" + `app/Services/{{ .Entity }}Service.go` + "`" + ` | the domain, between the controller and the repository |
+| ` + "`" + `app/Http/Controllers/{{ .Entity }}Controller.go` + "`" + ` | the actions the routes dispatch to |
+| ` + "`" + `app/Http/Requests/{{ .Entity }}Request.go` + "`" + ` | the input contract. Authorization stays in the Policy |
+| ` + "`" + `tests/Unit/{{ .Entity }}_test.go` + "`" + ` | that every repository method demands its Grant |
+
+## Its fields
+
+| field | type |
+| --- | --- |
+{{ range .Fields }}| ` + "`" + `{{ .Name }}` + "`" + ` | ` + "`" + `{{ .Type }}` + "`" + ` |
+{{ end }}
+{{- if .Tenant }}
+Every query is scoped by ` + "`" + `data.Tenant(g)` + "`" + `. The tenant comes from the Grant and
+never from a path segment, a body, a query or a header.
+{{- else }}
+This module is not tenant-scoped. That was declared in the specification, so a
+query here is global on purpose rather than by omission.
+{{- end }}
+
+## Reaching a record
+
+There is one way, and the compiler is what says so.
+
+` + "```" + `go
+g, err := policy.View(ctx, subject, id)   // the Policy decides and issues
+if err != nil {
+    return err
+}
+record, err := repo.Find(ctx, g, id)      // the repository demands it
+` + "```" + `
+
+A repository method takes ` + "`" + `security.Grant` + "`" + ` before the id, and nothing outside the
+security package can build one. So a handler that skips the Policy has nothing
+to pass and does not compile. If you are about to remove that parameter to make
+something build, stop: it is the only thing making the query safe.
+
+Reads are not exempt. ` + "`" + `List` + "`" + `, ` + "`" + `Find` + "`" + `, a report and an export all require a Grant.
+
+## What the policy allows
+
+{{ if .Permissions }}{{ range $action, $roles := .Permissions }}- ` + "`" + `{{ $action }}` + "`" + `: {{ range $i, $r := $roles }}{{ if $i }}, {{ end }}` + "`" + `{{ $r }}` + "`" + `{{ end }}
+{{ end }}{{ else }}Nothing yet. The generated policy denies every action, with no
+allow-everything branch to delete later. Open it one action at a time, and
+` + "`" + `aru doctor` + "`" + ` reports ` + "`" + `policy-never-opened` + "`" + ` as a warning until you do.
+{{ end }}
+## Before calling a change finished
+
+` + "```" + `sh
+export GOWORK=off
+aru view:build && go build ./... && go vet ./... && go test -race ./... && aru doctor
+` + "```" + `
+`

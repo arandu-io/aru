@@ -1,0 +1,70 @@
+---
+name: purchase-orders
+description: Work with the PurchaseOrder module of this Arandu application. Use when the request mentions purchaseorders, when a route under /purchase-orders is involved, or when reading or changing purchaseorder records. Covers what the module exposes, which roles may take which action, and the rule that a repository call here cannot be made without a Grant the policy issued.
+license: MIT
+---
+
+# The PurchaseOrder module
+
+Generated from a specification. If it needs to change, change the specification
+and generate again rather than editing the files by hand -- what falls outside
+what the specification can say goes between the `// arandu:begin custom` and
+`// arandu:end custom` markers, which survive regeneration.
+
+## What it is made of
+
+| file | what it holds |
+| --- | --- |
+| `app/Models/PurchaseOrder.go` | the entity |
+| `app/Policies/PurchaseOrderPolicy.go` | who may do what, and the only thing that issues a Grant |
+| `app/Repositories/PurchaseOrderRepository.go` | the queries. Every method takes a Grant before the id |
+| `app/Services/PurchaseOrderService.go` | the domain, between the controller and the repository |
+| `app/Http/Controllers/PurchaseOrderController.go` | the actions the routes dispatch to |
+| `app/Http/Requests/PurchaseOrderRequest.go` | the input contract. Authorization stays in the Policy |
+| `tests/Unit/PurchaseOrder_test.go` | that every repository method demands its Grant |
+
+## Its fields
+
+| field | type |
+| --- | --- |
+| `reference` | `string` |
+| `supplier_email` | `email` |
+| `total` | `money` |
+| `approved` | `bool` |
+| `notes` | `text` |
+| `delivery_date` | `date` |
+
+Every query is scoped by `data.Tenant(g)`. The tenant comes from the Grant and
+never from a path segment, a body, a query or a header.
+
+## Reaching a record
+
+There is one way, and the compiler is what says so.
+
+```go
+g, err := policy.View(ctx, subject, id)   // the Policy decides and issues
+if err != nil {
+    return err
+}
+record, err := repo.Find(ctx, g, id)      // the repository demands it
+```
+
+A repository method takes `security.Grant` before the id, and nothing outside the
+security package can build one. So a handler that skips the Policy has nothing
+to pass and does not compile. If you are about to remove that parameter to make
+something build, stop: it is the only thing making the query safe.
+
+Reads are not exempt. `List`, `Find`, a report and an export all require a Grant.
+
+## What the policy allows
+
+Nothing yet. The generated policy denies every action, with no
+allow-everything branch to delete later. Open it one action at a time, and
+`aru doctor` reports `policy-never-opened` as a warning until you do.
+
+## Before calling a change finished
+
+```sh
+export GOWORK=off
+aru view:build && go build ./... && go vet ./... && go test -race ./... && aru doctor
+```

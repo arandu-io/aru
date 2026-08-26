@@ -51,8 +51,12 @@ func TestTheModelDeclaresUpdatedAt(t *testing.T) {
 func TestTheMigrationCreatesUpdatedAt(t *testing.T) {
 	migration := rendered(t, "create_purchase_orders_table.go")
 
-	if !strings.Contains(migration, "updated_at TIMESTAMP NOT NULL") {
-		t.Errorf("the migration creates no updated_at:\n%s", migration)
+	// table.Timestamps() declares created_at and updated_at together, which is
+	// the point of it having a name of its own: two columns that always travel
+	// as a pair are one decision, and a migration that declared one of them
+	// would be the defect this test was written for.
+	if !strings.Contains(migration, "table.Timestamps()") {
+		t.Errorf("the migration does not declare the timestamps:\n%s", migration)
 	}
 }
 

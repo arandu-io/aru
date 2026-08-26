@@ -167,7 +167,17 @@ func stylesheetInput(root string) (string, error) {
 	// The project's stylesheet is imported by absolute path, and the relative
 	// @source and @import lines inside it keep resolving against its own
 	// directory: Tailwind resolves those per file, not against the entry.
-	input := "@import " + cssString(filepath.Join(root, stylesheetSource)) + ";\n"
+	//
+	// Absolute, and made so here rather than assumed: the compiler runs with the
+	// project as its working directory, so a relative root would be joined onto
+	// itself and the entry would not resolve. That is invisible from inside the
+	// project, where the root is ".", and it is what "aru new" hit -- it builds
+	// the views of the project it just wrote, from outside it.
+	entry, err := filepath.Abs(filepath.Join(root, stylesheetSource))
+	if err != nil {
+		return "", fmt.Errorf("resolving the stylesheet path: %w", err)
+	}
+	input := "@import " + cssString(entry) + ";\n"
 	if dir != "" {
 		// Every .go under the module rather than a list of its directories. The
 		// generated component sits beside its .kyse.go source and both carry the

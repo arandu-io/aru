@@ -203,42 +203,41 @@ func ({{.Type}}) GetName() string { return "{{.ID}}" }
 
 // Up adds the columns.
 //
-// One element per statement, because a connection sends one statement per call.
-// Two of them separated by a semicolon in a single string is refused by every
-// engine here except MySQL with multi-statement turned on.
+// The Blueprint sends them as one ALTER per engine's rules rather than one
+// statement per column composed here, and it spells the column type per engine:
+// what used to be a SQLType written into the template is the grammar's answer,
+// which is the only place it can be right for all three.
 func ({{.Type}}) Up(ctx context.Context, conn migrations.Connection) error {
-	statements := []string{
+	return conn.Schema().Table(ctx, "{{.Table}}", func(table *schema.Blueprint) {
 {{- range .Fields}}
-		` + "`" + `ALTER TABLE {{$.Table}} ADD COLUMN {{.Column}} {{.SQLType}} DEFAULT {{.SQLZero}}` + "`" + `,
+		table.{{.BlueprintMethod}}("{{.Column}}").Nullable()
 {{- end}}
 {{- range .UniqueFields}}
-		` + "`" + `CREATE UNIQUE INDEX {{$.Table}}_{{.Column}}_uidx ON {{$.Table}} ({{if $.Tenant}}tenant_id, {{end}}{{.Column}})` + "`" + `,
+		table.Unique([]string{ {{if $.Tenant}}"tenant_id", {{end}}"{{.Column}}" }, "{{$.Table}}_{{.Column}}_uidx")
 {{- end}}
-	}
-	for _, statement := range statements {
-		if _, err := conn.Statement(ctx, statement, nil); err != nil {
-			return err
-		}
-	}
-	return nil
+	})
 }
 
 // Down drops the columns.
 //
-// Dropping the column drops the index with it on all three engines, which is
-// why there is no DROP INDEX here: its spelling is the one thing SQLite,
-// PostgreSQL and MySQL do not agree about.
+// The indexes go first, and that is not tidiness: SQLite refuses to drop a
+// column an index still names, so a Down that dropped the column alone would
+// fail on the engine a project runs by default. The Blueprint runs its commands
+// in the order they were added.
+//
+// This used to say the opposite -- that dropping the column drops the index on
+// all three engines, so no DROP INDEX was needed -- and it was wrong about
+// SQLite and produced a migration that could not be rolled back there. It also
+// said DROP INDEX was the one spelling the three engines disagree about, which
+// was true and is now the grammar's problem rather than this template's.
 func ({{.Type}}) Down(ctx context.Context, conn migrations.Connection) error {
-	statements := []string{
-{{- range .Fields}}
-		` + "`" + `ALTER TABLE {{$.Table}} DROP COLUMN {{.Column}}` + "`" + `,
+	return conn.Schema().Table(ctx, "{{.Table}}", func(table *schema.Blueprint) {
+{{- range .UniqueFields}}
+		table.DropUnique("{{$.Table}}_{{.Column}}_uidx")
 {{- end}}
-	}
-	for _, statement := range statements {
-		if _, err := conn.Statement(ctx, statement, nil); err != nil {
-			return err
-		}
-	}
-	return nil
+{{- range .Fields}}
+		table.DropColumn("{{.Column}}")
+{{- end}}
+	})
 }
 `

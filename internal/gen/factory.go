@@ -173,7 +173,7 @@ func FieldsFromModel(path, entity string) (fields []FactoryField, tenant bool, e
 		goType := typeExpr(f.Type)
 		for _, name := range f.Names {
 			switch name.Name {
-			case "ID", "CreatedAt":
+			case "ID", "CreatedAt", "UpdatedAt":
 				continue
 			case "TenantID":
 				tenant = true
@@ -288,7 +288,6 @@ func (f {{.Type}}) Make(n int) models.{{.Entity}} {
 		{{.GoName}}: f.{{.Var}},
 {{- end}}
 {{- end}}
-		CreatedAt: time.Now().UTC(),
 	}
 }
 

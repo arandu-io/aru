@@ -672,7 +672,7 @@ func (m Module) Validate() error {
 			return fmt.Errorf("field %q: unknown type %q (%s)", f.Name, f.Type, TypeList())
 		}
 		switch f.Name {
-		case "id", "tenant_id", "created_at":
+		case "id", "tenant_id", "created_at", "updated_at":
 			return fmt.Errorf("field %q is generated for every module; do not declare it", f.Name)
 		}
 	}

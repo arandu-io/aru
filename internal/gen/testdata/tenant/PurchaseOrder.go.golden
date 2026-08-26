@@ -15,15 +15,16 @@ import (
 // List included -- takes a security.Grant that only a Policy can issue. The
 // model is data; the Policy is the door.
 type PurchaseOrder struct {
-	ID            string
-	TenantID      string
-	Reference     string
-	SupplierEmail string
-	Total         int64
-	Approved      bool
-	Notes         string
-	DeliveryDate  time.Time
-	CreatedAt     time.Time
+	ID            string    `db:"id"`
+	TenantID      string    `db:"tenant_id"`
+	Reference     string    `db:"reference"`
+	SupplierEmail string    `db:"supplier_email"`
+	Total         int64     `db:"total"`
+	Approved      bool      `db:"approved"`
+	Notes         string    `db:"notes"`
+	DeliveryDate  time.Time `db:"delivery_date"`
+	CreatedAt     time.Time `db:"created_at"`
+	UpdatedAt     time.Time `db:"updated_at"`
 }
 
 // What can go wrong with a purchase_order, declared beside the entity rather than

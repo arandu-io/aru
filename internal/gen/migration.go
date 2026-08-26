@@ -144,7 +144,8 @@ func ({{.Type}}) Up(ctx context.Context, conn migrations.Connection) error {
 {{- range .Fields}}
 			{{.Column}}{{"\t"}}{{.SQLType}}{{if .Required}} NOT NULL{{end}},
 {{- end}}
-			created_at TIMESTAMP NOT NULL
+			created_at TIMESTAMP NOT NULL,
+			updated_at TIMESTAMP NOT NULL
 {{- range .UniqueFields}},
 			UNIQUE ({{if $.Tenant}}tenant_id, {{end}}{{.Column}})
 {{- end}}

@@ -49,6 +49,7 @@ func (CreatePurchaseOrdersTable) Up(ctx context.Context, conn migrations.Connect
 			notes	TEXT,
 			delivery_date	DATE,
 			created_at TIMESTAMP NOT NULL,
+			updated_at TIMESTAMP NOT NULL,
 			UNIQUE (tenant_id, reference)
 		)`,
 		`CREATE INDEX purchase_orders_tenant_created_idx ON purchase_orders (tenant_id, created_at, id)`,

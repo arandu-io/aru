@@ -16,7 +16,7 @@ func TestAPortAlreadyTakenStopsTheLoopAndSaysWhy(t *testing.T) {
 2026/08/10 12:15:55 listen tcp :8080: bind: address already in use
 exit status 1
 `
-	message, fatal := diagnoseExit(said)
+	message, fatal := diagnoseExit(said, "aru dev")
 	if !fatal {
 		t.Fatal("the loop carries on retrying a port that will be taken on every attempt")
 	}
@@ -35,7 +35,7 @@ func TestThePortComesFromWhatTheApplicationSaid(t *testing.T) {
 		{"listen tcp 127.0.0.1:3000: bind: address already in use", "3000"},
 		{"listen tcp [::]:9999: bind: address already in use", "9999"},
 	} {
-		message, fatal := diagnoseExit(c.said)
+		message, fatal := diagnoseExit(c.said, "aru dev")
 		if !fatal {
 			t.Errorf("%q was not recognised", c.said)
 			continue
@@ -55,7 +55,7 @@ func TestAnOrdinaryFailureKeepsTheLoopRunning(t *testing.T) {
 		"2026/08/10 12:15:55 invalid APP_ENV: \"local\"\n",
 		"",
 	} {
-		if _, fatal := diagnoseExit(said); fatal {
+		if _, fatal := diagnoseExit(said, "aru dev"); fatal {
 			t.Errorf("the loop stopped for something the next save fixes:\n%s", said)
 		}
 	}

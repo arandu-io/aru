@@ -23,21 +23,30 @@ Ask one question: **does this need to know which modules the project
 registered?**
 
 - **No** — it runs here. `key:generate`, `new`, every `make:*`, `generate`,
-  `schema`, `doctor`, `build`, `dev`, `view:build`, `trace` and the five
-  `font:*` commands touch files and nothing else.
+  `schema`, `doctor`, `build`, `view:build`, `trace` and the five `font:*`
+  commands touch files and nothing else.
 - **Yes** — it forwards. Modules are wired explicitly in `bootstrap/app.go`,
   with no container and no plugin loading, so a separately compiled binary
-  cannot know them. `delegate("serve")` runs `go run . serve` in the project.
-  So does anything reading a table the application owns: the fourteen `queue:*`
-  commands forward because the failed job list, the batch list and the queue
-  itself are the application's, and this binary has no connection to any of
-  them.
+  cannot know them. `delegate("migrate")` runs `go run . migrate` in the
+  project. So does anything reading a table the application owns: the fourteen
+  `queue:*` commands forward because the failed job list, the batch list and the
+  queue itself are the application's, and this binary has no connection to any
+  of them.
 
 ```sh
-grep -c 'run:   delegate(' commands.go  # 23
+grep -c 'run:   delegate(' commands.go  # 22
 ```
 
-Two of those twenty-three forward under a different word than the one typed:
+`serve` and `dev` are the exception, and they are one exception rather than two.
+Both run the project the same way any forwarded command does -- `go run . serve`
+-- and neither goes through `delegate`, because starting the application needs
+two things no forwarded command wants: the view layer compiled from source
+first, and the application stopped when the command stops. They are written from
+one set of pieces in `dev.go` for that reason. `serve` used to forward, and the
+three things it then did not do -- recompile an edited view, recompile an edited
+stylesheet, drop the generated Go of a deleted one -- were silent every time.
+
+Two of the twenty-two forward under a different word than the one typed:
 `queue:work` calls `work` and `route:list` calls `routes`. The name a person
 types is the half that needs parity with what they already know; the string
 handed to the project binary is an internal protocol that promises nothing, so

@@ -9,13 +9,13 @@ live inside it that share almost no code:
 
 | | where | what it is |
 | --- | --- | --- |
-| the commands | the root package `main` | 53 entries in one slice, 23 of which forward to the project's own binary |
+| the commands | the root package `main` | 53 entries in one slice, 22 of which forward to the project's own binary |
 | the view compiler | `internal/kyse` | a `.kyse.go` becomes Go, and the Go it writes has to compile |
 | the checker | `internal/doctor` | 27 rule functions reading a project's parsed AST, emitting 33 rule names of their own and 4 borrowed from `internal/testlayout` |
 
 ```sh
 grep -c '^\t\tname:' commands.go                                      # 53
-grep -c 'run:   delegate(' commands.go                                # 23
+grep -c 'run:   delegate(' commands.go                                # 22
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go \
 	internal/testlayout/testlayout.go | sort -u | wc -l           # 37
 ```

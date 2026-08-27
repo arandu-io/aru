@@ -29,6 +29,79 @@ var devSignals = []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, sysc
 // where anyone notices. On a very large tree this is the first thing to replace.
 const pollInterval = 500 * time.Millisecond
 
+// serve compiles the view layer and runs the application, once.
+//
+// It is dev with the watch loop taken out, and it is written from the same three
+// pieces -- buildViews, startServer, stopServer -- because these two are the only
+// commands that start a project and they must not disagree about what starting it
+// means.
+//
+// They did disagree, and in three ways that all had the same shape. This command
+// used to reach the project through delegate, which compiles the view layer only
+// when its output is missing:
+//
+//   - an edited view served the previous save, because its generated Go was
+//     already there and nothing compared the two
+//   - an edited stylesheet served the previous CSS, for the same reason
+//   - a deleted view stayed renderable, because the generated Go that registers
+//     it is removed by the compiler and the compiler never ran
+//
+// None of the three said anything, and all three went away under dev -- which is
+// what "it works with aru dev and not with aru serve" meant. The version floor in
+// arandu.toml rode along with them: it is checked inside buildViews, so the
+// command that skipped the build skipped the check.
+//
+// What this does NOT do is watch. A file saved after it started is not picked up
+// -- nothing here looks a second time -- and it does not restart the application
+// for any reason. That is dev, and it is the whole of the difference.
+func serve(args []string, stdout, stderr io.Writer) error {
+	root, err := projectRoot()
+	if err != nil {
+		return err
+	}
+	if _, err := exec.LookPath("go"); err != nil {
+		return errors.New("the go toolchain was not found in PATH, and aru needs it to run the project")
+	}
+
+	if err := buildViews(root, stdout, stderr); err != nil {
+		return err
+	}
+
+	// The same set dev handles, and for the same reason rather than for
+	// symmetry: a signal left on its default disposition terminates aru without
+	// running a single deferred function, so stopServer is never reached and the
+	// binary `go run` spawned keeps the port. Ending this command has to end the
+	// application it started, and only a handled signal can do that.
+	interrupted := make(chan os.Signal, 1)
+	signal.Notify(interrupted, devSignals...)
+	defer signal.Stop(interrupted)
+
+	server, err := startServer(root, args, stdout, stderr)
+	if err != nil {
+		return err
+	}
+	defer func() { stopServer(server) }()
+
+	select {
+	case <-interrupted:
+		return stop(stdout, interrupted)
+	case err := <-server.exited:
+		server.done = true
+		if err == nil {
+			return nil
+		}
+		// The application has already said why on stderr, so the only thing
+		// worth adding is what it cannot know: who else holds the port. Without
+		// it the reader gets one line naming the command that failed, over a
+		// bind error whose cause is usually a run of this same command that
+		// outlived its parent.
+		if message, fatal := diagnoseExit(server.output(), "aru serve"); fatal {
+			fmt.Fprintf(stderr, "\n%s", message)
+		}
+		return errors.New("serve failed")
+	}
+}
+
 // dev runs the application and rebuilds it when a file changes.
 //
 // It is the whole development loop: `git clone && aru dev`, with no Node
@@ -120,7 +193,7 @@ func dev(args []string, stdout, stderr io.Writer) error {
 			// cannot outlast -- usually a previous `aru dev` that outlived its
 			// parent, still answering the browser, which is why the site looks
 			// like it works and ignores every change.
-			if message, fatal := diagnoseExit(server.output()); fatal {
+			if message, fatal := diagnoseExit(server.output(), "aru dev"); fatal {
 				fmt.Fprintf(stderr, "\n%s", message)
 				return errors.New("the application cannot start")
 			}

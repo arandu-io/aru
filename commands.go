@@ -27,8 +27,8 @@ var commands = []command{
 	{
 		name:  "serve",
 		usage: "aru serve [-- flags for the application]",
-		desc:  "run the application from the current project",
-		run:   delegate("serve"),
+		desc:  "build the views and run the application, once, without watching",
+		run:   serve,
 	},
 	{
 		name:  "migrate",

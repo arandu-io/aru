@@ -17,11 +17,16 @@ const appPackage = "."
 
 // delegate returns a command that forwards to the project's own binary.
 //
-// serve, migrate and routes all need the list of registered modules, and that
-// list only exists inside the application: the modules are wired explicitly in
-// bootstrap/app.go, with no container and no plugin loading. A CLI compiled
-// separately cannot know them, so the honest implementation is to run the
-// project. This is also why those subcommands exist in the skeleton's main.
+// migrate, routes and the queue family all need the list of registered modules,
+// and that list only exists inside the application: the modules are wired
+// explicitly in bootstrap/app.go, with no container and no plugin loading. A CLI
+// compiled separately cannot know them, so the honest implementation is to run
+// the project. This is also why those subcommands exist in the skeleton's main.
+//
+// serve runs the project the same way and is deliberately not one of these. What
+// it needs on top is the view layer compiled from source, and stopping the
+// application when the command stops -- neither of which any command here wants.
+// See serve.
 func delegate(subcommand string) func([]string, io.Writer, io.Writer) error {
 	return func(args []string, stdout, stderr io.Writer) error {
 		root, err := projectRoot()

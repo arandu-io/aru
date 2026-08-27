@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,6 +38,71 @@ func TestAViewSourceSchedulesAViewBuild(t *testing.T) {
 	)
 	if !changed || !views {
 		t.Errorf("deleting a view source: changed=%v views=%v, want both true", changed, views)
+	}
+}
+
+// TestServeCompilesTheViewLayerBeforeStarting is the whole of what `aru serve`
+// and `aru dev` used to disagree about.
+//
+// serve reached the project through delegate, which compiles the view layer only
+// when its output is missing. So with the generated Go already on disk -- which
+// it is after any previous build -- an edited view served the previous save, an
+// edited stylesheet served the previous CSS, and a view whose source had been
+// deleted stayed renderable, because the compiler that removes its generated Go
+// never ran. All three were silent, and all three went away under `aru dev`.
+//
+// The fixture below is the shape that made it invisible: a source that no
+// compiler accepts, beside generated Go that is already there. Under the old
+// path nothing looked at the source at all and `go run` started against the
+// stale output. This passes only while serve compiles first, and it never
+// reaches `go run`: the build has to fail before anything is started.
+func TestServeCompilesTheViewLayerBeforeStarting(t *testing.T) {
+	root := t.TempDir()
+
+	// A project root is a go.mod, a main.go and an arandu.toml together.
+	writeFile(t, filepath.Join(root, "go.mod"), "module example.test/x\n\ngo 1.25\n")
+	writeFile(t, filepath.Join(root, "main.go"), "package main\n\nfunc main() {}\n")
+	writeFile(t, filepath.Join(root, "arandu.toml"), "[tools]\n")
+
+	// The source no compiler accepts, and the output of a previous build beside
+	// it. No stylesheet: this has to prove the view half without downloading a
+	// Tailwind binary to do it.
+	writeFile(t, filepath.Join(root, "resources", "views", "home.kyse.go"),
+		"//go:build kyse\n\npackage views\n\n@extends(\n")
+	writeFile(t, filepath.Join(root, "storage", "framework", "views", "home.go"),
+		"package views\n")
+
+	goTool(t)
+	chdir(t, root)
+
+	err := serve(nil, io.Discard, io.Discard)
+	if err == nil {
+		t.Fatal("serve started the application against a view source it never compiled")
+	}
+	if strings.Contains(err.Error(), "serve failed") {
+		t.Fatalf("serve reached the application before compiling the views: %v", err)
+	}
+}
+
+// TestServeStillReachesTheProject is the half the test above cannot see.
+//
+// Compiling the view layer first is worth nothing if what starts afterwards is
+// the wrong thing, and moving serve off delegate is exactly the change that
+// could have broken the handover without breaking anything visible: it would
+// still appear in `aru help`, still exit 0, and still run nothing. So the argv
+// is read at the other end, from a project whose binary reports what it was
+// handed -- and the flags go through it untouched, because the application owns
+// every flag serve takes.
+func TestServeStillReachesTheProject(t *testing.T) {
+	goTool(t)
+	probeProject(t)
+
+	code, stdout, stderr := exercise(t, "serve", "--tenant=t1")
+	if code != 0 {
+		t.Fatalf("serve exited %d inside a project: %s", code, stderr)
+	}
+	if want := "argv: serve --tenant=t1\n"; stdout != want {
+		t.Errorf("the project binary received %q, want %q", stdout, want)
 	}
 }
 

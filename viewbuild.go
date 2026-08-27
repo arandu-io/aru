@@ -350,8 +350,14 @@ func skipDir(name string) bool {
 // It answers one question -- does what the project imports exist -- and it is
 // not a second build path: what it runs is buildViews, the same one `aru
 // view:build` runs. The distinction that keeps it from becoming one is that it
-// never rebuilds anything that is merely out of date. Staleness is what `aru
-// dev` watches for; absence is what stops the project compiling at all.
+// never rebuilds anything that is merely out of date. Absence is what stops the
+// project compiling at all, and it is the whole of what this is for.
+//
+// Staleness belongs to the commands that start the application, and both of them
+// compile the view layer from source before they do: `aru dev` on every change,
+// `aru serve` once. It was `aru serve` that used to come through here, and that
+// is how it came to serve the previous save of a view it had just been edited.
+// The commands left below render nothing.
 //
 // Absence is the normal state twice: after `aru new`, and after every clone,
 // because both the compiled views and the compiled stylesheet are gitignored

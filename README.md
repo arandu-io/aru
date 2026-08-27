@@ -48,11 +48,11 @@ plus `help` and `version`.
   the moment it lands.
 - **`aru generate`** — the same output, from a written specification: the
   model writes the spec, never the Go.
-- **`aru doctor`** — 30 named rules read the AST of a project, without
+- **`aru doctor`** — 34 named rules read the AST of a project, without
   running it, and fail CI on the first error. Among them:
   `repository-without-policy`, `grant-not-checked`, `sql-without-tenant-scope`,
   `tenant-from-request`, `tenant-from-header`, `sql-built-by-concatenation`,
-  `view-does-not-exist`, `session-not-rotated`. Three more answer only to
+  `view-does-not-exist`, `session-not-rotated`. Three of them answer only to
   `--profile=performance`, where a join and a transaction across two aggregates
   stop being ordinary SQL and become findings.
 - **`aru trace`** — a request reconstructed in the terminal, from the running
@@ -64,8 +64,8 @@ The view compiler is part of this binary rather than something it downloads:
 one fewer thing to pin, verify and cache.
 
 One direct dependency: `gopkg.in/yaml.v3`, for the specification format. CI
-refuses a second one. 19,363 lines of production code and 8,115 of test,
-across 29 test files.
+refuses a second one. 21,677 lines of production code and 10,737 of test,
+across 37 test files.
 
 The authentication screens are not here — `go run github.com/arandu-io/ui@latest auth`
 publishes them into your project, and they are yours to edit from the moment

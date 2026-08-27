@@ -117,10 +117,11 @@ type project struct {
 	files   []*file
 	// manifest is the arandu.mod.toml at the root, or nil.
 	//
-	// It sits at the root because the unit of distribution is the Go module:
-	// `aru add github.com/fulano/crm` resolves through the Go proxy, so the
-	// thing that declares permissions is the repository, not a directory inside
-	// it.
+	// It sits at the root because the unit of distribution is the Go module: a
+	// project takes a module on with `go get`, which resolves the repository
+	// through the Go proxy, so the thing that declares permissions is the
+	// repository and not a directory inside it. Read follows that -- it joins
+	// the file to one directory and looks nowhere else.
 	manifest *manifest.Module
 	// views are the `.kyse.go` sources. They are not Go -- the build tag keeps
 	// the compiler away from the markup -- so they are kept as text, and the

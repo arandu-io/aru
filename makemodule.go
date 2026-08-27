@@ -150,7 +150,7 @@ Then, by hand, because the wiring is meant to be readable:
 
       %s: controllers.New%s(
           services.New%s(repositories.New%s(db)), sessions, csrf),
-
+%s
 The migration is not one of them: %s registers itself in its own init, and
 nothing lists it. What it needs is to be linked -- something has to import
 database/migrations, or Go leaves the package, and its init, out of the binary.
@@ -167,7 +167,33 @@ Then:
 		m.ModulePath, m.ModulePath,
 		m.Entity(), m.Controller(),
 		m.ServiceType(), m.RepositoryType(),
+		tenantClaim(m),
 		m.MigrationType())
+}
+
+// tenantClaim is the line to paste for a module generated with --tenant, and it
+// is empty for one generated without.
+//
+// The table carries a tenant column, and the suite that reads the catalogue
+// fails until somebody states that every read of it is scoped. That failure is
+// the check working: the generator writes the table and a person writes the
+// claim, because the claim is the step where somebody reads the queries.
+//
+// So it is printed and never written. Filling the map in from here would answer
+// the question the map exists to ask, and it is the same reason nothing else in
+// this message edits a file for you.
+func tenantClaim(m gen.Module) string {
+	if !m.Tenant {
+		return ""
+	}
+	return fmt.Sprintf(`
+  tests/Feature/TenantScope_test.go -- the claim, once every read takes the tenant
+
+      %q: "why every read of it is scoped",
+
+The table has a tenant column, so that suite is red until the line is there. Add
+it after the reads are scoped, not before.
+`, m.Table())
 }
 
 // readModulePath reads the module path from the project's go.mod, because the

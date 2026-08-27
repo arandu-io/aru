@@ -328,6 +328,73 @@ func TestTheModuleWiringNamesTheImportsItsSnippetNeeds(t *testing.T) {
 	}
 }
 
+// TestTheTenantClaimNamesTheTableTheMigrationCreates.
+//
+// A module generated with --tenant lands in the skeleton's tenant suite the
+// first time it is generated: the table carries the column and nothing yet says
+// every read of it is scoped. That is the suite working rather than a defect, so
+// what the generator owes is the line to paste -- and the line is worth printing
+// only if it names the table that was actually created. A claim about a table
+// the catalogue does not have fails the same suite from the other side.
+func TestTheTenantClaimNamesTheTableTheMigrationCreates(t *testing.T) {
+	spec := gen.Module{
+		Name:       "purchase_order",
+		ModulePath: "example.test/project",
+		Tenant:     true,
+		Fields:     []gen.Field{{Name: "title", Type: gen.TypeString}},
+		Date:       "2026_07_31",
+	}
+
+	files, err := gen.Generate(spec)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	var migration string
+	for _, f := range files {
+		if strings.Contains(filepath.ToSlash(f.Path), "database/migrations/") {
+			migration = string(f.Content)
+		}
+	}
+	if migration == "" {
+		t.Fatal("the module generated no migration, so there is no table for the claim to be about")
+	}
+
+	message := wiring(spec, len(files))
+
+	// The file the line goes in, and the line itself, in the shape the suite's
+	// own failure asks for.
+	if !strings.Contains(message, "tests/Feature/TenantScope_test.go") {
+		t.Errorf("the message does not name the file the claim goes in:\n%s", message)
+	}
+	claim := `"` + spec.Table() + `": "why every read of it is scoped",`
+	if !strings.Contains(message, claim) {
+		t.Errorf("the message does not print %s to paste:\n%s", claim, message)
+	}
+
+	// And the half that makes the line true rather than merely present.
+	if !strings.Contains(migration, `"`+spec.Table()+`"`) {
+		t.Errorf("the claim names %q and the migration creates no such table:\n%s", spec.Table(), migration)
+	}
+}
+
+// TestTheTenantClaimIsAbsentWithoutATenantColumn is the other direction.
+//
+// A table with no tenant column that gets claimed anyway fails the same suite,
+// so a module generated without --tenant must not be told to claim one.
+func TestTheTenantClaimIsAbsentWithoutATenantColumn(t *testing.T) {
+	message := wiring(gen.Module{
+		Name:       "report",
+		ModulePath: "example.test/project",
+		Fields:     []gen.Field{{Name: "title", Type: gen.TypeString}},
+	}, 12)
+
+	for _, absent := range []string{"TenantScope_test.go", "why every read of it is scoped"} {
+		if strings.Contains(message, absent) {
+			t.Errorf("a module with no tenant column is told to claim one (%q):\n%s", absent, message)
+		}
+	}
+}
+
 // TestTheMissingEntityMessageSuggestsACommandThatRuns.
 //
 // make:policy refuses when the model is not there and prints how to create it.

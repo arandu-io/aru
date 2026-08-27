@@ -91,6 +91,18 @@ func newProject(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintf(stderr, "\nThe project was created, but its views were not compiled: %v\nRun `aru view:build` inside %s before building.\n", err, name)
 	}
 
+	// The variable is DATABASE_URL, and it is spelled out rather than named,
+	// because the shape is the part nobody guesses.
+	//
+	// It used to say DB_CONNECTION. That is one of the variables that carried
+	// the connection in parts, and those are refused at boot rather than
+	// ignored -- so the last line of `aru new` told the reader to set the one
+	// value that stops the application from starting, and the refusal they got
+	// named the variable this command had just recommended.
+	//
+	// "And nothing else" is the whole claim, and it holds: the skeleton
+	// registers the Postgres and SQLite connectors alike, so the engine changes
+	// without a line of Go.
 	fmt.Fprintf(stdout, `
 %s created, module %s.
 
@@ -100,7 +112,9 @@ func newProject(args []string, stdout, stderr io.Writer) error {
     aru serve
 
 It runs on SQLite, in a file under database/. Nothing to install. Moving to
-Postgres is DB_CONNECTION in .env and nothing else.
+Postgres is one line in .env and nothing else:
+
+    DATABASE_URL=postgres://user:password@127.0.0.1:5432/dbname
 `, name, path, name)
 	return nil
 }

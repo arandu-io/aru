@@ -11,7 +11,7 @@
   ],
   "repository": {
     "header": {
-      "comment": "A tag de build e a clausula de pacote sao o que fazem o arquivo ser legal para o compilador. Realcadas como Go, porque sao Go.",
+      "comment": "The build tag and the package clause are what make the file legal to the compiler. Highlighted as Go, because they are Go.",
       "patterns": [
         {
           "match": "^\\s*(//go:build)\\s+(kyse)\\s*$",
@@ -32,7 +32,7 @@
     },
 
     "go-block": {
-      "comment": "@go … @endgo carrega Go de verdade, entao e realcado como Go.",
+      "comment": "@go … @endgo carries real Go, so it is highlighted as Go.",
       "begin": "^\\s*(@go)\\s*$",
       "end": "^\\s*(@endgo)\\s*$",
       "beginCaptures": { "1": { "name": "keyword.control.kyse" } },
@@ -44,7 +44,7 @@
     "directive": {
       "patterns": [
         {
-          "comment": "Diretiva com argumento: @extends('layouts.app')",
+          "comment": "A directive with an argument: @extends('layouts.app')",
           "match": "(@(?:extends|section|yield|include|if|elseif|foreach|for|while))\\s*(\\()([^)]*)(\\))",
           "captures": {
             "1": { "name": "keyword.control.kyse" },
@@ -54,12 +54,12 @@
           }
         },
         {
-          "comment": "Diretiva sem argumento, e os fechamentos.",
+          "comment": "A directive with no argument, and the closing ones.",
           "match": "@(?:endsection|endif|endforeach|endfor|endwhile|endgo|else|csrf)\\b",
           "name": "keyword.control.kyse"
         },
         {
-          "comment": "Qualquer outro @nome e erro: o conjunto e fechado (REGRA 15).",
+          "comment": "Any other @name is an error: the set is closed.",
           "match": "@[a-zA-Z]+",
           "name": "invalid.illegal.unknown-directive.kyse"
         }
@@ -78,7 +78,7 @@
     "interpolation": {
       "patterns": [
         {
-          "comment": "{!! !!} nao escapa. Realcado diferente de proposito: e onde o XSS entra.",
+          "comment": "{!! !!} does not escape. Highlighted differently on purpose: it is where XSS gets in.",
           "begin": "\\{!!",
           "end": "!!\\}",
           "beginCaptures": { "0": { "name": "punctuation.section.interpolation.raw.begin.kyse" } },

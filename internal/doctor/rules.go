@@ -53,7 +53,7 @@ var rules = []func(*project) []Finding{
 	viewDataMustBeAStruct,
 	viewMustExist,
 	declaredPermissionsMatchTheCode,
-	alpineHoldsClientStateOnly,
+	viewsKeepNoStateInTheBrowser,
 	tenantMustScopeTheSQL,
 	theOutboxTableTravelsWithWhatWritesToIt,
 	resourceNotReauthorized,
@@ -1636,100 +1636,146 @@ func relativeTo(root, path string) string {
 	return path
 }
 
-// alpineAttribute captures what an Alpine directive contains.
+// clientDirective captures an attribute that holds state or behaviour in the
+// browser, and the value it holds.
 //
-// Alpine is written in HTML attributes, so this is text matching rather than
+// These are written in HTML attributes, so this is text matching rather than
 // parsing. That is a real limitation: a directive split across lines by a
-// formatter still matches, and one built by string concatenation in Go does not.
-// It catches the shape people actually write.
+// formatter still matches, one built by string concatenation in Go does not, and
+// a `@go` block that happens to contain the shape in a string literal matches
+// like markup would. It catches the shape people actually write.
 //
-// Event handlers and both quote styles, because that is where the mistake lives.
-// Matching x-data, x-init and x-effect with double quotes alone would let
-// `x-on:click="fetch(...)"`, `@click="fetch(...)"` and every single-quoted form
-// through untouched -- and an event handler is precisely where somebody writes a
-// network call.
-var alpineAttribute = regexp.MustCompile(`(?s)(?:^|[^\w:@-])(x-data|x-init|x-effect|x-on:[\w.:-]+|@[\w.:-]+)\s*=\s*("[^"]*"|'[^']*')`)
+// The name is any `x-` attribute rather than a written-out list. A list would
+// hold the dozen directives of the core and miss x-mask, x-intersect, x-collapse
+// and every other one a plugin adds -- and a list that has to be extended per
+// plugin is a list that goes stale, which is the failure this rule was corrected
+// for. Nothing else claims the prefix: HTML gives custom attributes `data-`, and
+// the other library on the page spells its own `hx-`.
+//
+// The `@name` shorthand is the same attribute in its short spelling, and it
+// cannot collide with the template's own directives: those take arguments in
+// parentheses that end the line, so `@name="value"` is never one of them. The
+// character before the name is what separates the families -- without it `hx-get`
+// reads as `x-get` and `data-x-id` as `x-id`, and the difference between an
+// attribute that routes a swap and one that holds a value is this rule's whole
+// subject.
+//
+// Both quote styles, because a formatter that prefers single quotes turned the
+// whole rule off once already.
+var clientDirective = regexp.MustCompile(`(?s)(?:^|[^\w:@-])(x-[\w.:-]+|@[\w.:-]+)\s*=\s*("[^"]*"|'[^']*')`)
 
-// networkInAlpine is the set that means this state is not client-only.
-var networkInAlpine = []struct {
+// reachesTheServer is what makes a directive more expensive than an inert one.
+//
+// It no longer decides whether there is a finding -- every directive here is one
+// -- and it stays because it decides what the finding says. A dropdown somebody
+// wrote in the wrong stack and a second fetch path with its own CSRF handling
+// both have to be reported, and telling them apart in the message is the
+// difference between a person reaching for ui.js and a person reaching for an
+// HTMX fragment.
+var reachesTheServer = []struct {
 	token string
 	what  string
 }{
-	{"fetch(", "a fetch call"},
-	{"axios", "an axios call"},
-	{"XMLHttpRequest", "an XMLHttpRequest"},
-	{"$store", "a global Alpine store"},
-	{"navigator.sendBeacon", "a beacon"},
-	{"EventSource(", "a server-sent events subscription"},
-	{"new WebSocket", "a WebSocket"},
+	{"fetch(", "calls fetch()"},
+	{"axios", "calls axios"},
+	{"XMLHttpRequest", "opens an XMLHttpRequest"},
+	{"$store", "reads a global store"},
+	{"navigator.sendBeacon", "sends a beacon"},
+	{"EventSource(", "opens a server-sent events subscription"},
+	{"new WebSocket", "opens a WebSocket"},
 }
 
-// 14. Alpine holds client state, and nothing else.
+// 14. A view keeps no state in the browser.
 //
-// Alpine is allowed when the state is client-only, ephemeral, and invisible to
-// the server -- a dropdown, a tab, an input mask. The moment a directive talks
-// to the server, the component should have been an HTMX fragment, and the
-// application now has two ways to fetch data with two sets of error handling,
-// two loading states and two places CSRF can be forgotten.
+// State on this stack is the server's. A handler reads the form, decides, and
+// answers markup that is already correct, so there is no second copy in the
+// browser to keep in step and nothing to reconcile when the two disagree. An
+// `hx-` attribute is not a counter-example and cannot become one: hx-post,
+// hx-target and hx-swap say where to ask and what to replace, and nothing reads
+// a value back out of one.
 //
-// Without this check that line is opinion, and opinion does not survive a code
-// review at 6pm.
+// What the browser does own is what dies with the tab and the server never needs
+// to hear about -- a menu that is open, a row that is selected -- and it has a
+// home already: the behaviours file the layout loads. It binds on document and
+// dispatches on `data-` attributes, keeps open and selected in the ARIA the
+// markup already carries, and evaluates nothing, so the DOM is the only copy and
+// swapped-in markup is live where it lands.
 //
-// It guards a library nothing here ships, and that is worth saying out loud
-// rather than leaving for whoever next goes looking for the file. The embedded
-// assets are a stylesheet, HTMX, a theme script and a hand-written file of
-// client behaviours; there is no alpine.min.js among them, and the behaviours
-// file exists precisely because there is not -- Alpine compiles every directive
-// with new AsyncFunction, and a page served under script-src 'self' with no
-// unsafe-eval throws at the point of evaluation, so not one directive would
-// ever have run.
+// # Why this refuses the directive rather than what is inside it
 //
-// The rule stays, for two reasons that survive that.
+// This rule used to permit an `x-` attribute and refuse only the ones whose value
+// called the network, and in that shape it was the weaker half of a line the rest
+// of the collection draws whole. Of four directives planted in a generated
+// project -- a state object, a shorthand handler, a visibility toggle and one
+// fetch -- it reported the fetch and passed the other three, which are exactly
+// the three the starter kit's own gate fails on. The narrow rule had become the
+// permissive one.
 //
-// The first is whose files these are. What this reads is the project the doctor
-// was pointed at, and a project serves its own scripts and writes its own
-// policy: the day one of them loads Alpine, it has done so by relaxing the
-// policy that made it impossible, and the cost this rule names -- two fetch
-// paths, two loading states, two places to forget the token -- is exactly what
-// it bought.
+// What decided the widening is that a generated project cannot run one. The
+// layout links a stylesheet, HTMX, the theme script and the behaviours file;
+// asking the asset table for a directive framework panics rather than answering a
+// URL that would 404, so the ordinary way to add the script tag takes the page
+// down at render. And the policy the skeleton wires is script-src 'self' with no
+// unsafe-eval, while a directive framework compiles every expression it is given
+// out of a string -- so even served, not one directive would evaluate.
 //
-// The second is the case where the policy was not relaxed. There the directive
-// is inert: somebody wrote a request that never leaves the page, and nothing
-// anywhere reports it. Silence is the wrong answer to that too.
+// So an `x-` attribute in a view today is in one of two states, and both are
+// worth a finding:
 //
-// One consequence is worth knowing before reading a report: no view in this
-// repository matches, so a clean run says nothing about whether the rule works.
-// What answers for that is the fixture corpus, which plants the state directive
-// and the event handler in both quote styles, plus one client-only directive
-// that has to stay silent.
-func alpineHoldsClientStateOnly(p *project) []Finding {
+//   - inert, which is the ordinary case. Somebody wrote behaviour that never
+//     runs, the screen does nothing, and nothing anywhere says why. Silence is
+//     the wrong answer to a feature that is not there.
+//   - live, which costs more. It is live only because the project deleted the
+//     security headers from its own bootstrap and vendored a second client
+//     framework, and the application now has two state models, two loading
+//     states and two places to forget the CSRF token.
+//
+// The compiler that builds these views classifies the same attributes as code
+// when it escapes an interpolation into one, and that is not a contradiction to
+// read as permission: an escaper has to assume the worst about a value a browser
+// might evaluate, and a check has to say the value should not be there at all.
+//
+// # What it does not reach
+//
+// No view in this repository matches, so a clean run says nothing about whether
+// the rule works. What answers for that is the fixture corpus, which plants the
+// state directive and the event handler in both quote styles, the inert
+// client-only directive that is now a finding, and the `data-` shape that has to
+// stay silent.
+func viewsKeepNoStateInTheBrowser(p *project) []Finding {
 	var out []Finding
 
 	for _, v := range p.views {
-		for _, match := range alpineAttribute.FindAllStringSubmatchIndex(v.body, -1) {
+		for _, match := range clientDirective.FindAllStringSubmatchIndex(v.body, -1) {
 			directive := v.body[match[2]:match[3]]
 			// The quotes are part of the capture, so that one alternative can
 			// hold both styles; the content is what sits between them.
 			quoted := v.body[match[4]:match[5]]
 			content := quoted[1 : len(quoted)-1]
 
-			for _, forbidden := range networkInAlpine {
-				if !strings.Contains(content, forbidden.token) {
-					continue
+			message := directive + " holds state in the browser"
+			for _, reach := range reachesTheServer {
+				if strings.Contains(content, reach.token) {
+					message += ", and its value " + reach.what
+					break
 				}
-				out = append(out, Finding{
-					Rule: "alpine-reaches-the-server", Severity: Error,
-					// The directive, not the whole match: the match starts one
-					// character earlier, and that character can be the newline
-					// that ends the line above.
-					File: v.rel, Line: lineOf(v.body, match[2]),
-					Message: directive + " contains " + forbidden.what,
-					Why: "Alpine holds state that is client-only, ephemeral and invisible to the server. " +
-						"A directive that talks to the server should be an HTMX fragment instead -- otherwise the " +
-						"application has two ways to fetch data, with two loading states and two places to forget the CSRF token.",
-				})
-				break
 			}
+
+			out = append(out, Finding{
+				Rule: "view-keeps-state-in-the-browser", Severity: Error,
+				// The directive, not the whole match: the match starts one
+				// character earlier, and that character can be the newline
+				// that ends the line above.
+				File: v.rel, Line: lineOf(v.body, match[2]),
+				Message: message,
+				Why: "Nothing this project serves evaluates that attribute: the layout loads a behaviours file that " +
+					"dispatches on data- attributes and evaluates no expression, and the policy is script-src 'self' " +
+					"with no unsafe-eval, so a framework that compiles a directive out of a string cannot run beside it. " +
+					"Either the directive is inert and the screen silently does nothing, or the policy was relaxed to run " +
+					"a second client stack -- and then there are two state models, two loading states and two places to " +
+					"forget the CSRF token. Put the decision in a handler and swap the markup; what dies with the tab goes " +
+					"on a data- attribute, or in <details> and :focus-within.",
+			})
 		}
 	}
 	return out

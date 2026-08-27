@@ -52,19 +52,31 @@ func renderInternalDoctorTestdataCleanResourcesViewsInvoicesIndex(kyse__w kyse__
 				_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 			}
 			if kyse__err == nil {
-				_, kyse__err = kyse__io.WriteString(kyse__w, "\t<!-- Alpine within its limit: which tab is open is client state, it dies on\n")
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t<!-- Which tab is open is client state: it dies on reload without loss and\n")
 			}
 			if kyse__err == nil {
-				_, kyse__err = kyse__io.WriteString(kyse__w, "\t     reload without loss, and the server never sees it. -->\n")
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t     the server never sees it, so it is the one thing the browser owns. It\n")
 			}
 			if kyse__err == nil {
-				_, kyse__err = kyse__io.WriteString(kyse__w, "\t<div x-data=\"{ tab: 0 }\" class=\"mt-4 flex gap-2\">\n")
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t     is spelled the way the behaviours file reads it -- data- attributes it\n")
 			}
 			if kyse__err == nil {
-				_, kyse__err = kyse__io.WriteString(kyse__w, "\t\t<button @click=\"tab = 0\" class=\"rounded px-3 py-1\">All</button>\n")
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t     dispatches on, and the selected tab in the ARIA the markup carries\n")
 			}
 			if kyse__err == nil {
-				_, kyse__err = kyse__io.WriteString(kyse__w, "\t\t<button @click=\"tab = 1\" class=\"rounded px-3 py-1\">Overdue</button>\n")
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t     anyway. Nothing here is an expression, which is why it survives\n")
+			}
+			if kyse__err == nil {
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t     script-src 'self'. -->\n")
+			}
+			if kyse__err == nil {
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t<div data-tabs class=\"mt-4 flex gap-2\" role=\"tablist\">\n")
+			}
+			if kyse__err == nil {
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t\t<button data-tab=\"all\" role=\"tab\" aria-selected=\"true\" class=\"rounded px-3 py-1\">All</button>\n")
+			}
+			if kyse__err == nil {
+				_, kyse__err = kyse__io.WriteString(kyse__w, "\t\t<button data-tab=\"overdue\" role=\"tab\" aria-selected=\"false\" class=\"rounded px-3 py-1\">Overdue</button>\n")
 			}
 			if kyse__err == nil {
 				_, kyse__err = kyse__io.WriteString(kyse__w, "\t</div>\n")
@@ -75,10 +87,10 @@ func renderInternalDoctorTestdataCleanResourcesViewsInvoicesIndex(kyse__w kyse__
 			if kyse__err == nil {
 				_, kyse__err = kyse__io.WriteString(kyse__w, "\t<ul class=\"mt-4 divide-y\">\n")
 			}
-//line internal/doctor/testdata/clean/resources/views/invoices/index.kyse.go:26
+//line internal/doctor/testdata/clean/resources/views/invoices/index.kyse.go:30
 			for _, invoice := range kyse__d.Invoices {
 				_ = invoice
-//line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:82
+//line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:94
 				if kyse__err == nil {
 					_, kyse__err = kyse__io.WriteString(kyse__w, "\t\t\t<!-- The raw form, used the one way it is entitled to be: a component\n")
 				}
@@ -92,9 +104,9 @@ func renderInternalDoctorTestdataCleanResourcesViewsInvoicesIndex(kyse__w kyse__
 					_, kyse__err = kyse__io.WriteString(kyse__w, "\t\t\t<li class=\"py-2\">")
 				}
 				if kyse__err == nil {
-//line internal/doctor/testdata/clean/resources/views/invoices/index.kyse.go:30
+//line internal/doctor/testdata/clean/resources/views/invoices/index.kyse.go:34
 					_, kyse__err = kyse__io.WriteString(kyse__w, kyse__template.HTMLEscapeString(kyse__view.Text(invoice.Reference)))
-//line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:98
+//line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:110
 				}
 				if kyse__err == nil {
 					_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
@@ -103,9 +115,9 @@ func renderInternalDoctorTestdataCleanResourcesViewsInvoicesIndex(kyse__w kyse__
 					_, kyse__err = kyse__io.WriteString(kyse__w, "\t\t\t\t")
 				}
 				if kyse__err == nil {
-//line internal/doctor/testdata/clean/resources/views/invoices/index.kyse.go:31
+//line internal/doctor/testdata/clean/resources/views/invoices/index.kyse.go:35
 					_, kyse__err = kyse__io.WriteString(kyse__w, kyse__view.UnsafeText(components.Badge(components.BadgeProps{Label: invoice.State})))
-//line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:109
+//line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:121
 				}
 				if kyse__err == nil {
 					_, kyse__err = kyse__io.WriteString(kyse__w, "</li>\n")

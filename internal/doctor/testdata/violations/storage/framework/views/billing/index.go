@@ -79,16 +79,16 @@ func renderInternalDoctorTestdataViolationsResourcesViewsBillingIndex(kyse__w ky
 		_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 	}
 	if kyse__err == nil {
-		_, kyse__err = kyse__io.WriteString(kyse__w, "<!-- Violation: Alpine reaching the server. This should be an HTMX fragment --\n")
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<!-- Violation, and the expensive kind: a directive that fetches. This should be\n")
 	}
 	if kyse__err == nil {
-		_, kyse__err = kyse__io.WriteString(kyse__w, "     x-data holds client state, and the moment it fetches, the application has\n")
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     an HTMX fragment -- the moment it loads data of its own, the application has\n")
 	}
 	if kyse__err == nil {
-		_, kyse__err = kyse__io.WriteString(kyse__w, "     two ways to load data with two loading states and two places to forget the\n")
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     two ways to do it, with two loading states and two places to forget the CSRF\n")
 	}
 	if kyse__err == nil {
-		_, kyse__err = kyse__io.WriteString(kyse__w, "     CSRF token. -->\n")
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     token. -->\n")
 	}
 	if kyse__err == nil {
 		_, kyse__err = kyse__io.WriteString(kyse__w, "<div x-data=\"{ open: false, invoices: [], async load() { const r = await fetch('/api/invoices'); this.invoices = await r.json() } }\">\n")
@@ -103,10 +103,16 @@ func renderInternalDoctorTestdataViolationsResourcesViewsBillingIndex(kyse__w ky
 		_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 	}
 	if kyse__err == nil {
-		_, kyse__err = kyse__io.WriteString(kyse__w, "<!-- This one is fine: open/closed is client-only, ephemeral and invisible to\n")
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<!-- Violation, and the ordinary kind: open/closed never leaves the page, and\n")
 	}
 	if kyse__err == nil {
-		_, kyse__err = kyse__io.WriteString(kyse__w, "     the server, which is exactly what doc 14 permits. -->\n")
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     the directive is still a finding because nothing here evaluates one. The\n")
+	}
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     screen does nothing and says nothing about why. The behaviours file the\n")
+	}
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     layout loads owns this, on a data- attribute. -->\n")
 	}
 	if kyse__err == nil {
 		_, kyse__err = kyse__io.WriteString(kyse__w, "<div x-data=\"{ open: false }\">\n")

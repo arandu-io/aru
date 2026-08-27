@@ -208,10 +208,13 @@ func TestADeclaredPermissionThatIsUsedIsSilent(t *testing.T) {
 	}
 }
 
-// TestAlpineReachingTheServerIsCaught: without this check, "Alpine only where
-// HTMX cannot reach" is opinion, and opinion does not survive a code review at
-// 6pm.
-func TestAlpineReachingTheServerIsCaught(t *testing.T) {
+// TestADirectiveThatFetchesIsCaught: without this check, "one way to load data"
+// is opinion, and opinion does not survive a code review at 6pm.
+//
+// It is the expensive half of the rule -- a second fetch path with its own
+// loading state and its own CSRF handling -- so the message has to say that much
+// and not merely name the attribute.
+func TestADirectiveThatFetchesIsCaught(t *testing.T) {
 	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -219,16 +222,16 @@ func TestAlpineReachingTheServerIsCaught(t *testing.T) {
 
 	var caught *doctor.Finding
 	for i, f := range findings {
-		if f.Rule == "alpine-reaches-the-server" {
+		if f.Rule == "view-keeps-state-in-the-browser" && strings.Contains(f.Message, "fetch()") {
 			caught = &findings[i]
 			break
 		}
 	}
 	if caught == nil {
-		t.Fatal("an x-data with a fetch call was not caught")
+		t.Fatalf("an x-data with a fetch call was not caught:\n%v", findings)
 	}
 	if caught.Severity != doctor.Error {
-		t.Error("Alpine fetching from the server is a warning: it is a second data path")
+		t.Error("a directive fetching from the server is a warning: it is a second data path")
 	}
 	// The view file, whatever the engine spells it: hardcoding an extension
 	// makes this test about the engine rather than about the rule.
@@ -240,16 +243,46 @@ func TestAlpineReachingTheServerIsCaught(t *testing.T) {
 	}
 }
 
-// TestAlpineWithinItsLimitIsSilent: a dropdown is exactly what the rule permits,
-// and firing on it would teach people to ignore the rule.
-func TestAlpineWithinItsLimitIsSilent(t *testing.T) {
+// TestAnInertDirectiveIsCaughtToo is the half the rule gained, and the reason it
+// gained it.
+//
+// A dropdown written in `x-data` calls nothing and leaks nothing, and it also
+// does not work: no asset this stack serves reads the attribute, and the policy
+// is script-src 'self' with no unsafe-eval, so nothing would evaluate it even if
+// one did. The screen silently does nothing. Reporting only the ones that fetch
+// left that case to be discovered by a person clicking a menu that never opens.
+func TestAnInertDirectiveIsCaughtToo(t *testing.T) {
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, f := range findings {
+		if f.Rule != "view-keeps-state-in-the-browser" {
+			continue
+		}
+		// The inert one is the finding that names no network call.
+		if !strings.Contains(f.Message, "fetch()") && !strings.Contains(f.Message, "WebSocket") {
+			return
+		}
+	}
+	t.Errorf("a client-only x-data produced no finding, so the rule still only reports the ones that fetch:\n%v", findings)
+}
+
+// TestTheShapeTheBehavioursFileReadsIsSilent is where the widening stops.
+//
+// The clean fixture spells its tabs the way ui.js reads them -- data- attributes
+// and the selected one in ARIA -- and a rule that fired there would be a rule
+// teaching people to mute it. It is also the guard against the cheap way to
+// widen this rule wrong: `hx-get` is not `x-get`, and `data-x-id` is not `x-id`.
+func TestTheShapeTheBehavioursFileReadsIsSilent(t *testing.T) {
 	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	for _, f := range findings {
-		if f.Rule == "alpine-reaches-the-server" {
-			t.Errorf("client-only state was reported: %s", f.Message)
+		if f.Rule == "view-keeps-state-in-the-browser" {
+			t.Errorf("the data- shape was reported: %s: %s", f.File, f.Message)
 		}
 	}
 }
@@ -855,17 +888,19 @@ func TestATypeThatMerelyStartsWithRepoIsNotARepository(t *testing.T) {
 	}
 }
 
-// TestAlpineIsMatchedInEveryDirectiveAndBothQuotes: the pattern matched x-data,
-// x-init and x-effect, with double quotes only.
+// TestEveryDirectiveAndBothQuotesAreMatched: the pattern matched x-data, x-init
+// and x-effect, with double quotes only.
 //
 // x-on: and @ are precisely where a network call is written, and a formatter
-// that prefers single quotes turned the whole rule off.
-func TestAlpineIsMatchedInEveryDirectiveAndBothQuotes(t *testing.T) {
+// that prefers single quotes turned the whole rule off. The fourth name is the
+// widening: x-show holds no expression anybody would call a data path, and it is
+// the shape that used to walk straight through.
+func TestEveryDirectiveAndBothQuotesAreMatched(t *testing.T) {
 	findings := gaps(t)
 
-	var xon, shorthand, singleQuoted bool
+	var xon, shorthand, singleQuoted, stateOnly bool
 	for _, f := range findings {
-		if f.Rule != "alpine-reaches-the-server" {
+		if f.Rule != "view-keeps-state-in-the-browser" {
 			continue
 		}
 		switch {
@@ -873,8 +908,10 @@ func TestAlpineIsMatchedInEveryDirectiveAndBothQuotes(t *testing.T) {
 			xon = true
 		case strings.HasPrefix(f.Message, "@"):
 			shorthand = true
-		case strings.HasPrefix(f.Message, "x-data"):
+		case strings.HasPrefix(f.Message, "x-data") && strings.Contains(f.Message, "WebSocket"):
 			singleQuoted = true
+		case strings.HasPrefix(f.Message, "x-data"):
+			stateOnly = true
 		}
 	}
 
@@ -886,6 +923,9 @@ func TestAlpineIsMatchedInEveryDirectiveAndBothQuotes(t *testing.T) {
 	}
 	if !singleQuoted {
 		t.Errorf("a single-quoted x-data with a WebSocket was not caught:\n%v", findings)
+	}
+	if !stateOnly {
+		t.Errorf("a client-only x-data was not caught, so the rule is still the narrow one:\n%v", findings)
 	}
 }
 
@@ -930,15 +970,15 @@ func TestAnUnusedPermissionHasAFixture(t *testing.T) {
 // rule under test.
 func TestTheGapsFixtureReportsNothingElse(t *testing.T) {
 	expected := map[string]bool{
-		"grant-not-received":            true,
-		"grant-check-discarded":         true,
-		"sql-without-tenant-scope":      true,
-		"system-grant-outside-scope":    true,
-		"handler-reaches-data":          true,
-		"controller-reaches-repository": true,
-		"alpine-reaches-the-server":     true,
-		"permission-not-used":           true,
-		"outbox-not-registered":         true,
+		"grant-not-received":              true,
+		"grant-check-discarded":           true,
+		"sql-without-tenant-scope":        true,
+		"system-grant-outside-scope":      true,
+		"handler-reaches-data":            true,
+		"controller-reaches-repository":   true,
+		"view-keeps-state-in-the-browser": true,
+		"permission-not-used":             true,
+		"outbox-not-registered":           true,
 	}
 	for _, f := range gaps(t) {
 		if !expected[f.Rule] {

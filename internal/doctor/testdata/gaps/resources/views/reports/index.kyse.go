@@ -23,8 +23,19 @@ type ReportsIndexData struct {
      style it did not. -->
 <div x-data='{ socket: new WebSocket("/ws") }'>Live</div>
 
-<!-- Client-only, and it stays silent: which panel is open dies on reload
-     without loss, and the server never sees it. -->
+<!-- Client-only, and reported all the same: which panel is open dies on reload
+     without loss, and the server never sees it -- but nothing this stack serves
+     evaluates the directive, so the menu does not open and no error says so.
+     This block is the widening, and the one below is where it stops. -->
 <div x-data="{ open: false }">
 	<button @click="open = !open">Menu</button>
+</div>
+
+<!-- The same menu, spelled the way the behaviours file reads it, and silent.
+     A rule that fired here would be a rule teaching people to mute it: hx- is
+     not the family, data- is not the family, and neither is an attribute that
+     merely ends in one of the names. -->
+<div data-menu>
+	<button data-menu-trigger aria-expanded="false" hx-get="/reports/menu">Menu</button>
+	<div data-x-id="not-a-directive" class="combobox-initialized"></div>
 </div>

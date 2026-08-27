@@ -303,8 +303,8 @@ func Run(dir string, profile Profile) ([]Finding, error) {
 // parseViews collects the `.kyse.go` sources under resources/views.
 //
 // They are read rather than parsed: a view is Go only down to the package
-// clause, and everything a rule cares about -- an Alpine directive, the name the
-// view answers to -- is below that line.
+// clause, and everything a rule cares about -- an attribute that holds state in
+// the browser, the name the view answers to -- is below that line.
 func parseViews(dir string) ([]view, error) {
 	root := filepath.Join(dir, viewsDir)
 	if _, err := os.Stat(root); os.IsNotExist(err) {

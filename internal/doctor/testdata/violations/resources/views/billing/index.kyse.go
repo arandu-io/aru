@@ -18,16 +18,18 @@ type BillingIndexData struct {
      away. -->
 <div class="note">{!! .Note !!}</div>
 
-<!-- Violation: Alpine reaching the server. This should be an HTMX fragment --
-     x-data holds client state, and the moment it fetches, the application has
-     two ways to load data with two loading states and two places to forget the
-     CSRF token. -->
+<!-- Violation, and the expensive kind: a directive that fetches. This should be
+     an HTMX fragment -- the moment it loads data of its own, the application has
+     two ways to do it, with two loading states and two places to forget the CSRF
+     token. -->
 <div x-data="{ open: false, invoices: [], async load() { const r = await fetch('/api/invoices'); this.invoices = await r.json() } }">
 	<button @click="open = !open">Toggle</button>
 </div>
 
-<!-- This one is fine: open/closed is client-only, ephemeral and invisible to
-     the server, which is exactly what doc 14 permits. -->
+<!-- Violation, and the ordinary kind: open/closed never leaves the page, and
+     the directive is still a finding because nothing here evaluates one. The
+     screen does nothing and says nothing about why. The behaviours file the
+     layout loads owns this, on a data- attribute. -->
 <div x-data="{ open: false }">
 	<button @click="open = !open">Menu</button>
 </div>

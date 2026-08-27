@@ -126,7 +126,7 @@ func emitsByRule() map[string][]string {
 		"viewDataMustBeAStruct":                   {"view-data-is-a-map"},
 		"viewMustExist":                           {"view-does-not-exist"},
 		"declaredPermissionsMatchTheCode":         {"permission-not-declared", "permission-not-used"},
-		"alpineHoldsClientStateOnly":              {"alpine-reaches-the-server"},
+		"viewsKeepNoStateInTheBrowser":            {"view-keeps-state-in-the-browser"},
 		"tenantMustScopeTheSQL":                   {"sql-without-tenant-scope"},
 		"theOutboxTableTravelsWithWhatWritesToIt": {"outbox-not-registered"},
 		"resourceNotReauthorized":                 {"resource-not-reauthorized"},

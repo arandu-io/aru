@@ -81,14 +81,17 @@ func TestDecimalKeepsItsDigits(t *testing.T) {
 	m := spec(true)
 	m.Fields = append(m.Fields, gen.Field{Name: "rate", Type: gen.TypeDecimal})
 
-	// Collapsed, because the DDL aligns its columns and the alignment is not
-	// what this test is about.
+	// The migration no longer writes the type: it names a Blueprint method and
+	// the grammar writes the type per engine. So what this test can still assert
+	// here is the method, and what it used to assert -- that the column is eight
+	// bytes and not four -- is now a property of the Postgres grammar, tested
+	// where the grammar lives.
 	migration := collapse(migrationOf(t, m))
-	if strings.Contains(migration, "rate REAL") {
-		t.Fatal("decimal is still REAL, which is four bytes in PostgreSQL")
+	if !strings.Contains(migration, `table.Double("rate")`) {
+		t.Errorf("decimal does not declare Double:\n%s", migration)
 	}
-	if !strings.Contains(migration, "rate DOUBLE PRECISION") {
-		t.Errorf("decimal is not DOUBLE PRECISION:\n%s", migration)
+	if strings.Contains(migration, `table.Float("rate")`) {
+		t.Fatal("decimal declares Float, which is four bytes in PostgreSQL and rounds a float64 on read")
 	}
 }
 
@@ -121,30 +124,24 @@ func TestNothingKeyedIsDeclaredTEXT(t *testing.T) {
 	m := spec(true)
 	migration := collapse(migrationOf(t, m))
 
-	for _, forbidden := range []string{
-		"id TEXT PRIMARY KEY",
-		"tenant_id TEXT",
-		// reference is the unique field of the fixture.
-		"reference TEXT",
-	} {
-		if strings.Contains(migration, forbidden) {
-			t.Errorf("a keyed column is still TEXT: %q", forbidden)
+	// The generator stopped choosing between VARCHAR and TEXT, and that is the
+	// fix rather than a loss of coverage: the grammar makes that choice per
+	// engine, which is why it exists. What is still the generator's to get right
+	// is which Blueprint method a keyed column gets, because Text is the one
+	// MySQL refuses in a key.
+	for _, keyed := range []string{"id", "tenant_id", "reference"} {
+		if strings.Contains(migration, `table.Text("`+keyed+`")`) {
+			t.Errorf("the keyed column %q declares Text, which MySQL refuses in a key without a prefix length", keyed)
 		}
-	}
-	for _, wanted := range []string{
-		"id VARCHAR(255) PRIMARY KEY",
-		"tenant_id VARCHAR(255) NOT NULL",
-		"reference VARCHAR(255) NOT NULL",
-	} {
-		if !strings.Contains(migration, wanted) {
-			t.Errorf("missing %q:\n%s", wanted, migration)
+		if !strings.Contains(migration, `table.String("`+keyed+`")`) {
+			t.Errorf("the keyed column %q does not declare String:\n%s", keyed, migration)
 		}
 	}
 
-	// The long kind stays TEXT: it is never indexed, and capping it would make
+	// The long kind stays Text: it is never indexed, and capping it would make
 	// "long text" mean 255 characters.
-	if !strings.Contains(migration, "notes TEXT") {
-		t.Error("a text field is no longer TEXT")
+	if !strings.Contains(migration, `table.Text("notes")`) {
+		t.Error("a text field no longer declares Text")
 	}
 }
 

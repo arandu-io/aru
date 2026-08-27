@@ -85,7 +85,6 @@ func (f InvoiceFactory) Make(n int) models.Invoice {
 		SupplierEmail: supplierEmail,
 		Total:         total,
 		DeliveryDate:  deliveryDate,
-		CreatedAt:     time.Now().UTC(),
 	}
 }
 

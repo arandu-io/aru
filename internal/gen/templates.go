@@ -33,14 +33,15 @@ import (
 // List included -- takes a security.Grant that only a Policy can issue. The
 // model is data; the Policy is the door.
 type {{.Entity}} struct {
-	ID        string
+	ID        string    ` + "`" + `db:"id"` + "`" + `
 {{- if .Tenant}}
-	TenantID  string
+	TenantID  string    ` + "`" + `db:"tenant_id"` + "`" + `
 {{- end}}
 {{- range .Fields}}
-	{{.GoName}} {{.GoType}}
+	{{.GoName}} {{.GoType}} ` + "`" + `db:"{{.Column}}"` + "`" + `
 {{- end}}
-	CreatedAt time.Time
+	CreatedAt time.Time ` + "`" + `db:"created_at"` + "`" + `
+	UpdatedAt time.Time ` + "`" + `db:"updated_at"` + "`" + `
 }
 
 // What can go wrong with a {{.Name}}, declared beside the entity rather than
@@ -201,7 +202,7 @@ func New{{.RepositoryType}}(db *data.DB) *{{.RepositoryType}} { return &{{.Repos
 // Compile-time proof of the contract.
 var _ data.Repository[models.{{.Entity}}, string] = (*{{.RepositoryType}})(nil)
 
-const {{.Unexported}}Columns = ` + "`" + `id, {{if .Tenant}}tenant_id, {{end}}{{range .Fields}}{{.Column}}, {{end}}created_at` + "`" + `
+const {{.Unexported}}Columns = ` + "`" + `id, {{if .Tenant}}tenant_id, {{end}}{{range .Fields}}{{.Column}}, {{end}}created_at, updated_at` + "`" + `
 
 // Find returns one {{.Name}} by id{{if .Tenant}}, scoped to the grant's tenant{{end}}.
 func (r *{{.RepositoryType}}) Find(ctx context.Context, g security.Grant, id string) (models.{{.Entity}}, error) {
@@ -317,11 +318,15 @@ func (r *{{.RepositoryType}}) Create(ctx context.Context, g security.Grant, {{.R
 {{- range .Fields}}{{if .IsEmail}}
 	{{$.Receiver}}.{{.GoName}} = r.normalize({{$.Receiver}}.{{.GoName}})
 {{- end}}{{end}}
+	// Both stamps are the repository's, and they are the same instant on insert:
+	// a row that was never updated has updated_at equal to created_at, which is
+	// what "not updated since it was written" reads as.
 	{{.Receiver}}.CreatedAt = time.Now().UTC()
+	{{.Receiver}}.UpdatedAt = {{.Receiver}}.CreatedAt
 
 	_, err = r.db.ExecContext(ctx,
-		` + "`" + `INSERT INTO {{.Table}} (` + "`" + `+{{.Unexported}}Columns+` + "`" + `) VALUES ({{if .Tenant}}?, {{end}}?{{range .Fields}}, ?{{end}}, ?)` + "`" + `,
-		{{.Receiver}}.ID, {{if .Tenant}}{{.Receiver}}.TenantID, {{end}}{{range .Fields}}{{.Bind $.Receiver}}, {{end}}{{.Receiver}}.CreatedAt)
+		` + "`" + `INSERT INTO {{.Table}} (` + "`" + `+{{.Unexported}}Columns+` + "`" + `) VALUES ({{if .Tenant}}?, {{end}}?{{range .Fields}}, ?{{end}}, ?, ?)` + "`" + `,
+		{{.Receiver}}.ID, {{if .Tenant}}{{.Receiver}}.TenantID, {{end}}{{range .Fields}}{{.Bind $.Receiver}}, {{end}}{{.Receiver}}.CreatedAt, {{.Receiver}}.UpdatedAt)
 	if err != nil {
 		if r.conflict(err) {
 			return models.{{.Entity}}{}, models.Err{{.Entity}}Conflict
@@ -341,9 +346,14 @@ func (r *{{.RepositoryType}}) Update(ctx context.Context, g security.Grant, {{.R
 	{{$.Receiver}}.{{.GoName}} = r.normalize({{$.Receiver}}.{{.GoName}})
 {{- end}}{{end}}
 
+	// The stamp is the repository's here, not the caller's: an update that left
+	// updated_at alone would make the column a lie, and the caller has no reason
+	// to remember a column the schema owns.
+	{{.Receiver}}.UpdatedAt = time.Now().UTC()
+
 	res, err := r.db.ExecContext(ctx,
-		` + "`" + `UPDATE {{.Table}} SET {{range $i, $f := .Fields}}{{if $i}}, {{end}}{{$f.Column}} = ?{{end}} WHERE id = ?{{if .Tenant}} AND tenant_id = ?{{end}}` + "`" + `,
-		{{range .Fields}}{{.Bind $.Receiver}}, {{end}}{{.Receiver}}.ID{{if .Tenant}}, data.Tenant(g){{end}})
+		` + "`" + `UPDATE {{.Table}} SET {{range .Fields}}{{.Column}} = ?, {{end}}updated_at = ? WHERE id = ?{{if .Tenant}} AND tenant_id = ?{{end}}` + "`" + `,
+		{{range .Fields}}{{.Bind $.Receiver}}, {{end}}{{.Receiver}}.UpdatedAt, {{.Receiver}}.ID{{if .Tenant}}, data.Tenant(g){{end}})
 	if err != nil {
 		if r.conflict(err) {
 			return models.{{.Entity}}{}, models.Err{{.Entity}}Conflict
@@ -387,7 +397,7 @@ func (r *{{.RepositoryType}}) Health(ctx context.Context) error { return r.db.Pi
 // declaring rowScanner would not compile.
 func (r *{{.RepositoryType}}) scan(row interface{ Scan(dest ...any) error }) (models.{{.Entity}}, error) {
 	var {{.Receiver}} models.{{.Entity}}
-	err := row.Scan(&{{.Receiver}}.ID, {{if .Tenant}}&{{.Receiver}}.TenantID, {{end}}{{range .Fields}}&{{$.Receiver}}.{{.GoName}}, {{end}}&{{.Receiver}}.CreatedAt)
+	err := row.Scan(&{{.Receiver}}.ID, {{if .Tenant}}&{{.Receiver}}.TenantID, {{end}}{{range .Fields}}&{{$.Receiver}}.{{.GoName}}, {{end}}&{{.Receiver}}.CreatedAt, &{{.Receiver}}.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return models.{{.Entity}}{}, models.Err{{.Entity}}NotFound
 	}

@@ -115,7 +115,7 @@ func emitsByRule() map[string][]string {
 		"repositoryNeedsPolicy":                   {"repository-without-policy"},
 		"repositoryMethodNeedsGrant":              {"grant-not-checked", "grant-not-received", "grant-check-discarded"},
 		"policyMustBeOpened":                      {"policy-never-opened"},
-		"controllerMustNotReachData":              {"handler-reaches-data"},
+		"controllerMustNotReachData":              {"handler-reaches-data", "handler-reaches-the-model"},
 		"controllerMustNotReachTheRepository":     {"controller-reaches-repository"},
 		"tenantMustComeFromTheGrant":              {"tenant-from-request", "tenant-from-header"},
 		"systemGrantIsAudited":                    {"system-grant-without-tenant", "system-grant-outside-scope"},

@@ -43,7 +43,7 @@ func NewPurchaseOrderRepository(db *data.DB) *PurchaseOrderRepository {
 // Compile-time proof of the contract.
 var _ data.Repository[models.PurchaseOrder, string] = (*PurchaseOrderRepository)(nil)
 
-const purchaseOrderColumns = `id, reference, supplier_email, total, approved, notes, delivery_date, created_at`
+const purchaseOrderColumns = `id, reference, supplier_email, total, approved, notes, delivery_date, created_at, updated_at`
 
 // Find returns one purchase_order by id.
 func (r *PurchaseOrderRepository) Find(ctx context.Context, g security.Grant, id string) (models.PurchaseOrder, error) {
@@ -135,11 +135,15 @@ func (r *PurchaseOrderRepository) Create(ctx context.Context, g security.Grant, 
 		}
 	}
 	p.SupplierEmail = r.normalize(p.SupplierEmail)
+	// Both stamps are the repository's, and they are the same instant on insert:
+	// a row that was never updated has updated_at equal to created_at, which is
+	// what "not updated since it was written" reads as.
 	p.CreatedAt = time.Now().UTC()
+	p.UpdatedAt = p.CreatedAt
 
 	_, err = r.db.ExecContext(ctx,
-		`INSERT INTO purchase_orders (`+purchaseOrderColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Reference, p.SupplierEmail, p.Total, p.Approved, p.Notes, data.Day(p.DeliveryDate), p.CreatedAt)
+		`INSERT INTO purchase_orders (`+purchaseOrderColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Reference, p.SupplierEmail, p.Total, p.Approved, p.Notes, data.Day(p.DeliveryDate), p.CreatedAt, p.UpdatedAt)
 	if err != nil {
 		if r.conflict(err) {
 			return models.PurchaseOrder{}, models.ErrPurchaseOrderConflict
@@ -156,9 +160,14 @@ func (r *PurchaseOrderRepository) Update(ctx context.Context, g security.Grant, 
 	}
 	p.SupplierEmail = r.normalize(p.SupplierEmail)
 
+	// The stamp is the repository's here, not the caller's: an update that left
+	// updated_at alone would make the column a lie, and the caller has no reason
+	// to remember a column the schema owns.
+	p.UpdatedAt = time.Now().UTC()
+
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE purchase_orders SET reference = ?, supplier_email = ?, total = ?, approved = ?, notes = ?, delivery_date = ? WHERE id = ?`,
-		p.Reference, p.SupplierEmail, p.Total, p.Approved, p.Notes, data.Day(p.DeliveryDate), p.ID)
+		`UPDATE purchase_orders SET reference = ?, supplier_email = ?, total = ?, approved = ?, notes = ?, delivery_date = ?, updated_at = ? WHERE id = ?`,
+		p.Reference, p.SupplierEmail, p.Total, p.Approved, p.Notes, data.Day(p.DeliveryDate), p.UpdatedAt, p.ID)
 	if err != nil {
 		if r.conflict(err) {
 			return models.PurchaseOrder{}, models.ErrPurchaseOrderConflict
@@ -202,7 +211,7 @@ func (r *PurchaseOrderRepository) Health(ctx context.Context) error { return r.d
 // declaring rowScanner would not compile.
 func (r *PurchaseOrderRepository) scan(row interface{ Scan(dest ...any) error }) (models.PurchaseOrder, error) {
 	var p models.PurchaseOrder
-	err := row.Scan(&p.ID, &p.Reference, &p.SupplierEmail, &p.Total, &p.Approved, &p.Notes, &p.DeliveryDate, &p.CreatedAt)
+	err := row.Scan(&p.ID, &p.Reference, &p.SupplierEmail, &p.Total, &p.Approved, &p.Notes, &p.DeliveryDate, &p.CreatedAt, &p.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return models.PurchaseOrder{}, models.ErrPurchaseOrderNotFound
 	}

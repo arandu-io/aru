@@ -114,7 +114,21 @@ func Generate(m Module) ([]File, error) {
 }
 
 // ModelParts is what `aru make:model` was asked to write besides the model.
-type ModelParts struct{ Migration, Factory bool }
+//
+// Each field is one file, and --all is every field set rather than a mode of its
+// own: the command that writes four things and the command that writes one are
+// the same code path with a different struct, so a part cannot behave
+// differently depending on how it was asked for.
+type ModelParts struct{ Migration, Factory, Seeder, Policy, Request bool }
+
+// Everything is ModelParts with every part set, which is what --all means.
+//
+// It is the data side of a module and not the module: `aru make:module` writes
+// the controller, the service, the repository, the views and the route wiring
+// as well, and this writes what belongs to the entity itself.
+func Everything() ModelParts {
+	return ModelParts{Migration: true, Factory: true, Seeder: true, Policy: true, Request: true}
+}
 
 // GenerateModel produces the model, and the parts the flags asked for.
 //
@@ -161,6 +175,35 @@ func GenerateModel(m Module, parts ModelParts) ([]File, error) {
 			return nil, err
 		}
 		out = append(out, f)
+	}
+	if parts.Seeder {
+		f, err := RenderSeeder(SeederSpec{Entity: m.Entity()})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+
+	// The policy and the request are rendered from the same templates
+	// `aru make:module` renders, for the reason the model is: a policy written
+	// by one command and a policy written by the other would be two shapes of
+	// one file, and the second one to change would be the one nobody noticed.
+	for _, t := range []struct {
+		want bool
+		path string
+		tmpl string
+	}{
+		{parts.Policy, filepath.Join("app", "Policies", m.Entity()+"Policy.go"), policyTemplate},
+		{parts.Request, filepath.Join("app", "Http", "Requests", m.Entity()+"Request.go"), requestTemplate + requestRulesTemplate},
+	} {
+		if !t.want {
+			continue
+		}
+		content, err := render(filepath.Base(t.path), t.tmpl, m)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", t.path, err)
+		}
+		out = append(out, File{Path: t.path, Content: content})
 	}
 	return out, nil
 }

@@ -185,6 +185,12 @@ func repositoryNeedsPolicy(p *project) []Finding {
 
 // isRepository reports whether a method belongs to a repository.
 //
+// It answers the narrow question -- is this filed as a repository, or named
+// like one -- and it is still the right question for repositoryNeedsPolicy,
+// which is about the shape of the tree. The four authorization rules ask
+// reachesApplicationData instead, because a model-based project has neither the
+// directory nor the name and the four of them would go quiet together.
+//
 // The directory answers for a project that follows the tree, and the receiver
 // name answers for the one that does not -- a type called InvoiceRepository is a
 // repository wherever somebody filed it.
@@ -329,7 +335,7 @@ func repositoryMethodNeedsGrant(p *project) []Finding {
 			if !ok || fn.Recv == nil {
 				continue
 			}
-			if !isRepository(f, fn) || !ast.IsExported(fn.Name.Name) {
+			if !reachesApplicationData(f, fn) || !ast.IsExported(fn.Name.Name) {
 				continue
 			}
 			file, line := f.at(fn)
@@ -495,6 +501,25 @@ func controllerMustNotReachData(p *project) []Finding {
 				File: f.rel, Line: 1,
 				Message: "this " + kind + " uses the data package beyond data.Query",
 				Why:     "a handler that reaches the database skipped the service, and therefore the policy -- whether it is a controller, a middleware, or written inline in the route table. Move the call into app/Services, where the Grant is issued.",
+			})
+			break
+		}
+
+		// The same arrow, on the route the model opened. A controller that names
+		// a model type in its view data is fine and common; one that queries
+		// through the model package has skipped the service exactly as the one
+		// above did, and the compiler cannot see either.
+		for _, decl := range f.ast.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || !callsTheModelPackage(f, fn) {
+				continue
+			}
+			file, line := f.at(fn)
+			out = append(out, Finding{
+				Rule: "handler-reaches-the-model", Severity: Error,
+				File: file, Line: line,
+				Message: fn.Name.Name + " queries through the model from a " + kind,
+				Why:     "a handler that reads a row itself skipped the service, and therefore the policy that would have issued the Grant. Naming a model type is fine -- view data is full of them; opening a query is not. Move the call into app/Services.",
 			})
 			break
 		}

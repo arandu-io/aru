@@ -45,27 +45,34 @@ var types = map[Type]struct {
 	// SQLZero is the DEFAULT an added column carries. See Field.SQLZero.
 	SQLZero string
 	Import  string
+	// Blueprint is the method that declares this column on a schema.Blueprint.
+	//
+	// It is beside the SQL rather than replacing it: the alter path still writes
+	// a statement, and the SQL is what the doc comments explain. What changes is
+	// that the create path stops choosing between VARCHAR and TEXT itself and
+	// lets the grammar do it per engine, which is what the grammar is for.
+	Blueprint string
 }{
 	// VARCHAR for the short kinds, TEXT for the long one. That is the
 	// distinction the DSL already draws -- "short text, up to a line" against
 	// "long text". Collapsing both to TEXT leaves MySQL refusing a UNIQUE or an
 	// index without a prefix length. See data.KeyText.
-	TypeString: {Go: "string", SQL: "VARCHAR(255)", Zero: `""`, SQLZero: "''"},
-	TypeText:   {Go: "string", SQL: "TEXT", Zero: `""`, SQLZero: "''"},
-	TypeInt:    {Go: "int64", SQL: "INTEGER", Zero: "0", SQLZero: "0"},
+	TypeString: {Go: "string", SQL: "VARCHAR(255)", Zero: `""`, SQLZero: "''", Blueprint: "String"},
+	TypeText:   {Go: "string", SQL: "TEXT", Zero: `""`, SQLZero: "''", Blueprint: "Text"},
+	TypeInt:    {Go: "int64", SQL: "INTEGER", Zero: "0", SQLZero: "0", Blueprint: "BigInteger"},
 	// DOUBLE PRECISION, not REAL: REAL is four bytes in PostgreSQL, so a
 	// float64 written through it comes back rounded to about seven digits --
 	// silently, on read, with no error anywhere. SQLite gives "DOUB" REAL
 	// affinity and MySQL accepts the spelling, so one word serves all three.
-	TypeDecimal: {Go: "float64", SQL: "DOUBLE PRECISION", Zero: "0", SQLZero: "0"},
+	TypeDecimal: {Go: "float64", SQL: "DOUBLE PRECISION", Zero: "0", SQLZero: "0", Blueprint: "Double"},
 	// Money is an integer of cents, never a float: 0.1 + 0.2 is not 0.3 in
 	// binary floating point, and an invoice off by a cent is a support ticket.
-	TypeMoney:     {Go: "int64", SQL: "INTEGER", Zero: "0", SQLZero: "0"},
-	TypeBool:      {Go: "bool", SQL: "BOOLEAN", Zero: "false", SQLZero: "FALSE"},
-	TypeDate:      {Go: "time.Time", SQL: "DATE", Zero: "time.Time{}", Import: "time", SQLZero: "'1970-01-01'"},
-	TypeTimestamp: {Go: "time.Time", SQL: "TIMESTAMP", Zero: "time.Time{}", Import: "time", SQLZero: "'1970-01-01 00:00:01'"},
-	TypeUUID:      {Go: "string", SQL: "VARCHAR(255)", Zero: `""`, SQLZero: "''"},
-	TypeEmail:     {Go: "string", SQL: "VARCHAR(255)", Zero: `""`, SQLZero: "''"},
+	TypeMoney:     {Go: "int64", SQL: "INTEGER", Zero: "0", SQLZero: "0", Blueprint: "BigInteger"},
+	TypeBool:      {Go: "bool", SQL: "BOOLEAN", Zero: "false", SQLZero: "FALSE", Blueprint: "Boolean"},
+	TypeDate:      {Go: "time.Time", SQL: "DATE", Zero: "time.Time{}", Import: "time", SQLZero: "'1970-01-01'", Blueprint: "Date"},
+	TypeTimestamp: {Go: "time.Time", SQL: "TIMESTAMP", Zero: "time.Time{}", Import: "time", SQLZero: "'1970-01-01 00:00:01'", Blueprint: "Timestamp"},
+	TypeUUID:      {Go: "string", SQL: "VARCHAR(255)", Zero: `""`, SQLZero: "''", Blueprint: "UUID"},
+	TypeEmail:     {Go: "string", SQL: "VARCHAR(255)", Zero: `""`, SQLZero: "''", Blueprint: "String"},
 }
 
 // Field is one column of the entity.
@@ -84,6 +91,9 @@ func (f Field) GoType() string { return types[f.Type].Go }
 
 // SQLType is the column type, in the portable subset.
 func (f Field) SQLType() string { return types[f.Type].SQL }
+
+// BlueprintMethod is the Blueprint method that declares this column.
+func (f Field) BlueprintMethod() string { return types[f.Type].Blueprint }
 
 // SQLZero is the value a column of this type gets when it is added to a table
 // that already has rows.
@@ -672,7 +682,7 @@ func (m Module) Validate() error {
 			return fmt.Errorf("field %q: unknown type %q (%s)", f.Name, f.Type, TypeList())
 		}
 		switch f.Name {
-		case "id", "tenant_id", "created_at":
+		case "id", "tenant_id", "created_at", "updated_at":
 			return fmt.Errorf("field %q is generated for every module; do not declare it", f.Name)
 		}
 	}

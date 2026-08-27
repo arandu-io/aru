@@ -78,6 +78,19 @@ func newProject(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
+	// The views are compiled here rather than left for the first command the
+	// person runs. The skeleton's controllers import the package this writes,
+	// so a project handed over without it does not build -- and "go build
+	// ./..." is the first thing most people type after cd.
+	//
+	// A failure here is reported and not returned: the project on disk is
+	// complete and correct, and what is missing is a build step the person can
+	// run again once whatever stopped it -- usually the network, the first time
+	// the stylesheet compiler is fetched -- is out of the way.
+	if err := buildViews(name, io.Discard, stderr); err != nil {
+		fmt.Fprintf(stderr, "\nThe project was created, but its views were not compiled: %v\nRun `aru view:build` inside %s before building.\n", err, name)
+	}
+
 	fmt.Fprintf(stdout, `
 %s created, module %s.
 

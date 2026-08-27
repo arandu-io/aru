@@ -337,6 +337,51 @@ func TestAnAlteringMigrationAddsNothingNotNull(t *testing.T) {
 	}
 }
 
+// TestAnAlteringMigrationDropsTheIndexBeforeTheColumn: SQLite refuses to drop a
+// column an index still names, so a Down that dropped the column alone fails on
+// the engine a project runs by default.
+//
+// The template used to say the opposite in a comment -- that dropping the column
+// drops the index on all three engines -- and emitted no drop at all, which made
+// every unique field in an altering migration a rollback that could not run.
+func TestAnAlteringMigrationDropsTheIndexBeforeTheColumn(t *testing.T) {
+	file, err := gen.RenderMigration(gen.MigrationSpec{
+		ID: "2026_08_07_000003_add_reference_to_invoices", Type: "AddReferenceToInvoices",
+		Table: "invoices", Tenant: true,
+		Fields: []gen.Field{{Name: "reference", Type: gen.TypeString, Unique: true}},
+	})
+	if err != nil {
+		t.Fatalf("RenderMigration: %v", err)
+	}
+	source := string(file.Content)
+
+	_, down, ok := strings.Cut(source, ") Down(")
+	if !ok {
+		t.Fatalf("the migration has no Down:\n%s", source)
+	}
+	dropIndex := strings.Index(down, "DropUnique(")
+	dropColumn := strings.Index(down, "DropColumn(")
+	if dropIndex < 0 {
+		t.Fatalf("Down does not drop the unique index, so SQLite refuses the column drop:\n%s", down)
+	}
+	if dropColumn < 0 {
+		t.Fatalf("Down does not drop the column:\n%s", down)
+	}
+	if dropIndex > dropColumn {
+		t.Fatalf("Down drops the column before the index, which SQLite refuses:\n%s", down)
+	}
+
+	// The index Up creates and the one Down drops have to be the same name, or
+	// the rollback drops nothing and reports success.
+	if !strings.Contains(source, `"invoices_reference_uidx"`) {
+		t.Fatalf("the index is not named the same on both sides:\n%s", source)
+	}
+	if strings.Count(source, `"invoices_reference_uidx"`) != 2 {
+		t.Fatalf("the index name appears %d times, want one in Up and one in Down:\n%s",
+			strings.Count(source, `"invoices_reference_uidx"`), source)
+	}
+}
+
 func withoutComments(s string) string {
 	var b strings.Builder
 	for _, line := range strings.Split(s, "\n") {

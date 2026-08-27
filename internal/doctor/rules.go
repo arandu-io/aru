@@ -3299,25 +3299,32 @@ func addedColumnsMustBeNullable(p *project) []Finding {
 	return out
 }
 
-// migrationsMustBeReversible: a rollback with no Down reports success and undoes
-// nothing.
+// migrationsMustBeReversible: a migration that reverses nothing stops the
+// rollback of everything applied beside it.
 //
-// The migrator asserts for the Down and treats its absence as "not reversed, and
-// that is not an error" -- then deletes the record from the applied table and
-// prints the migration as rolled back. So the schema still has the table, and
-// the row that said so is gone. The next `aru migrate` runs the Up again and
-// fails on a table that already exists, at which point the failure is two
-// commands away from what caused it.
+// The migrator refuses it rather than pretending. A migration that declares
+// neither a Down nor Irreversible is named and the rollback stops there: the
+// record is kept, the schema is untouched, and nothing is reported as undone
+// that was not. One that declares Irreversible is left applied on purpose, with
+// its record and the reason printed beside its name, and the batch carries on
+// past it.
+//
+// So the failure this warns about is no longer a silent one, and that is exactly
+// why the warning is still worth having. Refusing is the right thing to do and
+// it is still a stop: the rollback halts at the first migration nobody finished,
+// and every migration applied beside it in the same batch stays applied because
+// the rollback never reaches them. That is discovered by running
+// `aru migrate:rollback`, which is a command people reach for when something is
+// already wrong. This is discovered while the migration is being written.
 //
 // It only reports the migrations for which a Down could actually be written: one
 // that created a table, added a column or created an index. A backfill is left
 // alone, because `UPDATE ... WHERE total IS NULL` cannot be reversed by anything
 // -- the rows it changed are no longer distinguishable from the rows it did not
 // -- and telling somebody to write a Down they cannot write is how a report
-// teaches people to stop reading it. That migration is still rolled back
-// silently, and saying so is the component's to say: the declaration that would
-// let a rollback refuse instead of reporting success does not exist in
-// hesape/database/migrations.
+// teaches people to stop reading it. That backfill is what Irreversible exists
+// for, and declaring it is what lets a rollback carry on past it instead of
+// stopping on it.
 func migrationsMustBeReversible(p *project) []Finding {
 	var out []Finding
 	for _, d := range p.migrationDecls() {
@@ -3332,9 +3339,9 @@ func migrationsMustBeReversible(p *project) []Finding {
 			Rule: "rollback-does-nothing", Severity: Warning,
 			File: d.f.rel, Line: d.f.line(d.up),
 			Message: fmt.Sprintf("%s %s and declares no Down", d.name, what),
-			Why: "A migration with no Down is not reversed, and the migrator does not treat that as an error: `aru migrate:rollback` deletes the row recording it as applied, prints it as rolled back, and leaves the schema exactly as it was. " +
-				"The next `aru migrate` runs the Up again and fails on what is already there, two commands away from the thing that caused it. " +
-				"Write the Down that undoes this change.",
+			Why: "A migration that declares neither a Down nor Irreversible cannot be rolled back, and `aru migrate:rollback` refuses it by name rather than reporting a change it did not make: the record is kept and the schema is left as it is. " +
+				"The rollback stops there, so every migration applied beside this one in the same batch stays applied too -- and that is found out by running the one command whose whole purpose is to undo, usually while something is already wrong. " +
+				"Write the Down that undoes this change, or declare Irreversible with the reason nothing can.",
 		})
 	}
 	return out

@@ -115,6 +115,14 @@ type project struct {
 	// not apply -- which is where somebody reading it will look.
 	profile Profile
 	files   []*file
+	// modulePath is what go.mod declares, or empty when it could not be read.
+	//
+	// It is here because one question cannot be answered without it: whether the
+	// package holding the migrations is imported anywhere. That import is spelled
+	// with the module path in front of it, so a rule that does not know the module
+	// cannot recognise the import -- and the honest answer to not knowing is to
+	// say nothing rather than to report every project as unlinked.
+	modulePath string
 	// manifest is the arandu.mod.toml at the root, or nil.
 	//
 	// It sits at the root because the unit of distribution is the Go module: a
@@ -284,7 +292,10 @@ func Run(dir string, profile Profile) ([]Finding, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &project{root: dir, profile: profile, files: files, manifest: declared, views: views, unreadable: unreadable}
+	p := &project{
+		root: dir, profile: profile, files: files, modulePath: readModulePath(dir),
+		manifest: declared, views: views, unreadable: unreadable,
+	}
 
 	var findings []Finding
 	for _, rule := range rules {
@@ -298,6 +309,28 @@ func Run(dir string, profile Profile) ([]Finding, error) {
 		return findings[i].Line < findings[j].Line
 	})
 	return findings, nil
+}
+
+// readModulePath answers what go.mod declares, or empty.
+//
+// Only the module line is read, and it is read as text: the alternative is a
+// dependency on golang.org/x/mod to learn one string, and doctor already refuses
+// to run anything it looks at. An unreadable or absent go.mod answers empty,
+// which every caller has to treat as "cannot tell" rather than as a finding --
+// doctor runs on projects that do not compile, and a project mid-edit is the
+// normal case rather than the exotic one.
+func readModulePath(dir string) string {
+	body, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(body), "\n") {
+		line = strings.TrimSpace(line)
+		if rest, found := strings.CutPrefix(line, "module "); found {
+			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
 }
 
 // parseViews collects the `.kyse.go` sources under resources/views.

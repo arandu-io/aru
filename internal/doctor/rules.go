@@ -60,6 +60,9 @@ var rules = []func(*project) []Finding{
 	rawOutputIsAComponent,
 	noRetiredModuleIsImported,
 	testsAreWhereTheyCanRun,
+	migrationsMustReachTheBinary,
+	addedColumnsMustBeNullable,
+	migrationsMustBeReversible,
 	theProfileIsDeclared,
 	queriesReachOneAggregate,
 	transactionsStayInsideOneAggregate,
@@ -3024,4 +3027,416 @@ var sqlKeywords = map[string]bool{
 	"or": true, "order": true, "outer": true, "returning": true, "right": true,
 	"select": true, "set": true, "union": true, "update": true, "using": true,
 	"values": true, "where": true, "window": true, "with": true,
+}
+
+// hesapeMigrations is the package a migration is written against.
+const hesapeMigrations = "github.com/arandu-io/hesape/database/migrations"
+
+// migrationDecl is one migration the project declares, with the two methods the
+// rules below reason about.
+type migrationDecl struct {
+	f    *file
+	name string
+	line int
+	up   *ast.FuncDecl
+	down *ast.FuncDecl
+}
+
+// migrationDecls finds every migration in the project.
+//
+// A migration is a type that embeds migrations.BaseMigration, not a file in a
+// directory that happens to be called migrations. The embed is the contract and
+// the directory is only the convention: a project that keeps them somewhere else
+// still has them found, and a helper sitting beside them is not counted as one.
+//
+// Methods are collected across the whole package rather than from the file that
+// declares the type, because nothing requires Up and Down to be written next to
+// it -- and a rule that concluded "no Down" from one file would report the
+// project that split them.
+func (p *project) migrationDecls() []migrationDecl {
+	type key struct{ dir, typ string }
+
+	found := map[key]migrationDecl{}
+	methods := map[key]map[string]*ast.FuncDecl{}
+
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+
+		if local, imported := f.imports[hesapeMigrations]; imported && local != "_" && local != "." {
+			f.types(func(ts *ast.TypeSpec) {
+				st, isStruct := ts.Type.(*ast.StructType)
+				if !isStruct {
+					return
+				}
+				for _, field := range st.Fields.List {
+					// An embedded field has no name, and the type is what says
+					// which one it is.
+					if len(field.Names) > 0 {
+						continue
+					}
+					if exprName(field.Type) != local+".BaseMigration" {
+						continue
+					}
+					found[key{f.dir, ts.Name.Name}] = migrationDecl{f: f, name: ts.Name.Name, line: f.line(ts)}
+				}
+			})
+		}
+
+		f.functions(func(fn *ast.FuncDecl) {
+			recv := receiverType(fn)
+			if recv == "" {
+				return
+			}
+			k := key{f.dir, recv}
+			if methods[k] == nil {
+				methods[k] = map[string]*ast.FuncDecl{}
+			}
+			methods[k][fn.Name.Name] = fn
+		})
+	}
+
+	out := make([]migrationDecl, 0, len(found))
+	for k, decl := range found {
+		decl.up = methods[k]["Up"]
+		decl.down = methods[k]["Down"]
+		out = append(out, decl)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].f.rel != out[j].f.rel {
+			return out[i].f.rel < out[j].f.rel
+		}
+		return out[i].line < out[j].line
+	})
+	return out
+}
+
+// migrationsMustReachTheBinary: a migration nobody imports is a file that does
+// nothing and says nothing.
+//
+// This is the one thing in the whole migration path that fails by succeeding.
+// Go leaves a package nobody imports out of the binary, so the init that
+// registers the migration never runs, the registry is empty, and `aru migrate`
+// reports that there is nothing to apply -- which is exactly what it prints on a
+// database that is already up to date. Nothing anywhere says the difference.
+//
+// `aru make:migration` prints the import to add, and that print happens once, at
+// the moment the file is written, on a terminal somebody has already scrolled
+// past. This is the standing check: the same fact, asked again every time doctor
+// runs, including on the project that arrived by clone.
+//
+// It concludes from an absence, so it says nothing when it cannot see: no module
+// path means the import cannot be recognised, and a file that did not parse
+// might be the one holding it.
+func migrationsMustReachTheBinary(p *project) []Finding {
+	declared := p.migrationDecls()
+	if len(declared) == 0 || p.modulePath == "" || len(p.unreadable) > 0 {
+		return nil
+	}
+
+	// Where the migrations live, and the first one in each place, which is where
+	// the report points.
+	first := map[string]migrationDecl{}
+	count := map[string]int{}
+	for _, d := range declared {
+		if _, seen := first[d.f.dir]; !seen {
+			first[d.f.dir] = d
+		}
+		count[d.f.dir]++
+	}
+
+	dirs := make([]string, 0, len(first))
+	for dir := range first {
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+
+	var out []Finding
+	for _, dir := range dirs {
+		pkg := path.Join(p.modulePath, dir)
+
+		linked := false
+		for _, f := range p.files {
+			// The package importing itself is not the import that links it: the
+			// question is whether something ELSE in the binary names it.
+			if f.dir == dir {
+				continue
+			}
+			if _, imports := f.imports[pkg]; imports {
+				linked = true
+				break
+			}
+		}
+		if linked {
+			continue
+		}
+
+		d := first[dir]
+		out = append(out, Finding{
+			Rule: "migrations-not-linked", Severity: Warning,
+			File: d.f.rel, Line: d.line,
+			Message: fmt.Sprintf("nothing in this project imports %s, so the init that registers %s never runs", pkg, d.name),
+			Why: fmt.Sprintf("Go leaves a package nobody imports out of the binary, so all %d migration(s) here are absent from it and the registry `aru migrate` reads is empty. "+
+				"It does not fail: it reports that there is nothing to apply, which is the same thing it says about a database that is already migrated, and the schema is never created. "+
+				"Blank-import the package where the application is wired -- `_ %q` in bootstrap/app.go.", count[dir], pkg),
+		})
+	}
+	return out
+}
+
+// addedColumnsMustBeNullable: a NOT NULL column added to a table that has rows
+// fails on every row already in it.
+//
+// It is the rollout that breaks rather than the migration. During one, the
+// previous binary is still inserting rows and knows nothing about the new
+// column, so a NOT NULL without a default fails on its first insert -- and the
+// migration itself fails on every row already there. The column is added
+// nullable, backfilled, and tightened in a later migration.
+//
+// Only the alter path is read. A table being created has no rows and no older
+// binary writing to it, so NOT NULL is correct there and a rule that fired on it
+// would fire on almost every first migration ever written.
+//
+// `aru make:migration --table` already refuses a column declared required, and
+// this is not a second copy of that: the generator can only refuse what it is
+// about to write, and every migration that was hand-written, or edited after it
+// was generated, reaches a database without ever passing that check.
+func addedColumnsMustBeNullable(p *project) []Finding {
+	var out []Finding
+	for _, d := range p.migrationDecls() {
+		if d.up == nil {
+			continue
+		}
+		for _, block := range blueprintBlocks(d.up, "Table") {
+			for _, col := range block.columns() {
+				if col.nullable || col.changed {
+					continue
+				}
+				out = append(out, Finding{
+					Rule: "added-column-not-nullable", Severity: Warning,
+					File: d.f.rel, Line: d.f.line(col.at),
+					Message: fmt.Sprintf("%s is added to the existing table %s without Nullable() or a default", col.name, block.table),
+					Why: "A NOT NULL column added to a table that has rows fails on every row already there, so the migration does not apply at all. " +
+						"During a rollout it fails a second way: the previous binary is still inserting rows and does not know this column exists, so its next insert is rejected while it is still serving. " +
+						"Add it with .Nullable(), backfill the rows, and tighten it in a later migration.",
+				})
+			}
+		}
+	}
+	return out
+}
+
+// migrationsMustBeReversible: a rollback with no Down reports success and undoes
+// nothing.
+//
+// The migrator asserts for the Down and treats its absence as "not reversed, and
+// that is not an error" -- then deletes the record from the applied table and
+// prints the migration as rolled back. So the schema still has the table, and
+// the row that said so is gone. The next `aru migrate` runs the Up again and
+// fails on a table that already exists, at which point the failure is two
+// commands away from what caused it.
+//
+// It only reports the migrations for which a Down could actually be written: one
+// that created a table, added a column or created an index. A backfill is left
+// alone, because `UPDATE ... WHERE total IS NULL` cannot be reversed by anything
+// -- the rows it changed are no longer distinguishable from the rows it did not
+// -- and telling somebody to write a Down they cannot write is how a report
+// teaches people to stop reading it. That migration is still rolled back
+// silently, and saying so is the component's to say: the declaration that would
+// let a rollback refuse instead of reporting success does not exist in
+// hesape/database/migrations.
+func migrationsMustBeReversible(p *project) []Finding {
+	var out []Finding
+	for _, d := range p.migrationDecls() {
+		if d.up == nil || d.down != nil {
+			continue
+		}
+		what := reversibleChange(d.f, d.up)
+		if what == "" {
+			continue
+		}
+		out = append(out, Finding{
+			Rule: "rollback-does-nothing", Severity: Warning,
+			File: d.f.rel, Line: d.f.line(d.up),
+			Message: fmt.Sprintf("%s %s and declares no Down", d.name, what),
+			Why: "A migration with no Down is not reversed, and the migrator does not treat that as an error: `aru migrate:rollback` deletes the row recording it as applied, prints it as rolled back, and leaves the schema exactly as it was. " +
+				"The next `aru migrate` runs the Up again and fails on what is already there, two commands away from the thing that caused it. " +
+				"Write the Down that undoes this change.",
+		})
+	}
+	return out
+}
+
+// blueprintBlock is one Schema().Create or Schema().Table call: the table it
+// names and the closure it hands the Blueprint to.
+type blueprintBlock struct {
+	table string
+	param string
+	body  *ast.BlockStmt
+}
+
+// blueprintBlocks finds the Blueprint closures a method opens, by which builder
+// method opened them -- "Create" for a new table, "Table" for an alter.
+//
+// The receiver is matched by suffix rather than by name because nothing fixes
+// what the connection is called: conn.Schema().Table and c.Schema().Table are
+// the same call, and a rule keyed to one spelling silently stops applying to the
+// other.
+func blueprintBlocks(fn *ast.FuncDecl, method string) []blueprintBlock {
+	if fn.Body == nil {
+		return nil
+	}
+
+	var out []blueprintBlock
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		call, isCall := n.(*ast.CallExpr)
+		if !isCall || !strings.HasSuffix(callName(call), ".Schema()."+method) || len(call.Args) < 2 {
+			return true
+		}
+		lit, isLit := call.Args[len(call.Args)-1].(*ast.FuncLit)
+		if !isLit || len(lit.Type.Params.List) == 0 || len(lit.Type.Params.List[0].Names) == 0 {
+			return true
+		}
+		table, _ := stringLiteral(call.Args[1])
+		out = append(out, blueprintBlock{
+			table: table,
+			param: lit.Type.Params.List[0].Names[0].Name,
+			body:  lit.Body,
+		})
+		return true
+	})
+	return out
+}
+
+// columnAdd is one column a Blueprint closure declares.
+type columnAdd struct {
+	name     string
+	at       ast.Node
+	nullable bool
+	// changed marks a redefinition of a column that is already there. It is not
+	// an addition, and what makes it safe or not is what the column held before,
+	// which is not in this file.
+	changed bool
+}
+
+// columns reads the columns a Blueprint closure declares.
+//
+// What counts as a column is decided by exclusion, and that direction is the
+// whole reliability of this: the column types are a grammar that grows with
+// every engine feature anybody wants, while the commands that are not columns --
+// the drops, the renames and the indexes -- are a closed set that has not moved.
+// A list of column types would be one release behind from the day it was
+// written, and being behind means silently passing the column it had not heard
+// of.
+func (b blueprintBlock) columns() []columnAdd {
+	var out []columnAdd
+	for _, stmt := range b.body.List {
+		expr, isExpr := stmt.(*ast.ExprStmt)
+		if !isExpr {
+			continue
+		}
+		chain := exprName(expr.X)
+		if !strings.HasPrefix(chain, b.param+".") {
+			continue
+		}
+
+		// The innermost call on the Blueprint is the one that declares the
+		// column; everything to its right is a modifier.
+		var base *ast.CallExpr
+		ast.Inspect(expr.X, func(n ast.Node) bool {
+			call, isCall := n.(*ast.CallExpr)
+			if !isCall {
+				return true
+			}
+			sel, isSel := call.Fun.(*ast.SelectorExpr)
+			if !isSel {
+				return true
+			}
+			if id, isID := sel.X.(*ast.Ident); isID && id.Name == b.param {
+				base = call
+			}
+			return true
+		})
+		if base == nil || len(base.Args) == 0 {
+			continue
+		}
+		method := base.Fun.(*ast.SelectorExpr).Sel.Name
+		if strings.HasPrefix(method, "Drop") || strings.HasPrefix(method, "Rename") || blueprintNotAColumn[method] {
+			continue
+		}
+		// A column is named by a string. The index commands that take one column
+		// take a slice, so this is also what tells the two apart.
+		name, named := stringLiteral(base.Args[0])
+		if !named {
+			continue
+		}
+
+		out = append(out, columnAdd{
+			name: name,
+			at:   base,
+			nullable: strings.Contains(chain, ".Nullable()") ||
+				strings.Contains(chain, ".Default()") ||
+				strings.Contains(chain, ".UseCurrent()"),
+			changed: strings.Contains(chain, ".Change()"),
+		})
+	}
+	return out
+}
+
+// blueprintNotAColumn is what a Blueprint does that is not adding a column,
+// minus everything spelled Drop... or Rename..., which is matched by prefix.
+//
+// It is a closed list for the reason appCategories is one: these are the
+// commands, and the commands do not grow the way the column types do.
+var blueprintNotAColumn = map[string]bool{
+	"Create": true, "Engine": true, "InnoDb": true, "Charset": true,
+	"Collation": true, "Temporary": true, "Comment": true,
+	"Primary": true, "Unique": true, "Index": true, "FullText": true,
+	"SpatialIndex": true, "VectorIndex": true, "RawIndex": true, "Foreign": true,
+}
+
+// reversibleChange says what an Up did that a Down could undo, or empty.
+//
+// Empty is the answer for a backfill, and that is the point of the function:
+// what separates a migration somebody forgot to reverse from one that cannot be
+// reversed is whether the change is in the schema or in the rows.
+func reversibleChange(f *file, fn *ast.FuncDecl) string {
+	if len(blueprintBlocks(fn, "Create")) > 0 {
+		return "creates a table"
+	}
+	for _, block := range blueprintBlocks(fn, "Table") {
+		if len(block.columns()) > 0 {
+			return "adds a column"
+		}
+	}
+
+	// The escape hatch is still a schema change: a migration that writes its own
+	// DDL is the one most likely to have been written by hand, which is where a
+	// missing Down comes from in the first place.
+	found := ""
+	f.functionBodies(func(body *ast.BlockStmt) {
+		if body != fn.Body || found != "" {
+			return
+		}
+		ast.Inspect(body, func(n ast.Node) bool {
+			lit, isLit := n.(*ast.BasicLit)
+			if !isLit || lit.Kind != token.STRING {
+				return true
+			}
+			text := strings.Join(strings.Fields(strings.ToUpper(lit.Value)), " ")
+			switch {
+			case strings.Contains(text, "CREATE TABLE"):
+				found = "creates a table"
+			case strings.Contains(text, "ADD COLUMN"):
+				found = "adds a column"
+			case strings.Contains(text, "CREATE INDEX"), strings.Contains(text, "CREATE UNIQUE INDEX"):
+				found = "creates an index"
+			default:
+				return true
+			}
+			return false
+		})
+	})
+	return found
 }

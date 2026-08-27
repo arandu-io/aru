@@ -1,10 +1,13 @@
 package doctor_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/arandu-io/aru/internal/doctor"
+	"github.com/arandu-io/aru/internal/gen"
 	"github.com/arandu-io/aru/tests"
 )
 
@@ -1267,6 +1270,195 @@ func TestAnUnknownProfileIsRefused(t *testing.T) {
 	for _, name := range []string{"conventional", "performance"} {
 		if _, err := doctor.ParseProfile(name); err != nil {
 			t.Errorf("ParseProfile(%q): %v", name, err)
+		}
+	}
+}
+
+// TestAMigrationNobodyImportsIsCaught: it is the one failure in the migration
+// path that looks exactly like success.
+//
+// Go leaves a package nobody imports out of the binary, so the init that
+// registers the migration never runs and the registry is empty. `aru migrate`
+// then prints that there is nothing to apply -- which is what it prints on a
+// database that is fully migrated -- and creates no tables at all.
+func TestAMigrationNobodyImportsIsCaught(t *testing.T) {
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	caught := findRule(findings, "migrations-not-linked")
+	if caught == nil {
+		t.Fatal("a migrations package nothing imports produced no finding")
+	}
+	// The import that has to be added is the actionable half, so the finding has
+	// to spell it rather than describe it.
+	if !strings.Contains(caught.Why, `_ "example.test/p/database/migrations"`) {
+		t.Errorf("the finding does not spell the import to add: %s", caught)
+	}
+}
+
+// TestALinkedMigrationsPackageIsNotReported is the control, and without it the
+// rule above is satisfied by one that fires on every project.
+//
+// The clean fixture blank-imports its migrations from main.go, which is what the
+// skeleton does and what `aru new` produces.
+func TestALinkedMigrationsPackageIsNotReported(t *testing.T) {
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if caught := findRule(findings, "migrations-not-linked"); caught != nil {
+		t.Errorf("a project that blank-imports its migrations was reported: %s", caught)
+	}
+}
+
+// TestANotNullColumnAddedToAnExistingTableIsCaught: it fails on every row
+// already in the table, and again on the previous binary still inserting rows
+// during the rollout.
+//
+// The other half is what makes it a rule rather than a filter: the same alter
+// block adds a nullable column, and reporting that one would make the finding
+// impossible to act on.
+func TestANotNullColumnAddedToAnExistingTableIsCaught(t *testing.T) {
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	caught := findRule(findings, "added-column-not-nullable")
+	if caught == nil {
+		t.Fatal("a NOT NULL column added to an existing table produced no finding")
+	}
+	if !strings.Contains(caught.Message, "settled_by") {
+		t.Errorf("the finding does not name the column: %s", caught)
+	}
+	if mentions(findings, "added-column-not-nullable", "settled_at") {
+		t.Error("the nullable column in the same block was reported too, so the rule cannot be acted on")
+	}
+}
+
+// TestAMigrationWithNoDownIsCaught: the rollback reports success and undoes
+// nothing.
+//
+// The migrator treats a missing Down as "not reversed, and that is not an
+// error": it deletes the row recording the migration as applied, prints it as
+// rolled back, and leaves the table standing. The next migrate runs the Up again
+// and fails on what is already there.
+func TestAMigrationWithNoDownIsCaught(t *testing.T) {
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	caught := findRule(findings, "rollback-does-nothing")
+	if caught == nil {
+		t.Fatal("a migration that creates a table and declares no Down produced no finding")
+	}
+	if !strings.Contains(caught.Message, "CreateChargesTable") {
+		t.Errorf("the finding does not name the migration: %s", caught)
+	}
+}
+
+// TestABackfillWithNoDownIsNotReported is the half that keeps the rule
+// actionable, and it is the reason the rule reads the Up instead of counting
+// methods.
+//
+// The clean fixture's BackfillInvoiceTotals declares no Down either, and it is
+// right not to: `UPDATE invoices SET total = 0 WHERE total IS NULL` cannot be
+// reversed by anything, because the rows it changed are no longer tellable apart
+// from the rows it did not. A rule that asked for a Down there would be asking
+// for something nobody can write, which is how a report teaches people to stop
+// reading it.
+//
+// What that migration still does on rollback -- report success and undo nothing
+// -- is real, and saying so is not this rule's to say: nothing in
+// hesape/database/migrations lets a migration declare itself irreversible, so
+// there is no answer for anyone to act on here.
+func TestABackfillWithNoDownIsNotReported(t *testing.T) {
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if caught := findRule(findings, "rollback-does-nothing"); caught != nil {
+		t.Errorf("a backfill that cannot be reversed was told to write a Down: %s", caught)
+	}
+}
+
+// TestWhatMakeMigrationWritesPassesTheMigrationRules runs the real generator's
+// output through the real checker.
+//
+// The clean fixture is described as "the shape the generator emits", and it is a
+// copy maintained by hand: it says what somebody believed the generator emitted
+// on the day they wrote it. This asks the generator instead. A template that
+// loses its Down, or an alter that stops spelling Nullable, is a change that
+// makes every generated project fail its own `aru doctor` -- and a rule that
+// shouts at code the generator wrote is worse than no rule at all.
+//
+// It compiles nothing. What the emitted source compiles against is
+// tests/Unit/gen/compile_test.go's question, asked there against the published
+// libraries; this one is about whether the two halves of aru agree.
+func TestWhatMakeMigrationWritesPassesTheMigrationRules(t *testing.T) {
+	root := t.TempDir()
+
+	write := func(rel string, body []byte) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, rel), body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	write("go.mod", []byte("module example.test/generated\n\ngo 1.26\n"))
+	// The blank import the skeleton has and `aru make:migration` prints. Without
+	// it the project is correctly reported as unlinked, and this test would be
+	// asserting that the generator emits a broken project.
+	write("main.go", []byte(`package main
+
+import _ "example.test/generated/database/migrations"
+
+func main() {}
+`))
+
+	// The two shapes make:migration renders, and there is no third.
+	for _, spec := range []gen.MigrationSpec{{
+		ID:     "2026_07_31_000004_create_shipments_table",
+		Type:   "CreateShipmentsTable",
+		Table:  "shipments",
+		Tenant: true,
+		Create: true,
+		Fields: []gen.Field{
+			{Name: "tracking_code", Type: gen.TypeString, Required: true, Unique: true},
+			{Name: "dispatched_at", Type: gen.TypeTimestamp},
+		},
+	}, {
+		ID:     "2026_07_31_000005_add_status_to_shipments",
+		Type:   "AddStatusToShipments",
+		Table:  "shipments",
+		Tenant: true,
+		Fields: []gen.Field{
+			{Name: "status", Type: gen.TypeString, Unique: true},
+			{Name: "settled_at", Type: gen.TypeTimestamp},
+		},
+	}} {
+		file, err := gen.RenderMigration(spec)
+		if err != nil {
+			t.Fatalf("RenderMigration(%s): %v", spec.Type, err)
+		}
+		write(file.Path, file.Content)
+	}
+
+	findings, err := doctor.Run(root, doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, f := range findings {
+		switch f.Rule {
+		case "migrations-not-linked", "added-column-not-nullable", "rollback-does-nothing":
+			t.Errorf("`aru make:migration` writes a migration its own `aru doctor` reports: %s", f)
 		}
 	}
 }

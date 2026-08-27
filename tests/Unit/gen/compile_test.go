@@ -28,7 +28,7 @@ import (
 // that is what TestThePinnedTagsMatchTheSkeleton answers.
 var published = map[string]string{
 	"github.com/arandu-io/framework": "v0.38.1",
-	"github.com/arandu-io/hesape":    "v0.15.2",
+	"github.com/arandu-io/hesape":    "v0.16.0",
 	"github.com/arandu-io/kyse":      "v0.12.1",
 }
 

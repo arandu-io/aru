@@ -1674,6 +1674,34 @@ var networkInAlpine = []struct {
 //
 // Without this check that line is opinion, and opinion does not survive a code
 // review at 6pm.
+//
+// It guards a library nothing here ships, and that is worth saying out loud
+// rather than leaving for whoever next goes looking for the file. The embedded
+// assets are a stylesheet, HTMX, a theme script and a hand-written file of
+// client behaviours; there is no alpine.min.js among them, and the behaviours
+// file exists precisely because there is not -- Alpine compiles every directive
+// with new AsyncFunction, and a page served under script-src 'self' with no
+// unsafe-eval throws at the point of evaluation, so not one directive would
+// ever have run.
+//
+// The rule stays, for two reasons that survive that.
+//
+// The first is whose files these are. What this reads is the project the doctor
+// was pointed at, and a project serves its own scripts and writes its own
+// policy: the day one of them loads Alpine, it has done so by relaxing the
+// policy that made it impossible, and the cost this rule names -- two fetch
+// paths, two loading states, two places to forget the token -- is exactly what
+// it bought.
+//
+// The second is the case where the policy was not relaxed. There the directive
+// is inert: somebody wrote a request that never leaves the page, and nothing
+// anywhere reports it. Silence is the wrong answer to that too.
+//
+// One consequence is worth knowing before reading a report: no view in this
+// repository matches, so a clean run says nothing about whether the rule works.
+// What answers for that is the fixture corpus, which plants the state directive
+// and the event handler in both quote styles, plus one client-only directive
+// that has to stay silent.
 func alpineHoldsClientStateOnly(p *project) []Finding {
 	var out []Finding
 

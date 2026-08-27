@@ -11,7 +11,7 @@ command is in its entry: the name a person types, the usage line, the one-line
 description `aru help` prints, and the function that runs it.
 
 ```sh
-grep -c '^\t\tname:' commands.go        # 39
+grep -c '^\t\tname:' commands.go        # 52
 ```
 
 It is a slice and not a map on purpose. The order of `aru help` is part of the
@@ -28,16 +28,27 @@ registered?**
 - **Yes** — it forwards. Modules are wired explicitly in `bootstrap/app.go`,
   with no container and no plugin loading, so a separately compiled binary
   cannot know them. `delegate("serve")` runs `go run . serve` in the project.
+  So does anything reading a table the application owns: the fourteen `queue:*`
+  commands forward because the failed job list, the batch list and the queue
+  itself are the application's, and this binary has no connection to any of
+  them.
 
 ```sh
-grep -c 'run:   delegate(' commands.go  # 10
+grep -c 'run:   delegate(' commands.go  # 23
 ```
 
-Two of those ten forward under a different word than the one typed:
+Two of those twenty-three forward under a different word than the one typed:
 `queue:work` calls `work` and `route:list` calls `routes`. The name a person
 types is the half that needs parity with what they already know; the string
 handed to the project binary is an internal protocol that promises nothing, so
 changing it would break every project generated before today for no gain.
+
+A forwarded command is proved by running it.
+`TestTheQueueCommandsReachTheProject` (`main_internal_test.go`) writes a project
+whose binary prints the argv it was handed, runs each queue command through the
+CLI and reads what arrived. Asserting that the entry is in the slice would pass
+on a command wired to a subcommand nobody dispatches, which is the mistake that
+is silent: it appears in `aru help`, it exits, and it does nothing.
 
 ## The procedure
 

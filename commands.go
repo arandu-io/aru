@@ -66,6 +66,16 @@ var commands = []command{
 		desc:  "run one scheduled task now, on the same path the scheduler uses",
 		run:   delegate("schedule:run"),
 	},
+	// The queue family, in three groups: the workers, the jobs that gave up, and
+	// the batches. Every one of them forwards, because every one of them reads
+	// or writes a table the application owns -- the failed job list, the batch
+	// list, the queue itself -- and a separately compiled CLI has no connection
+	// to any of them.
+	//
+	// A project registers them in its own dispatcher. One that does not answers
+	// with the list of what it does know, which is the honest failure: the
+	// alternative is `aru queue:retry` reporting success against a job it never
+	// reached.
 	{
 		// queue:work, the conventional name. What the person types is the
 		// half that needs parity -- the string handed to the project binary is
@@ -75,6 +85,87 @@ var commands = []command{
 		usage: "aru queue:work [--queue=default] [--workers=4]",
 		desc:  "drain a job queue; the same image with another argument",
 		run:   delegate("work"),
+	},
+	{
+		name:  "queue:listen",
+		usage: "aru queue:listen [<connection>] [--queue=default]",
+		desc:  "drain a queue in a child process, restarted after each job",
+		run:   delegate("queue:listen"),
+	},
+	{
+		name:  "queue:restart",
+		usage: "aru queue:restart",
+		desc:  "ask every running worker to stop after its current job",
+		run:   delegate("queue:restart"),
+	},
+	{
+		name:  "queue:pause",
+		usage: "aru queue:pause <connection:queue> [--for=30m]",
+		desc:  "stop workers taking jobs off a queue, without stopping them",
+		run:   delegate("queue:pause"),
+	},
+	{
+		name:  "queue:resume",
+		usage: "aru queue:resume <connection:queue>",
+		desc:  "let workers take jobs off a paused queue again",
+		run:   delegate("queue:resume"),
+	},
+	{
+		name:  "queue:clear",
+		usage: "aru queue:clear [<connection>] [--queue=default] [--force]",
+		desc:  "delete every job waiting on a queue, after confirming",
+		run:   delegate("queue:clear"),
+	},
+	{
+		name:  "queue:monitor",
+		usage: "aru queue:monitor <connection:queue>... [--max=1000]",
+		desc:  "report how many jobs are waiting on each queue named",
+		run:   delegate("queue:monitor"),
+	},
+	{
+		// The dead letter list, and the five commands that are the whole reason
+		// it is not a table nobody touches: without them the only way out of a
+		// failed job is SQL by hand.
+		name:  "queue:failed",
+		usage: "aru queue:failed --tenant=<id>",
+		desc:  "list the jobs that gave up, with why each one did",
+		run:   delegate("queue:failed"),
+	},
+	{
+		name:  "queue:retry",
+		usage: "aru queue:retry --tenant=<id> [<id>...] [--queue=default]",
+		desc:  "put failed jobs back in line, by id or by queue",
+		run:   delegate("queue:retry"),
+	},
+	{
+		name:  "queue:forget",
+		usage: "aru queue:forget --tenant=<id> <id>",
+		desc:  "delete one failed job",
+		run:   delegate("queue:forget"),
+	},
+	{
+		name:  "queue:flush",
+		usage: "aru queue:flush --tenant=<id> [--hours=24]",
+		desc:  "delete the failed jobs, keeping the recent ones",
+		run:   delegate("queue:flush"),
+	},
+	{
+		name:  "queue:prune-failed",
+		usage: "aru queue:prune-failed --tenant=<id> [--hours=24]",
+		desc:  "delete the failed jobs past the retention, on a schedule",
+		run:   delegate("queue:prune-failed"),
+	},
+	{
+		name:  "queue:retry-batch",
+		usage: "aru queue:retry-batch --tenant=<id> <batch>",
+		desc:  "put the failed jobs of one batch back in line",
+		run:   delegate("queue:retry-batch"),
+	},
+	{
+		name:  "queue:prune-batches",
+		usage: "aru queue:prune-batches --tenant=<id> [--hours=24] [--unfinished=0] [--cancelled=0]",
+		desc:  "delete the stale rows from the batch list",
+		run:   delegate("queue:prune-batches"),
 	},
 	{
 		name:  "build",

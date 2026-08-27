@@ -37,8 +37,9 @@ against is still the one it is running.
 | run the project | `serve` `dev` `build` `new` `doctor` `trace` `generate` `schema` |
 | generate a module | `make:module` `make:model` `make:migration` `make:controller` `make:middleware` `make:request` `make:factory` `make:seeder` `make:job` `make:mail` `make:command` `make:listener` `make:event` `make:enum` `make:policy` |
 | migrations | `migrate` `migrate:rollback` `migrate:status` `migrate:fresh` |
+| queues | `queue:work` `queue:listen` `queue:restart` `queue:pause` `queue:resume` `queue:clear` `queue:monitor` `queue:failed` `queue:retry` `queue:forget` `queue:flush` `queue:prune-failed` `queue:retry-batch` `queue:prune-batches` |
 | fonts | `font:add` `font:search` `font:info` `font:list` `font:remove` |
-| everything else | `key:generate` `schedule:list` `schedule:run` `queue:work` `route:list` `db:seed` `view:build` |
+| everything else | `key:generate` `schedule:list` `schedule:run` `route:list` `db:seed` `view:build` |
 
 plus `help` and `version`.
 

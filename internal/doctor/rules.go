@@ -2320,18 +2320,63 @@ func tenantIsInThePredicate(text string) bool {
 	return strings.Contains(lower[where:], "tenant_id")
 }
 
+// namesOneRow reports whether a read call is pointed at a particular row.
+//
+// Find is by key wherever it is written. The model builder's Find and a
+// repository's Find both take the id as an argument and answer one entity, so
+// the name alone settles it.
+//
+// Get is the one that needs telling apart, because two different reads are
+// spelled that way. A model builder's Get is a listing terminal: it takes the
+// context and the Grant, applies the scopes the Grant carries, and answers the
+// collection the tenant owns. A repository or service Get written by hand
+// answers one entity, and it is handed the key that says which one. So the
+// arguments are the tell -- a call given nothing but a context and a Grant has
+// nothing in it that could name a row, and a call given more than that is being
+// pointed at something.
+//
+// String constants after the Grant are the exception, because that is where the
+// builder's Get takes the columns to select. Selecting columns narrows what
+// comes back from each row; it does not narrow the answer to one row.
+//
+// This reads the arguments as written, never their types, so a key held in a
+// constant reads here as a column name. That shape does not arise from a
+// request -- an id chosen by the caller arrives as ctx.Param, a field or a
+// variable -- and it is the request-supplied id that this rule exists for.
+func namesOneRow(call *ast.CallExpr, name string) bool {
+	if strings.HasSuffix(name, ".Find") {
+		return true
+	}
+	if !strings.HasSuffix(name, ".Get") || len(call.Args) <= 2 {
+		return false
+	}
+	for _, arg := range call.Args[2:] {
+		literal, ok := arg.(*ast.BasicLit)
+		if !ok || literal.Kind != token.STRING {
+			return true
+		}
+	}
+	return false
+}
+
 // resourceNotReauthorized checks that the row read from the database is
 // re-authorized before being returned.
 //
-// The first Authorize produces a Grant from a zero value, and the repository
-// call uses it. The second Authorize, with the row that was read, is the
-// object-level authorization. A method that skips it compiles and passes all
-// other rules -- the Grant was received, checked, and the policy exists -- but
-// returns data any user of the same tenant may read.
+// The first Authorize produces a Grant from a zero value, and the read uses it.
+// The second Authorize, with the row that was read, is the object-level
+// authorization. A method that skips it compiles and passes all other rules --
+// the Grant was received, checked, and the policy exists -- but returns data any
+// user of the same tenant may read.
 //
-// The rule looks for methods that call Authorize and a repository data method
-// (Find, Get, List, Paginate) in the same body, and warns if the Authorize
-// calls all come before the last repository call.
+// The distinction the rule draws, and it is the whole of it: authorizing an
+// action and then fetching one named object is a hole, and authorizing an
+// action and then listing the objects the tenant owns is not. A listing was
+// already filtered by the Grant it was handed, and there is no second object for
+// a second Authorize to be about. See namesOneRow for how the two are told
+// apart in the source.
+//
+// So the rule looks for methods that call Authorize and read one row in the same
+// body, and warns when every Authorize comes before the last such read.
 func resourceNotReauthorized(p *project) []Finding {
 	var out []Finding
 	for _, f := range p.files {
@@ -2352,15 +2397,7 @@ func resourceNotReauthorized(p *project) []Finding {
 				continue
 			}
 
-			callsRepoData := funcBodyContains(fn, func(name string) bool {
-				return strings.HasSuffix(name, ".Find") ||
-					strings.HasSuffix(name, ".Get")
-			})
-			if !callsRepoData {
-				continue
-			}
-
-			lastAuthorize, lastRepo := -1, -1
+			lastAuthorize, lastRow := -1, -1
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok {
@@ -2371,14 +2408,13 @@ func resourceNotReauthorized(p *project) []Finding {
 				if name == "security.Authorize" {
 					lastAuthorize = pos
 				}
-				if strings.HasSuffix(name, ".Find") ||
-					strings.HasSuffix(name, ".Get") {
-					lastRepo = pos
+				if namesOneRow(call, name) {
+					lastRow = pos
 				}
 				return true
 			})
 
-			if lastAuthorize < lastRepo {
+			if lastRow >= 0 && lastAuthorize < lastRow {
 				out = append(out, Finding{
 					Rule: "resource-not-reauthorized", Severity: Warning,
 					File: file, Line: line,

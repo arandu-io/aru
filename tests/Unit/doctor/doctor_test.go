@@ -578,6 +578,30 @@ func TestADottedViewNameResolvesToItsFile(t *testing.T) {
 	}
 }
 
+// TestOneRowFetchedAfterAuthorizeIsCaughtUnderBothNames pins the half of
+// resource-not-reauthorized that has to keep firing.
+//
+// The rule fetches the shape "authorize the action, then read one named object,
+// then return it", and there are two names for that read. Find is one. Get is
+// the other, and Get is also what a model builder's listing terminal is called
+// -- so narrowing the rule until the listing goes quiet can narrow it until this
+// goes quiet too, and a rule that reports nothing does not fail, it passes.
+//
+// Both methods are in the same service and differ only in the name they call, so
+// a change that keeps one and loses the other is named here rather than counted.
+func TestOneRowFetchedAfterAuthorizeIsCaughtUnderBothNames(t *testing.T) {
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, method := range []string{"ViewCharge", "ShowCharge"} {
+		if !mentions(findings, "resource-not-reauthorized", method) {
+			t.Errorf("%s reads one row after Authorize and was not reported:\n%v", method, findings)
+		}
+	}
+}
+
 // gaps runs doctor over testdata/gaps, the fixture of the shapes that pass every
 // other rule.
 //

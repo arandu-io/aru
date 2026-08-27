@@ -11,7 +11,7 @@ command is in its entry: the name a person types, the usage line, the one-line
 description `aru help` prints, and the function that runs it.
 
 ```sh
-grep -c '^\t\tname:' commands.go        # 52
+grep -c '^\t\tname:' commands.go        # 53
 ```
 
 It is a slice and not a map on purpose. The order of `aru help` is part of the
@@ -93,19 +93,19 @@ process with it.
   use, because a component library has views and no `main.go`.
 
 **5. Reuse the shared behaviour in `make.go`.** `takeName`, `checkFlatTree`,
-`suffixed`, `unsuffixed` and `emit` exist so that the thirteen granular `make:*`
+`suffixed`, `unsuffixed` and `emit` exist so that the fourteen granular `make:*`
 commands read a name, refuse a nested one and report an existing file the same
 way. A command that refuses `Admin/UserController` with its own message is a
 second way to do one thing inside the generator itself.
 
 ```sh
-ls make*.go | grep -v _test | wc -l                    # 16: make.go and 15 commands
-grep -l 'emit("' *.go | grep -v _test | wc -l          # 13
+ls make*.go | grep -v _test | wc -l                    # 17: make.go and 16 commands
+grep -l 'emit("' *.go | grep -v _test | wc -l          # 14
 ```
 
 `make:module` and `make:policy` are the two that do not go through `emit`: one
 writes a whole module and the other is reached by it. If you are adding a
-fifteenth granular command, it goes through the shared path.
+sixteenth granular command, it goes through the shared path.
 
 **6. Print the wiring; do not perform it.** `wiringSeeder` in `makeseeder.go` is
 the shape: the command writes the file and then prints the two lines to paste,

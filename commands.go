@@ -343,6 +343,12 @@ var commands = []command{
 		run:   makePolicy,
 	},
 	{
+		name:  "make:test",
+		usage: "aru make:test <Name> [--force] [--dry-run]",
+		desc:  "generate the unit test of an existing entity, in tests/Unit",
+		run:   makeTest,
+	},
+	{
 		name:  "trace",
 		usage: "aru trace [<request_id>] [--host http://127.0.0.1:8080]",
 		desc:  "reconstruct a request in the terminal, from the running application",

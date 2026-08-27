@@ -1,6 +1,7 @@
 package gen_test
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -61,6 +62,7 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 	// Where every file came from, so a compiler error names the command that
 	// wrote the file rather than only the file.
 	from := map[string]string{}
+	emitted := map[string][]byte{}
 	emit := func(command string, generate func() ([]gen.File, error)) {
 		t.Helper()
 		files, err := generate()
@@ -68,11 +70,22 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 			t.Fatalf("%s: %v", command, err)
 		}
 		for _, f := range files {
+			// Two commands may write one path, and only when they write the same
+			// bytes: that is the claim `aru make:test` makes about the file
+			// `aru make:module` already emits, and it is checked here rather
+			// than assumed. Different bytes mean the corpus is smaller than it
+			// looks -- the second write hides whatever the first produced, and
+			// the compiler never sees it.
 			if previous, clash := from[f.Path]; clash {
-				t.Fatalf("%s and %s both write %s, so the corpus is smaller than it looks",
-					previous, command, f.Path)
+				if !bytes.Equal(emitted[f.Path], f.Content) {
+					t.Fatalf("%s and %s both write %s and disagree about its contents, "+
+						"so the corpus is smaller than it looks", previous, command, f.Path)
+				}
+				from[f.Path] = previous + " and " + command
+				continue
 			}
 			from[f.Path] = command
+			emitted[f.Path] = f.Content
 			writeInto(t, filepath.Join(root, f.Path), f.Content)
 		}
 	}
@@ -91,6 +104,14 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 	globalModule := compiled("stock_item", false)
 	emit("aru make:module purchase_order --tenant", func() ([]gen.File, error) { return gen.Generate(tenantModule) })
 	emit("aru make:module stock_item", func() ([]gen.File, error) { return gen.Generate(globalModule) })
+
+	// make:test, over both modules. It writes the file make:module already
+	// wrote, so what reaches the compiler is one file and what is proved is two
+	// things: that the bytes are the same, checked by emit above, and that they
+	// build. It cannot be given a module of its own -- the test names a
+	// repository, a policy and a model, and only a whole module has all three.
+	one("aru make:test PurchaseOrder", func() (gen.File, error) { return gen.RenderTest(tenantModule) })
+	one("aru make:test StockItem", func() (gen.File, error) { return gen.RenderTest(globalModule) })
 
 	// make:model --all, which is the data half of a module: the model, the
 	// migration, the factory, the seeder, the policy and the request. It is a

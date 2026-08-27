@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/arandu-io/aru/internal/gen"
+	"github.com/arandu-io/aru/internal/testlayout"
 )
 
 // The wiring a command prints is tested for the same reason `wiring` is: an
@@ -343,5 +344,230 @@ func TestTheMissingEntityMessageSuggestsACommandThatRuns(t *testing.T) {
 		if !strings.Contains(message, "aru make:module "+gen.Normalize(given)+" ") {
 			t.Errorf("%q: the suggested command does not carry the normalized name:\n%s", given, message)
 		}
+	}
+}
+
+// projectWithModule writes a project holding one generated module, and answers
+// its root.
+//
+// The module is generated rather than written by hand, because what make:test is
+// asked about has to be the tree make:module produces: a fixture typed out here
+// would be a second opinion on what an entity looks like, and the copy nobody
+// regenerates is the one that drifts.
+func projectWithModule(t *testing.T, name string) string {
+	t.Helper()
+
+	root := t.TempDir()
+	for file, body := range map[string]string{
+		"go.mod":      "module example.test/project\n",
+		"main.go":     "package main\n\nfunc main() {}\n",
+		"arandu.toml": "name = \"project\"\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, file), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	files, err := gen.Generate(moduleUnderTest(name))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if _, _, err := gen.Write(root, files, false); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	return root
+}
+
+// moduleUnderTest is the specification the project above is generated from. The
+// date is fixed, or the migration id would move with the calendar.
+func moduleUnderTest(name string) gen.Module {
+	return gen.Module{
+		Name:       name,
+		Fields:     []gen.Field{{Name: "reference", Type: gen.TypeString, Required: true, Unique: true}},
+		Tenant:     true,
+		ModulePath: "example.test/project",
+		Date:       "2026_07_31",
+	}
+}
+
+// TestMakeTestWritesTheTestMakeModuleWrites runs the command and reads what
+// landed.
+//
+// Three things are asserted about the file and they are the three the layout
+// depends on: where it is, what it is called, and the package clause it carries.
+// A test written one directory over, or named PurchaseOrderTest.go, compiles
+// into a package and runs nowhere -- and the fourth assertion, that the bytes
+// are the ones make:module writes, is the rule against two shapes of one file.
+func TestMakeTestWritesTheTestMakeModuleWrites(t *testing.T) {
+	root := projectWithModule(t, "purchase_order")
+	t.Chdir(root)
+
+	// The command is the way back after somebody deletes the test, so it is
+	// deleted first: writing over the file make:module left would prove nothing
+	// about a project that lost it.
+	path := filepath.Join("tests", "Unit", "PurchaseOrder_test.go")
+	if err := os.Remove(filepath.Join(root, path)); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := exercise(t, "make:test", "PurchaseOrder")
+	if code != 0 {
+		t.Fatalf("make:test exited %d: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "created "+path) {
+		t.Errorf("the command does not say what it wrote: %q", stdout)
+	}
+
+	body, err := os.ReadFile(filepath.Join(root, path))
+	if err != nil {
+		t.Fatalf("make:test reported success and wrote no file: %v", err)
+	}
+	if !strings.HasPrefix(string(body), "package unit_test\n") {
+		t.Errorf("the package clause is not unit_test: %.40q", body)
+	}
+	// What it asserts, and not only that it exists. A stub that declared a Test
+	// function and checked nothing would satisfy every line above.
+	for _, want := range []string{
+		"func TestEveryPurchaseOrderMethodRequiresItsGrant(t *testing.T)",
+		"security.ErrForbidden",
+		`security.SystemGrant("some.other.action", "t1")`,
+		"func TestThePurchaseOrderPolicyDeniesWhatItDoesNotKnow(t *testing.T)",
+		"models.ErrPurchaseOrderSort",
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("the generated test does not carry %q, so it proves less than it claims", want)
+		}
+	}
+
+	// The same bytes make:module writes, because it is the same template
+	// rendered through the same function.
+	files, err := gen.Generate(moduleUnderTest("purchase_order"))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	for _, f := range files {
+		if !strings.HasSuffix(f.Path, "PurchaseOrder_test.go") {
+			continue
+		}
+		if string(f.Content) != string(body) {
+			t.Error("make:test and make:module write different tests for one entity")
+		}
+		return
+	}
+	t.Fatal("make:module generated no test, so there was nothing to compare against")
+}
+
+// TestTheGeneratedTestSatisfiesTheLayoutChecks runs the four checks over the
+// project the command wrote into.
+//
+// It is the same four `aru doctor` reports in a project and the same four this
+// repository's own suite runs over itself, so a generated test that broke one of
+// them would be the generator fighting the guard it ships.
+func TestTheGeneratedTestSatisfiesTheLayoutChecks(t *testing.T) {
+	root := projectWithModule(t, "purchase_order")
+	t.Chdir(root)
+
+	if code, _, stderr := exercise(t, "make:test", "PurchaseOrder", "--force"); code != 0 {
+		t.Fatalf("make:test exited %d: %s", code, stderr)
+	}
+
+	for _, c := range testlayout.Checks() {
+		result, err := c.Run(root)
+		if err != nil {
+			t.Errorf("%s: %v", c.Name, err)
+			continue
+		}
+		// Every one of these is of the form "every X is Y", and every one is
+		// true of no X at all: a check handed nothing reports nothing wrong.
+		if result.Examined == 0 {
+			t.Errorf("%s examined no file in the generated project, so it had nothing to be true of", c.Name)
+		}
+		for _, rel := range result.Unreadable {
+			t.Errorf("%s could not parse %s of the generated project", c.Name, rel)
+		}
+		for _, p := range result.Problems {
+			t.Errorf("%s: %s\n    %s", c.Name, p, p.Why)
+		}
+	}
+}
+
+// TestMakeTestRefusesATestThatWouldNotCompile covers the failure that costs the
+// most.
+//
+// The generated file names three packages, and Go has no way to skip an
+// assertion that does not build: a test written against a repository nobody
+// wrote stops `go test ./...` on that package and reports nothing about any
+// other test in the project. So each of the three is checked before anything is
+// written, and the refusal names the file and the command that creates it.
+func TestMakeTestRefusesATestThatWouldNotCompile(t *testing.T) {
+	for _, c := range []struct {
+		what    string
+		remove  string
+		expects []string
+	}{
+		{"no model", filepath.Join("app", "Models", "PurchaseOrder.go"),
+			[]string{"app/Models/PurchaseOrder.go", "aru make:model"}},
+		{"no repository", filepath.Join("app", "Repositories", "PurchaseOrderRepository.go"),
+			[]string{"app/Repositories/PurchaseOrderRepository.go", "aru make:module"}},
+		{"no policy", filepath.Join("app", "Policies", "PurchaseOrderPolicy.go"),
+			[]string{"app/Policies/PurchaseOrderPolicy.go", "aru make:policy"}},
+	} {
+		t.Run(c.what, func(t *testing.T) {
+			root := projectWithModule(t, "purchase_order")
+			t.Chdir(root)
+			if err := os.Remove(filepath.Join(root, c.remove)); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(root, "tests", "Unit", "PurchaseOrder_test.go")
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+
+			code, _, stderr := exercise(t, "make:test", "PurchaseOrder")
+			if code == 0 {
+				t.Fatal("make:test wrote a test against a file that is not there")
+			}
+			for _, want := range c.expects {
+				if !strings.Contains(stderr, want) {
+					t.Errorf("the refusal does not mention %q: %q", want, stderr)
+				}
+			}
+			if _, err := os.Stat(path); err == nil {
+				t.Error("the command refused and wrote the file anyway")
+			}
+		})
+	}
+}
+
+// TestMakeTestRefusesAnEntityThatDoesNotDeclareWhatTheTestNames is the half a
+// stat cannot catch.
+//
+// A model written before the sort allowlist existed is a file that is there and
+// does not declare Err<Entity>Sort, and the emitted test names that symbol. The
+// check reads the file rather than only finding it, so the answer is the missing
+// identifier rather than a compiler error two commands later.
+func TestMakeTestRefusesAnEntityThatDoesNotDeclareWhatTheTestNames(t *testing.T) {
+	root := projectWithModule(t, "purchase_order")
+	t.Chdir(root)
+
+	model := filepath.Join(root, "app", "Models", "PurchaseOrder.go")
+	body, err := os.ReadFile(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stripped := strings.ReplaceAll(string(body), "ErrPurchaseOrderSort", "ErrSomethingElse")
+	if stripped == string(body) {
+		t.Fatal("the generated model no longer declares ErrPurchaseOrderSort, so this test measures nothing")
+	}
+	if err := os.WriteFile(model, []byte(stripped), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _, stderr := exercise(t, "make:test", "PurchaseOrder", "--force")
+	if code == 0 {
+		t.Fatal("make:test wrote a test naming a symbol the model does not declare")
+	}
+	if !strings.Contains(stderr, "ErrPurchaseOrderSort") {
+		t.Errorf("the refusal does not name the missing identifier: %q", stderr)
 	}
 }

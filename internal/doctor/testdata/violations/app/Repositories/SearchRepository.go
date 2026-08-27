@@ -11,9 +11,9 @@ import (
 // caller supplied.
 //
 // It is the half sql-built-with-sprintf never read: the rule only ever looked at
-// fmt.Sprintf, while ADR 0024 stated as fact that it had been widened -- in the
-// paragraph arguing the project does not need sqlc. The one barrier against
-// hand-built SQL had a hole exactly where the decision leaned on it.
+// fmt.Sprintf, while the decision that leaned on it stated as fact that it had
+// been widened to concatenation. The one barrier against hand-built SQL had a
+// hole exactly where it was being relied on.
 type SearchRepository struct {
 	db *data.DB
 }

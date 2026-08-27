@@ -49,8 +49,8 @@ func (s *InvoiceService) List(ctx context.Context, subject security.Subject) ([]
 // Unauthorized receives a Grant and queries under it without ever asking a
 // policy or checking the action. It is the planted grant-not-checked, and it is
 // the finding that matters most in a model-first project: the model reads the
-// tenant off the Grant and checks nothing else, so this rule is what is left of
-// RULE 17.
+// tenant off the Grant and checks nothing else, so this rule is all that is
+// left holding the read path to a policy.
 func (s *InvoiceService) Unauthorized(ctx context.Context, g security.Grant) (int64, error) {
 	return models.Invoices(s.conn, s.grammar, s.processor).
 		NewQuery().

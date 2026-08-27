@@ -23,6 +23,12 @@ type PurchaseOrdersCreateData struct {
 	Form PurchaseOrderForm
 	// Errors is the message per field, as validation produced it.
 	Errors map[string][]string
+	// IndexURL is the listing this screen came from, and StoreURL is where the
+	// form submits. Both are built from the route names by the controller: a
+	// view has no route table, so a path written here could only be a literal --
+	// and a literal keeps rendering after the route moves.
+	IndexURL string
+	StoreURL string
 }
 
 // FieldError is the first message for a field, or empty.
@@ -79,12 +85,12 @@ func (f PurchaseOrderForm) ApprovedAttr() string {
 
 @section('content')
 	<nav class="text-sm text-slate-500 dark:text-slate-400">
-		<a class="underline underline-offset-2 hover:text-slate-900 dark:hover:text-slate-100" href="/purchase-orders">Purchase orders</a>
+		<a class="underline underline-offset-2 hover:text-slate-900 dark:hover:text-slate-100" href="{{ .IndexURL }}">Purchase orders</a>
 	</nav>
 
 	<h1 class="mt-2 text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
 
-	<form class="mt-8 space-y-6" method="post" action="/purchase-orders" hx-post="/purchase-orders" hx-target="this" hx-swap="outerHTML">
+	<form class="mt-8 space-y-6" method="post" action="{{ .StoreURL }}" hx-post="{{ .StoreURL }}" hx-target="this" hx-swap="outerHTML">
 		@csrf
 		
 		{!! components.Field(components.FieldProps{
@@ -137,7 +143,7 @@ func (f PurchaseOrderForm) ApprovedAttr() string {
 
 		<div class="flex items-center gap-3">
 			<button class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300" type="submit">Save</button>
-			<a class="text-sm text-slate-500 underline underline-offset-2 dark:text-slate-400" href="/purchase-orders">Cancel</a>
+			<a class="text-sm text-slate-500 underline underline-offset-2 dark:text-slate-400" href="{{ .IndexURL }}">Cancel</a>
 		</div>
 	</form>
 @endsection

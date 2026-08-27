@@ -10,7 +10,7 @@ package gen
 // what a view interpolates with, and a generator sharing the delimiters would
 // execute the markup it exists to emit.
 //
-// Three shapes repeat and are worth naming once:
+// Five shapes repeat and are worth naming once:
 //
 //   - the page data is a struct per screen, never a map, and it declares itself
 //     in the view's @go block. A field that does not exist stops the build,
@@ -24,6 +24,11 @@ package gen
 //     a time.Time would need the time package, and the generated file imports a
 //     fixed set -- so formatting is the controller's, which is where a decision
 //     about presentation belongs anyway;
+//   - every address is a field on the page data, filled by the controller from
+//     a route name. None of these templates writes a path. A view is handed no
+//     route table, so a link written here could only be a literal -- and a
+//     literal href compiles, renders and keeps pointing at the old address
+//     after the route moves, with nothing failing until somebody clicks;
 //   - everything goes in @section('content'), and nothing in any other section.
 //     A section only one layout yields is a section that disappears without a
 //     word when the layout is replaced. A back link or a "new" button placed in
@@ -45,9 +50,14 @@ type <%.ViewData "index"%> struct {
 	view.Page
 	// <%.Plural%> is the page of records.
 	<%.Plural%> []<%.RowStruct%>
-	// NextCursor is the keyset cursor of the following page. It is empty on the
-	// last page, and the link is not rendered then.
-	NextCursor string
+	// NewURL is where the "new" button goes: the create screen, addressed by
+	// route name in the controller rather than written here as a path. A view
+	// has no route table, so a link written here could only be a literal -- and
+	// a literal keeps rendering after the route moves.
+	NewURL string
+	// NextURL is the following page of the listing, cursor included. It is
+	// empty on the last page, and the link is not rendered then.
+	NextURL string
 }
 
 // Compile-time proof that this page fits the layout it extends.
@@ -55,8 +65,11 @@ var _ view.Layout = <%.ViewData "index"%>{}
 
 // <%.RowStruct%> is one record, formatted for display by the controller.
 type <%.RowStruct%> struct {
-	// ID is what the row links to.
+	// ID is what the row is addressed by.
 	ID string
+	// URL is where the row links to, built from the route name by the
+	// controller.
+	URL string
 <%range .Fields%>	// <%.GoName%> is the <%.Label%> column.
 	<%.GoName%> <%.ViewType%>
 <%end%>	// Created is the creation timestamp, already formatted.
@@ -73,12 +86,12 @@ type <%.RowStruct%> struct {
 @section('content')
 	<div class="flex items-center justify-between gap-4">
 		<h1 class="text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
-		<a class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" href="<%.Route%>/create">New <%.Human%></a>
+		<a class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" href="{{ .NewURL }}">New <%.Human%></a>
 	</div>
 
 	@if(len(d.<%.Plural%>) == 0)
 		<p class="mt-8 text-sm text-slate-500 dark:text-slate-400">
-			No <%.Human%> yet. <a class="underline underline-offset-2" href="<%.Route%>/create">Add the first one</a>.
+			No <%.Human%> yet. <a class="underline underline-offset-2" href="{{ .NewURL }}">Add the first one</a>.
 		</p>
 	@endif
 
@@ -96,7 +109,7 @@ type <%.RowStruct%> struct {
 					@foreach(.<%.Plural%> as <%.Unexported%>)
 						<tr class="border-b border-slate-100 dark:border-slate-900">
 							<td class="py-2 pr-4">
-								<a class="font-medium underline underline-offset-2" href="<%.Route%>/{{ <%.Unexported%>.ID }}">{{ <%.Unexported%>.<%.FirstField.GoName%> }}</a>
+								<a class="font-medium underline underline-offset-2" href="{{ <%.Unexported%>.URL }}">{{ <%.Unexported%>.<%.FirstField.GoName%> }}</a>
 							</td>
 <%$row := .Unexported%>							<%range .RestFields%>					<td class="py-2 pr-4">{{ <%$row%>.<%.GoName%> }}</td>
 <%end%>							<td class="py-2 text-slate-500 dark:text-slate-400">{{ <%.Unexported%>.Created }}</td>
@@ -107,8 +120,8 @@ type <%.RowStruct%> struct {
 		</div>
 	@endif
 
-	@if(d.NextCursor != "")
-		<a class="mt-6 inline-block text-sm underline underline-offset-2" href="<%.Route%>?cursor={{ .NextCursor }}">Next page</a>
+	@if(d.NextURL != "")
+		<a class="mt-6 inline-block text-sm underline underline-offset-2" href="{{ .NextURL }}">Next page</a>
 	@endif
 @endsection
 `
@@ -129,6 +142,13 @@ type <%.ViewData "show"%> struct {
 	view.Page
 	// <%.Entity%> is the record.
 	<%.Entity%> <%.RowStruct%>
+	// IndexURL, EditURL and DeleteURL are the three addresses this screen
+	// offers, built from the route names by the controller. A view has no route
+	// table, so a path written here could only be a literal -- and a literal
+	// keeps rendering after the route moves.
+	IndexURL  string
+	EditURL   string
+	DeleteURL string
 }
 
 // Compile-time proof that this page fits the layout it extends.
@@ -143,14 +163,14 @@ var _ view.Layout = <%.ViewData "show"%>{}
 
 @section('content')
 	<nav class="text-sm text-slate-500 dark:text-slate-400">
-		<a class="underline underline-offset-2 hover:text-slate-900 dark:hover:text-slate-100" href="<%.Route%>"><%.HumansTitle%></a>
+		<a class="underline underline-offset-2 hover:text-slate-900 dark:hover:text-slate-100" href="{{ .IndexURL }}"><%.HumansTitle%></a>
 	</nav>
 
 	<div class="mt-2 flex items-center justify-between gap-4">
 		<h1 class="text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
 		<div class="flex items-center gap-3">
-			<a class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" href="<%.Route%>/{{ .<%.Entity%>.ID }}/edit">Edit</a>
-			<button class="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950" type="button" hx-delete="<%.Route%>/{{ .<%.Entity%>.ID }}" hx-headers='{"X-CSRF-Token": "{{ .Token }}"}' hx-confirm="Delete this <%.Human%>?">Delete</button>
+			<a class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" href="{{ .EditURL }}">Edit</a>
+			<button class="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950" type="button" hx-delete="{{ .DeleteURL }}" hx-headers='{"X-CSRF-Token": "{{ .Token }}"}' hx-confirm="Delete this <%.Human%>?">Delete</button>
 		</div>
 	</div>
 
@@ -192,6 +212,12 @@ type <%.ViewData "create"%> struct {
 	Form <%.FormStruct%>
 	// Errors is the message per field, as validation produced it.
 	Errors map[string][]string
+	// IndexURL is the listing this screen came from, and StoreURL is where the
+	// form submits. Both are built from the route names by the controller: a
+	// view has no route table, so a path written here could only be a literal --
+	// and a literal keeps rendering after the route moves.
+	IndexURL string
+	StoreURL string
 }
 
 // FieldError is the first message for a field, or empty.
@@ -238,17 +264,17 @@ func (f <%$.FormStruct%>) <%.GoName%>Attr() string {
 
 @section('content')
 	<nav class="text-sm text-slate-500 dark:text-slate-400">
-		<a class="underline underline-offset-2 hover:text-slate-900 dark:hover:text-slate-100" href="<%.Route%>"><%.HumansTitle%></a>
+		<a class="underline underline-offset-2 hover:text-slate-900 dark:hover:text-slate-100" href="{{ .IndexURL }}"><%.HumansTitle%></a>
 	</nav>
 
 	<h1 class="mt-2 text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
 
-	<form class="mt-8 space-y-6" method="post" action="<%.Route%>" hx-post="<%.Route%>" hx-target="this" hx-swap="outerHTML">
+	<form class="mt-8 space-y-6" method="post" action="{{ .StoreURL }}" hx-post="{{ .StoreURL }}" hx-target="this" hx-swap="outerHTML">
 		@csrf
 		<%template "fields" .%>
 		<div class="flex items-center gap-3">
 			<button class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300" type="submit">Save</button>
-			<a class="text-sm text-slate-500 underline underline-offset-2 dark:text-slate-400" href="<%.Route%>">Cancel</a>
+			<a class="text-sm text-slate-500 underline underline-offset-2 dark:text-slate-400" href="{{ .IndexURL }}">Cancel</a>
 		</div>
 	</form>
 @endsection
@@ -275,6 +301,12 @@ type <%.ViewData "edit"%> struct {
 	Form <%.FormStruct%>
 	// Errors is the message per field, as validation produced it.
 	Errors map[string][]string
+	// ShowURL is the record this form edits, and UpdateURL is where it submits.
+	// Both are built from the route names by the controller: a view has no route
+	// table, so a path written here could only be a literal -- and a literal
+	// keeps rendering after the route moves.
+	ShowURL   string
+	UpdateURL string
 }
 
 // FieldError is the first message for a field, or empty.
@@ -301,7 +333,7 @@ var _ view.Layout = <%.ViewData "edit"%>{}
 
 @section('content')
 	<nav class="text-sm text-slate-500 dark:text-slate-400">
-		<a class="underline underline-offset-2 hover:text-slate-900 dark:hover:text-slate-100" href="<%.Route%>/{{ .Form.ID }}">Back</a>
+		<a class="underline underline-offset-2 hover:text-slate-900 dark:hover:text-slate-100" href="{{ .ShowURL }}">Back</a>
 	</nav>
 
 	<h1 class="mt-2 text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
@@ -309,12 +341,12 @@ var _ view.Layout = <%.ViewData "edit"%>{}
 	<!-- hx-put, and no action: a browser form can only send GET and POST, and
 	the update route is PUT. HTMX sends the real method, which is why this
 	stack does not need a hidden _method field. -->
-	<form class="mt-8 space-y-6" hx-put="<%.Route%>/{{ .Form.ID }}" hx-target="this" hx-swap="outerHTML">
+	<form class="mt-8 space-y-6" hx-put="{{ .UpdateURL }}" hx-target="this" hx-swap="outerHTML">
 		@csrf
 		<%template "fields" .%>
 		<div class="flex items-center gap-3">
 			<button class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-300" type="submit">Save</button>
-			<a class="text-sm text-slate-500 underline underline-offset-2 dark:text-slate-400" href="<%.Route%>/{{ .Form.ID }}">Cancel</a>
+			<a class="text-sm text-slate-500 underline underline-offset-2 dark:text-slate-400" href="{{ .ShowURL }}">Cancel</a>
 		</div>
 	</form>
 @endsection

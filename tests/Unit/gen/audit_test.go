@@ -95,6 +95,76 @@ func TestDecimalKeepsItsDigits(t *testing.T) {
 	}
 }
 
+// TestNoGeneratedFileWritesAnAddress: the controller redirected to
+// "/purchase-orders/"+id and the four views wrote the same prefix into every
+// href, form action and hx- attribute. Both compile, both render, and both keep
+// pointing at the old address the moment the route moves -- there is no build
+// failure and no error at request time, so the first report is somebody
+// clicking a link that 404s.
+//
+// Every one of them is now asked for by route name, which fails where the name
+// is wrong and says which name. The check is that no generated file writes a
+// path at all: an address that appears once is an address the next regeneration
+// keeps.
+//
+// It reads every file the module emits, prose included. The skill file used to
+// name the prefix in its description, and a description that goes stale is a
+// smaller failure than a dead link but it is the same failure -- so it says
+// "purchase-orders routes" and nothing here needs an exception.
+func TestNoGeneratedFileWritesAnAddress(t *testing.T) {
+	for _, tenant := range []bool{true, false} {
+		for name, body := range byName(t, spec(tenant)) {
+			for _, line := range strings.Split(body, "\n") {
+				// The views package is imported by a path that begins with the
+				// module path and carries the resource as its last segment. It
+				// is an import, not an address, and it is the one place the
+				// resource legitimately appears inside a quoted string.
+				if strings.Contains(line, `views "`) {
+					continue
+				}
+				if strings.Contains(line, "/purchase-orders") || strings.Contains(line, "/auth/login") {
+					t.Errorf("tenant=%v: %s writes an address instead of asking for a route by name:\n\t%s",
+						tenant, name, strings.TrimSpace(line))
+				}
+			}
+		}
+	}
+}
+
+// TestTheGeneratedControllerAsksForEveryAddressByItsRouteName is the other half
+// of the check above: nothing writes a path, and what replaced it is the seven
+// names Resource registers for this module, plus the one the sign-in screen is
+// registered under.
+//
+// The names are written out rather than derived, because deriving them from the
+// same method the generator uses would make this test agree with the generator
+// about a convention neither of them owns. The convention is the router's, and
+// these are the names it gives.
+func TestTheGeneratedControllerAsksForEveryAddressByItsRouteName(t *testing.T) {
+	for _, tenant := range []bool{true, false} {
+		files := byName(t, spec(tenant))
+		controller := files["PurchaseOrderController.go"]
+
+		for _, want := range []string{
+			`ctx.URL("purchase-orders.index")`,
+			`ctx.URL("purchase-orders.create")`,
+			`ctx.URL("purchase-orders.store")`,
+			`ctx.URL("purchase-orders.show", p.ID)`,
+			`ctx.URL("purchase-orders.edit", found.ID)`,
+			`ctx.URL("purchase-orders.update", found.ID)`,
+			`ctx.URL("purchase-orders.destroy", found.ID)`,
+			`ctx.RedirectRoute("purchase-orders.show", created.ID)`,
+			`ctx.RedirectRoute("purchase-orders.show", updated.ID)`,
+			`ctx.RedirectRoute("purchase-orders.index")`,
+			`ctx.RedirectRoute("auth.login")`,
+		} {
+			if !strings.Contains(controller, want) {
+				t.Errorf("tenant=%v: the controller does not ask for %s", tenant, want)
+			}
+		}
+	}
+}
+
 // byName generates a module and returns its files keyed by base name.
 func byName(t *testing.T, m gen.Module) map[string]string {
 	t.Helper()

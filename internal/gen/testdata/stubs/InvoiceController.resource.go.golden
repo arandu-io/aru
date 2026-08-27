@@ -103,8 +103,13 @@ func (c *InvoiceController) actor(ctx *fhttp.Context) (security.Subject, error) 
 // signIn sends an unauthenticated visitor to the sign-in screen. Under HTMX the
 // redirect becomes HX-Redirect, so the browser navigates instead of nesting the
 // whole page inside a fragment.
+//
+// The screen is asked for by name, not by path. Two different things register
+// it -- the framework's auth module and the starter kit -- and only one of them
+// answers in any given project; both name the route auth.login, and neither
+// promises the path stays where it is.
 func (c *InvoiceController) signIn(ctx *fhttp.Context) error {
-	return ctx.Redirect("/auth/login")
+	return ctx.RedirectRoute("auth.login")
 }
 
 // token issues a CSRF token for the session that is rendering the page.

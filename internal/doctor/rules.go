@@ -1278,9 +1278,45 @@ func hasRedaction(files []*file, dir, typeName string) bool {
 	return false
 }
 
+// sessionRotationCalls are the method names that end a login with the record
+// the request arrived with destroyed.
+//
+// It is a list rather than two literals in the matcher because a name here is
+// a claim about somebody else's API, and a claim nobody reads back goes stale
+// silently. This one had gone wrong in both directions at once: it accepted
+// Start, which exists and does not close the hole, and it did not carry
+// Regenerate, so a login written the way the session package documents was
+// reported as the violation. A test resolves these against the modules that
+// declare them.
+var sessionRotationCalls = []string{"Regenerate", "Rotate"}
+
 // 10. Login without rotating the session id is session fixation: an attacker
 // plants a known id and inherits the session after the victim signs in.
+//
+// Two names close it, because the operation is called two things one layer
+// apart: SessionStore.Rotate is the framework's name, and Regenerate is the
+// name underneath it and the one a project that reaches the session package
+// directly writes. Both destroy the record the request arrived with, and the
+// rule takes either.
+//
+// Start is refused, and that is the whole point of the check rather than an
+// omission from the list. Start has no parameter for the old id, so a login
+// body holding only Start cannot destroy the planted record -- the destruction
+// is not skipped, it is unsayable. And refusing it costs nothing: Regenerate
+// given an empty old id does exactly what Start does, so the login that arrived
+// with no session is already written correctly as Regenerate. There is no
+// sign-in shape that needs Start, and accepting it passed a login that leaves
+// the planted session readable.
 func sessionMustRotateOnLogin(p *project) []Finding {
+	accepts := func(name string) bool {
+		for _, call := range sessionRotationCalls {
+			if strings.HasSuffix(name, "."+call) {
+				return true
+			}
+		}
+		return false
+	}
+
 	var out []Finding
 	for _, f := range p.files {
 		if f.isTest {
@@ -1298,7 +1334,7 @@ func sessionMustRotateOnLogin(p *project) []Finding {
 			if !funcBodyContains(fn, func(n string) bool { return strings.Contains(n, "Authenticate") }) {
 				continue
 			}
-			if funcBodyContains(fn, func(n string) bool { return strings.HasSuffix(n, ".Rotate") || strings.HasSuffix(n, ".Start") }) {
+			if funcBodyContains(fn, accepts) {
 				continue
 			}
 			file, line := f.at(fn)
@@ -1306,7 +1342,7 @@ func sessionMustRotateOnLogin(p *project) []Finding {
 				Rule: "session-not-rotated", Severity: Error,
 				File: file, Line: line,
 				Message: fn.Name.Name + " authenticates and does not rotate the session",
-				Why:     "keeping the pre-login id is session fixation: an attacker plants a known id and inherits the session once the victim signs in. Call SessionStore.Rotate after Authenticate.",
+				Why:     "keeping the pre-login id is session fixation: an attacker plants a known id and inherits the session once the victim signs in. After Authenticate, call Regenerate with the id the request arrived with -- SessionStore spells the same call Rotate. Start is not enough: it takes no old id, so it mints a new one and leaves the planted record readable.",
 			})
 		}
 	}
@@ -1346,7 +1382,7 @@ func renderCalls(f *file) []renderCall {
 
 // 11. The data of a view is a typed struct, never a map.
 //
-// Doc 14 makes this the reason the view layer exists at all: with a struct, a
+// It is the reason the view layer is typed at all: with a struct, a
 // renamed field is a compile error and the page cannot ship broken. With
 // map[string]any, a typo in a key is a nil the template renders as nothing --
 // the page comes up, the field is blank, and nobody finds out until a customer

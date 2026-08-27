@@ -604,3 +604,159 @@ func TestTablesNamedSeparatesAJoinFromASubquery(t *testing.T) {
 		}
 	}
 }
+
+// loginProject writes a one-file project whose only function is a sign-in, and
+// answers the session-not-rotated findings it produces.
+func loginProject(t *testing.T, body string) []Finding {
+	t.Helper()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module demo\n\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(dir, "app", "Http", "Controllers", "Auth")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source := "package auth\n\ntype LoginController struct{ auth, sessions any }\n\n" +
+		"func (c LoginController) Login(w, r any) {\n" + body + "\n}\n"
+	if err := os.WriteFile(filepath.Join(src, "LoginController.go"), []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := Run(dir, Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var out []Finding
+	for _, f := range all {
+		if f.Rule == "session-not-rotated" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// TestALoginPassesOnlyWhenItDestroysTheOldSession pins both directions of the
+// session fixation check, and the second one is the reason it exists.
+//
+// The rule spent its life accepting Start, which mints an id and destroys
+// nothing -- so a sign-in that left the planted record readable was reported
+// clean, which is worse than not checking: the developer was told the hole was
+// closed. It also missed Regenerate, the name the session package itself uses,
+// so a login written the documented way was reported as the violation.
+//
+// Start is refused rather than listed as a weaker pass because Regenerate given
+// an empty old id already does everything Start does. A login on a request that
+// carried no session is spelt Regenerate too, and nothing is lost by requiring
+// it.
+func TestALoginPassesOnlyWhenItDestroysTheOldSession(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		body    string
+		flagged bool
+	}{
+		{
+			name: "Regenerate destroys the record the request arrived with",
+			body: "\tc.auth.Authenticate(r)\n\tc.sessions.Regenerate(r, w, c.sessions.ID(r), w)",
+		},
+		{
+			name: "Rotate is the same call one layer up",
+			body: "\tc.auth.Authenticate(r)\n\tc.sessions.Rotate(r, w, c.sessions.IDFromRequest(r), w)",
+		},
+		{
+			name:    "Start alone leaves the planted record readable",
+			body:    "\tc.auth.Authenticate(r)\n\tc.sessions.Start(r, w, w)",
+			flagged: true,
+		},
+		{
+			name:    "authenticating and keeping the id is the bare fixation",
+			body:    "\tc.auth.Authenticate(r)",
+			flagged: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			found := loginProject(t, tc.body)
+			switch {
+			case tc.flagged && len(found) == 0:
+				t.Error("the sign-in keeps the pre-login session and doctor reported nothing")
+			case !tc.flagged && len(found) > 0:
+				t.Errorf("the sign-in destroys the old session and doctor reported %s", found[0].Message)
+			}
+		})
+	}
+}
+
+// TestEverySessionCallTheRuleAcceptsExists resolves the accepted names against
+// the modules that declare them.
+//
+// A rule that lets a login through on a method name is asserting that the
+// method is there, and nothing was reading that assertion back. Both halves are
+// needed and neither covers the other: a name no module declares can never be
+// written, and a name every module declares can still be the wrong call. Start
+// is the second kind, so it is refused here by name rather than left to the
+// resolver, which would find it and pass it.
+func TestEverySessionCallTheRuleAcceptsExists(t *testing.T) {
+	decl := regexp.MustCompile(`^func \([^)]*\) ([A-Z]\w*)\(`)
+
+	found := map[string][]string{} // method -> files declaring it
+	var read int
+	for _, module := range []string{"framework", "hesape"} {
+		root := filepath.Join("..", "..", "..", module)
+		if _, err := os.Stat(root); err != nil {
+			t.Logf("%s is not checked out next to this repository", module)
+			continue
+		}
+		read++
+
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if d.IsDir() {
+				if d.Name() == ".git" || d.Name() == "testdata" {
+					return fs.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			for _, line := range strings.Split(string(body), "\n") {
+				if m := decl.FindStringSubmatch(line); m != nil {
+					found[m[1]] = append(found[m[1]], path)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if read == 0 {
+		t.Skip("neither module is checked out next to this repository")
+	}
+	if len(found) == 0 {
+		t.Fatal("no method was found in either module: this test stopped testing anything")
+	}
+
+	for _, call := range sessionRotationCalls {
+		if len(found[call]) == 0 {
+			t.Errorf("the rule lets a sign-in through on .%s and neither module declares that method, "+
+				"so the check passes on a name nobody can call", call)
+		}
+	}
+
+	// The other half: the call that does not destroy the old record must stay
+	// out of the list however the list is edited.
+	for _, call := range sessionRotationCalls {
+		if call == "Start" {
+			t.Error("Start is back in the accepted list: it mints an id, takes no old id, " +
+				"and leaves the session an attacker planted readable after the victim signs in")
+		}
+	}
+}

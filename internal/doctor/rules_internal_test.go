@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -147,6 +148,156 @@ func keys(m map[string]bool) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// TestTheDocumentedRuleCountIsTheOneThisPackageHas checks the figures this
+// repository's documents quote against the rule set they describe.
+//
+// The count has gone stale eight times, and the last one failed differently in
+// kind: the number was wrong because every instrument that had ever measured it
+// read rules.go alone. Four of the names are declared in internal/testlayout and
+// forwarded by testsAreWhereTheyCanRun, so no grep over that one file could
+// reach them however long it was left in place -- and a figure with a command
+// beside it reads as verified whether or not the command can answer.
+//
+// So the four figures are derived here, from the rules slice, from emitsByRule
+// and from both files that declare a name, and then read back out of every
+// document that quotes one. Nothing below is written down twice. A rule added or
+// deleted fails this test in the run that adds or deletes it, and the failure
+// names the document and the figure, which is the only arrangement in which
+// these cannot drift apart again.
+func TestTheDocumentedRuleCountIsTheOneThisPackageHas(t *testing.T) {
+	const (
+		skill  = "../../.agents/skills/aru-doctor-rule/SKILL.md"
+		agents = "../../AGENTS.md"
+		readme = "../../README.md"
+
+		rulesFile  = "rules.go"
+		layoutFile = "../testlayout/testlayout.go"
+	)
+
+	own := declaredRuleNames(t, rulesFile)
+	forwarded := declaredRuleNames(t, layoutFile)
+	if len(own) == 0 || len(forwarded) == 0 {
+		t.Fatal("one of the two files declares no rule name at all, so every figure below measures nothing")
+	}
+
+	// The registry and the two sources have to name one set. Either half
+	// disagreeing is what makes a figure that looks measured wrong: a name in
+	// the source and not in emitsByRule is a rule no fixture proves fires, and a
+	// name in emitsByRule that neither file declares is one that no longer
+	// exists.
+	total := map[string]bool{}
+	for _, names := range emitsByRule() {
+		for _, name := range names {
+			total[name] = true
+		}
+	}
+	for name := range own {
+		if !total[name] {
+			t.Errorf("%s declares %s and no rule in emitsByRule reports it", rulesFile, name)
+		}
+	}
+	for name := range forwarded {
+		if own[name] {
+			t.Errorf("%s is declared in both files, so the figures below count it twice", name)
+		}
+		if !total[name] {
+			t.Errorf("%s declares %s and no rule in emitsByRule forwards it", layoutFile, name)
+		}
+	}
+	for name := range total {
+		if !own[name] && !forwarded[name] {
+			t.Errorf("emitsByRule reports %s and neither file declares it", name)
+		}
+	}
+
+	figures := map[string]int{
+		"rule functions":      len(rules),
+		"names in total":      len(total),
+		"names declared here": len(own),
+		"names forwarded":     len(forwarded),
+	}
+
+	// Each pattern anchors one sentence in one document. They are written as
+	// expressions rather than as the figure so that what fails is the sentence
+	// that is wrong, named, rather than a count somebody then has to go looking
+	// for.
+	for _, quote := range []struct {
+		path, pattern, figure string
+	}{
+		{skill, `#\s*(\d+)\s+rule functions`, "rule functions"},
+		{skill, `#\s*(\d+)\s+names a report can carry`, "names in total"},
+		{skill, `#\s*(\d+)\s+of them declared here`, "names declared here"},
+		{skill, `#\s*(\d+)\s+forwarded, declared there`, "names forwarded"},
+
+		{agents, `(\d+) rule functions reading a project's parsed AST`, "rule functions"},
+		{agents, `emitting (\d+) rule names of their own`, "names declared here"},
+		{agents, `rule names of their own and (\d+) borrowed`, "names forwarded"},
+		{agents, `testlayout\.go \| sort -u \| wc -l\s+#\s*(\d+)`, "names in total"},
+
+		{readme, `(\d+) named rules read the AST`, "names in total"},
+	} {
+		got, ok := quoted(t, quote.path, quote.pattern)
+		if !ok {
+			continue
+		}
+		if want := figures[quote.figure]; got != want {
+			t.Errorf("%s says %d %s and this package has %d: correct the document",
+				quote.path, got, quote.figure, want)
+		}
+	}
+}
+
+// declaredRuleNames reads the rule names one file declares, with the expression
+// the documented commands match on.
+func declaredRuleNames(t *testing.T, path string) map[string]bool {
+	t.Helper()
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	out := map[string]bool{}
+	for _, m := range regexp.MustCompile(`Rule: *"([a-z0-9-]+)"`).FindAllStringSubmatch(string(body), -1) {
+		out[m[1]] = true
+	}
+	return out
+}
+
+// quoted answers the one number a document states for one figure.
+//
+// Exactly one match is required, and that is the half worth writing down: a
+// pattern matching twice is an anchor that has stopped identifying a single
+// sentence, and reading whichever came first is how a guard goes on passing over
+// the line it no longer looks at. Matching nothing is the same failure from the
+// other side -- the sentence was reworded and the guard silently stopped
+// guarding it.
+func quoted(t *testing.T, path, pattern string) (int, bool) {
+	t.Helper()
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Errorf("reading %s: %v", path, err)
+		return 0, false
+	}
+
+	found := regexp.MustCompile(pattern).FindAllStringSubmatch(string(body), -1)
+	switch len(found) {
+	case 1:
+		n, err := strconv.Atoi(found[0][1])
+		if err != nil {
+			t.Errorf("%s: %q is not a number in %s", path, found[0][1], pattern)
+			return 0, false
+		}
+		return n, true
+	case 0:
+		t.Errorf("nothing in %s matches %s, so no figure there is being checked any more", path, pattern)
+	default:
+		t.Errorf("%d places in %s match %s, so the figure is written more than once and the anchor names none of them",
+			len(found), path, pattern)
+	}
+	return 0, false
 }
 
 // TestEveryGrantConstructorIsGuarded compares grantConstructors against what the

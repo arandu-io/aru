@@ -86,8 +86,16 @@ func TestKeyGenerateProducesAUsableKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the key is not valid base64: %v", err)
 	}
-	if len(key) != appKeyLen {
-		t.Fatalf("key length = %d, want %d", len(key), appKeyLen)
+	// Thirty-two written out, not appKeyLen. A test that asserts a length
+	// against the constant the code generates with asserts nothing: change the
+	// constant and the assertion moves with it. This is the number the framework
+	// requires, so changing it has to be done twice, on purpose.
+	//
+	// It is the only guard there is. Nothing here can reach the framework's
+	// constant -- it is unexported, and this is a separate module -- so a change
+	// on that side still passes.
+	if len(key) != 32 {
+		t.Fatalf("key length = %d, want 32", len(key))
 	}
 	// The warning goes to stderr so that `aru key:generate >> .env` stays clean.
 	if !strings.Contains(stderr, "invalidates every session") {

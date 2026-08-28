@@ -7,9 +7,19 @@ import (
 	"io"
 )
 
-// appKeyLen must match config.AppKeyLen in the framework. It is duplicated
-// rather than imported: the CLI is a separate module, and importing the framework
-// here would make the CLI's version pin the project's version.
+// appKeyLen is the length, in bytes, of the key key:generate emits, and it is
+// the length the framework requires of APP_KEY at startup.
+//
+// The two numbers are written down separately. It is duplicated rather than
+// imported because the CLI is a separate module, and importing the framework
+// here would make the CLI's version pin the project's version -- and the
+// framework's own constant is unexported, so there is no name to import even if
+// that were wanted.
+//
+// So nothing catches a divergence: not the compiler, in either module, and no
+// test on either side. It surfaces in the project rather than here, as every
+// generated key being refused at startup for having the wrong length. Changing
+// the requirement means changing this number too, on purpose.
 const appKeyLen = 32
 
 // keyGenerate prints the APP_KEY line, ready to paste into .env.

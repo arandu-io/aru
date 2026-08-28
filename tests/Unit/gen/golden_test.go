@@ -74,8 +74,15 @@ func TestGolden(t *testing.T) {
 				t.Fatalf("generated %d files, want 13", len(files))
 			}
 
+			// The generated files name the golden files, so what this loop can
+			// notice is a golden that is missing or that differs. The directory
+			// is read back below for the one it cannot: a golden nothing
+			// generates any more.
+			expected := map[string]bool{}
+
 			for _, f := range files {
 				golden := filepath.Join(goldens(t, c.name), filepath.Base(f.Path)+".golden")
+				expected[filepath.Base(golden)] = true
 				if *update {
 					if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
 						t.Fatal(err)
@@ -93,6 +100,25 @@ func TestGolden(t *testing.T) {
 				if !bytes.Equal(want, f.Content) {
 					t.Errorf("%s differs from the golden file.\nRun `go test ./tests/Unit/gen -update` and review the diff.", f.Path)
 				}
+			}
+
+			// And the other direction, which nothing above reaches. Renaming a
+			// generated file and running -update writes the new golden and
+			// leaves the old one where it is: never read again, never compared
+			// against anything, and never failing. The count of generated files
+			// does not see it either -- it counts what was generated, and the
+			// orphan is in the directory rather than in that list.
+			entries, err := os.ReadDir(goldens(t, c.name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, e := range entries {
+				if e.IsDir() || expected[e.Name()] {
+					continue
+				}
+				t.Errorf("%s is a golden file nothing generates any more: delete it, "+
+					"or the generator that used to write it is gone and nobody noticed",
+					filepath.Join(goldens(t, c.name), e.Name()))
 			}
 		})
 	}

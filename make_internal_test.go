@@ -246,19 +246,23 @@ func TestGuessTableReadsTheMigrationName(t *testing.T) {
 	}
 }
 
-// TestNextMigrationSequenceReadsTheDirectory. The order of migrations is the
+// TestTheNextSequenceIsReadOffTheDirectory. The order of migrations is the
 // order of their ids, so two files written on one day need two numbers -- and
 // the number comes from the files rather than the clock, so it is the same
 // number on every machine.
-func TestNextMigrationSequenceReadsTheDirectory(t *testing.T) {
+func TestTheNextSequenceIsReadOffTheDirectory(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "database", "migrations")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	if n, err := nextMigrationSequence(root, "2026_08_07"); err != nil || n != 1 {
-		t.Fatalf("empty directory: %d, %v; want 1", n, err)
+	inv, err := readMigrationInventory(root)
+	if err != nil {
+		t.Fatalf("empty directory: %v", err)
+	}
+	if n := inv.nextSequence("2026_08_07"); n != 1 {
+		t.Fatalf("empty directory: %d; want 1", n)
 	}
 
 	for _, name := range []string{
@@ -271,8 +275,11 @@ func TestNextMigrationSequenceReadsTheDirectory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if n, err := nextMigrationSequence(root, "2026_08_07"); err != nil || n != 5 {
-		t.Fatalf("got %d, %v; want 5", n, err)
+	if inv, err = readMigrationInventory(root); err != nil {
+		t.Fatal(err)
+	}
+	if n := inv.nextSequence("2026_08_07"); n != 5 {
+		t.Fatalf("got %d; want 5", n)
 	}
 }
 
@@ -671,9 +678,12 @@ func migrationsIn(t *testing.T, root string) []string {
 func declaredTwice(t *testing.T, root string) (string, bool) {
 	t.Helper()
 
-	dir := filepath.Join(root, "database", "migrations")
+	inv, err := readMigrationInventory(root)
+	if err != nil {
+		t.Fatalf("reading database/migrations: %v", err)
+	}
 	for _, name := range migrationsIn(t, root) {
-		if where, taken := migrationTypeAlreadyDeclared(dir, "CreateInvoicesTable", strings.TrimSuffix(name, ".go")); taken {
+		if where, taken := inv.declaredBy("CreateInvoicesTable", strings.TrimSuffix(name, ".go")); taken {
 			return where, true
 		}
 	}

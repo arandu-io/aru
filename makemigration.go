@@ -85,11 +85,18 @@ func makeMigration(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	date := time.Now().UTC().Format("2006_01_02")
-	seq, err := nextMigrationSequence(root, date)
+	// database/migrations is read once, whole, before an id exists. The sequence
+	// this file takes and the file already declaring its type are two answers out
+	// of that one reading: read twice, the second reading can be lenient where the
+	// first refused, and the collision check then says "nobody declares that"
+	// about a directory nobody read.
+	inv, err := readMigrationInventory(root)
 	if err != nil {
 		return err
 	}
+
+	date := time.Now().UTC().Format("2006_01_02")
+	seq := inv.nextSequence(date)
 
 	modulePath, err := readModulePath(root)
 	if err != nil {
@@ -114,7 +121,7 @@ func makeMigration(args []string, stdout, stderr io.Writer) error {
 			return fmt.Errorf("make:migration: %s already exists", spec.Path())
 		}
 	}
-	if where, taken := migrationTypeAlreadyDeclared(filepath.Join(root, "database", "migrations"), spec.Type, spec.ID); taken {
+	if where, taken := inv.declaredBy(spec.Type, spec.ID); taken {
 		return fmt.Errorf("make:migration: database/migrations already declares %s, in %s -- pick another name", spec.Type, where)
 	}
 
@@ -240,31 +247,6 @@ func guessTable(name string) (table string, create bool, ok bool) {
 // migrationID is the shape of every migration file name: a date and a sequence.
 var migrationID = regexp.MustCompile(`^(\d{4}_\d{2}_\d{2})_(\d{6})_`)
 
-// nextMigrationSequence returns the six-digit half of today's migration id.
-//
-// The order of migrations is the order of their ids, so two files written on one
-// day need two numbers. The number comes from the directory rather than from the
-// clock because a number read off the files is the same number on every machine,
-// which is what makes the golden files mean something.
-//
-// It is not a unique number. Two commands running at once read the same
-// directory and are given the same answer, exactly as two commands in the same
-// second are given the same timestamp -- the collision moved from the clock to
-// the filesystem, it did not go away. What closes it is the file being created
-// exclusively instead of looked for and then written, so the second command is
-// refused at the path rather than replacing what the first one wrote.
-//
-// It refuses rather than answering from a partial reading of the directory, and
-// it is the first thing the three commands that write a migration do -- so an
-// inventory that cannot be read whole stops them before an id exists.
-func nextMigrationSequence(root, date string) (int, error) {
-	inv, err := readMigrationInventory(filepath.Join(root, "database", "migrations"))
-	if err != nil {
-		return 0, err
-	}
-	return inv.nextSequence(date), nil
-}
-
 // migrationInventory is what database/migrations already holds: the highest
 // sequence in use on each date, and the files declaring each package-level name.
 type migrationInventory struct {
@@ -272,8 +254,15 @@ type migrationInventory struct {
 	declared map[string][]string
 }
 
-// readMigrationInventory reads database/migrations whole, or answers with an
-// error naming the file it could not read.
+// readMigrationInventory reads the project's database/migrations whole, or
+// answers with an error naming the file it could not read.
+//
+// It is the only reading of that directory, and it is the first thing each of
+// the commands that write a migration does -- so an inventory that cannot be
+// taken whole stops them before an id exists. Both questions the generator has
+// are answered off the value it returns rather than off a second reading: two
+// readings can disagree, and a lenient one asked after a strict one says "nobody
+// declares that" about files it skipped.
 //
 // Everything it reports decides an identifier that is immutable once the
 // migration has been applied, so a file left out of the reading is not an
@@ -291,9 +280,10 @@ type migrationInventory struct {
 // and a type is what collides with it -- but a project still holding a value of
 // the name from the shape before it would otherwise be told to write a file that
 // does not compile, and the error would name neither file.
-func readMigrationInventory(dir string) (migrationInventory, error) {
+func readMigrationInventory(root string) (migrationInventory, error) {
 	inv := migrationInventory{highest: map[string]int{}, declared: map[string][]string{}}
 
+	dir := filepath.Join(root, "database", "migrations")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -345,11 +335,28 @@ func readMigrationInventory(dir string) (migrationInventory, error) {
 }
 
 // nextSequence is the six-digit half of an id written on that date.
+//
+// The order of migrations is the order of their ids, so two files written on one
+// day need two numbers. The number comes from the directory rather than from the
+// clock because a number read off the files is the same number on every machine,
+// which is what makes the golden files mean something.
+//
+// It is not a unique number. Two commands running at once read the same
+// directory and are given the same answer, exactly as two commands in the same
+// second are given the same timestamp -- the collision moved from the clock to
+// the filesystem, it did not go away. What closes it is the file being created
+// exclusively instead of looked for and then written, so the second command is
+// refused at the path rather than replacing what the first one wrote.
 func (inv migrationInventory) nextSequence(date string) int { return inv.highest[date] + 1 }
 
 // declaredBy names the file that already declares a package-level name of that
 // spelling. The file being written is skipped, so regenerating with --force is
 // not a collision with itself.
+//
+// It is a method rather than a function over the directory because the answer is
+// only worth having about a directory that was read whole: "nobody declares
+// that" is what an empty inventory says, and an inventory that read nothing is
+// empty.
 func (inv migrationInventory) declaredBy(name, self string) (string, bool) {
 	for _, file := range inv.declared[name] {
 		if file == self+".go" {
@@ -383,14 +390,15 @@ func (inv migrationInventory) declaredBy(name, self string) (string, bool) {
 // resolve: the module can take neither the name nor the file. It is refused here
 // rather than written.
 func resolveMigrationID(root string, m gen.Module) (gen.Module, error) {
-	date := time.Now().UTC().Format("2006_01_02")
-	seq, err := nextMigrationSequence(root, date)
+	inv, err := readMigrationInventory(root)
 	if err != nil {
 		return m, err
 	}
-	m.Date, m.Sequence = date, seq
 
-	where, taken := migrationTypeAlreadyDeclared(filepath.Join(root, "database", "migrations"), m.MigrationType(), "")
+	date := time.Now().UTC().Format("2006_01_02")
+	m.Date, m.Sequence = date, inv.nextSequence(date)
+
+	where, taken := inv.declaredBy(m.MigrationType(), "")
 	if !taken {
 		return m, nil
 	}
@@ -400,27 +408,11 @@ func resolveMigrationID(root string, m gen.Module) (gen.Module, error) {
 		return m, fmt.Errorf("database/migrations already declares %s, in %s -- rename that declaration, or %s cannot be regenerated",
 			m.MigrationType(), where, m.Name)
 	}
-	if seq, err = strconv.Atoi(id[2]); err != nil {
+	seq, err := strconv.Atoi(id[2])
+	if err != nil {
 		return m, fmt.Errorf("%s carries a sequence that is not a number: %w", where, err)
 	}
 
 	m.Date, m.Sequence = id[1], seq
 	return m, nil
-}
-
-// migrationTypeAlreadyDeclared reports which file of database/migrations already
-// declares a package-level name of that spelling. The file being written is
-// skipped, so regenerating with --force is not a collision with itself.
-//
-// It answers from what it could read, and answers "nobody" for a directory it
-// could not read at all. That is safe only in the order the callers use: the
-// sequence is read first, off the same directory, and that reading refuses an
-// inventory it cannot take whole -- so by the time this is asked, every file in
-// there has already parsed.
-func migrationTypeAlreadyDeclared(dir, name, self string) (string, bool) {
-	inv, err := readMigrationInventory(dir)
-	if err != nil {
-		return "", false
-	}
-	return inv.declaredBy(name, self)
 }

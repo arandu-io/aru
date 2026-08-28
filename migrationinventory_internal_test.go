@@ -137,6 +137,22 @@ func TestEveryCommandThatWritesAMigrationRefusesAnInventoryItCannotRead(t *testi
 	}
 }
 
+// TestOneReadingAnswersBothQuestionsOrNeither.
+//
+// Which file already declares a name used to be a second reading of the same
+// directory, lenient where the first refused, and what made that safe was only
+// that the sequence was asked for first. An invariant held by the order of two
+// calls is one edit away from being false. There is one reading now and both
+// answers are methods on what it returns, so the question cannot be put to a
+// directory nobody read: the value to put it to does not exist.
+func TestOneReadingAnswersBothQuestionsOrNeither(t *testing.T) {
+	root := projectWithABrokenMigration(t)
+
+	if _, err := readMigrationInventory(root); err == nil {
+		t.Fatalf("the directory holding %s was taken as read whole", brokenMigration)
+	}
+}
+
 // TestForceDoesNotOverwriteTheBrokenFileItWritesASecondOneBesideIt.
 //
 // --force means "overwrite an existing migration file", and refusing it reads
@@ -205,7 +221,7 @@ func TestMakeMigrationStillMintsAnIDOverAnInventoryThatParses(t *testing.T) {
 func TestAMigrationsDirectoryThatIsNotThereIsTheOneRealAbsence(t *testing.T) {
 	root := bareProject(t)
 
-	inv, err := readMigrationInventory(filepath.Join(root, "database", "migrations"))
+	inv, err := readMigrationInventory(root)
 	if err != nil {
 		t.Fatalf("a project with no migrations was refused: %v", err)
 	}
@@ -236,7 +252,7 @@ func TestADirectoryThatCannotBeReadIsNotAnEmptyOne(t *testing.T) {
 		t.Skip("this filesystem reads a directory with no permission bits")
 	}
 
-	if _, err := readMigrationInventory(dir); err == nil {
+	if _, err := readMigrationInventory(root); err == nil {
 		t.Fatal("a directory that could not be read answered as an empty one")
 	}
 }

@@ -247,31 +247,111 @@ var migrationID = regexp.MustCompile(`^(\d{4}_\d{2}_\d{2})_(\d{6})_`)
 // a timestamp to the second collides when two commands run in the same second,
 // and a number read off the files is the same number on every machine, which is
 // what makes the golden files mean something.
+//
+// It refuses rather than answering from a partial reading of the directory, and
+// it is the first thing the three commands that write a migration do -- so an
+// inventory that cannot be read whole stops them before an id exists.
 func nextMigrationSequence(root, date string) (int, error) {
-	dir := filepath.Join(root, "database", "migrations")
+	inv, err := readMigrationInventory(filepath.Join(root, "database", "migrations"))
+	if err != nil {
+		return 0, err
+	}
+	return inv.nextSequence(date), nil
+}
+
+// migrationInventory is what database/migrations already holds: the highest
+// sequence in use on each date, and the files declaring each package-level name.
+type migrationInventory struct {
+	highest  map[string]int
+	declared map[string][]string
+}
+
+// readMigrationInventory reads database/migrations whole, or answers with an
+// error naming the file it could not read.
+//
+// Everything it reports decides an identifier that is immutable once the
+// migration has been applied, so a file left out of the reading is not an
+// absence. A declaration nobody saw becomes a second file declaring one type,
+// which does not compile and names a file the developer never touched; a
+// sequence nobody saw becomes an identifier a file already carries. A directory
+// that is not there is the one real absence, and the only one that answers
+// empty.
+//
+// It repairs nothing. A file that does not parse is the developer's to fix or to
+// move out of the directory, and rewriting it here would be this command editing
+// a migration it did not write.
+//
+// Both type and value declarations are collected. The migration is a type now,
+// and a type is what collides with it -- but a project still holding a value of
+// the name from the shape before it would otherwise be told to write a file that
+// does not compile, and the error would name neither file.
+func readMigrationInventory(dir string) (migrationInventory, error) {
+	inv := migrationInventory{highest: map[string]int{}, declared: map[string][]string{}}
+
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return 1, nil
+			return inv, nil
 		}
-		return 0, err
+		return inv, fmt.Errorf("reading %s: %w", dir, err)
 	}
 
-	highest := 0
 	for _, e := range entries {
-		m := migrationID.FindStringSubmatch(e.Name())
-		if m == nil || m[1] != date {
+		// The sequence is read off the name, so it counts whatever carries a
+		// migration id -- a file the developer has not renamed to .go yet still
+		// occupies its number.
+		if m := migrationID.FindStringSubmatch(e.Name()); m != nil {
+			n, err := strconv.Atoi(m[2])
+			if err != nil {
+				return inv, fmt.Errorf("%s carries a sequence that is not a number: %w", e.Name(), err)
+			}
+			if n > inv.highest[m[1]] {
+				inv.highest[m[1]] = n
+			}
+		}
+
+		if e.IsDir() || filepath.Ext(e.Name()) != ".go" {
 			continue
 		}
-		n, err := strconv.Atoi(m[2])
+		file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, e.Name()), nil, parser.SkipObjectResolution)
 		if err != nil {
-			continue
+			return inv, fmt.Errorf("%s does not parse, so what it declares cannot be read -- fix that file, "+
+				"or move it out of %s: %w", e.Name(), dir, err)
 		}
-		if n > highest {
-			highest = n
+		for _, decl := range file.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				switch s := spec.(type) {
+				case *ast.TypeSpec:
+					inv.declared[s.Name.Name] = append(inv.declared[s.Name.Name], e.Name())
+				case *ast.ValueSpec:
+					for _, ident := range s.Names {
+						inv.declared[ident.Name] = append(inv.declared[ident.Name], e.Name())
+					}
+				}
+			}
 		}
 	}
-	return highest + 1, nil
+	return inv, nil
+}
+
+// nextSequence is the six-digit half of an id written on that date.
+func (inv migrationInventory) nextSequence(date string) int { return inv.highest[date] + 1 }
+
+// declaredBy names the file that already declares a package-level name of that
+// spelling. The file being written is skipped, so regenerating with --force is
+// not a collision with itself.
+func (inv migrationInventory) declaredBy(name, self string) (string, bool) {
+	for _, file := range inv.declared[name] {
+		if file == self+".go" {
+			continue
+		}
+		return file, true
+	}
+	return "", false
 }
 
 // resolveMigrationID fills in the date and sequence the module's migration has
@@ -326,43 +406,15 @@ func resolveMigrationID(root string, m gen.Module) (gen.Module, error) {
 // declares a package-level name of that spelling. The file being written is
 // skipped, so regenerating with --force is not a collision with itself.
 //
-// Both type and value declarations are read. The migration is a type now, and a
-// type is what collides with it -- but a project that still holds a value of the
-// name from the shape before it would otherwise be told to write a file that
-// does not compile, and the error would name neither file.
+// It answers from what it could read, and answers "nobody" for a directory it
+// could not read at all. That is safe only in the order the callers use: the
+// sequence is read first, off the same directory, and that reading refuses an
+// inventory it cannot take whole -- so by the time this is asked, every file in
+// there has already parsed.
 func migrationTypeAlreadyDeclared(dir, name, self string) (string, bool) {
-	entries, err := os.ReadDir(dir)
+	inv, err := readMigrationInventory(dir)
 	if err != nil {
 		return "", false
 	}
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".go" || e.Name() == self+".go" {
-			continue
-		}
-		file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, e.Name()), nil, parser.SkipObjectResolution)
-		if err != nil {
-			continue
-		}
-		for _, decl := range file.Decls {
-			gd, ok := decl.(*ast.GenDecl)
-			if !ok {
-				continue
-			}
-			for _, spec := range gd.Specs {
-				switch s := spec.(type) {
-				case *ast.TypeSpec:
-					if s.Name.Name == name {
-						return e.Name(), true
-					}
-				case *ast.ValueSpec:
-					for _, ident := range s.Names {
-						if ident.Name == name {
-							return e.Name(), true
-						}
-					}
-				}
-			}
-		}
-	}
-	return "", false
+	return inv.declaredBy(name, self)
 }

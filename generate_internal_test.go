@@ -525,3 +525,67 @@ func sortedNames(files map[string][]byte) []string {
 	sort.Strings(names)
 	return names
 }
+
+// TestASecondPathIsRefusedRatherThanIgnored.
+//
+// The command took args[0] and let the flag package keep the rest, and the flag
+// package stops at the first positional argument -- so a second path landed in
+// Args() and was read by nobody. A command that accepts N arguments and uses one
+// lies about its own signature, and the flag that followed the extra path was
+// dropped with it.
+func TestASecondPathIsRefusedRatherThanIgnored(t *testing.T) {
+	for name, order := range map[string]func(first, second string) []string{
+		"the paths first": func(first, second string) []string {
+			return []string{first, second}
+		},
+		"a flag first": func(first, second string) []string {
+			return []string{"--force", first, second}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root, first := project(t, invoiceSpec)
+			chdir(t, root)
+
+			second := filepath.Join(root, "shipment.yaml")
+			writeFile(t, second, strings.Replace(invoiceSpec, "name: invoice", "name: shipment", 1))
+
+			var out, errOut strings.Builder
+			err := generate(order(first, second), &out, &errOut)
+			if err == nil {
+				t.Fatal("the second path was ignored without a word")
+			}
+			for _, want := range []string{"one specification per run", "invoice.yaml", "shipment.yaml"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the error does not mention %q:\n%v", want, err)
+				}
+			}
+			// And nothing was written. Generating the first of two paths is the
+			// half-done state the refusal exists to prevent.
+			if _, statErr := os.Stat(filepath.Join(root, "app")); statErr == nil {
+				t.Error("a refused run still generated files")
+			}
+		})
+	}
+}
+
+// TestOnePathAndItsFlagsAreStillAccepted, in both orders, so the refusal above
+// cannot be satisfied by refusing everything.
+func TestOnePathAndItsFlagsAreStillAccepted(t *testing.T) {
+	for name, order := range map[string]func(path string) []string{
+		"the path first": func(path string) []string { return []string{path, "--check"} },
+		"the flag first": func(path string) []string { return []string{"--check", path} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			root, specPath := project(t, invoiceSpec)
+			chdir(t, root)
+
+			var out, errOut strings.Builder
+			if err := generate(order(specPath), &out, &errOut); err != nil {
+				t.Fatalf("a run with one path was refused: %v\n%s", err, errOut.String())
+			}
+			if !strings.Contains(out.String(), "is valid") {
+				t.Errorf("check said %q", out.String())
+			}
+		})
+	}
+}

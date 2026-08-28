@@ -33,12 +33,27 @@ func generate(args []string, stdout, stderr io.Writer) error {
 	if err := flags.Parse(args); err != nil {
 		return fmt.Errorf("generate: %w", err)
 	}
-	if path == "" && flags.NArg() > 0 {
-		path = flags.Arg(0)
+	rest := flags.Args()
+	if path == "" && len(rest) > 0 {
+		path, rest = rest[0], rest[1:]
 	}
 	if path == "" {
 		return fmt.Errorf("usage: aru generate <spec.yaml> [--check] [--dry-run] [--force]\n" +
 			"`aru schema` prints the JSON Schema a specification is written against")
+	}
+
+	// One specification per run, and what was left over is named.
+	//
+	// The flag package stops parsing at the first positional argument, so
+	// everything after a second path landed in Args() and was read by nobody --
+	// the extra path, and any flag written after it. A command that accepts N
+	// arguments and uses one lies about its own signature, and it lied in the
+	// direction that quietly does less than it was asked to.
+	if len(rest) > 0 {
+		return fmt.Errorf("generate: one specification per run. %s was read; %s was not.\n\n"+
+			"A specification is one module, so a run generates one. Run the command\n"+
+			"once for each file.",
+			path, strings.Join(rest, ", "))
 	}
 
 	// Validation first, always. An error in the spec dies here rather than

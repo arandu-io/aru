@@ -71,3 +71,72 @@ func TestTheSchemaWarnsBeforeTheErrorHappens(t *testing.T) {
 		t.Error("the schema does not warn about the colon, and a model has no way to know")
 	}
 }
+
+// TestASecondDocumentIsRefusedRatherThanDropped.
+//
+// KnownFields(true) exists so that a field nobody defined does not pass in
+// silence. A whole document did: the decoder reads the first and stops, so
+// somebody who wrote two modules into one file got one module, no second file,
+// and no word about it.
+//
+// It is refused rather than generated. One file per module is what the schema
+// declares -- an object, not an array -- and generating N would be a second way
+// to write several modules when the first is running the command once each.
+func TestASecondDocumentIsRefusedRatherThanDropped(t *testing.T) {
+	document := `version: "1"
+name: invoice
+fields:
+  - {name: reference, type: string}
+---
+version: "1"
+name: shipment
+fields:
+  - {name: code, type: string}
+`
+
+	_, err := spec.Parse([]byte(document), "modules.yaml")
+	if err == nil {
+		t.Fatal("the second module was dropped without a word")
+	}
+	// The message has to say how many there are and which one was going to be
+	// read, or the reader cannot tell what the tool did with the rest.
+	for _, want := range []string{"2 documents", "invoice", "shipment", "modules.yaml"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error does not mention %q:\n%v", want, err)
+		}
+	}
+}
+
+// TestATrailingSeparatorIsNotASecondModule.
+//
+// A file that ends in `---`, or in a comment after one, parses as two documents
+// and carries one module. Refusing it would reject a file whose only fault is a
+// blank line, which is the kind of false refusal that teaches people to distrust
+// the validator.
+func TestATrailingSeparatorIsNotASecondModule(t *testing.T) {
+	for name, document := range map[string]string{
+		"a separator": `version: "1"
+name: invoice
+fields:
+  - {name: reference, type: string}
+---
+`,
+		"a comment after one": `version: "1"
+name: invoice
+fields:
+  - {name: reference, type: string}
+---
+# nothing here
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			m, err := spec.Parse([]byte(document), "invoice.yaml")
+			if err != nil {
+				t.Fatalf("a file carrying one module was refused: %v", err)
+			}
+			if m.Name != "invoice" {
+				t.Errorf("the module read is %q, want invoice", m.Name)
+			}
+		})
+	}
+}

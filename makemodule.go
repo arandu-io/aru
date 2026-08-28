@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/arandu-io/aru/internal/gen"
 )
@@ -58,24 +57,17 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("make:module: %w", err)
 	}
 
-	// The sequence comes from the directory, the same way `aru make:migration`
-	// and `aru make:model --migration` take it. Hardcoding it to one would give
-	// two modules generated on the same day two migrations under the same date
-	// and the same number -- distinct ids, so nothing fails, and an order
-	// between them that nothing decides.
-	date := time.Now().UTC().Format("2006_01_02")
-	seq, err := nextMigrationSequence(root, date)
-	if err != nil {
-		return err
-	}
-
-	spec := gen.Module{
+	// The migration id comes from resolveMigrationID, which is where every
+	// command that writes a module's migration gets it: the next free sequence
+	// of today, or the id this module's migration already has.
+	spec, err := resolveMigrationID(root, gen.Module{
 		Name:       name,
 		Fields:     parsed,
 		Tenant:     *tenant,
 		ModulePath: modulePath,
-		Date:       date,
-		Sequence:   seq,
+	})
+	if err != nil {
+		return fmt.Errorf("make:module: %w", err)
 	}
 
 	files, err := gen.Generate(spec)

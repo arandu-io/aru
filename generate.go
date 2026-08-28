@@ -6,9 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/arandu-io/aru/internal/gen"
 	"github.com/arandu-io/aru/internal/spec"
@@ -64,32 +62,12 @@ func generate(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	// The sequence comes from the directory, the same way `aru make:module`,
-	// `aru make:model --migration` and `aru make:migration` take it. Hardcoding
-	// it to one gave two modules generated on the same day two migrations under
-	// the same date and the same number -- distinct ids, so nothing fails, and
-	// an order between them that nothing decides.
-	date := time.Now().UTC().Format("2006_01_02")
-	seq, err := nextMigrationSequence(root, date)
-	if err != nil {
-		return err
-	}
-
 	// The module is built once and reused, rather than converted again where it
-	// is needed. Reading the clock and the directory twice is how the wiring
+	// is needed. Converting twice read the clock twice, which is how the wiring
 	// message ends up naming a migration the run did not write.
-	target := fromSpec(module, modulePath, date, seq)
-
-	// A module that already has a migration keeps it, id and all.
-	//
-	// This is what makes taking the next sequence safe. A migration id is
-	// immutable -- it is the key the applied-migrations table records -- so
-	// minting a second one for a module that has one leaves two files declaring
-	// one type in database/migrations, which does not compile, and the error
-	// names a file the developer never touched. Regenerating is the documented
-	// way to use this command, and it has to land on the file already there.
-	if err := reuseMigrationID(root, module, modulePath, &target); err != nil {
-		return err
+	target, err := resolveMigrationID(root, fromSpec(module, modulePath))
+	if err != nil {
+		return fmt.Errorf("generate: %w", err)
 	}
 
 	files, err := gen.Generate(target)
@@ -147,47 +125,16 @@ func generate(args []string, stdout, stderr io.Writer) error {
 	return nil
 }
 
-// reuseMigrationID points the module at the migration it already wrote.
-//
-// It reads database/migrations for a file declaring the type this module renders
-// its migration as, and, finding one, rebuilds the module on that file's date
-// and sequence so the run writes over it instead of beside it.
-//
-// A declaration under a name that is not a migration id is the case nothing can
-// resolve: the module cannot take the name, and it cannot take the file either.
-// It is refused here rather than written, because two package-level types of one
-// spelling do not compile and the compiler would name the wrong file.
-func reuseMigrationID(root string, m spec.Module, modulePath string, target *gen.Module) error {
-	dir := filepath.Join(root, "database", "migrations")
-	where, taken := migrationTypeAlreadyDeclared(dir, target.MigrationType(), "")
-	if !taken {
-		return nil
-	}
-
-	id := migrationID.FindStringSubmatch(where)
-	if id == nil {
-		return fmt.Errorf("generate: database/migrations already declares %s, in %s -- rename that declaration, or %s cannot be regenerated",
-			target.MigrationType(), where, m.Name)
-	}
-	seq, err := strconv.Atoi(id[2])
-	if err != nil {
-		return fmt.Errorf("generate: %s carries a sequence that is not a number: %w", where, err)
-	}
-
-	*target = fromSpec(m, modulePath, id[1], seq)
-	return nil
-}
-
 // fromSpec converts a specification into what the generator takes.
 //
 // One direction, and it is the narrow one: everything the DSL expresses maps
 // onto something make:module already generates. A spec field with no equivalent
 // would mean the DSL grew past the generator, and the DSL is a closed set.
 //
-// The date and the sequence are arguments rather than read here, because they
-// name the migration file: a function that read the clock would give two callers
-// two different names for one run.
-func fromSpec(m spec.Module, modulePath, date string, seq int) gen.Module {
+// The date and the sequence are left zero for resolveMigrationID to fill in. A
+// conversion that read the clock would name the migration file, and it would
+// name it differently on every call.
+func fromSpec(m spec.Module, modulePath string) gen.Module {
 	fields := make([]gen.Field, 0, len(m.Fields))
 	for _, f := range m.Fields {
 		fields = append(fields, gen.Field{
@@ -203,8 +150,6 @@ func fromSpec(m spec.Module, modulePath, date string, seq int) gen.Module {
 		Fields:      fields,
 		Tenant:      m.Tenant,
 		ModulePath:  modulePath,
-		Date:        date,
-		Sequence:    seq,
 		Permissions: m.Permissions,
 	}
 }

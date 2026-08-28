@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/arandu-io/aru/internal/gen"
 )
@@ -86,14 +85,6 @@ func makeModel(args []string, stdout, stderr io.Writer) error {
 		parts = gen.Everything()
 	}
 
-	date := time.Now().UTC().Format("2006_01_02")
-	seq := 1
-	if parts.Migration {
-		if seq, err = nextMigrationSequence(root, date); err != nil {
-			return err
-		}
-	}
-
 	// Both spellings of the name are accepted: the developer this is for types
 	// the class name, PurchaseOrder, and the generator needs purchase_order.
 	spec := gen.Module{
@@ -101,8 +92,15 @@ func makeModel(args []string, stdout, stderr io.Writer) error {
 		Fields:     parsed,
 		Tenant:     *tenant,
 		ModulePath: modulePath,
-		Date:       date,
-		Sequence:   seq,
+	}
+
+	// Only when there is a migration to name. The date and the sequence feed
+	// MigrationID and nothing else, so asking for them without --migration would
+	// read the directory to fill in two fields no template renders.
+	if parts.Migration {
+		if spec, err = resolveMigrationID(root, spec); err != nil {
+			return fmt.Errorf("make:model: %w", err)
+		}
 	}
 
 	files, err := gen.GenerateModel(spec, parts)

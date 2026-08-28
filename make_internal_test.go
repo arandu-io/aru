@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -421,7 +422,9 @@ func TestTheMissingEntityMessageSuggestsACommandThatRuns(t *testing.T) {
 // asked about has to be the tree make:module produces: a fixture typed out here
 // would be a second opinion on what an entity looks like, and the copy nobody
 // regenerates is the one that drifts.
-func projectWithModule(t *testing.T, name string) string {
+// bareProject writes the three files a command needs to recognize a project, and
+// nothing else.
+func bareProject(t *testing.T) string {
 	t.Helper()
 
 	root := t.TempDir()
@@ -434,6 +437,13 @@ func projectWithModule(t *testing.T, name string) string {
 			t.Fatal(err)
 		}
 	}
+	return root
+}
+
+func projectWithModule(t *testing.T, name string) string {
+	t.Helper()
+
+	root := bareProject(t)
 
 	files, err := gen.Generate(moduleUnderTest(name))
 	if err != nil {
@@ -636,5 +646,113 @@ func TestMakeTestRefusesAnEntityThatDoesNotDeclareWhatTheTestNames(t *testing.T)
 	}
 	if !strings.Contains(stderr, "ErrPurchaseOrderSort") {
 		t.Errorf("the refusal does not name the missing identifier: %q", stderr)
+	}
+}
+
+// migrationsIn is the migration file names of a project, sorted, for an
+// assertion that reads the same on every run.
+func migrationsIn(t *testing.T, root string) []string {
+	t.Helper()
+
+	entries, err := os.ReadDir(filepath.Join(root, "database", "migrations"))
+	if err != nil {
+		t.Fatalf("reading database/migrations: %v", err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	sort.Strings(names)
+	return names
+}
+
+// declaredTwice reports a package-level name that two files of the directory
+// declare, which is the shape that does not compile.
+func declaredTwice(t *testing.T, root string) (string, bool) {
+	t.Helper()
+
+	dir := filepath.Join(root, "database", "migrations")
+	for _, name := range migrationsIn(t, root) {
+		if where, taken := migrationTypeAlreadyDeclared(dir, "CreateInvoicesTable", strings.TrimSuffix(name, ".go")); taken {
+			return where, true
+		}
+	}
+	return "", false
+}
+
+// TestMakeModuleKeepsTheMigrationItAlreadyWrote.
+//
+// A migration id is immutable: it is the key the applied-migrations table
+// records. Writing a second one for a module that has one leaves
+// database/migrations with two files declaring one type -- which does not
+// compile, naming a file the developer never touched -- and a migration recorded
+// as applied under an id no file carries any more.
+//
+// Both halves of the same failure are here. Twice in one day it is the sequence
+// that moves; a day later it is the date, and that half was reachable from the
+// moment the command existed.
+func TestMakeModuleKeepsTheMigrationItAlreadyWrote(t *testing.T) {
+	t.Run("twice in one day", func(t *testing.T) {
+		root := bareProject(t)
+		t.Chdir(root)
+
+		var out, errOut strings.Builder
+		for _, pass := range []string{"first", "second"} {
+			out.Reset()
+			errOut.Reset()
+			args := []string{"invoice", "--fields", "reference:string!", "--force"}
+			if err := makeModule(args, &out, &errOut); err != nil {
+				t.Fatalf("the %s make:module: %v\n%s", pass, err, errOut.String())
+			}
+		}
+
+		if names := migrationsIn(t, root); len(names) != 1 {
+			t.Fatalf("database/migrations holds %v, want the one migration the module has", names)
+		}
+	})
+
+	t.Run("a day later", func(t *testing.T) {
+		// The module on disk carries a date in the past, which is what a project
+		// generated on any earlier day looks like.
+		root := projectWithModule(t, "invoice")
+		t.Chdir(root)
+
+		var out, errOut strings.Builder
+		args := []string{"invoice", "--fields", "reference:string!", "--force"}
+		if err := makeModule(args, &out, &errOut); err != nil {
+			t.Fatalf("make:module: %v\n%s", err, errOut.String())
+		}
+
+		names := migrationsIn(t, root)
+		if len(names) != 1 {
+			t.Fatalf("regenerating a day later left %v: two files declaring one type do not compile", names)
+		}
+		if names[0] != "2026_07_31_000001_create_invoices_table.go" {
+			t.Errorf("the migration was renamed to %s, and a migration id is immutable", names[0])
+		}
+		if where, twice := declaredTwice(t, root); twice {
+			t.Errorf("CreateInvoicesTable is declared twice, in %s as well", where)
+		}
+	})
+}
+
+// TestMakeModelKeepsTheMigrationItAlreadyWrote is the same property for the
+// other command that writes a migration for an entity.
+func TestMakeModelKeepsTheMigrationItAlreadyWrote(t *testing.T) {
+	root := projectWithModule(t, "invoice")
+	t.Chdir(root)
+
+	var out, errOut strings.Builder
+	args := []string{"Invoice", "--fields", "reference:string!", "--migration", "--force"}
+	if err := makeModel(args, &out, &errOut); err != nil {
+		t.Fatalf("make:model --migration: %v\n%s", err, errOut.String())
+	}
+
+	names := migrationsIn(t, root)
+	if len(names) != 1 {
+		t.Fatalf("make:model --migration left %v: two files declaring one type do not compile", names)
+	}
+	if names[0] != "2026_07_31_000001_create_invoices_table.go" {
+		t.Errorf("the migration was renamed to %s, and a migration id is immutable", names[0])
 	}
 }

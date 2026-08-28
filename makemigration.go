@@ -274,6 +274,54 @@ func nextMigrationSequence(root, date string) (int, error) {
 	return highest + 1, nil
 }
 
+// resolveMigrationID fills in the date and sequence the module's migration has
+// to carry, and it is the one place the three commands that write a module's
+// migration decide that -- `aru generate`, `aru make:module` and
+// `aru make:model --migration`. Written out three times it would drift, and the
+// half that drifted would be the half nobody ran.
+//
+// A module with no migration yet takes the next free sequence of today, so two
+// modules generated on one day cannot land on one number with nothing to order
+// them.
+//
+// A module that already has a migration takes that file's date and sequence
+// back. A migration id is immutable -- it is the key the applied-migrations
+// table records -- so minting a second one leaves database/migrations with two
+// files declaring one type, which does not compile and names a file the
+// developer never touched, and leaves a migration recorded as applied under an
+// id no file carries any more. Regenerating has to land on the file already
+// there rather than beside it, and across a change of date as much as within one
+// day.
+//
+// A declaration under a name that is not a migration id is the case nothing can
+// resolve: the module can take neither the name nor the file. It is refused here
+// rather than written.
+func resolveMigrationID(root string, m gen.Module) (gen.Module, error) {
+	date := time.Now().UTC().Format("2006_01_02")
+	seq, err := nextMigrationSequence(root, date)
+	if err != nil {
+		return m, err
+	}
+	m.Date, m.Sequence = date, seq
+
+	where, taken := migrationTypeAlreadyDeclared(filepath.Join(root, "database", "migrations"), m.MigrationType(), "")
+	if !taken {
+		return m, nil
+	}
+
+	id := migrationID.FindStringSubmatch(where)
+	if id == nil {
+		return m, fmt.Errorf("database/migrations already declares %s, in %s -- rename that declaration, or %s cannot be regenerated",
+			m.MigrationType(), where, m.Name)
+	}
+	if seq, err = strconv.Atoi(id[2]); err != nil {
+		return m, fmt.Errorf("%s carries a sequence that is not a number: %w", where, err)
+	}
+
+	m.Date, m.Sequence = id[1], seq
+	return m, nil
+}
+
 // migrationTypeAlreadyDeclared reports which file of database/migrations already
 // declares a package-level name of that spelling. The file being written is
 // skipped, so regenerating with --force is not a collision with itself.

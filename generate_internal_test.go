@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -417,4 +418,110 @@ fields:
 	if !strings.Contains(policy, "IT DENIES EVERYTHING") {
 		t.Error("the policy does not say that it denies everything")
 	}
+}
+
+// TestTwoModulesGeneratedTheSameDayGetDistinctSequences.
+//
+// The order of migrations is the order of their ids, so two files written on one
+// day need two numbers. Every other command that writes a migration takes the
+// sequence from the directory; a generate that hardcoded it would emit two
+// distinct file names under the same date and the same number, and nothing
+// would decide which of the two runs first.
+func TestTwoModulesGeneratedTheSameDayGetDistinctSequences(t *testing.T) {
+	root, first := project(t, invoiceSpec)
+	chdir(t, root)
+
+	second := filepath.Join(root, "shipment.yaml")
+	writeFile(t, second, strings.Replace(invoiceSpec, "name: invoice", "name: shipment", 1))
+
+	var out, errOut strings.Builder
+	for _, path := range []string{first, second} {
+		out.Reset()
+		errOut.Reset()
+		if err := generate([]string{path}, &out, &errOut); err != nil {
+			t.Fatalf("generate %s: %v\n%s", path, err, errOut.String())
+		}
+	}
+
+	entries, err := os.ReadDir(filepath.Join(root, "database", "migrations"))
+	if err != nil {
+		t.Fatalf("reading database/migrations: %v", err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	if len(names) != 2 {
+		t.Fatalf("database/migrations holds %v, want one migration per module", names)
+	}
+
+	seen := map[string]string{}
+	for _, name := range names {
+		m := migrationID.FindStringSubmatch(name)
+		if m == nil {
+			t.Fatalf("%s is not named like a migration", name)
+		}
+		if other, taken := seen[m[2]]; taken {
+			t.Fatalf("%s and %s share sequence %s: nothing decides which runs first", other, name, m[2])
+		}
+		seen[m[2]] = name
+	}
+	if _, taken := seen["000002"]; !taken {
+		t.Errorf("the second module did not take the next sequence: %v", names)
+	}
+}
+
+// TestRegeneratingKeepsTheMigrationItAlreadyWrote is the other half of taking
+// the next sequence, and without it the first half is a regression.
+//
+// A migration id is immutable: it is the key the applied-migrations table
+// records. A run that minted a second id for a module that already has one would
+// leave database/migrations with two files declaring one type -- which does not
+// compile -- and a migration recorded as applied under an id no file carries.
+func TestRegeneratingKeepsTheMigrationItAlreadyWrote(t *testing.T) {
+	root, specPath := project(t, invoiceSpec)
+	chdir(t, root)
+
+	var out, errOut strings.Builder
+	if err := generate([]string{specPath}, &out, &errOut); err != nil {
+		t.Fatalf("the first generate: %v\n%s", err, errOut.String())
+	}
+	before := filesIn(t, filepath.Join(root, "database", "migrations"))
+	if len(before) != 1 {
+		t.Fatalf("the first run wrote %d migrations, want one", len(before))
+	}
+
+	// From the specification the first run saved, which is the round trip.
+	out.Reset()
+	errOut.Reset()
+	saved := filepath.Join(root, spec.Dir, "invoice.yaml")
+	if err := generate([]string{saved, "--force"}, &out, &errOut); err != nil {
+		t.Fatalf("regenerating: %v\n%s", err, errOut.String())
+	}
+
+	after := filesIn(t, filepath.Join(root, "database", "migrations"))
+	if len(after) != 1 {
+		t.Fatalf("regenerating left %d migrations declaring one type, and they do not compile: %v",
+			len(after), sortedNames(after))
+	}
+	for name, first := range before {
+		second, present := after[name]
+		if !present {
+			t.Fatalf("%s was replaced by %v: a migration id is immutable", name, sortedNames(after))
+		}
+		if !bytes.Equal(first, second) {
+			t.Errorf("%s differs after a round trip through the specification", name)
+		}
+	}
+}
+
+// sortedNames is the keys of a file map, for an error message that reads the
+// same on every run.
+func sortedNames(files map[string][]byte) []string {
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

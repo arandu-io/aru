@@ -243,10 +243,16 @@ var migrationID = regexp.MustCompile(`^(\d{4}_\d{2}_\d{2})_(\d{6})_`)
 // nextMigrationSequence returns the six-digit half of today's migration id.
 //
 // The order of migrations is the order of their ids, so two files written on one
-// day need two numbers. It comes from the directory rather than from the clock:
-// a timestamp to the second collides when two commands run in the same second,
-// and a number read off the files is the same number on every machine, which is
-// what makes the golden files mean something.
+// day need two numbers. The number comes from the directory rather than from the
+// clock because a number read off the files is the same number on every machine,
+// which is what makes the golden files mean something.
+//
+// It is not a unique number. Two commands running at once read the same
+// directory and are given the same answer, exactly as two commands in the same
+// second are given the same timestamp -- the collision moved from the clock to
+// the filesystem, it did not go away. What closes it is the file being created
+// exclusively instead of looked for and then written, so the second command is
+// refused at the path rather than replacing what the first one wrote.
 //
 // It refuses rather than answering from a partial reading of the directory, and
 // it is the first thing the three commands that write a migration do -- so an

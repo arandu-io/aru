@@ -327,6 +327,17 @@ func Merge(existing, generated []byte) []byte {
 
 // Write writes the files, preserving custom blocks in the ones that already
 // exist. It returns what it wrote and what it skipped.
+//
+// Without --force a file is created exclusively, in one operation, rather than
+// looked for and then written. Looking first answers about the moment of the
+// look: a second run of the same command reads the same directory, mints the
+// same name, finds nothing there and replaces the first run's file -- reporting
+// it as created, because from inside each run nothing was there. It is also what
+// lets a symlink standing on the path swallow the write, since asking whether
+// the file is there follows the link and answers about its target.
+//
+// With --force the existing file is read, merged and replaced, which is the
+// whole of what --force means.
 func Write(root string, files []File, force bool) (written, skipped []string, err error) {
 	for _, f := range files {
 		path := filepath.Join(root, f.Path)
@@ -334,12 +345,21 @@ func Write(root string, files []File, force bool) (written, skipped []string, er
 			return written, skipped, err
 		}
 
-		content := f.Content
-		if existing, readErr := os.ReadFile(path); readErr == nil {
-			if !force {
+		if !force {
+			created, err := createExclusively(path, f.Content)
+			if err != nil {
+				return written, skipped, err
+			}
+			if !created {
 				skipped = append(skipped, f.Path)
 				continue
 			}
+			written = append(written, f.Path)
+			continue
+		}
+
+		content := f.Content
+		if existing, readErr := os.ReadFile(path); readErr == nil {
 			content = Merge(existing, f.Content)
 		}
 		if err := os.WriteFile(path, content, 0o644); err != nil {
@@ -350,6 +370,24 @@ func Write(root string, files []File, force bool) (written, skipped []string, er
 	sort.Strings(written)
 	sort.Strings(skipped)
 	return written, skipped, nil
+}
+
+// createExclusively writes the file only if the path is free, and reports
+// whether it was. A path already taken is not an error: it is what --force is
+// offered for, and the caller says so naming every file at once.
+func createExclusively(path string, content []byte) (bool, error) {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		if os.IsExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if _, err := file.Write(content); err != nil {
+		file.Close()
+		return false, err
+	}
+	return true, file.Close()
 }
 
 func numbered(s string) string {

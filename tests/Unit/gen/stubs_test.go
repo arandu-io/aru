@@ -29,6 +29,11 @@ func stubFields() []gen.Field {
 // produce the same bytes, forever, and a template change shows up as a diff in
 // review instead of surprising somebody whose project regenerated differently.
 func TestGoldenStubs(t *testing.T) {
+	// The cases name the golden files, so what the loop can notice is a golden
+	// that is missing or that differs. The directory is read back below for the
+	// one it cannot: a golden no case names any more.
+	expected := map[string]bool{}
+
 	for _, c := range []struct {
 		golden string
 		build  func() (gen.File, error)
@@ -102,6 +107,8 @@ func TestGoldenStubs(t *testing.T) {
 		{"welcome-email.kyse.go", fileAt(1, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
 		{"welcome-email-text.kyse.go", fileAt(2, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
 	} {
+		expected[c.golden+".golden"] = true
+
 		t.Run(c.golden, func(t *testing.T) {
 			file, err := c.build()
 			if err != nil {
@@ -136,6 +143,25 @@ func TestGoldenStubs(t *testing.T) {
 				t.Errorf("%s differs from the golden file.\nRun `go test ./tests/Unit/gen -update` and review the diff.", file.Path)
 			}
 		})
+	}
+
+	// And the other direction, which nothing above reaches. Dropping a case, or
+	// renaming the file one emits and running -update, writes the new golden and
+	// leaves the old one where it is: never read again, never compared against
+	// anything, and never failing. The table does not see it either -- it lists
+	// what is generated, and the orphan is in the directory rather than in the
+	// list.
+	entries, err := os.ReadDir(goldens(t, "stubs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || expected[e.Name()] {
+			continue
+		}
+		t.Errorf("%s is a golden file no case generates any more: delete it, "+
+			"or the generator that used to write it is gone and nobody noticed",
+			filepath.Join(goldens(t, "stubs"), e.Name()))
 	}
 }
 

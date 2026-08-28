@@ -32,3 +32,20 @@ func (s *BillingService) ViewCharge(ctx context.Context, actor security.Subject,
 	charge, err := s.charges.Find(ctx, g, id)
 	return charge, err
 }
+
+// ShowCharge is the same violation spelled through a Get.
+//
+// The spelling is the whole reason this method exists. A model builder's listing
+// terminal is also called Get, and a listing after an Authorize is not a hole --
+// the Grant that was handed in is what scoped the statement, and there is no
+// second object to ask about. What makes this one a hole is the id: the call is
+// pointed at one row, and nothing asks the policy about that row.
+func (s *BillingService) ShowCharge(ctx context.Context, actor security.Subject, id string) (models.Charge, error) {
+	g, err := security.Authorize(ctx, s.policy, actor, "billing.view", models.Charge{})
+	if err != nil {
+		return models.Charge{}, err
+	}
+
+	charge, err := s.charges.Get(ctx, g, id)
+	return charge, err
+}

@@ -35,10 +35,11 @@ against is still the one it is running.
 | group | commands |
 |---|---|
 | run the project | `serve` `dev` `build` `new` `doctor` `trace` `generate` `schema` |
-| generate a module | `make:module` `make:model` `make:migration` `make:controller` `make:middleware` `make:request` `make:factory` `make:seeder` `make:job` `make:mail` `make:command` `make:listener` `make:event` `make:enum` `make:policy` |
+| generate a module | `make:module` `make:model` `make:migration` `make:controller` `make:middleware` `make:request` `make:factory` `make:seeder` `make:job` `make:mail` `make:command` `make:listener` `make:event` `make:enum` `make:policy` `make:test` |
 | migrations | `migrate` `migrate:rollback` `migrate:status` `migrate:fresh` |
+| queues | `queue:work` `queue:listen` `queue:restart` `queue:pause` `queue:resume` `queue:clear` `queue:monitor` `queue:failed` `queue:retry` `queue:forget` `queue:flush` `queue:prune-failed` `queue:retry-batch` `queue:prune-batches` |
 | fonts | `font:add` `font:search` `font:info` `font:list` `font:remove` |
-| everything else | `key:generate` `schedule:list` `schedule:run` `queue:work` `route:list` `db:seed` `view:build` |
+| everything else | `key:generate` `schedule:list` `schedule:run` `route:list` `db:seed` `view:build` |
 
 plus `help` and `version`.
 
@@ -47,11 +48,11 @@ plus `help` and `version`.
   the moment it lands.
 - **`aru generate`** — the same output, from a written specification: the
   model writes the spec, never the Go.
-- **`aru doctor`** — 30 named rules read the AST of a project, without
+- **`aru doctor`** — 37 named rules read the AST of a project, without
   running it, and fail CI on the first error. Among them:
   `repository-without-policy`, `grant-not-checked`, `sql-without-tenant-scope`,
   `tenant-from-request`, `tenant-from-header`, `sql-built-by-concatenation`,
-  `view-does-not-exist`, `session-not-rotated`. Three more answer only to
+  `view-does-not-exist`, `session-not-rotated`. Three of them answer only to
   `--profile=performance`, where a join and a transaction across two aggregates
   stop being ordinary SQL and become findings.
 - **`aru trace`** — a request reconstructed in the terminal, from the running
@@ -63,8 +64,8 @@ The view compiler is part of this binary rather than something it downloads:
 one fewer thing to pin, verify and cache.
 
 One direct dependency: `gopkg.in/yaml.v3`, for the specification format. CI
-refuses a second one. 19,363 lines of production code and 8,115 of test,
-across 29 test files.
+refuses a second one. 21,677 lines of production code and 10,737 of test,
+across 37 test files.
 
 The authentication screens are not here — `go run github.com/arandu-io/ui@latest auth`
 publishes them into your project, and they are yours to edit from the moment

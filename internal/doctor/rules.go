@@ -53,13 +53,16 @@ var rules = []func(*project) []Finding{
 	viewDataMustBeAStruct,
 	viewMustExist,
 	declaredPermissionsMatchTheCode,
-	alpineHoldsClientStateOnly,
+	viewsKeepNoStateInTheBrowser,
 	tenantMustScopeTheSQL,
 	theOutboxTableTravelsWithWhatWritesToIt,
 	resourceNotReauthorized,
 	rawOutputIsAComponent,
 	noRetiredModuleIsImported,
 	testsAreWhereTheyCanRun,
+	migrationsMustReachTheBinary,
+	addedColumnsMustBeNullable,
+	migrationsMustBeReversible,
 	theProfileIsDeclared,
 	queriesReachOneAggregate,
 	transactionsStayInsideOneAggregate,
@@ -1275,9 +1278,45 @@ func hasRedaction(files []*file, dir, typeName string) bool {
 	return false
 }
 
+// sessionRotationCalls are the method names that end a login with the record
+// the request arrived with destroyed.
+//
+// It is a list rather than two literals in the matcher because a name here is
+// a claim about somebody else's API, and a claim nobody reads back goes stale
+// silently. This one had gone wrong in both directions at once: it accepted
+// Start, which exists and does not close the hole, and it did not carry
+// Regenerate, so a login written the way the session package documents was
+// reported as the violation. A test resolves these against the modules that
+// declare them.
+var sessionRotationCalls = []string{"Regenerate", "Rotate"}
+
 // 10. Login without rotating the session id is session fixation: an attacker
 // plants a known id and inherits the session after the victim signs in.
+//
+// Two names close it, because the operation is called two things one layer
+// apart: SessionStore.Rotate is the framework's name, and Regenerate is the
+// name underneath it and the one a project that reaches the session package
+// directly writes. Both destroy the record the request arrived with, and the
+// rule takes either.
+//
+// Start is refused, and that is the whole point of the check rather than an
+// omission from the list. Start has no parameter for the old id, so a login
+// body holding only Start cannot destroy the planted record -- the destruction
+// is not skipped, it is unsayable. And refusing it costs nothing: Regenerate
+// given an empty old id does exactly what Start does, so the login that arrived
+// with no session is already written correctly as Regenerate. There is no
+// sign-in shape that needs Start, and accepting it passed a login that leaves
+// the planted session readable.
 func sessionMustRotateOnLogin(p *project) []Finding {
+	accepts := func(name string) bool {
+		for _, call := range sessionRotationCalls {
+			if strings.HasSuffix(name, "."+call) {
+				return true
+			}
+		}
+		return false
+	}
+
 	var out []Finding
 	for _, f := range p.files {
 		if f.isTest {
@@ -1295,7 +1334,7 @@ func sessionMustRotateOnLogin(p *project) []Finding {
 			if !funcBodyContains(fn, func(n string) bool { return strings.Contains(n, "Authenticate") }) {
 				continue
 			}
-			if funcBodyContains(fn, func(n string) bool { return strings.HasSuffix(n, ".Rotate") || strings.HasSuffix(n, ".Start") }) {
+			if funcBodyContains(fn, accepts) {
 				continue
 			}
 			file, line := f.at(fn)
@@ -1303,7 +1342,7 @@ func sessionMustRotateOnLogin(p *project) []Finding {
 				Rule: "session-not-rotated", Severity: Error,
 				File: file, Line: line,
 				Message: fn.Name.Name + " authenticates and does not rotate the session",
-				Why:     "keeping the pre-login id is session fixation: an attacker plants a known id and inherits the session once the victim signs in. Call SessionStore.Rotate after Authenticate.",
+				Why:     "keeping the pre-login id is session fixation: an attacker plants a known id and inherits the session once the victim signs in. After Authenticate, call Regenerate with the id the request arrived with -- SessionStore spells the same call Rotate. Start is not enough: it takes no old id, so it mints a new one and leaves the planted record readable.",
 			})
 		}
 	}
@@ -1343,7 +1382,7 @@ func renderCalls(f *file) []renderCall {
 
 // 11. The data of a view is a typed struct, never a map.
 //
-// Doc 14 makes this the reason the view layer exists at all: with a struct, a
+// It is the reason the view layer is typed at all: with a struct, a
 // renamed field is a compile error and the page cannot ship broken. With
 // map[string]any, a typo in a key is a nil the template renders as nothing --
 // the page comes up, the field is blank, and nobody finds out until a customer
@@ -1636,72 +1675,146 @@ func relativeTo(root, path string) string {
 	return path
 }
 
-// alpineAttribute captures what an Alpine directive contains.
+// clientDirective captures an attribute that holds state or behaviour in the
+// browser, and the value it holds.
 //
-// Alpine is written in HTML attributes, so this is text matching rather than
+// These are written in HTML attributes, so this is text matching rather than
 // parsing. That is a real limitation: a directive split across lines by a
-// formatter still matches, and one built by string concatenation in Go does not.
-// It catches the shape people actually write.
+// formatter still matches, one built by string concatenation in Go does not, and
+// a `@go` block that happens to contain the shape in a string literal matches
+// like markup would. It catches the shape people actually write.
 //
-// Event handlers and both quote styles, because that is where the mistake lives.
-// Matching x-data, x-init and x-effect with double quotes alone would let
-// `x-on:click="fetch(...)"`, `@click="fetch(...)"` and every single-quoted form
-// through untouched -- and an event handler is precisely where somebody writes a
-// network call.
-var alpineAttribute = regexp.MustCompile(`(?s)(?:^|[^\w:@-])(x-data|x-init|x-effect|x-on:[\w.:-]+|@[\w.:-]+)\s*=\s*("[^"]*"|'[^']*')`)
+// The name is any `x-` attribute rather than a written-out list. A list would
+// hold the dozen directives of the core and miss x-mask, x-intersect, x-collapse
+// and every other one a plugin adds -- and a list that has to be extended per
+// plugin is a list that goes stale, which is the failure this rule was corrected
+// for. Nothing else claims the prefix: HTML gives custom attributes `data-`, and
+// the other library on the page spells its own `hx-`.
+//
+// The `@name` shorthand is the same attribute in its short spelling, and it
+// cannot collide with the template's own directives: those take arguments in
+// parentheses that end the line, so `@name="value"` is never one of them. The
+// character before the name is what separates the families -- without it `hx-get`
+// reads as `x-get` and `data-x-id` as `x-id`, and the difference between an
+// attribute that routes a swap and one that holds a value is this rule's whole
+// subject.
+//
+// Both quote styles, because a formatter that prefers single quotes turned the
+// whole rule off once already.
+var clientDirective = regexp.MustCompile(`(?s)(?:^|[^\w:@-])(x-[\w.:-]+|@[\w.:-]+)\s*=\s*("[^"]*"|'[^']*')`)
 
-// networkInAlpine is the set that means this state is not client-only.
-var networkInAlpine = []struct {
+// reachesTheServer is what makes a directive more expensive than an inert one.
+//
+// It no longer decides whether there is a finding -- every directive here is one
+// -- and it stays because it decides what the finding says. A dropdown somebody
+// wrote in the wrong stack and a second fetch path with its own CSRF handling
+// both have to be reported, and telling them apart in the message is the
+// difference between a person reaching for ui.js and a person reaching for an
+// HTMX fragment.
+var reachesTheServer = []struct {
 	token string
 	what  string
 }{
-	{"fetch(", "a fetch call"},
-	{"axios", "an axios call"},
-	{"XMLHttpRequest", "an XMLHttpRequest"},
-	{"$store", "a global Alpine store"},
-	{"navigator.sendBeacon", "a beacon"},
-	{"EventSource(", "a server-sent events subscription"},
-	{"new WebSocket", "a WebSocket"},
+	{"fetch(", "calls fetch()"},
+	{"axios", "calls axios"},
+	{"XMLHttpRequest", "opens an XMLHttpRequest"},
+	{"$store", "reads a global store"},
+	{"navigator.sendBeacon", "sends a beacon"},
+	{"EventSource(", "opens a server-sent events subscription"},
+	{"new WebSocket", "opens a WebSocket"},
 }
 
-// 14. Alpine holds client state, and nothing else.
+// 14. A view keeps no state in the browser.
 //
-// Alpine is allowed when the state is client-only, ephemeral, and invisible to
-// the server -- a dropdown, a tab, an input mask. The moment a directive talks
-// to the server, the component should have been an HTMX fragment, and the
-// application now has two ways to fetch data with two sets of error handling,
-// two loading states and two places CSRF can be forgotten.
+// State on this stack is the server's. A handler reads the form, decides, and
+// answers markup that is already correct, so there is no second copy in the
+// browser to keep in step and nothing to reconcile when the two disagree. An
+// `hx-` attribute is not a counter-example and cannot become one: hx-post,
+// hx-target and hx-swap say where to ask and what to replace, and nothing reads
+// a value back out of one.
 //
-// Without this check that line is opinion, and opinion does not survive a code
-// review at 6pm.
-func alpineHoldsClientStateOnly(p *project) []Finding {
+// What the browser does own is what dies with the tab and the server never needs
+// to hear about -- a menu that is open, a row that is selected -- and it has a
+// home already: the behaviours file the layout loads. It binds on document and
+// dispatches on `data-` attributes, keeps open and selected in the ARIA the
+// markup already carries, and evaluates nothing, so the DOM is the only copy and
+// swapped-in markup is live where it lands.
+//
+// # Why this refuses the directive rather than what is inside it
+//
+// This rule used to permit an `x-` attribute and refuse only the ones whose value
+// called the network, and in that shape it was the weaker half of a line the rest
+// of the collection draws whole. Of four directives planted in a generated
+// project -- a state object, a shorthand handler, a visibility toggle and one
+// fetch -- it reported the fetch and passed the other three, which are exactly
+// the three the starter kit's own gate fails on. The narrow rule had become the
+// permissive one.
+//
+// What decided the widening is that a generated project cannot run one. The
+// layout links a stylesheet, HTMX, the theme script and the behaviours file;
+// asking the asset table for a directive framework panics rather than answering a
+// URL that would 404, so the ordinary way to add the script tag takes the page
+// down at render. And the policy the skeleton wires is script-src 'self' with no
+// unsafe-eval, while a directive framework compiles every expression it is given
+// out of a string -- so even served, not one directive would evaluate.
+//
+// So an `x-` attribute in a view today is in one of two states, and both are
+// worth a finding:
+//
+//   - inert, which is the ordinary case. Somebody wrote behaviour that never
+//     runs, the screen does nothing, and nothing anywhere says why. Silence is
+//     the wrong answer to a feature that is not there.
+//   - live, which costs more. It is live only because the project deleted the
+//     security headers from its own bootstrap and vendored a second client
+//     framework, and the application now has two state models, two loading
+//     states and two places to forget the CSRF token.
+//
+// The compiler that builds these views classifies the same attributes as code
+// when it escapes an interpolation into one, and that is not a contradiction to
+// read as permission: an escaper has to assume the worst about a value a browser
+// might evaluate, and a check has to say the value should not be there at all.
+//
+// # What it does not reach
+//
+// No view in this repository matches, so a clean run says nothing about whether
+// the rule works. What answers for that is the fixture corpus, which plants the
+// state directive and the event handler in both quote styles, the inert
+// client-only directive that is now a finding, and the `data-` shape that has to
+// stay silent.
+func viewsKeepNoStateInTheBrowser(p *project) []Finding {
 	var out []Finding
 
 	for _, v := range p.views {
-		for _, match := range alpineAttribute.FindAllStringSubmatchIndex(v.body, -1) {
+		for _, match := range clientDirective.FindAllStringSubmatchIndex(v.body, -1) {
 			directive := v.body[match[2]:match[3]]
 			// The quotes are part of the capture, so that one alternative can
 			// hold both styles; the content is what sits between them.
 			quoted := v.body[match[4]:match[5]]
 			content := quoted[1 : len(quoted)-1]
 
-			for _, forbidden := range networkInAlpine {
-				if !strings.Contains(content, forbidden.token) {
-					continue
+			message := directive + " holds state in the browser"
+			for _, reach := range reachesTheServer {
+				if strings.Contains(content, reach.token) {
+					message += ", and its value " + reach.what
+					break
 				}
-				out = append(out, Finding{
-					Rule: "alpine-reaches-the-server", Severity: Error,
-					// The directive, not the whole match: the match starts one
-					// character earlier, and that character can be the newline
-					// that ends the line above.
-					File: v.rel, Line: lineOf(v.body, match[2]),
-					Message: directive + " contains " + forbidden.what,
-					Why: "Alpine holds state that is client-only, ephemeral and invisible to the server. " +
-						"A directive that talks to the server should be an HTMX fragment instead -- otherwise the " +
-						"application has two ways to fetch data, with two loading states and two places to forget the CSRF token.",
-				})
-				break
 			}
+
+			out = append(out, Finding{
+				Rule: "view-keeps-state-in-the-browser", Severity: Error,
+				// The directive, not the whole match: the match starts one
+				// character earlier, and that character can be the newline
+				// that ends the line above.
+				File: v.rel, Line: lineOf(v.body, match[2]),
+				Message: message,
+				Why: "Nothing this project serves evaluates that attribute: the layout loads a behaviours file that " +
+					"dispatches on data- attributes and evaluates no expression, and the policy is script-src 'self' " +
+					"with no unsafe-eval, so a framework that compiles a directive out of a string cannot run beside it. " +
+					"Either the directive is inert and the screen silently does nothing, or the policy was relaxed to run " +
+					"a second client stack -- and then there are two state models, two loading states and two places to " +
+					"forget the CSRF token. Put the decision in a handler and swap the markup; what dies with the tab goes " +
+					"on a data- attribute, or in <details> and :focus-within.",
+			})
 		}
 	}
 	return out
@@ -2207,18 +2320,63 @@ func tenantIsInThePredicate(text string) bool {
 	return strings.Contains(lower[where:], "tenant_id")
 }
 
+// namesOneRow reports whether a read call is pointed at a particular row.
+//
+// Find is by key wherever it is written. The model builder's Find and a
+// repository's Find both take the id as an argument and answer one entity, so
+// the name alone settles it.
+//
+// Get is the one that needs telling apart, because two different reads are
+// spelled that way. A model builder's Get is a listing terminal: it takes the
+// context and the Grant, applies the scopes the Grant carries, and answers the
+// collection the tenant owns. A repository or service Get written by hand
+// answers one entity, and it is handed the key that says which one. So the
+// arguments are the tell -- a call given nothing but a context and a Grant has
+// nothing in it that could name a row, and a call given more than that is being
+// pointed at something.
+//
+// String constants after the Grant are the exception, because that is where the
+// builder's Get takes the columns to select. Selecting columns narrows what
+// comes back from each row; it does not narrow the answer to one row.
+//
+// This reads the arguments as written, never their types, so a key held in a
+// constant reads here as a column name. That shape does not arise from a
+// request -- an id chosen by the caller arrives as ctx.Param, a field or a
+// variable -- and it is the request-supplied id that this rule exists for.
+func namesOneRow(call *ast.CallExpr, name string) bool {
+	if strings.HasSuffix(name, ".Find") {
+		return true
+	}
+	if !strings.HasSuffix(name, ".Get") || len(call.Args) <= 2 {
+		return false
+	}
+	for _, arg := range call.Args[2:] {
+		literal, ok := arg.(*ast.BasicLit)
+		if !ok || literal.Kind != token.STRING {
+			return true
+		}
+	}
+	return false
+}
+
 // resourceNotReauthorized checks that the row read from the database is
 // re-authorized before being returned.
 //
-// The first Authorize produces a Grant from a zero value, and the repository
-// call uses it. The second Authorize, with the row that was read, is the
-// object-level authorization. A method that skips it compiles and passes all
-// other rules -- the Grant was received, checked, and the policy exists -- but
-// returns data any user of the same tenant may read.
+// The first Authorize produces a Grant from a zero value, and the read uses it.
+// The second Authorize, with the row that was read, is the object-level
+// authorization. A method that skips it compiles and passes all other rules --
+// the Grant was received, checked, and the policy exists -- but returns data any
+// user of the same tenant may read.
 //
-// The rule looks for methods that call Authorize and a repository data method
-// (Find, Get, List, Paginate) in the same body, and warns if the Authorize
-// calls all come before the last repository call.
+// The distinction the rule draws, and it is the whole of it: authorizing an
+// action and then fetching one named object is a hole, and authorizing an
+// action and then listing the objects the tenant owns is not. A listing was
+// already filtered by the Grant it was handed, and there is no second object for
+// a second Authorize to be about. See namesOneRow for how the two are told
+// apart in the source.
+//
+// So the rule looks for methods that call Authorize and read one row in the same
+// body, and warns when every Authorize comes before the last such read.
 func resourceNotReauthorized(p *project) []Finding {
 	var out []Finding
 	for _, f := range p.files {
@@ -2239,15 +2397,7 @@ func resourceNotReauthorized(p *project) []Finding {
 				continue
 			}
 
-			callsRepoData := funcBodyContains(fn, func(name string) bool {
-				return strings.HasSuffix(name, ".Find") ||
-					strings.HasSuffix(name, ".Get")
-			})
-			if !callsRepoData {
-				continue
-			}
-
-			lastAuthorize, lastRepo := -1, -1
+			lastAuthorize, lastRow := -1, -1
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok {
@@ -2258,14 +2408,13 @@ func resourceNotReauthorized(p *project) []Finding {
 				if name == "security.Authorize" {
 					lastAuthorize = pos
 				}
-				if strings.HasSuffix(name, ".Find") ||
-					strings.HasSuffix(name, ".Get") {
-					lastRepo = pos
+				if namesOneRow(call, name) {
+					lastRow = pos
 				}
 				return true
 			})
 
-			if lastAuthorize < lastRepo {
+			if lastRow >= 0 && lastAuthorize < lastRow {
 				out = append(out, Finding{
 					Rule: "resource-not-reauthorized", Severity: Warning,
 					File: file, Line: line,
@@ -2950,4 +3099,423 @@ var sqlKeywords = map[string]bool{
 	"or": true, "order": true, "outer": true, "returning": true, "right": true,
 	"select": true, "set": true, "union": true, "update": true, "using": true,
 	"values": true, "where": true, "window": true, "with": true,
+}
+
+// hesapeMigrations is the package a migration is written against.
+const hesapeMigrations = "github.com/arandu-io/hesape/database/migrations"
+
+// migrationDecl is one migration the project declares, with the two methods the
+// rules below reason about.
+type migrationDecl struct {
+	f    *file
+	name string
+	line int
+	up   *ast.FuncDecl
+	down *ast.FuncDecl
+}
+
+// migrationDecls finds every migration in the project.
+//
+// A migration is a type that embeds migrations.BaseMigration, not a file in a
+// directory that happens to be called migrations. The embed is the contract and
+// the directory is only the convention: a project that keeps them somewhere else
+// still has them found, and a helper sitting beside them is not counted as one.
+//
+// Methods are collected across the whole package rather than from the file that
+// declares the type, because nothing requires Up and Down to be written next to
+// it -- and a rule that concluded "no Down" from one file would report the
+// project that split them.
+func (p *project) migrationDecls() []migrationDecl {
+	type key struct{ dir, typ string }
+
+	found := map[key]migrationDecl{}
+	methods := map[key]map[string]*ast.FuncDecl{}
+
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+
+		if local, imported := f.imports[hesapeMigrations]; imported && local != "_" && local != "." {
+			f.types(func(ts *ast.TypeSpec) {
+				st, isStruct := ts.Type.(*ast.StructType)
+				if !isStruct {
+					return
+				}
+				for _, field := range st.Fields.List {
+					// An embedded field has no name, and the type is what says
+					// which one it is.
+					if len(field.Names) > 0 {
+						continue
+					}
+					if exprName(field.Type) != local+".BaseMigration" {
+						continue
+					}
+					found[key{f.dir, ts.Name.Name}] = migrationDecl{f: f, name: ts.Name.Name, line: f.line(ts)}
+				}
+			})
+		}
+
+		f.functions(func(fn *ast.FuncDecl) {
+			recv := receiverType(fn)
+			if recv == "" {
+				return
+			}
+			k := key{f.dir, recv}
+			if methods[k] == nil {
+				methods[k] = map[string]*ast.FuncDecl{}
+			}
+			methods[k][fn.Name.Name] = fn
+		})
+	}
+
+	out := make([]migrationDecl, 0, len(found))
+	for k, decl := range found {
+		decl.up = methods[k]["Up"]
+		decl.down = methods[k]["Down"]
+		out = append(out, decl)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].f.rel != out[j].f.rel {
+			return out[i].f.rel < out[j].f.rel
+		}
+		return out[i].line < out[j].line
+	})
+	return out
+}
+
+// migrationsMustReachTheBinary: a migration nobody imports is a file that does
+// nothing and says nothing.
+//
+// This is the one thing in the whole migration path that fails by succeeding.
+// Go leaves a package nobody imports out of the binary, so the init that
+// registers the migration never runs, the registry is empty, and `aru migrate`
+// reports that there is nothing to apply -- which is exactly what it prints on a
+// database that is already up to date. Nothing anywhere says the difference.
+//
+// `aru make:migration` prints the import to add, and that print happens once, at
+// the moment the file is written, on a terminal somebody has already scrolled
+// past. This is the standing check: the same fact, asked again every time doctor
+// runs, including on the project that arrived by clone.
+//
+// It concludes from an absence, so it says nothing when it cannot see: no module
+// path means the import cannot be recognised, and a file that did not parse
+// might be the one holding it.
+func migrationsMustReachTheBinary(p *project) []Finding {
+	declared := p.migrationDecls()
+	if len(declared) == 0 || p.modulePath == "" || len(p.unreadable) > 0 {
+		return nil
+	}
+
+	// Where the migrations live, and the first one in each place, which is where
+	// the report points.
+	first := map[string]migrationDecl{}
+	count := map[string]int{}
+	for _, d := range declared {
+		if _, seen := first[d.f.dir]; !seen {
+			first[d.f.dir] = d
+		}
+		count[d.f.dir]++
+	}
+
+	dirs := make([]string, 0, len(first))
+	for dir := range first {
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+
+	var out []Finding
+	for _, dir := range dirs {
+		pkg := path.Join(p.modulePath, dir)
+
+		linked := false
+		for _, f := range p.files {
+			// The package importing itself is not the import that links it: the
+			// question is whether something ELSE in the binary names it.
+			if f.dir == dir {
+				continue
+			}
+			if _, imports := f.imports[pkg]; imports {
+				linked = true
+				break
+			}
+		}
+		if linked {
+			continue
+		}
+
+		d := first[dir]
+		out = append(out, Finding{
+			Rule: "migrations-not-linked", Severity: Warning,
+			File: d.f.rel, Line: d.line,
+			Message: fmt.Sprintf("nothing in this project imports %s, so the init that registers %s never runs", pkg, d.name),
+			Why: fmt.Sprintf("Go leaves a package nobody imports out of the binary, so all %d migration(s) here are absent from it and the registry `aru migrate` reads is empty. "+
+				"It does not fail: it reports that there is nothing to apply, which is the same thing it says about a database that is already migrated, and the schema is never created. "+
+				"Blank-import the package where the application is wired -- `_ %q` in bootstrap/app.go.", count[dir], pkg),
+		})
+	}
+	return out
+}
+
+// addedColumnsMustBeNullable: a NOT NULL column added to a table that has rows
+// fails on every row already in it.
+//
+// It is the rollout that breaks rather than the migration. During one, the
+// previous binary is still inserting rows and knows nothing about the new
+// column, so a NOT NULL without a default fails on its first insert -- and the
+// migration itself fails on every row already there. The column is added
+// nullable, backfilled, and tightened in a later migration.
+//
+// Only the alter path is read. A table being created has no rows and no older
+// binary writing to it, so NOT NULL is correct there and a rule that fired on it
+// would fire on almost every first migration ever written.
+//
+// `aru make:migration --table` already refuses a column declared required, and
+// this is not a second copy of that: the generator can only refuse what it is
+// about to write, and every migration that was hand-written, or edited after it
+// was generated, reaches a database without ever passing that check.
+func addedColumnsMustBeNullable(p *project) []Finding {
+	var out []Finding
+	for _, d := range p.migrationDecls() {
+		if d.up == nil {
+			continue
+		}
+		for _, block := range blueprintBlocks(d.up, "Table") {
+			for _, col := range block.columns() {
+				if col.nullable || col.changed {
+					continue
+				}
+				out = append(out, Finding{
+					Rule: "added-column-not-nullable", Severity: Warning,
+					File: d.f.rel, Line: d.f.line(col.at),
+					Message: fmt.Sprintf("%s is added to the existing table %s without Nullable() or a default", col.name, block.table),
+					Why: "A NOT NULL column added to a table that has rows fails on every row already there, so the migration does not apply at all. " +
+						"During a rollout it fails a second way: the previous binary is still inserting rows and does not know this column exists, so its next insert is rejected while it is still serving. " +
+						"Add it with .Nullable(), backfill the rows, and tighten it in a later migration.",
+				})
+			}
+		}
+	}
+	return out
+}
+
+// migrationsMustBeReversible: a migration that reverses nothing stops the
+// rollback of everything applied beside it.
+//
+// The migrator refuses it rather than pretending. A migration that declares
+// neither a Down nor Irreversible is named and the rollback stops there: the
+// record is kept, the schema is untouched, and nothing is reported as undone
+// that was not. One that declares Irreversible is left applied on purpose, with
+// its record and the reason printed beside its name, and the batch carries on
+// past it.
+//
+// So the failure this warns about is no longer a silent one, and that is exactly
+// why the warning is still worth having. Refusing is the right thing to do and
+// it is still a stop: the rollback halts at the first migration nobody finished,
+// and every migration applied beside it in the same batch stays applied because
+// the rollback never reaches them. That is discovered by running
+// `aru migrate:rollback`, which is a command people reach for when something is
+// already wrong. This is discovered while the migration is being written.
+//
+// It only reports the migrations for which a Down could actually be written: one
+// that created a table, added a column or created an index. A backfill is left
+// alone, because `UPDATE ... WHERE total IS NULL` cannot be reversed by anything
+// -- the rows it changed are no longer distinguishable from the rows it did not
+// -- and telling somebody to write a Down they cannot write is how a report
+// teaches people to stop reading it. That backfill is what Irreversible exists
+// for, and declaring it is what lets a rollback carry on past it instead of
+// stopping on it.
+func migrationsMustBeReversible(p *project) []Finding {
+	var out []Finding
+	for _, d := range p.migrationDecls() {
+		if d.up == nil || d.down != nil {
+			continue
+		}
+		what := reversibleChange(d.f, d.up)
+		if what == "" {
+			continue
+		}
+		out = append(out, Finding{
+			Rule: "rollback-does-nothing", Severity: Warning,
+			File: d.f.rel, Line: d.f.line(d.up),
+			Message: fmt.Sprintf("%s %s and declares no Down", d.name, what),
+			Why: "A migration that declares neither a Down nor Irreversible cannot be rolled back, and `aru migrate:rollback` refuses it by name rather than reporting a change it did not make: the record is kept and the schema is left as it is. " +
+				"The rollback stops there, so every migration applied beside this one in the same batch stays applied too -- and that is found out by running the one command whose whole purpose is to undo, usually while something is already wrong. " +
+				"Write the Down that undoes this change, or declare Irreversible with the reason nothing can.",
+		})
+	}
+	return out
+}
+
+// blueprintBlock is one Schema().Create or Schema().Table call: the table it
+// names and the closure it hands the Blueprint to.
+type blueprintBlock struct {
+	table string
+	param string
+	body  *ast.BlockStmt
+}
+
+// blueprintBlocks finds the Blueprint closures a method opens, by which builder
+// method opened them -- "Create" for a new table, "Table" for an alter.
+//
+// The receiver is matched by suffix rather than by name because nothing fixes
+// what the connection is called: conn.Schema().Table and c.Schema().Table are
+// the same call, and a rule keyed to one spelling silently stops applying to the
+// other.
+func blueprintBlocks(fn *ast.FuncDecl, method string) []blueprintBlock {
+	if fn.Body == nil {
+		return nil
+	}
+
+	var out []blueprintBlock
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		call, isCall := n.(*ast.CallExpr)
+		if !isCall || !strings.HasSuffix(callName(call), ".Schema()."+method) || len(call.Args) < 2 {
+			return true
+		}
+		lit, isLit := call.Args[len(call.Args)-1].(*ast.FuncLit)
+		if !isLit || len(lit.Type.Params.List) == 0 || len(lit.Type.Params.List[0].Names) == 0 {
+			return true
+		}
+		table, _ := stringLiteral(call.Args[1])
+		out = append(out, blueprintBlock{
+			table: table,
+			param: lit.Type.Params.List[0].Names[0].Name,
+			body:  lit.Body,
+		})
+		return true
+	})
+	return out
+}
+
+// columnAdd is one column a Blueprint closure declares.
+type columnAdd struct {
+	name     string
+	at       ast.Node
+	nullable bool
+	// changed marks a redefinition of a column that is already there. It is not
+	// an addition, and what makes it safe or not is what the column held before,
+	// which is not in this file.
+	changed bool
+}
+
+// columns reads the columns a Blueprint closure declares.
+//
+// What counts as a column is decided by exclusion, and that direction is the
+// whole reliability of this: the column types are a grammar that grows with
+// every engine feature anybody wants, while the commands that are not columns --
+// the drops, the renames and the indexes -- are a closed set that has not moved.
+// A list of column types would be one release behind from the day it was
+// written, and being behind means silently passing the column it had not heard
+// of.
+func (b blueprintBlock) columns() []columnAdd {
+	var out []columnAdd
+	for _, stmt := range b.body.List {
+		expr, isExpr := stmt.(*ast.ExprStmt)
+		if !isExpr {
+			continue
+		}
+		chain := exprName(expr.X)
+		if !strings.HasPrefix(chain, b.param+".") {
+			continue
+		}
+
+		// The innermost call on the Blueprint is the one that declares the
+		// column; everything to its right is a modifier.
+		var base *ast.CallExpr
+		ast.Inspect(expr.X, func(n ast.Node) bool {
+			call, isCall := n.(*ast.CallExpr)
+			if !isCall {
+				return true
+			}
+			sel, isSel := call.Fun.(*ast.SelectorExpr)
+			if !isSel {
+				return true
+			}
+			if id, isID := sel.X.(*ast.Ident); isID && id.Name == b.param {
+				base = call
+			}
+			return true
+		})
+		if base == nil || len(base.Args) == 0 {
+			continue
+		}
+		method := base.Fun.(*ast.SelectorExpr).Sel.Name
+		if strings.HasPrefix(method, "Drop") || strings.HasPrefix(method, "Rename") || blueprintNotAColumn[method] {
+			continue
+		}
+		// A column is named by a string. The index commands that take one column
+		// take a slice, so this is also what tells the two apart.
+		name, named := stringLiteral(base.Args[0])
+		if !named {
+			continue
+		}
+
+		out = append(out, columnAdd{
+			name: name,
+			at:   base,
+			nullable: strings.Contains(chain, ".Nullable()") ||
+				strings.Contains(chain, ".Default()") ||
+				strings.Contains(chain, ".UseCurrent()"),
+			changed: strings.Contains(chain, ".Change()"),
+		})
+	}
+	return out
+}
+
+// blueprintNotAColumn is what a Blueprint does that is not adding a column,
+// minus everything spelled Drop... or Rename..., which is matched by prefix.
+//
+// It is a closed list for the reason appCategories is one: these are the
+// commands, and the commands do not grow the way the column types do.
+var blueprintNotAColumn = map[string]bool{
+	"Create": true, "Engine": true, "InnoDb": true, "Charset": true,
+	"Collation": true, "Temporary": true, "Comment": true,
+	"Primary": true, "Unique": true, "Index": true, "FullText": true,
+	"SpatialIndex": true, "VectorIndex": true, "RawIndex": true, "Foreign": true,
+}
+
+// reversibleChange says what an Up did that a Down could undo, or empty.
+//
+// Empty is the answer for a backfill, and that is the point of the function:
+// what separates a migration somebody forgot to reverse from one that cannot be
+// reversed is whether the change is in the schema or in the rows.
+func reversibleChange(f *file, fn *ast.FuncDecl) string {
+	if len(blueprintBlocks(fn, "Create")) > 0 {
+		return "creates a table"
+	}
+	for _, block := range blueprintBlocks(fn, "Table") {
+		if len(block.columns()) > 0 {
+			return "adds a column"
+		}
+	}
+
+	// The escape hatch is still a schema change: a migration that writes its own
+	// DDL is the one most likely to have been written by hand, which is where a
+	// missing Down comes from in the first place.
+	found := ""
+	f.functionBodies(func(body *ast.BlockStmt) {
+		if body != fn.Body || found != "" {
+			return
+		}
+		ast.Inspect(body, func(n ast.Node) bool {
+			lit, isLit := n.(*ast.BasicLit)
+			if !isLit || lit.Kind != token.STRING {
+				return true
+			}
+			text := strings.Join(strings.Fields(strings.ToUpper(lit.Value)), " ")
+			switch {
+			case strings.Contains(text, "CREATE TABLE"):
+				found = "creates a table"
+			case strings.Contains(text, "ADD COLUMN"):
+				found = "adds a column"
+			case strings.Contains(text, "CREATE INDEX"), strings.Contains(text, "CREATE UNIQUE INDEX"):
+				found = "creates an index"
+			default:
+				return true
+			}
+			return false
+		})
+	})
+	return found
 }

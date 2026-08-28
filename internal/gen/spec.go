@@ -388,8 +388,25 @@ func (m Module) Table() string {
 	}
 }
 
-// Route is the URL prefix of the module.
-func (m Module) Route() string { return "/" + m.Resource() }
+// RouteName is the name of one of the module's routes:
+// RouteName("show") is "purchase-orders.show".
+//
+// It is what the generated code asks for an address by, and there is
+// deliberately no method that answers the address itself. A path built here
+// would be written into a controller and into four views, and it would keep
+// compiling and keep rendering after the route it points at moved -- the
+// failure nobody sees until somebody clicks. Asking by name fails where the
+// name is wrong, and says which name.
+//
+// The seven names are the ones Resource registers, so they exist for as long as
+// the module is registered the way the wiring instructions say to register it.
+//
+// It is not ViewName. The two produce the same string for the four pages that
+// are both a view and a route, and they answer different questions: one is a
+// file under resources/views, the other is an entry in the route table. A page
+// rendered by a route with no name still has a view name, and store, update and
+// destroy are route names with no page at all.
+func (m Module) RouteName(action string) string { return m.Resource() + "." + action }
 
 // Resource is the resource segment: the table with dashes instead of
 // underscores. It names the URL, the route names and the view directory, so all

@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -125,7 +126,7 @@ func emitsByRule() map[string][]string {
 		"viewDataMustBeAStruct":                   {"view-data-is-a-map"},
 		"viewMustExist":                           {"view-does-not-exist"},
 		"declaredPermissionsMatchTheCode":         {"permission-not-declared", "permission-not-used"},
-		"alpineHoldsClientStateOnly":              {"alpine-reaches-the-server"},
+		"viewsKeepNoStateInTheBrowser":            {"view-keeps-state-in-the-browser"},
 		"tenantMustScopeTheSQL":                   {"sql-without-tenant-scope"},
 		"theOutboxTableTravelsWithWhatWritesToIt": {"outbox-not-registered"},
 		"resourceNotReauthorized":                 {"resource-not-reauthorized"},
@@ -135,6 +136,9 @@ func emitsByRule() map[string][]string {
 			"test-is-not-run", "test-outside-the-tests-tree",
 			"package-clause-is-capitalised", "scaffolding-ships",
 		},
+		"migrationsMustReachTheBinary":       {"migrations-not-linked"},
+		"addedColumnsMustBeNullable":         {"added-column-not-nullable"},
+		"migrationsMustBeReversible":         {"rollback-does-nothing"},
 		"theProfileIsDeclared":               {"profile-not-declared"},
 		"queriesReachOneAggregate":           {"join-across-aggregates"},
 		"transactionsStayInsideOneAggregate": {"transaction-across-aggregates"},
@@ -147,6 +151,156 @@ func keys(m map[string]bool) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// TestTheDocumentedRuleCountIsTheOneThisPackageHas checks the figures this
+// repository's documents quote against the rule set they describe.
+//
+// The count has gone stale eight times, and the last one failed differently in
+// kind: the number was wrong because every instrument that had ever measured it
+// read rules.go alone. Four of the names are declared in internal/testlayout and
+// forwarded by testsAreWhereTheyCanRun, so no grep over that one file could
+// reach them however long it was left in place -- and a figure with a command
+// beside it reads as verified whether or not the command can answer.
+//
+// So the four figures are derived here, from the rules slice, from emitsByRule
+// and from both files that declare a name, and then read back out of every
+// document that quotes one. Nothing below is written down twice. A rule added or
+// deleted fails this test in the run that adds or deletes it, and the failure
+// names the document and the figure, which is the only arrangement in which
+// these cannot drift apart again.
+func TestTheDocumentedRuleCountIsTheOneThisPackageHas(t *testing.T) {
+	const (
+		skill  = "../../.agents/skills/aru-doctor-rule/SKILL.md"
+		agents = "../../AGENTS.md"
+		readme = "../../README.md"
+
+		rulesFile  = "rules.go"
+		layoutFile = "../testlayout/testlayout.go"
+	)
+
+	own := declaredRuleNames(t, rulesFile)
+	forwarded := declaredRuleNames(t, layoutFile)
+	if len(own) == 0 || len(forwarded) == 0 {
+		t.Fatal("one of the two files declares no rule name at all, so every figure below measures nothing")
+	}
+
+	// The registry and the two sources have to name one set. Either half
+	// disagreeing is what makes a figure that looks measured wrong: a name in
+	// the source and not in emitsByRule is a rule no fixture proves fires, and a
+	// name in emitsByRule that neither file declares is one that no longer
+	// exists.
+	total := map[string]bool{}
+	for _, names := range emitsByRule() {
+		for _, name := range names {
+			total[name] = true
+		}
+	}
+	for name := range own {
+		if !total[name] {
+			t.Errorf("%s declares %s and no rule in emitsByRule reports it", rulesFile, name)
+		}
+	}
+	for name := range forwarded {
+		if own[name] {
+			t.Errorf("%s is declared in both files, so the figures below count it twice", name)
+		}
+		if !total[name] {
+			t.Errorf("%s declares %s and no rule in emitsByRule forwards it", layoutFile, name)
+		}
+	}
+	for name := range total {
+		if !own[name] && !forwarded[name] {
+			t.Errorf("emitsByRule reports %s and neither file declares it", name)
+		}
+	}
+
+	figures := map[string]int{
+		"rule functions":      len(rules),
+		"names in total":      len(total),
+		"names declared here": len(own),
+		"names forwarded":     len(forwarded),
+	}
+
+	// Each pattern anchors one sentence in one document. They are written as
+	// expressions rather than as the figure so that what fails is the sentence
+	// that is wrong, named, rather than a count somebody then has to go looking
+	// for.
+	for _, quote := range []struct {
+		path, pattern, figure string
+	}{
+		{skill, `#\s*(\d+)\s+rule functions`, "rule functions"},
+		{skill, `#\s*(\d+)\s+names a report can carry`, "names in total"},
+		{skill, `#\s*(\d+)\s+of them declared here`, "names declared here"},
+		{skill, `#\s*(\d+)\s+forwarded, declared there`, "names forwarded"},
+
+		{agents, `(\d+) rule functions reading a project's parsed AST`, "rule functions"},
+		{agents, `emitting (\d+) rule names of their own`, "names declared here"},
+		{agents, `rule names of their own and (\d+) borrowed`, "names forwarded"},
+		{agents, `testlayout\.go \| sort -u \| wc -l\s+#\s*(\d+)`, "names in total"},
+
+		{readme, `(\d+) named rules read the AST`, "names in total"},
+	} {
+		got, ok := quoted(t, quote.path, quote.pattern)
+		if !ok {
+			continue
+		}
+		if want := figures[quote.figure]; got != want {
+			t.Errorf("%s says %d %s and this package has %d: correct the document",
+				quote.path, got, quote.figure, want)
+		}
+	}
+}
+
+// declaredRuleNames reads the rule names one file declares, with the expression
+// the documented commands match on.
+func declaredRuleNames(t *testing.T, path string) map[string]bool {
+	t.Helper()
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	out := map[string]bool{}
+	for _, m := range regexp.MustCompile(`Rule: *"([a-z0-9-]+)"`).FindAllStringSubmatch(string(body), -1) {
+		out[m[1]] = true
+	}
+	return out
+}
+
+// quoted answers the one number a document states for one figure.
+//
+// Exactly one match is required, and that is the half worth writing down: a
+// pattern matching twice is an anchor that has stopped identifying a single
+// sentence, and reading whichever came first is how a guard goes on passing over
+// the line it no longer looks at. Matching nothing is the same failure from the
+// other side -- the sentence was reworded and the guard silently stopped
+// guarding it.
+func quoted(t *testing.T, path, pattern string) (int, bool) {
+	t.Helper()
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Errorf("reading %s: %v", path, err)
+		return 0, false
+	}
+
+	found := regexp.MustCompile(pattern).FindAllStringSubmatch(string(body), -1)
+	switch len(found) {
+	case 1:
+		n, err := strconv.Atoi(found[0][1])
+		if err != nil {
+			t.Errorf("%s: %q is not a number in %s", path, found[0][1], pattern)
+			return 0, false
+		}
+		return n, true
+	case 0:
+		t.Errorf("nothing in %s matches %s, so no figure there is being checked any more", path, pattern)
+	default:
+		t.Errorf("%d places in %s match %s, so the figure is written more than once and the anchor names none of them",
+			len(found), path, pattern)
+	}
+	return 0, false
 }
 
 // TestEveryGrantConstructorIsGuarded compares grantConstructors against what the
@@ -447,6 +601,162 @@ func TestTablesNamedSeparatesAJoinFromASubquery(t *testing.T) {
 		got := tablesNamed(c.sql)
 		if !reflect.DeepEqual(got, c.want) {
 			t.Errorf("tablesNamed(%q) = %v, want %v: %s", c.sql, got, c.want, c.why)
+		}
+	}
+}
+
+// loginProject writes a one-file project whose only function is a sign-in, and
+// answers the session-not-rotated findings it produces.
+func loginProject(t *testing.T, body string) []Finding {
+	t.Helper()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module demo\n\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(dir, "app", "Http", "Controllers", "Auth")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source := "package auth\n\ntype LoginController struct{ auth, sessions any }\n\n" +
+		"func (c LoginController) Login(w, r any) {\n" + body + "\n}\n"
+	if err := os.WriteFile(filepath.Join(src, "LoginController.go"), []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := Run(dir, Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var out []Finding
+	for _, f := range all {
+		if f.Rule == "session-not-rotated" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// TestALoginPassesOnlyWhenItDestroysTheOldSession pins both directions of the
+// session fixation check, and the second one is the reason it exists.
+//
+// The rule spent its life accepting Start, which mints an id and destroys
+// nothing -- so a sign-in that left the planted record readable was reported
+// clean, which is worse than not checking: the developer was told the hole was
+// closed. It also missed Regenerate, the name the session package itself uses,
+// so a login written the documented way was reported as the violation.
+//
+// Start is refused rather than listed as a weaker pass because Regenerate given
+// an empty old id already does everything Start does. A login on a request that
+// carried no session is spelt Regenerate too, and nothing is lost by requiring
+// it.
+func TestALoginPassesOnlyWhenItDestroysTheOldSession(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		body    string
+		flagged bool
+	}{
+		{
+			name: "Regenerate destroys the record the request arrived with",
+			body: "\tc.auth.Authenticate(r)\n\tc.sessions.Regenerate(r, w, c.sessions.ID(r), w)",
+		},
+		{
+			name: "Rotate is the same call one layer up",
+			body: "\tc.auth.Authenticate(r)\n\tc.sessions.Rotate(r, w, c.sessions.IDFromRequest(r), w)",
+		},
+		{
+			name:    "Start alone leaves the planted record readable",
+			body:    "\tc.auth.Authenticate(r)\n\tc.sessions.Start(r, w, w)",
+			flagged: true,
+		},
+		{
+			name:    "authenticating and keeping the id is the bare fixation",
+			body:    "\tc.auth.Authenticate(r)",
+			flagged: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			found := loginProject(t, tc.body)
+			switch {
+			case tc.flagged && len(found) == 0:
+				t.Error("the sign-in keeps the pre-login session and doctor reported nothing")
+			case !tc.flagged && len(found) > 0:
+				t.Errorf("the sign-in destroys the old session and doctor reported %s", found[0].Message)
+			}
+		})
+	}
+}
+
+// TestEverySessionCallTheRuleAcceptsExists resolves the accepted names against
+// the modules that declare them.
+//
+// A rule that lets a login through on a method name is asserting that the
+// method is there, and nothing was reading that assertion back. Both halves are
+// needed and neither covers the other: a name no module declares can never be
+// written, and a name every module declares can still be the wrong call. Start
+// is the second kind, so it is refused here by name rather than left to the
+// resolver, which would find it and pass it.
+func TestEverySessionCallTheRuleAcceptsExists(t *testing.T) {
+	decl := regexp.MustCompile(`^func \([^)]*\) ([A-Z]\w*)\(`)
+
+	found := map[string][]string{} // method -> files declaring it
+	var read int
+	for _, module := range []string{"framework", "hesape"} {
+		root := filepath.Join("..", "..", "..", module)
+		if _, err := os.Stat(root); err != nil {
+			t.Logf("%s is not checked out next to this repository", module)
+			continue
+		}
+		read++
+
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if d.IsDir() {
+				if d.Name() == ".git" || d.Name() == "testdata" {
+					return fs.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			for _, line := range strings.Split(string(body), "\n") {
+				if m := decl.FindStringSubmatch(line); m != nil {
+					found[m[1]] = append(found[m[1]], path)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if read == 0 {
+		t.Skip("neither module is checked out next to this repository")
+	}
+	if len(found) == 0 {
+		t.Fatal("no method was found in either module: this test stopped testing anything")
+	}
+
+	for _, call := range sessionRotationCalls {
+		if len(found[call]) == 0 {
+			t.Errorf("the rule lets a sign-in through on .%s and neither module declares that method, "+
+				"so the check passes on a name nobody can call", call)
+		}
+	}
+
+	// The other half: the call that does not destroy the old record must stay
+	// out of the list however the list is edited.
+	for _, call := range sessionRotationCalls {
+		if call == "Start" {
+			t.Error("Start is back in the accepted list: it mints an id, takes no old id, " +
+				"and leaves the session an attacker planted readable after the victim signs in")
 		}
 	}
 }

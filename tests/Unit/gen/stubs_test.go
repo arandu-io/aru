@@ -281,6 +281,19 @@ func TestTheGranularCommandsAndMakeModuleAgree(t *testing.T) {
 			t.Error("make:model and make:module emit different models for one specification")
 		}
 	})
+
+	t.Run("the unit test", func(t *testing.T) {
+		// make:module's test is rendered through RenderTest, which is what
+		// make:test renders through: a project that lost the file gets the same
+		// bytes back rather than a second opinion about what it asserts.
+		file, err := gen.RenderTest(spec(true))
+		if err != nil {
+			t.Fatalf("RenderTest: %v", err)
+		}
+		if string(file.Content) != find("PurchaseOrder_test.go") {
+			t.Error("make:module and make:test emit different tests for one specification")
+		}
+	})
 }
 
 // TestTheGeneratedActionsDoNotAnswerSuccess: an action generated with an empty

@@ -11,7 +11,7 @@ command is in its entry: the name a person types, the usage line, the one-line
 description `aru help` prints, and the function that runs it.
 
 ```sh
-grep -c '^\t\tname:' commands.go        # 39
+grep -c '^\t\tname:' commands.go        # 53
 ```
 
 It is a slice and not a map on purpose. The order of `aru help` is part of the
@@ -23,21 +23,41 @@ Ask one question: **does this need to know which modules the project
 registered?**
 
 - **No** — it runs here. `key:generate`, `new`, every `make:*`, `generate`,
-  `schema`, `doctor`, `build`, `dev`, `view:build`, `trace` and the five
-  `font:*` commands touch files and nothing else.
+  `schema`, `doctor`, `build`, `view:build`, `trace` and the five `font:*`
+  commands touch files and nothing else.
 - **Yes** — it forwards. Modules are wired explicitly in `bootstrap/app.go`,
   with no container and no plugin loading, so a separately compiled binary
-  cannot know them. `delegate("serve")` runs `go run . serve` in the project.
+  cannot know them. `delegate("migrate")` runs `go run . migrate` in the
+  project. So does anything reading a table the application owns: the fourteen
+  `queue:*` commands forward because the failed job list, the batch list and the
+  queue itself are the application's, and this binary has no connection to any
+  of them.
 
 ```sh
-grep -c 'run:   delegate(' commands.go  # 10
+grep -c 'run:   delegate(' commands.go  # 22
 ```
 
-Two of those ten forward under a different word than the one typed:
+`serve` and `dev` are the exception, and they are one exception rather than two.
+Both run the project the same way any forwarded command does -- `go run . serve`
+-- and neither goes through `delegate`, because starting the application needs
+two things no forwarded command wants: the view layer compiled from source
+first, and the application stopped when the command stops. They are written from
+one set of pieces in `dev.go` for that reason. `serve` used to forward, and the
+three things it then did not do -- recompile an edited view, recompile an edited
+stylesheet, drop the generated Go of a deleted one -- were silent every time.
+
+Two of the twenty-two forward under a different word than the one typed:
 `queue:work` calls `work` and `route:list` calls `routes`. The name a person
 types is the half that needs parity with what they already know; the string
 handed to the project binary is an internal protocol that promises nothing, so
 changing it would break every project generated before today for no gain.
+
+A forwarded command is proved by running it.
+`TestTheQueueCommandsReachTheProject` (`main_internal_test.go`) writes a project
+whose binary prints the argv it was handed, runs each queue command through the
+CLI and reads what arrived. Asserting that the entry is in the slice would pass
+on a command wired to a subcommand nobody dispatches, which is the mistake that
+is silent: it appears in `aru help`, it exits, and it does nothing.
 
 ## The procedure
 
@@ -82,19 +102,19 @@ process with it.
   use, because a component library has views and no `main.go`.
 
 **5. Reuse the shared behaviour in `make.go`.** `takeName`, `checkFlatTree`,
-`suffixed`, `unsuffixed` and `emit` exist so that the thirteen granular `make:*`
+`suffixed`, `unsuffixed` and `emit` exist so that the fourteen granular `make:*`
 commands read a name, refuse a nested one and report an existing file the same
 way. A command that refuses `Admin/UserController` with its own message is a
 second way to do one thing inside the generator itself.
 
 ```sh
-ls make*.go | grep -v _test | wc -l                    # 16: make.go and 15 commands
-grep -l 'emit("' *.go | grep -v _test | wc -l          # 13
+ls make*.go | grep -v _test | wc -l                    # 17: make.go and 16 commands
+grep -l 'emit("' *.go | grep -v _test | wc -l          # 14
 ```
 
 `make:module` and `make:policy` are the two that do not go through `emit`: one
 writes a whole module and the other is reached by it. If you are adding a
-fifteenth granular command, it goes through the shared path.
+sixteenth granular command, it goes through the shared path.
 
 **6. Print the wiring; do not perform it.** `wiringSeeder` in `makeseeder.go` is
 the shape: the command writes the file and then prints the two lines to paste,

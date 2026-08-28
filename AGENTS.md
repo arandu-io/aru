@@ -9,15 +9,21 @@ live inside it that share almost no code:
 
 | | where | what it is |
 | --- | --- | --- |
-| the commands | the root package `main` | 39 entries in one slice, 10 of which forward to the project's own binary |
+| the commands | the root package `main` | 53 entries in one slice, 22 of which forward to the project's own binary |
 | the view compiler | `internal/kyse` | a `.kyse.go` becomes Go, and the Go it writes has to compile |
-| the checker | `internal/doctor` | 24 rule functions reading a project's parsed AST, emitting 29 rule names of their own and 4 borrowed from `internal/testlayout` |
+| the checker | `internal/doctor` | 27 rule functions reading a project's parsed AST, emitting 33 rule names of their own and 4 borrowed from `internal/testlayout` |
 
 ```sh
-grep -c '^\t\tname:' commands.go                                      # 39
-grep -c 'run:   delegate(' commands.go                                # 10
-grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go | sort -u | wc -l   # 29
+grep -c '^\t\tname:' commands.go                                      # 53
+grep -c 'run:   delegate(' commands.go                                # 22
+grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go \
+	internal/testlayout/testlayout.go | sort -u | wc -l           # 37
 ```
+
+The last command reads both files because the sentence above it counts both.
+`testsAreWhereTheyCanRun` forwards four names it does not declare, so a `grep`
+over `rules.go` alone cannot reach them however long it is left in place — which
+is how that count went stale while looking measured.
 
 Read `.agents/skills/` before writing code. Each file is a procedure, named by
 the situation you are in.
@@ -142,8 +148,15 @@ Every test at the root of this repository is internal, because `package main`
 has no external form.
 
 ```sh
-find . -name '*_test.go' -not -path '*/testdata/*' | wc -l   # 33
+find . -name '*_test.go' -not -path '*/testdata/*' | wc -l   # 37 test files
+find . -name '*_test.go' -not -path '*/testdata/*' -exec cat {} + | wc -l   # 10737 lines of test
+find . -name '*.go' -not -name '*_test.go' -not -path '*/testdata/*' \
+	-not -name '*.kyse.go' -exec cat {} + | wc -l                      # 21677 of production
 ```
+
+Those three are the numbers `README.md` quotes, which is why the commands are
+here: a figure in a document nobody can re-measure from is a figure that ages
+without anybody noticing.
 
 Three things follow from Go and are not negotiable: the file name ends in
 `_test.go` (`go test` runs nothing in `BrokerTest.go`, with no error and no

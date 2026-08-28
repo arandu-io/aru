@@ -1,6 +1,6 @@
 ---
 name: purchase-orders
-description: Work with the PurchaseOrder module of this Arandu application. Use when the request mentions purchaseorders, when a route under /purchase-orders is involved, or when reading or changing purchaseorder records. Covers what the module exposes, which roles may take which action, and the rule that a repository call here cannot be made without a Grant the policy issued.
+description: Work with the PurchaseOrder module of this Arandu application. Use when the request mentions purchaseorders, when a purchase-orders route is involved, or when reading or changing purchaseorder records. Covers what the module exposes, which roles may take which action, and the rule that a repository call here cannot be made without a Grant the policy issued.
 license: MIT
 ---
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -185,6 +186,127 @@ func TestDelegationRequiresAProject(t *testing.T) {
 		}
 		if !strings.Contains(stderr, "arandu.toml") {
 			t.Errorf("%s does not explain what is missing: %q", name, stderr)
+		}
+	}
+}
+
+// probeProject writes a project whose binary reports the arguments it was
+// handed, and moves into it.
+//
+// It is what makes a forwarded command testable at all. `aru queue:retry` does
+// exactly one thing here -- hand an argv to the project binary -- and the only
+// place that argv is readable is inside the binary that receives it. Asserting
+// that the entry exists in the slice would pass on a command wired to the wrong
+// subcommand, which is the mistake worth catching.
+//
+// Three files, because projectRoot requires all three together, and no go
+// directive: a version above the local toolchain would send `go run` looking for
+// another one before it reached the probe.
+func probeProject(t *testing.T) {
+	t.Helper()
+
+	root := t.TempDir()
+	for name, body := range map[string]string{
+		"go.mod":      "module example.test/probe\n",
+		"arandu.toml": "name = \"probe\"\n",
+		"main.go": `package main
+
+import (
+	"fmt"
+	"os"
+	"strings"
+)
+
+func main() { fmt.Println("argv:", strings.Join(os.Args[1:], " ")) }
+`,
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The workspace is switched off for the child. This repository sits inside
+	// one, and a temporary directory is not a module of it, so `go run` would
+	// refuse before it ever compiled the probe.
+	t.Setenv("GOWORK", "off")
+	t.Chdir(root)
+}
+
+// TestTheQueueCommandsReachTheProject runs every queue command and reads what
+// arrived at the other end.
+//
+// The failed job list, the batch list and the queue are the application's
+// tables, so all fourteen of these forward and none of them can be answered
+// here. What this repository is responsible for is the handover, and the way it
+// breaks is silent: a command wired to a subcommand nobody dispatches still
+// appears in `aru help`, still exits, and still says nothing about the job that
+// died.
+//
+// The expectations are derived from the slice rather than listed again, so a
+// queue command added later is exercised by this test on the day it is added
+// rather than on the day somebody remembers it.
+func TestTheQueueCommandsReachTheProject(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go is not on PATH, so nothing could be delegated")
+	}
+	probeProject(t)
+
+	// The one command whose forwarded name is not the name typed. The word the
+	// project binary receives is an internal protocol that promises nothing, and
+	// changing it would break every project generated before today.
+	renamed := map[string]string{"queue:work": "work"}
+
+	queued := 0
+	for _, c := range commands {
+		if !strings.HasPrefix(c.name, "queue:") {
+			continue
+		}
+		queued++
+
+		t.Run(c.name, func(t *testing.T) {
+			want := c.name
+			if other, ok := renamed[c.name]; ok {
+				want = other
+			}
+
+			// A flag nobody here parses, to prove the arguments are passed
+			// through rather than consumed: every one of these takes flags this
+			// binary knows nothing about.
+			code, stdout, stderr := exercise(t, c.name, "--tenant=t1")
+			if code != 0 {
+				t.Fatalf("%s exited %d inside a project: %s", c.name, code, stderr)
+			}
+			if got, want := stdout, "argv: "+want+" --tenant=t1\n"; got != want {
+				t.Errorf("the project binary received %q, want %q", got, want)
+			}
+		})
+	}
+
+	// Every check above is true of no queue command at all, and a filter that
+	// matched nothing would report a pass over an empty loop.
+	if queued == 0 {
+		t.Fatal("no command in the slice is a queue command, so nothing was forwarded")
+	}
+}
+
+// TestTheDeadLetterCommandsAreReachable is the gap this family closes, named.
+//
+// A job that gave up is inspected with queue:failed and put back with
+// queue:retry, and for as long as neither was in the slice the answer to a dead
+// job was SQL by hand. The five are asserted by name because that is the claim:
+// not that the queue family is large, but that these particular five can be
+// typed.
+func TestTheDeadLetterCommandsAreReachable(t *testing.T) {
+	for _, name := range []string{"queue:failed", "queue:retry", "queue:forget", "queue:flush", "queue:prune-failed"} {
+		c, found := lookup(name)
+		if !found {
+			t.Errorf("%s is not a command, so a failed job cannot be reached from the CLI", name)
+			continue
+		}
+		// --tenant, because a failed job list is one customer's and the command
+		// that answered without one would print whichever sorted first.
+		if !strings.Contains(c.usage, "--tenant") {
+			t.Errorf("%s does not show --tenant in its usage: %q", name, c.usage)
 		}
 	}
 }

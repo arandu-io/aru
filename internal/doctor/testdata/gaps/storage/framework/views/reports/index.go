@@ -88,16 +88,49 @@ func renderInternalDoctorTestdataGapsResourcesViewsReportsIndex(kyse__w kyse__io
 		_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
 	}
 	if kyse__err == nil {
-		_, kyse__err = kyse__io.WriteString(kyse__w, "<!-- Client-only, and it stays silent: which panel is open dies on reload\n")
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<!-- Client-only, and reported all the same: which panel is open dies on reload\n")
 	}
 	if kyse__err == nil {
-		_, kyse__err = kyse__io.WriteString(kyse__w, "     without loss, and the server never sees it. -->\n")
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     without loss, and the server never sees it -- but nothing this stack serves\n")
+	}
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     evaluates the directive, so the menu does not open and no error says so.\n")
+	}
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     This block is the widening, and the one below is where it stops. -->\n")
 	}
 	if kyse__err == nil {
 		_, kyse__err = kyse__io.WriteString(kyse__w, "<div x-data=\"{ open: false }\">\n")
 	}
 	if kyse__err == nil {
 		_, kyse__err = kyse__io.WriteString(kyse__w, "\t<button @click=\"open = !open\">Menu</button>\n")
+	}
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "</div>\n")
+	}
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\n")
+	}
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<!-- The same menu, spelled the way the behaviours file reads it, and silent.\n")
+	}
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     A rule that fired here would be a rule teaching people to mute it: hx- is\n")
+	}
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     not the family, data- is not the family, and neither is an attribute that\n")
+	}
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     merely ends in one of the names. -->\n")
+	}
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "<div data-menu>\n")
+	}
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\t<button data-menu-trigger aria-expanded=\"false\" hx-get=\"/reports/menu\">Menu</button>\n")
+	}
+	if kyse__err == nil {
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\t<div data-x-id=\"not-a-directive\" class=\"combobox-initialized\"></div>\n")
 	}
 	if kyse__err == nil {
 		_, kyse__err = kyse__io.WriteString(kyse__w, "</div>\n")

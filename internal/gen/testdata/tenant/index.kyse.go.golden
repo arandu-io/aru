@@ -13,9 +13,14 @@ type PurchaseOrdersIndexData struct {
 	view.Page
 	// PurchaseOrders is the page of records.
 	PurchaseOrders []PurchaseOrderRow
-	// NextCursor is the keyset cursor of the following page. It is empty on the
-	// last page, and the link is not rendered then.
-	NextCursor string
+	// NewURL is where the "new" button goes: the create screen, addressed by
+	// route name in the controller rather than written here as a path. A view
+	// has no route table, so a link written here could only be a literal -- and
+	// a literal keeps rendering after the route moves.
+	NewURL string
+	// NextURL is the following page of the listing, cursor included. It is
+	// empty on the last page, and the link is not rendered then.
+	NextURL string
 }
 
 // Compile-time proof that this page fits the layout it extends.
@@ -23,8 +28,11 @@ var _ view.Layout = PurchaseOrdersIndexData{}
 
 // PurchaseOrderRow is one record, formatted for display by the controller.
 type PurchaseOrderRow struct {
-	// ID is what the row links to.
+	// ID is what the row is addressed by.
 	ID string
+	// URL is where the row links to, built from the route name by the
+	// controller.
+	URL string
 	// Reference is the Reference column.
 	Reference string
 	// SupplierEmail is the Supplier email column.
@@ -51,12 +59,12 @@ type PurchaseOrderRow struct {
 @section('content')
 	<div class="flex items-center justify-between gap-4">
 		<h1 class="text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
-		<a class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" href="/purchase-orders/create">New purchase order</a>
+		<a class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" href="{{ .NewURL }}">New purchase order</a>
 	</div>
 
 	@if(len(d.PurchaseOrders) == 0)
 		<p class="mt-8 text-sm text-slate-500 dark:text-slate-400">
-			No purchase order yet. <a class="underline underline-offset-2" href="/purchase-orders/create">Add the first one</a>.
+			No purchase order yet. <a class="underline underline-offset-2" href="{{ .NewURL }}">Add the first one</a>.
 		</p>
 	@endif
 
@@ -78,7 +86,7 @@ type PurchaseOrderRow struct {
 					@foreach(.PurchaseOrders as purchaseOrder)
 						<tr class="border-b border-slate-100 dark:border-slate-900">
 							<td class="py-2 pr-4">
-								<a class="font-medium underline underline-offset-2" href="/purchase-orders/{{ purchaseOrder.ID }}">{{ purchaseOrder.Reference }}</a>
+								<a class="font-medium underline underline-offset-2" href="{{ purchaseOrder.URL }}">{{ purchaseOrder.Reference }}</a>
 							</td>
 												<td class="py-2 pr-4">{{ purchaseOrder.SupplierEmail }}</td>
 					<td class="py-2 pr-4">{{ purchaseOrder.Total }}</td>
@@ -93,7 +101,7 @@ type PurchaseOrderRow struct {
 		</div>
 	@endif
 
-	@if(d.NextCursor != "")
-		<a class="mt-6 inline-block text-sm underline underline-offset-2" href="/purchase-orders?cursor={{ .NextCursor }}">Next page</a>
+	@if(d.NextURL != "")
+		<a class="mt-6 inline-block text-sm underline underline-offset-2" href="{{ .NextURL }}">Next page</a>
 	@endif
 @endsection

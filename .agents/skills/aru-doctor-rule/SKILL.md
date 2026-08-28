@@ -11,17 +11,41 @@ AST and never runs the code, so it works on a project that does not compile —
 which is exactly when someone needs to be told what is wrong.
 
 ```sh
-sed -n '41,66p' internal/doctor/rules.go | grep -cE '^\t[a-z]'                # 24  rule functions
-grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go | sort -u | wc -l    # 29  rule names declared here
-grep -ohE 'Rule: *"[a-z0-9-]+"' internal/testlayout/testlayout.go | sort -u | wc -l  # 4  more, borrowed
+awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 27  rule functions
+grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/testlayout/testlayout.go \
+	| sort -u | wc -l                                                     # 37  names a report can carry
+grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go | sort -u | wc -l    # 33  of them declared here
+grep -ohE 'Rule: *"[a-z0-9-]+"' internal/testlayout/testlayout.go \
+	| sort -u | wc -l                                                     # 4  forwarded, declared there
 ```
 
-Twenty-four functions and thirty-three names, because one function can emit
-several. `repositoryMethodNeedsGrant` reports `grant-not-received`,
-`grant-not-checked` and `grant-check-discarded`; `testsAreWhereTheyCanRun` hands
-back four names it does not own, because `internal/testlayout` answers the same
-four questions for this repository's own tree and a second copy is how the two
-would come to disagree in silence.
+The two counts differ because one function can emit several names.
+`repositoryMethodNeedsGrant` reports `grant-not-received`, `grant-not-checked`
+and `grant-check-discarded`; `testsAreWhereTheyCanRun` hands back the four names
+it does not own, because `internal/testlayout` answers the same four questions
+for this repository's own tree and a second copy is how the two would come to
+disagree in silence.
+
+**Every figure above has a command beside it that can reach it, and no figure is
+written anywhere twice.** This count has aged eight times, and the last one
+failed differently in kind: the number was wrong because the command beside it
+measured something narrower than the sentence it stood under. A `grep` over
+`rules.go` alone cannot see `package-clause-is-capitalised`, `scaffolding-ships`,
+`test-is-not-run` or `test-outside-the-tests-tree` — `testsAreWhereTheyCanRun`
+forwards those, and `tests/Unit/doctor/doctor_test.go` proves all four fire in a
+generated project. A number with a command beside it that cannot reach the
+answer is worse than a number on its own, because it reads as verified.
+
+`TestTheDocumentedRuleCountIsTheOneThisPackageHas`
+(`internal/doctor/rules_internal_test.go`) is why none of the four can go stale
+again. It derives all of them from the rules slice, from `emitsByRule` and from
+both files that declare a name, then reads them back out of this file, of
+`AGENTS.md` and of `README.md`. Adding or deleting a rule fails that test in the
+same run, and the failure names the document and the figure to change.
+
+The line range is gone from the first command for the same reason.
+`sed -n '41,66p'` was right on the day it was written and had no way to stay
+right: the `awk` above finds the slice wherever it moves.
 
 ## Where the rule goes, and where it does not
 
@@ -64,8 +88,8 @@ the CLI accepts the fixture as a project:
 ```sh
 cp -R internal/doctor/testdata/violations /tmp/viol && touch /tmp/viol/arandu.toml
 (cd /tmp/viol && /tmp/aru-src doctor > /tmp/viol.out 2>&1); echo $?   # 1
-tail -1 /tmp/viol.out                                                 # 24 error(s), 17 warning(s)
-grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 27
+tail -1 /tmp/viol.out                                                 # 28 error(s), 20 warning(s)
+grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 30
 ```
 
 ```sh

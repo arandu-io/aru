@@ -658,6 +658,7 @@ const controllerTemplate = `package controllers
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 {{- if .NeedsTimeParse}}
 	"time"
@@ -745,7 +746,7 @@ func (c *{{.Controller}}) Index(ctx *fhttp.Context) error {
 
 	rows := make([]views.{{.RowStruct}}, 0, len(found))
 	for _, {{.Receiver}} := range found {
-		rows = append(rows, c.row({{.Receiver}}))
+		rows = append(rows, c.row(ctx, {{.Receiver}}))
 	}
 
 	// The listing writes nothing, but the layout around it does: the sign-out
@@ -758,16 +759,22 @@ func (c *{{.Controller}}) Index(ctx *fhttp.Context) error {
 	}
 
 	// Keyset pagination picks up after the last id of the page. A partial page
-	// is the last page, and offering a cursor there would be a link to nothing.
+	// is the last page, and offering a link there would be a link to nothing.
+	//
+	// The address is the listing's own, asked for by name and given the cursor
+	// as a query parameter -- the parameter is not part of the route, so it is
+	// appended here rather than passed to URL, and it is escaped because the
+	// cursor is data.
 	next := ""
 	if len(rows) == limit {
-		next = rows[len(rows)-1].ID
+		next = ctx.URL("{{.RouteName "index"}}") + "?cursor=" + url.QueryEscape(rows[len(rows)-1].ID)
 	}
 
 	return ctx.View("{{.ViewName "index"}}", views.{{.ViewData "index"}}{
 		Page:       view.Page{Title: "{{.HumansTitle}}", Token: token},
 		{{.Plural}}: rows,
-		NextCursor: next,
+		NewURL:     ctx.URL("{{.RouteName "create"}}"),
+		NextURL:    next,
 	})
 }
 
@@ -793,7 +800,10 @@ func (c *{{.Controller}}) Show(ctx *fhttp.Context) error {
 
 	return ctx.View("{{.ViewName "show"}}", views.{{.ViewData "show"}}{
 		Page:     view.Page{Title: "{{.HumanTitle}}", Token: token},
-		{{.Entity}}: c.row(found),
+		{{.Entity}}: c.row(ctx, found),
+		IndexURL:  ctx.URL("{{.RouteName "index"}}"),
+		EditURL:   ctx.URL("{{.RouteName "edit"}}", found.ID),
+		DeleteURL: ctx.URL("{{.RouteName "destroy"}}", found.ID),
 	})
 }
 
@@ -808,8 +818,10 @@ func (c *{{.Controller}}) Create(ctx *fhttp.Context) error {
 	}
 
 	return ctx.View("{{.ViewName "create"}}", views.{{.ViewData "create"}}{
-		Page:   view.Page{Title: "New {{.Human}}", Token: token},
-		Errors: map[string][]string{},
+		Page:     view.Page{Title: "New {{.Human}}", Token: token},
+		Errors:   map[string][]string{},
+		IndexURL: ctx.URL("{{.RouteName "index"}}"),
+		StoreURL: ctx.URL("{{.RouteName "store"}}"),
 	})
 }
 
@@ -833,7 +845,7 @@ func (c *{{.Controller}}) Store(ctx *fhttp.Context) error {
 		}
 		return c.fail(ctx, err)
 	}
-	return ctx.Redirect("{{.Route}}/" + created.ID)
+	return ctx.RedirectRoute("{{.RouteName "show"}}", created.ID)
 }
 
 // Edit renders the form filled in.
@@ -853,9 +865,11 @@ func (c *{{.Controller}}) Edit(ctx *fhttp.Context) error {
 	}
 
 	return ctx.View("{{.ViewName "edit"}}", views.{{.ViewData "edit"}}{
-		Page:   view.Page{Title: "Edit {{.Human}}", Token: token},
-		Form:   c.form(found),
-		Errors: map[string][]string{},
+		Page:      view.Page{Title: "Edit {{.Human}}", Token: token},
+		Form:      c.form(found),
+		Errors:    map[string][]string{},
+		ShowURL:   ctx.URL("{{.RouteName "show"}}", found.ID),
+		UpdateURL: ctx.URL("{{.RouteName "update"}}", found.ID),
 	})
 }
 
@@ -885,7 +899,7 @@ func (c *{{.Controller}}) Update(ctx *fhttp.Context) error {
 		}
 		return c.fail(ctx, err)
 	}
-	return ctx.Redirect("{{.Route}}/" + updated.ID)
+	return ctx.RedirectRoute("{{.RouteName "show"}}", updated.ID)
 }
 
 // Destroy removes the record.
@@ -897,7 +911,7 @@ func (c *{{.Controller}}) Destroy(ctx *fhttp.Context) error {
 	if err := c.svc.Delete(ctx.Ctx(), actor, ctx.Param("id")); err != nil {
 		return c.fail(ctx, err)
 	}
-	return ctx.Redirect("{{.Route}}")
+	return ctx.RedirectRoute("{{.RouteName "index"}}")
 }
 
 {{template "controllerSession" .}}
@@ -906,9 +920,14 @@ func (c *{{.Controller}}) Destroy(ctx *fhttp.Context) error {
 // Formatting happens here rather than in the view: a view that formats a
 // time.Time would need the time package, and what a date looks like on screen is
 // a decision about presentation, which is this side of the line.
-func (c *{{.Controller}}) row({{.Receiver}} models.{{.Entity}}) views.{{.RowStruct}} {
+//
+// The address is settled here too, for the same reason and one more: the view
+// has no route table, so a link written there could only be a literal. This
+// takes the context so it can ask for the route by name.
+func (c *{{.Controller}}) row(ctx *fhttp.Context, {{.Receiver}} models.{{.Entity}}) views.{{.RowStruct}} {
 	return views.{{.RowStruct}}{
-		ID: {{.Receiver}}.ID,
+		ID:  {{.Receiver}}.ID,
+		URL: ctx.URL("{{.RouteName "show"}}", {{.Receiver}}.ID),
 {{- range .Fields}}
 		{{.GoName}}: {{.Display $.Receiver}},
 {{- end}}
@@ -967,9 +986,11 @@ func (c *{{.Controller}}) rejectedCreate(ctx *fhttp.Context, form views.{{.FormS
 		return err
 	}
 	return c.Invalid(ctx, "{{.ViewName "create"}}", views.{{.ViewData "create"}}{
-		Page:   view.Page{Title: "New {{.Human}}", Token: token},
-		Form:   form,
-		Errors: errs,
+		Page:     view.Page{Title: "New {{.Human}}", Token: token},
+		Form:     form,
+		Errors:   errs,
+		IndexURL: ctx.URL("{{.RouteName "index"}}"),
+		StoreURL: ctx.URL("{{.RouteName "store"}}"),
 	})
 }
 
@@ -980,9 +1001,11 @@ func (c *{{.Controller}}) rejectedEdit(ctx *fhttp.Context, form views.{{.FormStr
 		return err
 	}
 	return c.Invalid(ctx, "{{.ViewName "edit"}}", views.{{.ViewData "edit"}}{
-		Page:   view.Page{Title: "Edit {{.Human}}", Token: token},
-		Form:   form,
-		Errors: errs,
+		Page:      view.Page{Title: "Edit {{.Human}}", Token: token},
+		Form:      form,
+		Errors:    errs,
+		ShowURL:   ctx.URL("{{.RouteName "show"}}", form.ID),
+		UpdateURL: ctx.URL("{{.RouteName "update"}}", form.ID),
 	})
 }
 
@@ -1077,8 +1100,13 @@ func (c *{{.Controller}}) actor(ctx *fhttp.Context) (security.Subject, error) {
 // signIn sends an unauthenticated visitor to the sign-in screen. Under HTMX the
 // redirect becomes HX-Redirect, so the browser navigates instead of nesting the
 // whole page inside a fragment.
+//
+// The screen is asked for by name, not by path. Two different things register
+// it -- the framework's auth module and the starter kit -- and only one of them
+// answers in any given project; both name the route auth.login, and neither
+// promises the path stays where it is.
 func (c *{{.Controller}}) signIn(ctx *fhttp.Context) error {
-	return ctx.Redirect("/auth/login")
+	return ctx.RedirectRoute("auth.login")
 }
 
 // token issues a CSRF token for the session that is rendering the page.
@@ -1208,7 +1236,7 @@ func Test{{.Entity}}ListRejectsSortOutsideTheAllowlist(t *testing.T) {
 // names the situation rather than the subject.
 const skillTemplate = `---
 name: {{ .Resource }}
-description: Work with the {{ .Entity }} module of this Arandu application. Use when the request mentions {{ .Entity | lower }}s, when a route under /{{ .Resource }} is involved, or when reading or changing {{ .Entity | lower }} records. Covers what the module exposes, which roles may take which action, and the rule that a repository call here cannot be made without a Grant the policy issued.
+description: Work with the {{ .Entity }} module of this Arandu application. Use when the request mentions {{ .Entity | lower }}s, when a {{ .Resource }} route is involved, or when reading or changing {{ .Entity | lower }} records. Covers what the module exposes, which roles may take which action, and the rule that a repository call here cannot be made without a Grant the policy issued.
 license: MIT
 ---
 

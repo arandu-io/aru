@@ -3,6 +3,7 @@ package controllers
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -88,7 +89,7 @@ func (c *PurchaseOrderController) Index(ctx *fhttp.Context) error {
 
 	rows := make([]views.PurchaseOrderRow, 0, len(found))
 	for _, p := range found {
-		rows = append(rows, c.row(p))
+		rows = append(rows, c.row(ctx, p))
 	}
 
 	// The listing writes nothing, but the layout around it does: the sign-out
@@ -101,16 +102,22 @@ func (c *PurchaseOrderController) Index(ctx *fhttp.Context) error {
 	}
 
 	// Keyset pagination picks up after the last id of the page. A partial page
-	// is the last page, and offering a cursor there would be a link to nothing.
+	// is the last page, and offering a link there would be a link to nothing.
+	//
+	// The address is the listing's own, asked for by name and given the cursor
+	// as a query parameter -- the parameter is not part of the route, so it is
+	// appended here rather than passed to URL, and it is escaped because the
+	// cursor is data.
 	next := ""
 	if len(rows) == limit {
-		next = rows[len(rows)-1].ID
+		next = ctx.URL("purchase-orders.index") + "?cursor=" + url.QueryEscape(rows[len(rows)-1].ID)
 	}
 
 	return ctx.View("purchase-orders.index", views.PurchaseOrdersIndexData{
 		Page:           view.Page{Title: "Purchase orders", Token: token},
 		PurchaseOrders: rows,
-		NextCursor:     next,
+		NewURL:         ctx.URL("purchase-orders.create"),
+		NextURL:        next,
 	})
 }
 
@@ -136,7 +143,10 @@ func (c *PurchaseOrderController) Show(ctx *fhttp.Context) error {
 
 	return ctx.View("purchase-orders.show", views.PurchaseOrdersShowData{
 		Page:          view.Page{Title: "Purchase order", Token: token},
-		PurchaseOrder: c.row(found),
+		PurchaseOrder: c.row(ctx, found),
+		IndexURL:      ctx.URL("purchase-orders.index"),
+		EditURL:       ctx.URL("purchase-orders.edit", found.ID),
+		DeleteURL:     ctx.URL("purchase-orders.destroy", found.ID),
 	})
 }
 
@@ -151,8 +161,10 @@ func (c *PurchaseOrderController) Create(ctx *fhttp.Context) error {
 	}
 
 	return ctx.View("purchase-orders.create", views.PurchaseOrdersCreateData{
-		Page:   view.Page{Title: "New purchase order", Token: token},
-		Errors: map[string][]string{},
+		Page:     view.Page{Title: "New purchase order", Token: token},
+		Errors:   map[string][]string{},
+		IndexURL: ctx.URL("purchase-orders.index"),
+		StoreURL: ctx.URL("purchase-orders.store"),
 	})
 }
 
@@ -176,7 +188,7 @@ func (c *PurchaseOrderController) Store(ctx *fhttp.Context) error {
 		}
 		return c.fail(ctx, err)
 	}
-	return ctx.Redirect("/purchase-orders/" + created.ID)
+	return ctx.RedirectRoute("purchase-orders.show", created.ID)
 }
 
 // Edit renders the form filled in.
@@ -196,9 +208,11 @@ func (c *PurchaseOrderController) Edit(ctx *fhttp.Context) error {
 	}
 
 	return ctx.View("purchase-orders.edit", views.PurchaseOrdersEditData{
-		Page:   view.Page{Title: "Edit purchase order", Token: token},
-		Form:   c.form(found),
-		Errors: map[string][]string{},
+		Page:      view.Page{Title: "Edit purchase order", Token: token},
+		Form:      c.form(found),
+		Errors:    map[string][]string{},
+		ShowURL:   ctx.URL("purchase-orders.show", found.ID),
+		UpdateURL: ctx.URL("purchase-orders.update", found.ID),
 	})
 }
 
@@ -231,7 +245,7 @@ func (c *PurchaseOrderController) Update(ctx *fhttp.Context) error {
 		}
 		return c.fail(ctx, err)
 	}
-	return ctx.Redirect("/purchase-orders/" + updated.ID)
+	return ctx.RedirectRoute("purchase-orders.show", updated.ID)
 }
 
 // Destroy removes the record.
@@ -243,7 +257,7 @@ func (c *PurchaseOrderController) Destroy(ctx *fhttp.Context) error {
 	if err := c.svc.Delete(ctx.Ctx(), actor, ctx.Param("id")); err != nil {
 		return c.fail(ctx, err)
 	}
-	return ctx.Redirect("/purchase-orders")
+	return ctx.RedirectRoute("purchase-orders.index")
 }
 
 // actor is who is acting, from the session and never from the request body.
@@ -254,8 +268,13 @@ func (c *PurchaseOrderController) actor(ctx *fhttp.Context) (security.Subject, e
 // signIn sends an unauthenticated visitor to the sign-in screen. Under HTMX the
 // redirect becomes HX-Redirect, so the browser navigates instead of nesting the
 // whole page inside a fragment.
+//
+// The screen is asked for by name, not by path. Two different things register
+// it -- the framework's auth module and the starter kit -- and only one of them
+// answers in any given project; both name the route auth.login, and neither
+// promises the path stays where it is.
 func (c *PurchaseOrderController) signIn(ctx *fhttp.Context) error {
-	return ctx.Redirect("/auth/login")
+	return ctx.RedirectRoute("auth.login")
 }
 
 // token issues a CSRF token for the session that is rendering the page.
@@ -273,9 +292,14 @@ func (c *PurchaseOrderController) token(ctx *fhttp.Context) (string, error) {
 // Formatting happens here rather than in the view: a view that formats a
 // time.Time would need the time package, and what a date looks like on screen is
 // a decision about presentation, which is this side of the line.
-func (c *PurchaseOrderController) row(p models.PurchaseOrder) views.PurchaseOrderRow {
+//
+// The address is settled here too, for the same reason and one more: the view
+// has no route table, so a link written there could only be a literal. This
+// takes the context so it can ask for the route by name.
+func (c *PurchaseOrderController) row(ctx *fhttp.Context, p models.PurchaseOrder) views.PurchaseOrderRow {
 	return views.PurchaseOrderRow{
 		ID:            p.ID,
+		URL:           ctx.URL("purchase-orders.show", p.ID),
 		Reference:     p.Reference,
 		SupplierEmail: p.SupplierEmail,
 		Total:         p.Total,
@@ -342,9 +366,11 @@ func (c *PurchaseOrderController) rejectedCreate(ctx *fhttp.Context, form views.
 		return err
 	}
 	return c.Invalid(ctx, "purchase-orders.create", views.PurchaseOrdersCreateData{
-		Page:   view.Page{Title: "New purchase order", Token: token},
-		Form:   form,
-		Errors: errs,
+		Page:     view.Page{Title: "New purchase order", Token: token},
+		Form:     form,
+		Errors:   errs,
+		IndexURL: ctx.URL("purchase-orders.index"),
+		StoreURL: ctx.URL("purchase-orders.store"),
 	})
 }
 
@@ -355,9 +381,11 @@ func (c *PurchaseOrderController) rejectedEdit(ctx *fhttp.Context, form views.Pu
 		return err
 	}
 	return c.Invalid(ctx, "purchase-orders.edit", views.PurchaseOrdersEditData{
-		Page:   view.Page{Title: "Edit purchase order", Token: token},
-		Form:   form,
-		Errors: errs,
+		Page:      view.Page{Title: "Edit purchase order", Token: token},
+		Form:      form,
+		Errors:    errs,
+		ShowURL:   ctx.URL("purchase-orders.show", form.ID),
+		UpdateURL: ctx.URL("purchase-orders.update", form.ID),
 	})
 }
 

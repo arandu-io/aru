@@ -109,9 +109,10 @@ copies that happen to match. `GenerateModel` and `Generate` write the same
 model; the migration goes through `MigrationSpec` whichever command asked for
 it.
 
-`TestTheGranularCommandsAndMakeModuleAgree` (`stubs_test.go:203`) checks four of
-those pairings — the session helpers, the validation rules, the migration and
-the model. If you add a template that both paths can reach, add it there too.
+`TestTheGranularCommandsAndMakeModuleAgree` (`stubs_test.go:203`) checks five of
+those pairings — the session helpers, the validation rules, the migration, the
+model and the unit test. If you add a template that both paths can reach, add it
+there too.
 
 `GenerateModel` deliberately writes no repository, and there is no
 `--repository` flag: a repository pulls a policy with it, `aru doctor` reports
@@ -162,9 +163,13 @@ it is also `internal/doctor/testdata/clean`. Break one and you break the other.
   `TestTheGeneratedActionsDoNotAnswerSuccess` (`stubs_test.go:289`) — an empty
   action that answered 200 would look like it worked in the browser, in the logs
   and on every dashboard, which is the failure nobody debugs.
-- **The generated test file is `<Entity>_test.go`, not `<Entity>Test.go`.** A
-  file that does not end in `_test.go` compiles into the package, so the test
-  ships in the binary and never runs.
+- **The generated test file is `<Entity>_test.go`, not `<Entity>Test.go`**, in
+  `tests/Unit/` and carrying `package unit_test`. A file that does not end in
+  `_test.go` compiles into the package, so the test ships in the binary and
+  never runs. `internal/testlayout` is what says so, and `aru doctor` reports
+  it in the generated project — a template that emits a test anywhere else is
+  the generator fighting the guard it ships. `gen.RenderTest` is the one place
+  that file is rendered, for `aru make:module` and `aru make:test` alike.
 - **Nothing keyed is declared `TEXT`.**
   `TestNothingKeyedIsDeclaredTEXT` (`tests/Unit/gen/audit_test.go:120`) exists
   because every test once ran against SQLite, which accepts `id TEXT PRIMARY

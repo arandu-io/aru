@@ -1,10 +1,13 @@
 package doctor_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/arandu-io/aru/internal/doctor"
+	"github.com/arandu-io/aru/internal/gen"
 	"github.com/arandu-io/aru/tests"
 )
 
@@ -208,10 +211,13 @@ func TestADeclaredPermissionThatIsUsedIsSilent(t *testing.T) {
 	}
 }
 
-// TestAlpineReachingTheServerIsCaught: without this check, "Alpine only where
-// HTMX cannot reach" is opinion, and opinion does not survive a code review at
-// 6pm.
-func TestAlpineReachingTheServerIsCaught(t *testing.T) {
+// TestADirectiveThatFetchesIsCaught: without this check, "one way to load data"
+// is opinion, and opinion does not survive a code review at 6pm.
+//
+// It is the expensive half of the rule -- a second fetch path with its own
+// loading state and its own CSRF handling -- so the message has to say that much
+// and not merely name the attribute.
+func TestADirectiveThatFetchesIsCaught(t *testing.T) {
 	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -219,16 +225,16 @@ func TestAlpineReachingTheServerIsCaught(t *testing.T) {
 
 	var caught *doctor.Finding
 	for i, f := range findings {
-		if f.Rule == "alpine-reaches-the-server" {
+		if f.Rule == "view-keeps-state-in-the-browser" && strings.Contains(f.Message, "fetch()") {
 			caught = &findings[i]
 			break
 		}
 	}
 	if caught == nil {
-		t.Fatal("an x-data with a fetch call was not caught")
+		t.Fatalf("an x-data with a fetch call was not caught:\n%v", findings)
 	}
 	if caught.Severity != doctor.Error {
-		t.Error("Alpine fetching from the server is a warning: it is a second data path")
+		t.Error("a directive fetching from the server is a warning: it is a second data path")
 	}
 	// The view file, whatever the engine spells it: hardcoding an extension
 	// makes this test about the engine rather than about the rule.
@@ -240,16 +246,46 @@ func TestAlpineReachingTheServerIsCaught(t *testing.T) {
 	}
 }
 
-// TestAlpineWithinItsLimitIsSilent: a dropdown is exactly what the rule permits,
-// and firing on it would teach people to ignore the rule.
-func TestAlpineWithinItsLimitIsSilent(t *testing.T) {
+// TestAnInertDirectiveIsCaughtToo is the half the rule gained, and the reason it
+// gained it.
+//
+// A dropdown written in `x-data` calls nothing and leaks nothing, and it also
+// does not work: no asset this stack serves reads the attribute, and the policy
+// is script-src 'self' with no unsafe-eval, so nothing would evaluate it even if
+// one did. The screen silently does nothing. Reporting only the ones that fetch
+// left that case to be discovered by a person clicking a menu that never opens.
+func TestAnInertDirectiveIsCaughtToo(t *testing.T) {
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, f := range findings {
+		if f.Rule != "view-keeps-state-in-the-browser" {
+			continue
+		}
+		// The inert one is the finding that names no network call.
+		if !strings.Contains(f.Message, "fetch()") && !strings.Contains(f.Message, "WebSocket") {
+			return
+		}
+	}
+	t.Errorf("a client-only x-data produced no finding, so the rule still only reports the ones that fetch:\n%v", findings)
+}
+
+// TestTheShapeTheBehavioursFileReadsIsSilent is where the widening stops.
+//
+// The clean fixture spells its tabs the way ui.js reads them -- data- attributes
+// and the selected one in ARIA -- and a rule that fired there would be a rule
+// teaching people to mute it. It is also the guard against the cheap way to
+// widen this rule wrong: `hx-get` is not `x-get`, and `data-x-id` is not `x-id`.
+func TestTheShapeTheBehavioursFileReadsIsSilent(t *testing.T) {
 	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	for _, f := range findings {
-		if f.Rule == "alpine-reaches-the-server" {
-			t.Errorf("client-only state was reported: %s", f.Message)
+		if f.Rule == "view-keeps-state-in-the-browser" {
+			t.Errorf("the data- shape was reported: %s: %s", f.File, f.Message)
 		}
 	}
 }
@@ -538,6 +574,30 @@ func TestADottedViewNameResolvesToItsFile(t *testing.T) {
 	for _, f := range findings {
 		if f.Rule == "view-does-not-exist" {
 			t.Fatalf("a view that exists was reported missing: %s", f.Message)
+		}
+	}
+}
+
+// TestOneRowFetchedAfterAuthorizeIsCaughtUnderBothNames pins the half of
+// resource-not-reauthorized that has to keep firing.
+//
+// The rule fetches the shape "authorize the action, then read one named object,
+// then return it", and there are two names for that read. Find is one. Get is
+// the other, and Get is also what a model builder's listing terminal is called
+// -- so narrowing the rule until the listing goes quiet can narrow it until this
+// goes quiet too, and a rule that reports nothing does not fail, it passes.
+//
+// Both methods are in the same service and differ only in the name they call, so
+// a change that keeps one and loses the other is named here rather than counted.
+func TestOneRowFetchedAfterAuthorizeIsCaughtUnderBothNames(t *testing.T) {
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, method := range []string{"ViewCharge", "ShowCharge"} {
+		if !mentions(findings, "resource-not-reauthorized", method) {
+			t.Errorf("%s reads one row after Authorize and was not reported:\n%v", method, findings)
 		}
 	}
 }
@@ -855,17 +915,19 @@ func TestATypeThatMerelyStartsWithRepoIsNotARepository(t *testing.T) {
 	}
 }
 
-// TestAlpineIsMatchedInEveryDirectiveAndBothQuotes: the pattern matched x-data,
-// x-init and x-effect, with double quotes only.
+// TestEveryDirectiveAndBothQuotesAreMatched: the pattern matched x-data, x-init
+// and x-effect, with double quotes only.
 //
 // x-on: and @ are precisely where a network call is written, and a formatter
-// that prefers single quotes turned the whole rule off.
-func TestAlpineIsMatchedInEveryDirectiveAndBothQuotes(t *testing.T) {
+// that prefers single quotes turned the whole rule off. The fourth name is the
+// widening: x-show holds no expression anybody would call a data path, and it is
+// the shape that used to walk straight through.
+func TestEveryDirectiveAndBothQuotesAreMatched(t *testing.T) {
 	findings := gaps(t)
 
-	var xon, shorthand, singleQuoted bool
+	var xon, shorthand, singleQuoted, stateOnly bool
 	for _, f := range findings {
-		if f.Rule != "alpine-reaches-the-server" {
+		if f.Rule != "view-keeps-state-in-the-browser" {
 			continue
 		}
 		switch {
@@ -873,8 +935,10 @@ func TestAlpineIsMatchedInEveryDirectiveAndBothQuotes(t *testing.T) {
 			xon = true
 		case strings.HasPrefix(f.Message, "@"):
 			shorthand = true
-		case strings.HasPrefix(f.Message, "x-data"):
+		case strings.HasPrefix(f.Message, "x-data") && strings.Contains(f.Message, "WebSocket"):
 			singleQuoted = true
+		case strings.HasPrefix(f.Message, "x-data"):
+			stateOnly = true
 		}
 	}
 
@@ -886,6 +950,9 @@ func TestAlpineIsMatchedInEveryDirectiveAndBothQuotes(t *testing.T) {
 	}
 	if !singleQuoted {
 		t.Errorf("a single-quoted x-data with a WebSocket was not caught:\n%v", findings)
+	}
+	if !stateOnly {
+		t.Errorf("a client-only x-data was not caught, so the rule is still the narrow one:\n%v", findings)
 	}
 }
 
@@ -930,15 +997,15 @@ func TestAnUnusedPermissionHasAFixture(t *testing.T) {
 // rule under test.
 func TestTheGapsFixtureReportsNothingElse(t *testing.T) {
 	expected := map[string]bool{
-		"grant-not-received":            true,
-		"grant-check-discarded":         true,
-		"sql-without-tenant-scope":      true,
-		"system-grant-outside-scope":    true,
-		"handler-reaches-data":          true,
-		"controller-reaches-repository": true,
-		"alpine-reaches-the-server":     true,
-		"permission-not-used":           true,
-		"outbox-not-registered":         true,
+		"grant-not-received":              true,
+		"grant-check-discarded":           true,
+		"sql-without-tenant-scope":        true,
+		"system-grant-outside-scope":      true,
+		"handler-reaches-data":            true,
+		"controller-reaches-repository":   true,
+		"view-keeps-state-in-the-browser": true,
+		"permission-not-used":             true,
+		"outbox-not-registered":           true,
 	}
 	for _, f := range gaps(t) {
 		if !expected[f.Rule] {
@@ -1227,6 +1294,195 @@ func TestAnUnknownProfileIsRefused(t *testing.T) {
 	for _, name := range []string{"conventional", "performance"} {
 		if _, err := doctor.ParseProfile(name); err != nil {
 			t.Errorf("ParseProfile(%q): %v", name, err)
+		}
+	}
+}
+
+// TestAMigrationNobodyImportsIsCaught: it is the one failure in the migration
+// path that looks exactly like success.
+//
+// Go leaves a package nobody imports out of the binary, so the init that
+// registers the migration never runs and the registry is empty. `aru migrate`
+// then prints that there is nothing to apply -- which is what it prints on a
+// database that is fully migrated -- and creates no tables at all.
+func TestAMigrationNobodyImportsIsCaught(t *testing.T) {
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	caught := findRule(findings, "migrations-not-linked")
+	if caught == nil {
+		t.Fatal("a migrations package nothing imports produced no finding")
+	}
+	// The import that has to be added is the actionable half, so the finding has
+	// to spell it rather than describe it.
+	if !strings.Contains(caught.Why, `_ "example.test/p/database/migrations"`) {
+		t.Errorf("the finding does not spell the import to add: %s", caught)
+	}
+}
+
+// TestALinkedMigrationsPackageIsNotReported is the control, and without it the
+// rule above is satisfied by one that fires on every project.
+//
+// The clean fixture blank-imports its migrations from main.go, which is what the
+// skeleton does and what `aru new` produces.
+func TestALinkedMigrationsPackageIsNotReported(t *testing.T) {
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if caught := findRule(findings, "migrations-not-linked"); caught != nil {
+		t.Errorf("a project that blank-imports its migrations was reported: %s", caught)
+	}
+}
+
+// TestANotNullColumnAddedToAnExistingTableIsCaught: it fails on every row
+// already in the table, and again on the previous binary still inserting rows
+// during the rollout.
+//
+// The other half is what makes it a rule rather than a filter: the same alter
+// block adds a nullable column, and reporting that one would make the finding
+// impossible to act on.
+func TestANotNullColumnAddedToAnExistingTableIsCaught(t *testing.T) {
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	caught := findRule(findings, "added-column-not-nullable")
+	if caught == nil {
+		t.Fatal("a NOT NULL column added to an existing table produced no finding")
+	}
+	if !strings.Contains(caught.Message, "settled_by") {
+		t.Errorf("the finding does not name the column: %s", caught)
+	}
+	if mentions(findings, "added-column-not-nullable", "settled_at") {
+		t.Error("the nullable column in the same block was reported too, so the rule cannot be acted on")
+	}
+}
+
+// TestAMigrationWithNoDownIsCaught: the rollback reports success and undoes
+// nothing.
+//
+// The migrator treats a missing Down as "not reversed, and that is not an
+// error": it deletes the row recording the migration as applied, prints it as
+// rolled back, and leaves the table standing. The next migrate runs the Up again
+// and fails on what is already there.
+func TestAMigrationWithNoDownIsCaught(t *testing.T) {
+	findings, err := doctor.Run(fixture(t, "violations"), doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	caught := findRule(findings, "rollback-does-nothing")
+	if caught == nil {
+		t.Fatal("a migration that creates a table and declares no Down produced no finding")
+	}
+	if !strings.Contains(caught.Message, "CreateChargesTable") {
+		t.Errorf("the finding does not name the migration: %s", caught)
+	}
+}
+
+// TestABackfillWithNoDownIsNotReported is the half that keeps the rule
+// actionable, and it is the reason the rule reads the Up instead of counting
+// methods.
+//
+// The clean fixture's BackfillInvoiceTotals declares no Down either, and it is
+// right not to: `UPDATE invoices SET total = 0 WHERE total IS NULL` cannot be
+// reversed by anything, because the rows it changed are no longer tellable apart
+// from the rows it did not. A rule that asked for a Down there would be asking
+// for something nobody can write, which is how a report teaches people to stop
+// reading it.
+//
+// What that migration still does on rollback -- report success and undo nothing
+// -- is real, and saying so is not this rule's to say: nothing in
+// hesape/database/migrations lets a migration declare itself irreversible, so
+// there is no answer for anyone to act on here.
+func TestABackfillWithNoDownIsNotReported(t *testing.T) {
+	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if caught := findRule(findings, "rollback-does-nothing"); caught != nil {
+		t.Errorf("a backfill that cannot be reversed was told to write a Down: %s", caught)
+	}
+}
+
+// TestWhatMakeMigrationWritesPassesTheMigrationRules runs the real generator's
+// output through the real checker.
+//
+// The clean fixture is described as "the shape the generator emits", and it is a
+// copy maintained by hand: it says what somebody believed the generator emitted
+// on the day they wrote it. This asks the generator instead. A template that
+// loses its Down, or an alter that stops spelling Nullable, is a change that
+// makes every generated project fail its own `aru doctor` -- and a rule that
+// shouts at code the generator wrote is worse than no rule at all.
+//
+// It compiles nothing. What the emitted source compiles against is
+// tests/Unit/gen/compile_test.go's question, asked there against the published
+// libraries; this one is about whether the two halves of aru agree.
+func TestWhatMakeMigrationWritesPassesTheMigrationRules(t *testing.T) {
+	root := t.TempDir()
+
+	write := func(rel string, body []byte) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, rel), body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	write("go.mod", []byte("module example.test/generated\n\ngo 1.26\n"))
+	// The blank import the skeleton has and `aru make:migration` prints. Without
+	// it the project is correctly reported as unlinked, and this test would be
+	// asserting that the generator emits a broken project.
+	write("main.go", []byte(`package main
+
+import _ "example.test/generated/database/migrations"
+
+func main() {}
+`))
+
+	// The two shapes make:migration renders, and there is no third.
+	for _, spec := range []gen.MigrationSpec{{
+		ID:     "2026_07_31_000004_create_shipments_table",
+		Type:   "CreateShipmentsTable",
+		Table:  "shipments",
+		Tenant: true,
+		Create: true,
+		Fields: []gen.Field{
+			{Name: "tracking_code", Type: gen.TypeString, Required: true, Unique: true},
+			{Name: "dispatched_at", Type: gen.TypeTimestamp},
+		},
+	}, {
+		ID:     "2026_07_31_000005_add_status_to_shipments",
+		Type:   "AddStatusToShipments",
+		Table:  "shipments",
+		Tenant: true,
+		Fields: []gen.Field{
+			{Name: "status", Type: gen.TypeString, Unique: true},
+			{Name: "settled_at", Type: gen.TypeTimestamp},
+		},
+	}} {
+		file, err := gen.RenderMigration(spec)
+		if err != nil {
+			t.Fatalf("RenderMigration(%s): %v", spec.Type, err)
+		}
+		write(file.Path, file.Content)
+	}
+
+	findings, err := doctor.Run(root, doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, f := range findings {
+		switch f.Rule {
+		case "migrations-not-linked", "added-column-not-nullable", "rollback-does-nothing":
+			t.Errorf("`aru make:migration` writes a migration its own `aru doctor` reports: %s", f)
 		}
 	}
 }

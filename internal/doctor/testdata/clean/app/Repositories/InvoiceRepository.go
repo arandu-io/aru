@@ -56,7 +56,7 @@ func (r *InvoiceRepository) Find(ctx context.Context, g security.Grant, id strin
 // List returns a page of invoices in the grant's tenant.
 //
 // The read path is authorized exactly like the write path: a query with no
-// policy is a tenant leak with a technical name (RULE 17).
+// policy is a tenant leak with a technical name.
 func (r *InvoiceRepository) List(ctx context.Context, g security.Grant, q data.Query) ([]models.Invoice, error) {
 	if err := g.Check(policies.ActionViewInvoice); err != nil {
 		return nil, err

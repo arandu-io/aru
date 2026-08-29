@@ -62,7 +62,7 @@ func TestTheOutputIsReadBackBeforeItIsWritten(t *testing.T) {
 			generated: `package views
 
 import (
-	view "github.com/arandu-io/framework/view"
+	view "github.com/arandu-io/hesape/view"
 	"strings"
 )
 

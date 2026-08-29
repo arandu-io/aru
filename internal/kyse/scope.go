@@ -55,8 +55,8 @@ import (
 // # What it is not
 //
 // It is not a type check, and choosing not to be one is the point. Type-
-// checking the output means resolving what it imports -- the framework, the
-// component library, the project's own packages -- which needs a warm module
+// checking the output means resolving what it imports -- the native runtime,
+// component libraries, the project's own packages -- which needs a warm module
 // cache, costs seconds per view, and turns any compile error anywhere in the
 // project into a failure of `aru view:build`. A build step that is slow, that
 // fails on an aeroplane, or that reports somebody else's error is a worse tool

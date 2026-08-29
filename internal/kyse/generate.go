@@ -198,14 +198,14 @@ const (
 	// pkgStrings is strings: the builder a component writes into, and the test a
 	// checked interpolation makes.
 	pkgStrings = hygienePrefix + "strings"
-	// pkgView is the framework's view package, which holds every escape, the
+	// pkgView is the native view package, which holds every escape, the
 	// registries and the calls a directive compiles to.
 	pkgView = hygienePrefix + "view"
 )
 
-// frameworkView is the import path of the view package the generated file calls
+// nativeView is the import path of the view package the generated file calls
 // into, and the one path this file writes twice.
-const frameworkView = "github.com/arandu-io/framework/view"
+const nativeView = "github.com/arandu-io/hesape/view"
 
 // republished is a package the generated file may name twice: once under the
 // reserved prefix, for the calls this generator writes, and once under its own
@@ -259,7 +259,7 @@ type republished struct {
 // The symbols are values rather than types, because the silencing block reads
 // each one into the blank identifier and a type is not a value there.
 var republishedPackages = map[string]republished{
-	"view":     {path: frameworkView, symbol: "Text"},
+	"view":     {path: nativeView, symbol: "Text"},
 	"template": {path: "html/template", symbol: "HTMLEscapeString"},
 	"io":       {path: "io", symbol: "WriteString"},
 	"fmt":      {path: "fmt", symbol: "Fprintf"},
@@ -443,13 +443,14 @@ func qualifiers(src string) map[string]bool {
 	return out
 }
 
-// frameworkQualifier is how a caller names a type of the framework's view
-// package, and it is the one qualifier in a data type this generator translates.
+// viewQualifier is how a caller names a type of the native view package, and it
+// is the one qualifier in a data type this generator translates.
 //
 // The type a view draws is nearly always its own -- a struct its own @go block
 // declares -- and such a name is written out untouched, because it is the view's
 // name and resolves in the view's own file. The exception is a layout that
-// declares no interface: the contract it renders with belongs to the framework,
+// declares no interface: the contract it renders with belongs to the native
+// view package,
 // and a caller names it the way a person writing Go would. The generated file
 // calls that package by a name of its own, so this qualifier is replaced on the
 // way in.
@@ -457,11 +458,11 @@ func qualifiers(src string) map[string]bool {
 // Only the Go is translated. The name carried in the mismatch error is left as
 // the caller wrote it, because it is read by somebody who never opens the
 // generated file and would not recognise the other spelling.
-const frameworkQualifier = "view."
+const viewQualifier = "view."
 
 // renderType is the data type as the generated file has to spell it.
 func (g *generator) renderType() string {
-	if rest, ok := strings.CutPrefix(g.dataType, frameworkQualifier); ok {
+	if rest, ok := strings.CutPrefix(g.dataType, viewQualifier); ok {
 		return pkgView + "." + rest
 	}
 	return g.dataType
@@ -699,7 +700,7 @@ func (g *generator) emitHeader() {
 	if g.checks || g.isComponent() {
 		fmt.Fprintf(&g.out, "\t%s \"strings\"\n", pkgStrings)
 	}
-	fmt.Fprintf(&g.out, "\n\t%s %q\n", pkgView, frameworkView)
+	fmt.Fprintf(&g.out, "\n\t%s %q\n", pkgView, nativeView)
 	// And the packages the view calls by their plain names a second time, under
 	// those names -- `view.URL` in a link, `view.Page` in the struct it draws,
 	// `template.HTML` on the field of a component's props. Each is already above
@@ -979,7 +980,11 @@ func (g *generator) node(n Node) {
 		// opens. Anywhere else the position of everything after it would be a
 		// guess, so there is none.
 		g.opaque()
-		g.write(n.Line, pkgView+".UnsafeText(%s)", g.expr(n.Body))
+		// Text only converts the value to characters. Escaped interpolation is
+		// the separate path that wraps Text in the position-specific escape, so
+		// using Text here preserves the raw form without relying on the legacy
+		// Framework bridge's UnsafeText alias.
+		g.write(n.Line, pkgView+".Text(%s)", g.expr(n.Body))
 
 	case Directive:
 		g.directive(n)
@@ -2405,7 +2410,6 @@ func (g *generator) silenceUnused() {
 	// because deciding per file would mean predicting which directives emit a
 	// call, and being wrong in the other direction is a build that fails.
 	fmt.Fprintf(&g.out, "\t_ = %s.Text\n", pkgView)
-	fmt.Fprintf(&g.out, "\t_ = %s.UnsafeText\n", pkgView)
 	// strings is only imported by a component, and only used by one that writes
 	// something.
 	if g.isComponent() {

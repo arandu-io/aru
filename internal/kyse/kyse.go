@@ -270,8 +270,8 @@ func Directives() []string {
 //
 // The output does not land flat. Go has one package per directory, which is what
 // makes flattening look necessary -- but a nested package imports what it needs
-// like any other, and the chrome a layout declares lives in `framework/view`,
-// which every generated file already imports.
+// like any other, and the chrome a layout declares lives in the native view
+// package, which every generated file already imports.
 //
 // The cost is one blank import per directory of views in bootstrap, next to the
 // one that was already there. That is the registration the whole design is built
@@ -332,10 +332,10 @@ func Name(viewsDir, source string) string {
 // For a page it is the struct, because a page interpolates fields.
 //
 // A layout that declares no interface renders with view.Layout, the contract
-// framework/view publishes and that view.Page satisfies. That is the ordinary
-// case now: the chrome every application drew identically -- the title, the
-// brand, the token, the four navigation links -- moved into the framework, so a
-// layout only declares an interface when it wants a different one.
+// the native view package publishes and that view.Page satisfies. That is the
+// ordinary case now: the chrome every application draws identically -- the
+// title, the brand, the token, the four navigation links -- belongs to that
+// package, so a layout only declares an interface when it wants a different one.
 func RenderType(f *File) string {
 	if f.IsLayout() {
 		if name := firstType(f, " interface"); name != "" {

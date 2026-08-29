@@ -106,7 +106,7 @@ func dashboardNote(d DashboardData, w io.Writer) error {
 // which contains `template "html/template"` whole. An unanchored search passed
 // on four of the six against a file that binds none of them.
 var goBlockImports = map[string]string{
-	"view":     `view "github.com/arandu-io/framework/view"`,
+	"view":     `view "github.com/arandu-io/hesape/view"`,
 	"template": `template "html/template"`,
 	"io":       `io "io"`,
 	"fmt":      `fmt "fmt"`,
@@ -119,8 +119,8 @@ var goBlockImports = map[string]string{
 //
 // It is built rather than read, for the reason the tests beside it are: a
 // withdrawn name costs a type error, and only a type checker sees one. The
-// corpus is generated into a module of its own -- the framework beside it is
-// the same stub -- and handed to the Go compiler.
+// corpus is generated into a module of its own -- the native view package
+// beside it is the same stub -- and handed to the Go compiler.
 func TestAGoBlockThatNamesAPackageCompiles(t *testing.T) {
 	tool := goTool(t)
 	root := t.TempDir()

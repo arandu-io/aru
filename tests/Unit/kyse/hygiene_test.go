@@ -284,7 +284,7 @@ func TestABindingInTheCompilersNamespaceIsRefused(t *testing.T) {
 	}
 }
 
-// The two shapes that call the framework's view package from the view's own
+// The two shapes that call the native view package from the view's own
 // source: an asset in a link, and the embedded struct a page is drawn with.
 //
 // Neither is written by this generator. They are written by the person, they
@@ -329,6 +329,56 @@ type HomeData struct {
 @endsection
 `
 )
+
+const explicitlyImportedNativeView = `//go:build kyse
+
+package views
+
+import "github.com/arandu-io/hesape/view"
+
+@go
+type HomeData struct {
+	view.Page
+	Name string
+}
+@endgo
+
+<h1>{{ .Name }}</h1>
+<p>{!! .Name !!}</p>
+`
+
+// TestGeneratedViewsImportNativeViewDirectly is the import golden for both
+// names a source view can need. Generated calls keep the reserved alias, while
+// the view's own import keeps the plain name it wrote; both must resolve to the
+// native package, and neither may pass through the compatibility bridge.
+func TestGeneratedViewsImportNativeViewDirectly(t *testing.T) {
+	file, err := kyse.Parse("resources/views/home.kyse.go", explicitlyImportedNativeView)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	out, err := kyse.Generate(file, "home", "HomeData", "storage/framework/views/home.go")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	generated := string(out)
+
+	const nativePath = `"github.com/arandu-io/hesape/view"`
+	if n := strings.Count(generated, nativePath); n != 2 {
+		t.Fatalf("the generated and source-owned view imports name the native package %d times, want 2:\n%s", n, generated)
+	}
+	if !strings.Contains(generated, "\tkyse__view "+nativePath+"\n") {
+		t.Fatalf("the compiler's hygienic view import is not native:\n%s", generated)
+	}
+	if strings.Contains(generated, `"github.com/arandu-io/framework/view"`) {
+		t.Fatalf("the generated Go still imports the Framework view bridge:\n%s", generated)
+	}
+	if strings.Contains(generated, "kyse__view.UnsafeText") {
+		t.Fatalf("the generated Go still calls a symbol owned only by the Framework bridge:\n%s", generated)
+	}
+	if !strings.Contains(generated, "kyse__io.WriteString(kyse__w, kyse__view.Text(kyse__d.Name))") {
+		t.Fatalf("raw interpolation does not use the native Text conversion:\n%s", generated)
+	}
+}
 
 // TestAViewThatCallsThePackageItselfCompiles is the promise the rename broke.
 //
@@ -436,10 +486,10 @@ package layouts
 
 // writeStubModule lays out the module the generated views are built in.
 //
-// The framework beside them is a stub with the signatures the generated code
-// calls and nothing behind them. A view that builds against it is a view whose
-// names resolve, which is the whole of what this proves -- and it keeps the
-// test from needing a checkout of anything, or a network.
+// The native view package beside them is a stub with the signatures the
+// generated code calls and nothing behind them. A view that builds against it
+// is a view whose names resolve, which is the whole of what this proves -- and
+// it keeps the test from needing a checkout of anything, or a network.
 func writeStubModule(t *testing.T, root string) {
 	t.Helper()
 
@@ -447,12 +497,12 @@ func writeStubModule(t *testing.T, root string) {
 
 go 1.21
 
-require github.com/arandu-io/framework v0.0.0
+require github.com/arandu-io/hesape v0.0.0
 
-replace github.com/arandu-io/framework => ./framework
+replace github.com/arandu-io/hesape => ./hesape
 `)
-	writeFile(t, filepath.Join(root, "framework", "go.mod"), "module github.com/arandu-io/framework\n\ngo 1.21\n")
-	writeFile(t, filepath.Join(root, "framework", "view", "view.go"), `package view
+	writeFile(t, filepath.Join(root, "hesape", "go.mod"), "module github.com/arandu-io/hesape\n\ngo 1.21\n")
+	writeFile(t, filepath.Join(root, "hesape", "view", "view.go"), `package view
 
 import "io"
 
@@ -490,8 +540,6 @@ type Page struct{ PageTitle string }
 func URL(name string) string { return "" }
 
 func Text(v any) string { return "" }
-
-func UnsafeText(v any) string { return "" }
 
 func TextAttr(v any) string { return "" }
 

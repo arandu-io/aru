@@ -599,7 +599,7 @@ func TestTheCompilerIsToldWhichLineOfTheViewEachExpressionCameFrom(t *testing.T)
 		{"the condition of @if", "if kyse__d.Name !=", 14},
 		// Matched without the escape around it: the escaped form on line 13
 		// ends in `kyse__view.Text(…)))` and would be found first.
-		{"the raw interpolation", "kyse__io.WriteString(kyse__w, kyse__view.UnsafeText(", 15},
+		{"the raw interpolation", "kyse__io.WriteString(kyse__w, kyse__view.Text(", 15},
 		{"the subject of @foreach", "range kyse__d.Items", 17},
 	} {
 		file, line, ok := mappedLine(generated, want.mark)
@@ -647,12 +647,12 @@ func TestTheCompiledViewGoesUnderStorage(t *testing.T) {
 }
 
 // A layout that declares no interface of its own renders with view.Layout, the
-// contract the framework publishes.
+// contract the native view package publishes.
 //
 // Without the default a layout whose @go block is empty -- which is every layout
-// whose chrome comes from framework/view -- would assert the data to the empty
+// whose chrome comes from the native view package -- would assert the data to the empty
 // string and generate Go that does not parse.
-func TestALayoutWithoutAnInterfaceUsesTheFrameworkContract(t *testing.T) {
+func TestALayoutWithoutAnInterfaceUsesTheNativeViewContract(t *testing.T) {
 	const source = `//go:build kyse
 
 package views

@@ -30,7 +30,7 @@ import (
 var published = map[string]string{
 	"github.com/arandu-io/framework": "v0.41.0",
 	"github.com/arandu-io/hesape":    "v0.19.1",
-	"github.com/arandu-io/kyse":      "v0.12.1",
+	"github.com/arandu-io/kyse":      "v0.13.0",
 }
 
 // generatedModulePath is the module path the fixtures already generate imports

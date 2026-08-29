@@ -2,6 +2,7 @@ package gen
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/format"
 	"os"
@@ -380,8 +381,7 @@ func createExclusively(path string, content []byte) (bool, error) {
 		return false, err
 	}
 	if _, err := file.Write(content); err != nil {
-		file.Close()
-		return false, err
+		return false, errors.Join(err, file.Close())
 	}
 	return true, file.Close()
 }

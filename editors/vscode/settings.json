@@ -6,10 +6,9 @@
     "*.kyse.go": "kyse"
   },
 
-  "//2": "The generated view is build output, not source. This keeps it out of search results, so looking for a string in a view finds the .kyse.go you can edit and not the copy of it you cannot.",
+  "//2": "Compiled views under storage/framework/views are build output. Editable sources under resources/views remain visible.",
   "search.exclude": {
-    "**/resources/views/*.go": true,
-    "!**/resources/views/*.kyse.go": false
+    "storage/framework/views/**": true
   },
 
   "//3": "gofmt ignores build tags, so formatting a .kyse.go on save would break it.",

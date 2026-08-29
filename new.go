@@ -193,8 +193,9 @@ func writeEnv(dir string) error {
 	return os.WriteFile(filepath.Join(dir, ".env"), []byte(env), 0o600)
 }
 
-// editorSettings is what a project's .vscode/settings.json needs so the editor
-// stops reporting errors in files that are correct.
+// editorSettings is the project-local configuration that lets an installed
+// editor adapter recognize Kyse sources without treating generated views as
+// editable files.
 //
 // It is embedded rather than copied from a template file, because it has to
 // reach a project created on a machine that has only the `aru` binary.
@@ -208,10 +209,10 @@ var editorSettings []byte
 // directive as a syntax error, and the file is red while being correct -- which
 // is the first impression somebody gets of the view layer.
 //
-// It is settings, not an extension: settings need no manifest and therefore no
-// package.json, which a project never carries. The grammar that would make the
-// highlighting fine lives in aru/editors/vscode/ and is not published yet --
-// see the README there for the decision that is open.
+// A generated project receives only these settings. The installable adapter,
+// including its grammar, language configuration and `aru lsp` client, lives in
+// its own repository so editor packaging is not a dependency of this binary or
+// of the applications it creates.
 func writeEditorSettings(dir string) error {
 	vscode := filepath.Join(dir, ".vscode")
 	if err := os.MkdirAll(vscode, 0o755); err != nil {

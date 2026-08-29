@@ -14,9 +14,9 @@ import (
 // --all is the entity: the migration that creates its table, the factory that
 // builds it, the seeder that fills it, the policy that decides who may reach it,
 // and the request that validates the input. It is not a smaller make:module --
-// the controller, the service, the repository, the views and the route wiring
-// are the feature, and a --all that wrote them would be a second spelling of a
-// command that already exists.
+// the controller, the service, the views and the route wiring are the feature,
+// and a --all that wrote them would be a second spelling of a command that
+// already exists.
 func TestEverythingWritesTheDataSideAndNothingElse(t *testing.T) {
 	files, err := gen.GenerateModel(invoiceModule(), gen.Everything())
 	if err != nil {
@@ -41,9 +41,9 @@ func TestEverythingWritesTheDataSideAndNothingElse(t *testing.T) {
 		t.Fatalf("--all wrote\n  %s\nwant\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))
 	}
 
-	// The repository is the one thing it must not write, and the reason is in
-	// gen.GenerateModel: a repository pulls a policy and a service with it, and
-	// the mandatory path is indivisible.
+	// Repositories is checked explicitly so this granular path cannot revive the
+	// generated CRUD layer. Controllers and Services belong only to the whole
+	// feature written by make:module.
 	for _, f := range got {
 		if strings.Contains(f, "Repositories") || strings.Contains(f, "Controllers") || strings.Contains(f, "Services") {
 			t.Errorf("--all wrote %s, which belongs to make:module", f)

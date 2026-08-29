@@ -239,7 +239,7 @@ var commands = []command{
 	{
 		name:  "make:module",
 		usage: `aru make:module <name> --fields "title:string!,amount:money" [--tenant] [--force]`,
-		desc:  "generate a full module: entity, policy, repository, service, request, routes, tests",
+		desc:  "generate a full module: Model-backed entity, policy, service, request, controller, migration, screens, tests",
 		run:   makeModule,
 	},
 	{

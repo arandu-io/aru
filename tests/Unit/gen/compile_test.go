@@ -29,7 +29,7 @@ import (
 // that is what TestThePinnedTagsMatchTheSkeleton answers.
 var published = map[string]string{
 	"github.com/arandu-io/framework": "v0.40.0",
-	"github.com/arandu-io/hesape":    "v0.18.0",
+	"github.com/arandu-io/hesape":    "v0.19.0",
 	"github.com/arandu-io/kyse":      "v0.12.1",
 }
 
@@ -97,9 +97,9 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 		})
 	}
 
-	// A tenant module and a global one. The two differ in every statement the
-	// repository emits and in the keys the migration composes, so building one
-	// of them proves nothing about the other.
+	// A tenant module and a global one. The two differ in the scope every Model
+	// query applies and in the keys the migration composes, so building one of
+	// them proves nothing about the other.
 	tenantModule := compiled("purchase_order", true)
 	globalModule := compiled("stock_item", false)
 	emit("aru make:module purchase_order --tenant", func() ([]gen.File, error) { return gen.Generate(tenantModule) })
@@ -108,8 +108,8 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 	// make:test, over both modules. It writes the file make:module already
 	// wrote, so what reaches the compiler is one file and what is proved is two
 	// things: that the bytes are the same, checked by emit above, and that they
-	// build. It cannot be given a module of its own -- the test names a
-	// repository, a policy and a model, and only a whole module has all three.
+	// build. It cannot be given a module of its own -- the test names a service,
+	// a policy and a model, and only a whole module has all three.
 	one("aru make:test PurchaseOrder", func() (gen.File, error) { return gen.RenderTest(tenantModule) })
 	one("aru make:test StockItem", func() (gen.File, error) { return gen.RenderTest(globalModule) })
 

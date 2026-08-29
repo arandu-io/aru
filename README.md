@@ -23,10 +23,10 @@ cd my-app && aru dev
 ```
 
 `aru` is the toolchain of a Go framework for web applications, services and
-APIs: it generates a full module — entity, policy, repository, service,
-request, migration, screens — compiling and tested, in one command, and its
-`doctor` reads a project's source to check that the architecture it compiled
-against is still the one it is running.
+APIs: it generates a full module — Model-backed entity, policy, service,
+request, controller, migration, screens — compiling and tested, in one command,
+and its `doctor` reads a project's source to check that the architecture it
+compiled against is still the one it is running.
 
 ## What it delivers
 
@@ -43,7 +43,7 @@ against is still the one it is running.
 
 plus `help` and `version`.
 
-- **`aru make:module`** — an entity with its policy, repository, service,
+- **`aru make:module`** — a Model-backed entity with its policy, service,
   request, controller, migration and four screens, compiling and tested from
   the moment it lands.
 - **`aru generate`** — the same output, from a written specification: the

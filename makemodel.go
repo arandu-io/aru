@@ -13,13 +13,13 @@ import (
 // It is for somebody porting forty models who wants the struct and the migration
 // in one gesture. --all is the data side of an entity -- migration, factory,
 // seeder, policy and request -- and `aru make:module` is the whole feature, with
-// the controller, the service, the repository, the views and the route wiring
-// besides. The two are not two ways to write one thing: one writes an entity and
-// the other writes a feature.
+// the controller, the service, the views and the route wiring besides. The two
+// are not two ways to write one thing: one writes an entity and the other writes
+// a feature.
 //
-// What it never writes is a repository -- see gen.GenerateModel, which says why
-// -- and the output of the command is the cheapest place there is to teach the
-// one thing that has to be unlearned: a model here reaches nothing.
+// Neither command writes a Repository for CRUD. The Model is the data entry
+// point, and the output of this command is the cheapest place there is to teach
+// where the Service and Policy join that path.
 func makeModel(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("make:model", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -119,31 +119,29 @@ func makeModel(args []string, stdout, stderr io.Writer) error {
 }
 
 // modelWiring is the part of this command that matters most: it names, in one
-// screen, the difference between an ORM model and this one, and the two
-// commands that make the entity reachable.
+// screen, the difference between the data side of an entity and a whole
+// feature.
 func modelWiring(m gen.Module, migration bool) string {
 	out := fmt.Sprintf(`
-A model here is data. It has no save, no find and no query builder: an ORM has
-the model reach the database, and here nothing does except a Repository, whose
-every method takes a security.Grant that a Policy issued -- the reads included.
+A model here is data plus its Hesape Model entry point. Rows returned by a query
+carry their connection and can be saved again. Application use cases reach that
+persistence through a Service, after a Policy issues a security.Grant.
 
-So this entity reaches no table yet, and nothing will fail to compile because of
-it. What makes it reachable:
+What writes the whole feature:
 
     aru make:module %s --fields "..."
-        the whole path in one command: policy, repository, service, request,
-        controller, views and test
+        a Model-backed entity, policy, service, request, controller, migration,
+        four screens and test
 
     aru make:policy %s
-        the policy alone, for an entity that already has a repository
+        the policy alone, for a use-case path written by hand
 
-`+"`aru doctor`"+` reports a repository with no policy as an error, and a policy that
-denies everything as a warning. Both are on purpose.
+A Repository remains available for a complex query, read model or report; the
+generated CRUD path uses the Model directly.
 
 --all writes the data side of the entity -- migration, factory, seeder, policy
 and request. It is not a smaller make:module: the controller, the service, the
-repository, the views and the route wiring are the feature, and this is the
-entity.
+screens and the route wiring are the feature, and this is the entity.
 `, m.Name, m.Name)
 
 	if migration {

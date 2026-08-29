@@ -45,13 +45,14 @@ the second change.
 
 ```sh
 /tmp/aru-src schema > /tmp/module.schema.json; echo $?     # 0
-python3 -c "import json;s=json.load(open('/tmp/module.schema.json'));print(sorted(s['properties']))"
-# ['description', 'fields', 'name', 'permissions', 'tenant', 'version']
-python3 -c "import json;s=json.load(open('/tmp/module.schema.json'));print(s['properties']['fields']['items']['properties']['type']['enum'])"
-# ['bool', 'date', 'decimal', 'email', 'int', 'money', 'string', 'text', 'timestamp', 'uuid']
+GOWORK=off go test -count=1 ./... -run 'TestTheSchemaIsValidJSONSchema|TestTheCommittedSchemaIsCurrent'
+# PASS: six top-level properties and the ten field types documented below.
 ```
 
-Six top-level properties and `additionalProperties: false`. Adding a property to
+The properties are `description`, `fields`, `name`, `permissions`, `tenant` and
+`version`. The field types are `bool`, `date`, `decimal`, `email`, `int`,
+`money`, `string`, `text`, `timestamp` and `uuid`. The root also has
+`additionalProperties: false`. Adding a property to
 the schema without adding it to `Validate`, or the reverse, is the one failure
 this arrangement exists to make impossible — so add the constant, not the JSON.
 

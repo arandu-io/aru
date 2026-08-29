@@ -157,8 +157,17 @@ func TestAnUnsupportedExtensionIsRefused(t *testing.T) {
 func TestAdviceOnlyFiresForWhatIsNotAWoff2(t *testing.T) {
 	ttf := write(t, "Own.ttf", []byte("x"))
 	got, _ := fonts.Local(ttf, "Own", "400", "")
-	if advice := fonts.Advice(got, ttf); !strings.Contains(advice, ttf) {
+	advice := fonts.Advice(got, ttf)
+	if !strings.Contains(advice, ttf) {
 		t.Errorf("the advice does not name the file: %s", advice)
+	}
+	if !strings.Contains(advice, "Export this source as woff2") {
+		t.Errorf("the advice does not give a toolchain-neutral next step: %s", advice)
+	}
+	for _, forbidden := range []string{"python", "pip", "fonttools"} {
+		if strings.Contains(strings.ToLower(advice), forbidden) {
+			t.Errorf("the advice reintroduced %q as a project toolchain dependency: %s", forbidden, advice)
+		}
 	}
 
 	woff2 := write(t, "Own.woff2", []byte("x"))

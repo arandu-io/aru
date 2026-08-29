@@ -21,7 +21,7 @@ import (
 // WOFF2 is what ships. TrueType and OpenType are accepted because a font in
 // development is a .ttf long before it is a .woff2, and refusing them would mean
 // the command is unusable during exactly the work it was asked for -- but they
-// are two to four times the bytes, and the command says so every time.
+// are two to four times the bytes, and the advice says so every time.
 var formats = map[string]string{
 	".woff2": "font/woff2",
 	".ttf":   "font/ttf",
@@ -125,11 +125,8 @@ func Advice(f Family, path string) string {
 
   Converting needs a font compiler, which is not in this toolchain and will not
   be -- it is a build dependency for a step that runs once per font. Whatever
-  drew the file can export it, and so can:
-
-      pip install fonttools brotli && fonttools ttLib.woff2 compress %s
-
-  Then run this again, pointing --file at the .woff2 it writes and
-  --metrics-from at this file -- a woff2 is compressed and its metrics cannot
+  drew the file can export it. Export this source as woff2, then run this
+  again, pointing --file at the .woff2 it writes and
+  --metrics-from at %s -- a woff2 is compressed and its metrics cannot
   be read out of it.`, float64(size)/1024, path)
 }

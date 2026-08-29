@@ -194,6 +194,12 @@ var commands = []command{
 		run:   dev,
 	},
 	{
+		name:  "lsp",
+		usage: "aru lsp",
+		desc:  "serve Kyse diagnostics and completion to an editor",
+		run:   runLSP,
+	},
+	{
 		name:  "view:build",
 		usage: "aru view:build",
 		desc:  "compile the templates and the stylesheet, with no Node involved",

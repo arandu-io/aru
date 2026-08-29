@@ -125,6 +125,12 @@ func TestKeyGenerateRejectsArguments(t *testing.T) {
 // is what will notice if one of them ever regresses to a stub.
 func TestEveryCommandIsImplemented(t *testing.T) {
 	for _, c := range commands {
+		// The language server intentionally waits for framed input. Its CLI test
+		// supplies that input through a subprocess instead of borrowing the test
+		// process's standard input.
+		if c.name == "lsp" {
+			continue
+		}
 		out := &bytes.Buffer{}
 		_ = run([]string{c.name}, out, out)
 		if strings.Contains(out.String(), "not implemented") {

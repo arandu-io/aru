@@ -8,7 +8,7 @@ import (
 	kyse__template "html/template"
 	kyse__io "io"
 
-	kyse__view "github.com/arandu-io/framework/view"
+	kyse__view "github.com/arandu-io/hesape/view"
 )
 
 //line internal/doctor/testdata/violations/resources/views/billing/index.kyse.go:5
@@ -69,7 +69,7 @@ func renderInternalDoctorTestdataViolationsResourcesViewsBillingIndex(kyse__w ky
 	}
 	if kyse__err == nil {
 //line internal/doctor/testdata/violations/resources/views/billing/index.kyse.go:19
-		_, kyse__err = kyse__io.WriteString(kyse__w, kyse__view.UnsafeText(kyse__d.Note))
+		_, kyse__err = kyse__io.WriteString(kyse__w, kyse__view.Text(kyse__d.Note))
 //line internal/doctor/testdata/violations/storage/framework/views/billing/index.go:74
 	}
 	if kyse__err == nil {
@@ -133,5 +133,4 @@ var (
 	_ = kyse__template.HTMLEscapeString
 	_ = kyse__io.WriteString
 	_ = kyse__view.Text
-	_ = kyse__view.UnsafeText
 )

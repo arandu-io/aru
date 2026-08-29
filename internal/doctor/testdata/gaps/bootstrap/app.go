@@ -4,7 +4,7 @@ package bootstrap
 import (
 	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/framework/modules/auth"
-	"github.com/arandu-io/framework/view"
+	"github.com/arandu-io/hesape/view"
 )
 
 // Boot builds the auth service and registers the modules of this application.

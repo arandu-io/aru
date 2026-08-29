@@ -8,7 +8,7 @@ import (
 	"github.com/arandu-io/framework/events"
 	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/framework/modules/auth"
-	"github.com/arandu-io/framework/view"
+	"github.com/arandu-io/hesape/view"
 
 	// The migrations register themselves, and a package nobody imports is not
 	// in the binary at all -- so its init never runs and the schema is never

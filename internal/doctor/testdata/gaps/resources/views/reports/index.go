@@ -8,7 +8,7 @@ import (
 	"html/template"
 	"io"
 
-	"github.com/arandu-io/framework/view"
+	"github.com/arandu-io/hesape/view"
 )
 
 //line internal/doctor/testdata/gaps/resources/views/reports/index.kyse.go:5

@@ -8,7 +8,7 @@ import (
 	kyse__template "html/template"
 	kyse__io "io"
 
-	kyse__view "github.com/arandu-io/framework/view"
+	kyse__view "github.com/arandu-io/hesape/view"
 )
 
 //line internal/doctor/testdata/clean/resources/views/invoices/row.kyse.go:5
@@ -83,5 +83,4 @@ var (
 	_ = kyse__template.HTMLEscapeString
 	_ = kyse__io.WriteString
 	_ = kyse__view.Text
-	_ = kyse__view.UnsafeText
 )

@@ -8,7 +8,7 @@ import (
 	kyse__template "html/template"
 	kyse__io "io"
 
-	kyse__view "github.com/arandu-io/framework/view"
+	kyse__view "github.com/arandu-io/hesape/view"
 )
 
 //line internal/doctor/testdata/clean/resources/views/invoices/index.kyse.go:5
@@ -116,7 +116,7 @@ func renderInternalDoctorTestdataCleanResourcesViewsInvoicesIndex(kyse__w kyse__
 				}
 				if kyse__err == nil {
 //line internal/doctor/testdata/clean/resources/views/invoices/index.kyse.go:35
-					_, kyse__err = kyse__io.WriteString(kyse__w, kyse__view.UnsafeText(components.Badge(components.BadgeProps{Label: invoice.State})))
+					_, kyse__err = kyse__io.WriteString(kyse__w, kyse__view.Text(components.Badge(components.BadgeProps{Label: invoice.State})))
 //line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:121
 				}
 				if kyse__err == nil {
@@ -136,5 +136,4 @@ var (
 	_ = kyse__template.HTMLEscapeString
 	_ = kyse__io.WriteString
 	_ = kyse__view.Text
-	_ = kyse__view.UnsafeText
 )

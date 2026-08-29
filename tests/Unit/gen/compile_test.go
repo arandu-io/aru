@@ -364,8 +364,8 @@ type Seeder interface {
 //
 // This is the one step allowed to reach the network, and it is separate from
 // the build for that reason: the build below runs with lookups disabled, so a
-// green result cannot have come from resolving something these three lines did
-// not ask for.
+// green result cannot have come from resolving something outside the complete
+// dependency graph rooted at these three lines.
 //
 // A machine that can neither reach the proxy nor find the tags already
 // extracted has not tested anything, and says so. The skip names the version,
@@ -379,11 +379,7 @@ type Seeder interface {
 func ensureModules(t *testing.T, tool, root string) {
 	t.Helper()
 
-	args := []string{"mod", "download"}
-	for path, version := range published {
-		args = append(args, path+"@"+version)
-	}
-	sort.Strings(args[2:])
+	args := []string{"mod", "download", "all"}
 
 	out, err := runGo(tool, root, args...)
 	if err == nil {
@@ -394,8 +390,17 @@ func ensureModules(t *testing.T, tool, root string) {
 		say = t.Fatalf
 	}
 	say("the generated project was not compiled, so nothing here was proved: "+
-		"%s could not be resolved from the module cache or the proxy.\n%v\n%s",
-		strings.Join(args[2:], " "), err, out)
+		"the dependency graph rooted at %s could not be resolved from the module cache or the proxy.\n%v\n%s",
+		publishedModules(), err, out)
+}
+
+func publishedModules() string {
+	modules := make([]string, 0, len(published))
+	for path, version := range published {
+		modules = append(modules, path+"@"+version)
+	}
+	sort.Strings(modules)
+	return strings.Join(modules, " ")
 }
 
 // runGo runs one go command inside the generated project.

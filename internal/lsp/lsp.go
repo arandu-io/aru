@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -38,9 +37,27 @@ func Serve(in io.Reader, out io.Writer) error {
 
 		var message request
 		if err := json.Unmarshal(body, &message); err != nil {
-			return fmt.Errorf("decode JSON-RPC message: %w", err)
+			code, description := -32700, "Parse error"
+			var id json.RawMessage
+			if json.Valid(body) {
+				code, description = -32600, "Invalid Request"
+				id = responseIDForInvalidRequest(body)
+			}
+			if err := writeError(out, id, code, description); err != nil {
+				return err
+			}
+			continue
+		}
+		if !validRequestEnvelope(message) {
+			if err := writeError(out, responseIDForInvalidRequest(body), -32600, "Invalid Request"); err != nil {
+				return err
+			}
+			continue
 		}
 		isRequest := len(message.ID) > 0
+		if !isRequest && requestOnlyMethod(message.Method) {
+			continue
+		}
 
 		if message.Method == "exit" {
 			if !shutdown {
@@ -64,19 +81,34 @@ func Serve(in io.Reader, out io.Writer) error {
 			}
 			continue
 		}
+		if initialized && message.Method == "initialize" {
+			if isRequest {
+				if err := writeError(out, message.ID, -32600, "Invalid Request"); err != nil {
+					return err
+				}
+			}
+			continue
+		}
 
 		switch message.Method {
 		case "initialize":
 			var params initializeParams
-			if len(message.Params) > 0 {
-				if err := json.Unmarshal(message.Params, &params); err != nil {
+			if !decodeObjectParams(message.Params, &params) {
+				if isRequest {
+					if err := writeError(out, message.ID, -32602, "Invalid params"); err != nil {
+						return err
+					}
+				}
+				continue
+			}
+			if params.RootURI != "" {
+				if _, err := pathFromFileURI(params.RootURI, nativeFilePathStyle()); err != nil {
 					if isRequest {
-						if err := writeError(out, message.ID, -32602, "Invalid params"); err != nil {
+						if err := writeError(out, message.ID, -32602, "Invalid rootUri"); err != nil {
 							return err
 						}
-						continue
 					}
-					return fmt.Errorf("decode initialize params: %w", err)
+					continue
 				}
 			}
 			rootURI = params.RootURI
@@ -103,30 +135,50 @@ func Serve(in io.Reader, out io.Writer) error {
 			shutdown = true
 		case "textDocument/didOpen":
 			var params didOpenParams
-			if err := json.Unmarshal(message.Params, &params); err != nil {
-				return fmt.Errorf("decode didOpen params: %w", err)
+			if !decodeObjectParams(message.Params, &params) || !validTextDocumentItem(params.TextDocument) {
+				if isRequest {
+					if err := writeError(out, message.ID, -32602, "Invalid params"); err != nil {
+						return err
+					}
+				}
+				continue
 			}
-			documents[params.TextDocument.URI] = params.TextDocument.Text
-			if err := publishDiagnostics(out, params.TextDocument.URI, params.TextDocument.Text); err != nil {
+			documents[params.TextDocument.URI] = *params.TextDocument.Text
+			if err := publishDiagnostics(out, params.TextDocument.URI, *params.TextDocument.Text); err != nil {
 				return err
 			}
 		case "textDocument/didChange":
 			var params didChangeParams
-			if err := json.Unmarshal(message.Params, &params); err != nil {
-				return fmt.Errorf("decode didChange params: %w", err)
+			if !decodeObjectParams(message.Params, &params) || params.TextDocument == nil || params.TextDocument.URI == "" || params.TextDocument.Version == nil {
+				if isRequest {
+					if err := writeError(out, message.ID, -32602, "Invalid params"); err != nil {
+						return err
+					}
+				}
+				continue
 			}
-			if len(params.ContentChanges) == 0 {
-				return fmt.Errorf("didChange has no content changes")
+			if !validContentChanges(params.ContentChanges) {
+				if isRequest {
+					if err := writeError(out, message.ID, -32602, "Invalid params"); err != nil {
+						return err
+					}
+				}
+				continue
 			}
-			text := params.ContentChanges[len(params.ContentChanges)-1].Text
+			text := *params.ContentChanges[len(params.ContentChanges)-1].Text
 			documents[params.TextDocument.URI] = text
 			if err := publishDiagnostics(out, params.TextDocument.URI, text); err != nil {
 				return err
 			}
 		case "textDocument/didClose":
 			var params didCloseParams
-			if err := json.Unmarshal(message.Params, &params); err != nil {
-				return fmt.Errorf("decode didClose params: %w", err)
+			if !decodeObjectParams(message.Params, &params) || params.TextDocument == nil || params.TextDocument.URI == "" {
+				if isRequest {
+					if err := writeError(out, message.ID, -32602, "Invalid params"); err != nil {
+						return err
+					}
+				}
+				continue
 			}
 			delete(documents, params.TextDocument.URI)
 			if err := writeFrame(out, notification{
@@ -141,13 +193,16 @@ func Serve(in io.Reader, out io.Writer) error {
 			}
 		case "textDocument/completion":
 			var params completionParams
-			if err := json.Unmarshal(message.Params, &params); err != nil {
-				if err := writeError(out, message.ID, -32602, "Invalid params"); err != nil {
-					return err
+			if !decodeObjectParams(message.Params, &params) || !validCompletionParams(params) {
+				if isRequest {
+					if err := writeError(out, message.ID, -32602, "Invalid params"); err != nil {
+						return err
+					}
 				}
 				continue
 			}
-			items := completionItems(documents[params.TextDocument.URI], params.Position)
+			at := position{Line: *params.Position.Line, Character: *params.Position.Character}
+			items := completionItems(documents[params.TextDocument.URI], at)
 			if err := writeResult(out, message.ID, items); err != nil {
 				return err
 			}
@@ -158,14 +213,27 @@ func Serve(in io.Reader, out io.Writer) error {
 				}
 				continue
 			}
-			analysis, err := doctor.Analyze(sourcePath(rootURI), doctor.Conventional)
+			root, err := pathFromFileURI(rootURI, nativeFilePathStyle())
+			if err != nil {
+				if err := writeError(out, message.ID, -32602, "initialize rootUri is invalid"); err != nil {
+					return err
+				}
+				continue
+			}
+			analysis, err := doctor.Analyze(root, doctor.Conventional)
 			if err != nil {
 				if err := writeError(out, message.ID, -32603, "Project analysis failed: "+err.Error()); err != nil {
 					return err
 				}
 				continue
 			}
-			graph := projectGraphForProtocol(sourcePath(rootURI), analysis.Graph)
+			graph, err := projectGraphForProtocol(root, analysis.Graph)
+			if err != nil {
+				if err := writeError(out, message.ID, -32603, "Project graph location failed: "+err.Error()); err != nil {
+					return err
+				}
+				continue
+			}
 			if err := writeResult(out, message.ID, graph); err != nil {
 				return err
 			}
@@ -177,6 +245,74 @@ func Serve(in io.Reader, out io.Writer) error {
 			}
 		}
 	}
+}
+
+func requestOnlyMethod(method string) bool {
+	switch method {
+	case "initialize", "shutdown", "textDocument/completion", "arandu/projectGraph":
+		return true
+	default:
+		return false
+	}
+}
+
+func validRequestEnvelope(message request) bool {
+	return message.JSONRPC == "2.0" && message.Method != "" && validRequestID(message.ID)
+}
+
+func validRequestID(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return true
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var id any
+	if err := decoder.Decode(&id); err != nil {
+		return false
+	}
+	switch id.(type) {
+	case nil, string, json.Number:
+		return true
+	default:
+		return false
+	}
+}
+
+func responseIDForInvalidRequest(body []byte) json.RawMessage {
+	var envelope struct {
+		ID json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil || len(envelope.ID) == 0 || !validRequestID(envelope.ID) {
+		return nil
+	}
+	return envelope.ID
+}
+
+func decodeObjectParams(raw json.RawMessage, target any) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) > 0 && trimmed[0] == '{' && json.Unmarshal(trimmed, target) == nil
+}
+
+func validTextDocumentItem(document *textDocumentItem) bool {
+	return document != nil && document.URI != "" && document.LanguageID != nil && document.Version != nil && document.Text != nil
+}
+
+func validContentChanges(changes []contentChange) bool {
+	if len(changes) == 0 {
+		return false
+	}
+	for _, change := range changes {
+		if change.Text == nil {
+			return false
+		}
+	}
+	return true
+}
+
+func validCompletionParams(params completionParams) bool {
+	return params.TextDocument != nil && params.TextDocument.URI != "" &&
+		params.Position != nil && params.Position.Line != nil && params.Position.Character != nil &&
+		*params.Position.Line >= 0 && *params.Position.Character >= 0
 }
 
 type request struct {
@@ -234,8 +370,13 @@ type completionItem struct {
 }
 
 type completionParams struct {
-	TextDocument textDocumentIdentifier `json:"textDocument"`
-	Position     position               `json:"position"`
+	TextDocument *textDocumentIdentifier `json:"textDocument"`
+	Position     *completionPosition     `json:"position"`
+}
+
+type completionPosition struct {
+	Line      *int `json:"line"`
+	Character *int `json:"character"`
 }
 
 type textDocumentIdentifier struct {
@@ -243,25 +384,32 @@ type textDocumentIdentifier struct {
 }
 
 type textDocumentItem struct {
-	URI  string `json:"uri"`
-	Text string `json:"text"`
+	URI        string  `json:"uri"`
+	LanguageID *string `json:"languageId"`
+	Version    *int    `json:"version"`
+	Text       *string `json:"text"`
 }
 
 type didOpenParams struct {
-	TextDocument textDocumentItem `json:"textDocument"`
+	TextDocument *textDocumentItem `json:"textDocument"`
 }
 
 type didChangeParams struct {
-	TextDocument   textDocumentIdentifier `json:"textDocument"`
-	ContentChanges []contentChange        `json:"contentChanges"`
+	TextDocument   *versionedTextDocumentIdentifier `json:"textDocument"`
+	ContentChanges []contentChange                  `json:"contentChanges"`
 }
 
 type contentChange struct {
-	Text string `json:"text"`
+	Text *string `json:"text"`
+}
+
+type versionedTextDocumentIdentifier struct {
+	URI     string `json:"uri"`
+	Version *int   `json:"version"`
 }
 
 type didCloseParams struct {
-	TextDocument textDocumentIdentifier `json:"textDocument"`
+	TextDocument *textDocumentIdentifier `json:"textDocument"`
 }
 
 type publishDiagnosticsParams struct {
@@ -355,7 +503,7 @@ func utf16Length(value string) int {
 
 func completionItems(source string, at position) []completionItem {
 	insertPrefix := "@"
-	if previous, ok := runeBeforeUTF16Position(sourceLine(source, at.Line), at.Character); ok && previous == '@' {
+	if directiveAtSignBeforeUTF16Position(sourceLine(source, at.Line), at.Character) {
 		insertPrefix = ""
 	}
 	directives := kyse.Directives()
@@ -370,32 +518,46 @@ func completionItems(source string, at position) []completionItem {
 	return items
 }
 
-func runeBeforeUTF16Position(line string, character int) (rune, bool) {
+func directiveAtSignBeforeUTF16Position(line string, character int) bool {
 	if character <= 0 {
-		return 0, false
+		return false
 	}
 	units := 0
+	prefix := make([]rune, 0, len(line))
 	for _, current := range line {
-		units += utf16Length(string(current))
-		if units == character {
-			return current, true
+		width := utf16Length(string(current))
+		if units+width > character {
+			return false
 		}
-		if units > character {
-			return 0, false
+		units += width
+		prefix = append(prefix, current)
+		if units == character {
+			break
 		}
 	}
-	return 0, false
+	if units != character {
+		return false
+	}
+	index := len(prefix) - 1
+	for index >= 0 && directiveNameRune(prefix[index]) {
+		index--
+	}
+	return index >= 0 && prefix[index] == '@'
+}
+
+func directiveNameRune(value rune) bool {
+	return value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z'
 }
 
 func sourcePath(uri string) string {
-	parsed, err := url.Parse(uri)
-	if err != nil || parsed.Scheme != "file" {
+	path, err := pathFromFileURI(uri, nativeFilePathStyle())
+	if err != nil {
 		return uri
 	}
-	return parsed.Path
+	return path
 }
 
-func projectGraphForProtocol(root string, graph doctor.ProjectGraph) doctor.ProjectGraph {
+func projectGraphForProtocol(root string, graph doctor.ProjectGraph) (doctor.ProjectGraph, error) {
 	for i := range graph.Nodes {
 		node := &graph.Nodes[i]
 		if node.File != "" {
@@ -403,7 +565,11 @@ func projectGraphForProtocol(root string, graph doctor.ProjectGraph) doctor.Proj
 			if !filepath.IsAbs(path) {
 				path = filepath.Join(root, path)
 			}
-			node.File = (&url.URL{Scheme: "file", Path: filepath.Clean(path)}).String()
+			uri, err := fileURIFromPath(filepath.Clean(path), nativeFilePathStyle())
+			if err != nil {
+				return doctor.ProjectGraph{}, err
+			}
+			node.File = uri
 		}
 		if node.Line > 0 {
 			node.Line--
@@ -412,7 +578,7 @@ func projectGraphForProtocol(root string, graph doctor.ProjectGraph) doctor.Proj
 			node.Column--
 		}
 	}
-	return graph
+	return graph, nil
 }
 
 func readFrame(reader *bufio.Reader) ([]byte, error) {

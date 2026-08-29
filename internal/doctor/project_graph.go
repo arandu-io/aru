@@ -373,6 +373,9 @@ func addCommunityModules(builder *graphBuilder, p *project, files []*file) {
 			if name != "Register" && !strings.HasSuffix(name, ".Register") {
 				return true
 			}
+			if !kernelRegisterCall(f, call) {
+				return true
+			}
 			for _, argument := range call.Args {
 				alias, at, ok := registeredImportAlias(argument)
 				if !ok {
@@ -392,6 +395,73 @@ func addCommunityModules(builder *graphBuilder, p *project, files []*file) {
 			return false
 		})
 	}
+}
+
+func kernelRegisterCall(f *file, call *ast.CallExpr) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "Register" {
+		return false
+	}
+	return kernelExpression(f, selector.X)
+}
+
+func kernelExpression(f *file, expression ast.Expr) bool {
+	switch value := expression.(type) {
+	case *ast.Ident:
+		return value.Obj != nil && kernelDeclaration(f, value.Obj.Decl, value)
+	case *ast.CallExpr:
+		selector, ok := value.Fun.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != "New" {
+			return false
+		}
+		alias, ok := selector.X.(*ast.Ident)
+		return ok && importPathForAlias(f, alias.Name) == "github.com/arandu-io/framework/kernel"
+	case *ast.ParenExpr:
+		return kernelExpression(f, value.X)
+	case *ast.UnaryExpr:
+		return value.Op == token.AND && kernelExpression(f, value.X)
+	case *ast.CompositeLit:
+		return kernelType(f, value.Type)
+	}
+	return false
+}
+
+func kernelDeclaration(f *file, declaration any, identifier *ast.Ident) bool {
+	switch value := declaration.(type) {
+	case *ast.Field:
+		return kernelType(f, value.Type)
+	case *ast.AssignStmt:
+		for index, left := range value.Lhs {
+			declared, ok := left.(*ast.Ident)
+			if !ok || declared.Obj != identifier.Obj || len(value.Lhs) != len(value.Rhs) {
+				continue
+			}
+			return kernelExpression(f, value.Rhs[index])
+		}
+	case *ast.ValueSpec:
+		if value.Type != nil && kernelType(f, value.Type) {
+			return true
+		}
+		for index, name := range value.Names {
+			if name.Obj != identifier.Obj || len(value.Names) != len(value.Values) {
+				continue
+			}
+			return kernelExpression(f, value.Values[index])
+		}
+	}
+	return false
+}
+
+func kernelType(f *file, expression ast.Expr) bool {
+	if pointer, ok := expression.(*ast.StarExpr); ok {
+		expression = pointer.X
+	}
+	selector, ok := expression.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "Kernel" {
+		return false
+	}
+	alias, ok := selector.X.(*ast.Ident)
+	return ok && importPathForAlias(f, alias.Name) == "github.com/arandu-io/framework/kernel"
 }
 
 func registeredImportAlias(expression ast.Expr) (string, ast.Node, bool) {
@@ -424,7 +494,12 @@ func aliasName(alias *ast.Ident, at ast.Node, ok bool) (string, ast.Node, bool) 
 }
 
 func importPathForAlias(f *file, alias string) string {
-	for importPath, local := range f.imports {
+	for _, spec := range f.ast.Imports {
+		importPath := strings.Trim(spec.Path.Value, `"`)
+		local := filepath.Base(importPath)
+		if spec.Name != nil {
+			local = spec.Name.Name
+		}
 		if local == alias {
 			return importPath
 		}
@@ -433,10 +508,10 @@ func importPathForAlias(f *file, alias string) string {
 }
 
 func isExternalModule(importPath, modulePath string) bool {
-	if importPath == "" || strings.HasPrefix(importPath, "github.com/arandu-io/") {
+	if importPath == "" || modulePath == "" || strings.HasPrefix(importPath, "github.com/arandu-io/") {
 		return false
 	}
-	if modulePath != "" && (importPath == modulePath || strings.HasPrefix(importPath, modulePath+"/")) {
+	if importPath == modulePath || strings.HasPrefix(importPath, modulePath+"/") {
 		return false
 	}
 	return strings.Contains(strings.Split(importPath, "/")[0], ".")

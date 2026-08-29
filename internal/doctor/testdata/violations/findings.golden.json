@@ -1,0 +1,410 @@
+[
+  {
+    "rule": "session-not-rotated",
+    "severity": "error",
+    "file": "app/Http/Controllers/Auth/LoginController.go",
+    "line": 19,
+    "message": "Login authenticates and does not rotate the session",
+    "why": "keeping the pre-login id is session fixation: an attacker plants a known id and inherits the session once the victim signs in. After Authenticate, call Regenerate with the id the request arrived with -- SessionStore spells the same call Rotate. Start is not enough: it takes no old id, so it mints a new one and leaves the planted record readable."
+  },
+  {
+    "rule": "handler-reaches-data",
+    "severity": "error",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 1,
+    "message": "this controller uses the data package beyond data.Query",
+    "why": "a handler that reaches the database skipped the service, and therefore the policy -- whether it is a controller, a middleware, or written inline in the route table. Move the call into app/Services, where the Grant is issued."
+  },
+  {
+    "rule": "controller-reaches-repository",
+    "severity": "error",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 1,
+    "message": "this controller imports example.test/p/app/Repositories",
+    "why": "the Grant a repository requires would have to be issued here, which is the request authorizing itself. Call app/Services instead: it validates, calls security.Authorize, and only then reaches the repository."
+  },
+  {
+    "rule": "view-data-is-a-map",
+    "severity": "error",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 26,
+    "message": "the data of view billing.index is a map: this call passes a map",
+    "why": "a struct is what makes a typo a compile error. With a map, a renamed or misspelled key renders as an empty string, the page comes up, and the missing field is found in production. Declare the type in the view's @go block and pass it."
+  },
+  {
+    "rule": "view-data-is-a-map",
+    "severity": "error",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 33,
+    "message": "the data of view billing.missing is a map: payload, built on line 32, is a map",
+    "why": "a struct is what makes a typo a compile error. With a map, a renamed or misspelled key renders as an empty string, the page comes up, and the missing field is found in production. Declare the type in the view's @go block and pass it."
+  },
+  {
+    "rule": "view-does-not-exist",
+    "severity": "error",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 33,
+    "message": "there is no view named billing.missing",
+    "why": "the name of a view is a string, so this is the one thing in the view path the compiler cannot check: it builds, it deploys, and the page answers 500 the first time somebody opens it. Create resources/views/billing/missing.kyse.go, or fix the name."
+  },
+  {
+    "rule": "tenant-from-request",
+    "severity": "error",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 39,
+    "message": "the tenant is being read from the request",
+    "why": "a tenant the client controls is the client choosing whose data to read. It comes from data.Tenant(g), and the Grant comes from the session."
+  },
+  {
+    "rule": "tenant-from-request",
+    "severity": "error",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 49,
+    "message": "the tenant of this Grant is org, which line 48 read from the request",
+    "why": "the name of a header or a parameter is chosen by whoever wrote the client, so it proves nothing. What makes a value a tenant is that it scopes SQL -- and a client that picks its own scope reads whichever customer it names. Resolve the tenant from the session, the host name or a constant."
+  },
+  {
+    "rule": "system-grant-outside-scope",
+    "severity": "warning",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 49,
+    "message": "SystemGrant in ByOrg is outside a seeder, a job and a command",
+    "why": "it is the one way past a policy, and its call sites are the audit. If this is a request path, the Grant should come from security.Authorize instead. If the escape is deliberate, write `//arandu:system-grant \u003creason\u003e` on the line, so the reason is read in review rather than inferred from the function name."
+  },
+  {
+    "rule": "tenant-from-header",
+    "severity": "error",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 56,
+    "message": "the tenant is being read from a header",
+    "why": "any client can send that header. Resolve the tenant from the host name or from a constant, and let it reach SQL only through the Grant."
+  },
+  {
+    "rule": "tenant-from-request",
+    "severity": "error",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 65,
+    "message": "the tenant of this Grant is tenant, which line 64 read from the request",
+    "why": "the name of a header or a parameter is chosen by whoever wrote the client, so it proves nothing. What makes a value a tenant is that it scopes SQL -- and a client that picks its own scope reads whichever customer it names. Resolve the tenant from the session, the host name or a constant."
+  },
+  {
+    "rule": "system-grant-outside-scope",
+    "severity": "warning",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 65,
+    "message": "SystemGrant in ByPathValue is outside a seeder, a job and a command",
+    "why": "it is the one way past a policy, and its call sites are the audit. If this is a request path, the Grant should come from security.Authorize instead. If the escape is deliberate, write `//arandu:system-grant \u003creason\u003e` on the line, so the reason is read in review rather than inferred from the function name."
+  },
+  {
+    "rule": "tenant-from-request",
+    "severity": "error",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 78,
+    "message": "the tenant of this Grant is org, which line 77 read from the request",
+    "why": "the name of a header or a parameter is chosen by whoever wrote the client, so it proves nothing. What makes a value a tenant is that it scopes SQL -- and a client that picks its own scope reads whichever customer it names. Resolve the tenant from the session, the host name or a constant."
+  },
+  {
+    "rule": "system-grant-outside-scope",
+    "severity": "warning",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 78,
+    "message": "GrantFor in ThroughTheJobWrapper is outside a seeder, a job and a command",
+    "why": "it is the one way past a policy, and its call sites are the audit. If this is a request path, the Grant should come from security.Authorize instead. If the escape is deliberate, write `//arandu:system-grant \u003creason\u003e` on the line, so the reason is read in review rather than inferred from the function name."
+  },
+  {
+    "rule": "tenant-from-request",
+    "severity": "error",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 89,
+    "message": "the tenant of this Grant is read straight off the request, by ctx.Query",
+    "why": "whoever sent the request picks the tenant, and reads every row of it. It comes from the Grant."
+  },
+  {
+    "rule": "system-grant-outside-scope",
+    "severity": "warning",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 89,
+    "message": "SystemGrant in Embedded is outside a seeder, a job and a command",
+    "why": "it is the one way past a policy, and its call sites are the audit. If this is a request path, the Grant should come from security.Authorize instead. If the escape is deliberate, write `//arandu:system-grant \u003creason\u003e` on the line, so the reason is read in review rather than inferred from the function name."
+  },
+  {
+    "rule": "test-is-not-run",
+    "severity": "warning",
+    "file": "app/Jobs/RetryInvoiceTest.go",
+    "line": 1,
+    "message": "this file is named Test.go, and go test runs only files whose names end in _test.go",
+    "why": "whatever is inside it is compiled into the package and executed by nothing -- no error, no warning, and a green build over tests that never ran. Rename it to end in _test.go."
+  },
+  {
+    "rule": "package-clause-is-capitalised",
+    "severity": "warning",
+    "file": "app/Ledger/Ledger.go",
+    "line": 1,
+    "message": "this file declares `package Ledger`",
+    "why": "a package identifier is lowercase whatever the directory holding it is called, and every import of a capitalised one reads as an exported name that is not one. go vet has nothing to say about it."
+  },
+  {
+    "rule": "sensitive-field-not-redacted",
+    "severity": "warning",
+    "file": "app/Models/Billing.go",
+    "line": 5,
+    "message": "Charge holds APIToken and does not redact itself",
+    "why": "one observability.Dump or one log line publishes it on the debug page. Add LogValue() slog.Value and MarshalJSON to the type, so no caller has to remember."
+  },
+  {
+    "rule": "policy-never-opened",
+    "severity": "warning",
+    "file": "app/Policies/ChargePolicy.go",
+    "line": 17,
+    "message": "the policy of Charge denies every action",
+    "why": "this is how `aru make:policy` generates it, on purpose. Open what the application needs inside the custom block -- until then every request that reaches this entity is refused."
+  },
+  {
+    "rule": "grant-not-received",
+    "severity": "error",
+    "file": "app/Reporting/InvoiceRepo.go",
+    "line": 21,
+    "message": "All reaches the database and receives no Grant",
+    "why": "reading is authorized exactly like writing: a query with no policy is a tenant leak with a technical name. A read model, a report, a projection and an export are not exceptions. Take a security.Grant and start the method with: if err := g.Check(Action...); err != nil { return err }"
+  },
+  {
+    "rule": "sql-without-tenant-scope",
+    "severity": "error",
+    "file": "app/Reporting/InvoiceRepo.go",
+    "line": 22,
+    "message": "the SELECT in All reaches invoices and does not filter by tenant_id",
+    "why": "other statements on invoices in this project scope it by tenant, so the table has the column and this one reaches every customer's rows -- reading them, or writing them. Add `AND tenant_id = ?` to the WHERE and pass data.Tenant(g), which is the only source of a tenant for SQL. If this statement is meant to cross tenants, write `//arandu:system-grant \u003creason\u003e` on the line, so the reason is read in review."
+  },
+  {
+    "rule": "repository-without-policy",
+    "severity": "error",
+    "file": "app/Repositories/BillingRepository.go",
+    "line": 1,
+    "message": "Billing has a repository and no policy",
+    "why": "the entity is reachable and nobody decided who may reach it. Run `aru make:policy` or write app/Policies/BillingPolicy.go."
+  },
+  {
+    "rule": "grant-not-checked",
+    "severity": "error",
+    "file": "app/Repositories/BillingRepository.go",
+    "line": 18,
+    "message": "Find receives a Grant and never checks it",
+    "why": "a Grant issued for another action would pass. Start the method with: if err := g.Check(Action...); err != nil { return err }"
+  },
+  {
+    "rule": "sql-without-tenant-scope",
+    "severity": "error",
+    "file": "app/Repositories/BillingRepository.go",
+    "line": 19,
+    "message": "the SELECT in Find reaches charges and does not filter by tenant_id",
+    "why": "other statements on charges in this project scope it by tenant, so the table has the column and this one reaches every customer's rows -- reading them, or writing them. Add `AND tenant_id = ?` to the WHERE and pass data.Tenant(g), which is the only source of a tenant for SQL. If this statement is meant to cross tenants, write `//arandu:system-grant \u003creason\u003e` on the line, so the reason is read in review."
+  },
+  {
+    "rule": "sql-built-with-sprintf",
+    "severity": "error",
+    "file": "app/Repositories/BillingRepository.go",
+    "line": 47,
+    "message": "SQL assembled with fmt.Sprintf",
+    "why": "every value interpolated into SQL is injection waiting for the right input. Use ? placeholders and pass the values as arguments -- the dialect rebinds them."
+  },
+  {
+    "rule": "sql-without-tenant-scope",
+    "severity": "error",
+    "file": "app/Repositories/BillingRepository.go",
+    "line": 47,
+    "message": "the SELECT in Search reaches charges and does not filter by tenant_id",
+    "why": "other statements on charges in this project scope it by tenant, so the table has the column and this one reaches every customer's rows -- reading them, or writing them. Add `AND tenant_id = ?` to the WHERE and pass data.Tenant(g), which is the only source of a tenant for SQL. If this statement is meant to cross tenants, write `//arandu:system-grant \u003creason\u003e` on the line, so the reason is read in review."
+  },
+  {
+    "rule": "system-grant-without-tenant",
+    "severity": "error",
+    "file": "app/Repositories/BillingRepository.go",
+    "line": 55,
+    "message": "SystemGrant with an empty tenant",
+    "why": "it returns the zero Grant, which fails Check -- so this call site is dead code. A system grant with no tenant would read across every customer, which is why it does not exist."
+  },
+  {
+    "rule": "repository-without-policy",
+    "severity": "error",
+    "file": "app/Repositories/SearchRepository.go",
+    "line": 1,
+    "message": "Search has a repository and no policy",
+    "why": "the entity is reachable and nobody decided who may reach it. Run `aru make:policy` or write app/Policies/SearchPolicy.go."
+  },
+  {
+    "rule": "sql-built-by-concatenation",
+    "severity": "error",
+    "file": "app/Repositories/SearchRepository.go",
+    "line": 26,
+    "message": "SQL assembled by concatenating term",
+    "why": "a value the caller supplied reaches the statement as text, which is injection with one more step than fmt.Sprintf. Use a ? placeholder and pass it as an argument. A column or table NAME cannot be a placeholder -- pick it from an allowlist first, and concatenate the allowlisted value, which is what `aru make:module` emits."
+  },
+  {
+    "rule": "system-grant-outside-scope",
+    "severity": "warning",
+    "file": "app/Services/AliasedGrantService.go",
+    "line": 20,
+    "message": "GrantFor in escalateBehindAnAlias is outside a seeder, a job and a command",
+    "why": "it is the one way past a policy, and its call sites are the audit. If this is a request path, the Grant should come from security.Authorize instead. If the escape is deliberate, write `//arandu:system-grant \u003creason\u003e` on the line, so the reason is read in review rather than inferred from the function name."
+  },
+  {
+    "rule": "system-grant-without-tenant",
+    "severity": "error",
+    "file": "app/Services/AliasedGrantService.go",
+    "line": 25,
+    "message": "GrantFor with an empty tenant",
+    "why": "it returns the zero Grant, which fails Check -- so this call site is dead code. A system grant with no tenant would read across every customer, which is why it does not exist."
+  },
+  {
+    "rule": "resource-not-reauthorized",
+    "severity": "warning",
+    "file": "app/Services/BillingService.go",
+    "line": 26,
+    "message": "ViewCharge reads a row and does not re-authorize it",
+    "why": "the first Authorize tells whether the caller may look at all. The second, with the row that was read, is the object-level decision: the caller may read this row, and nobody else's. Skipping it means any user of the same tenant sees the row. Call security.Authorize with the entity after the read."
+  },
+  {
+    "rule": "resource-not-reauthorized",
+    "severity": "warning",
+    "file": "app/Services/BillingService.go",
+    "line": 43,
+    "message": "ShowCharge reads a row and does not re-authorize it",
+    "why": "the first Authorize tells whether the caller may look at all. The second, with the row that was read, is the object-level decision: the caller may read this row, and nobody else's. Skipping it means any user of the same tenant sees the row. Call security.Authorize with the entity after the read."
+  },
+  {
+    "rule": "test-outside-the-tests-tree",
+    "severity": "warning",
+    "file": "app/Services/BillingService_test.go",
+    "line": 1,
+    "message": "this test is outside tests/ and its name does not end in _internal_test.go",
+    "why": "a test beside the code is a claim that it reads something the package does not export, which is the one reason Go leaves no choice about. Name it _internal_test.go if that is true, and move it under tests/ if it is not -- otherwise every listing of the package is doubled by files nobody opens on purpose."
+  },
+  {
+    "rule": "system-grant-outside-scope",
+    "severity": "warning",
+    "file": "app/Services/JobGrantService.go",
+    "line": 20,
+    "message": "GrantFor in escalateThroughTheWrapper is outside a seeder, a job and a command",
+    "why": "it is the one way past a policy, and its call sites are the audit. If this is a request path, the Grant should come from security.Authorize instead. If the escape is deliberate, write `//arandu:system-grant \u003creason\u003e` on the line, so the reason is read in review rather than inferred from the function name."
+  },
+  {
+    "rule": "system-grant-without-tenant",
+    "severity": "error",
+    "file": "app/Services/JobGrantService.go",
+    "line": 27,
+    "message": "GrantFor with an empty tenant",
+    "why": "it returns the zero Grant, which fails Check -- so this call site is dead code. A system grant with no tenant would read across every customer, which is why it does not exist."
+  },
+  {
+    "rule": "scaffolding-ships",
+    "severity": "warning",
+    "file": "app/Services/LedgerService.go",
+    "line": 6,
+    "message": "this file imports example.test/p/tests/Helpers, which is test scaffolding",
+    "why": "it is built to be linked into a test binary: it calls t.Fatal, reads fixtures and pulls in the testing package. Imported from a file the compiler puts in the application, all of that is inside what gets deployed. Move the helper into a package that ships, or call it only from a test."
+  },
+  {
+    "rule": "permission-not-declared",
+    "severity": "error",
+    "file": "arandu.mod.toml",
+    "line": 1,
+    "message": "example/billing uses network and declares network = false",
+    "why": "the code makes calls that leave the process, and whoever installed it agreed to a module that does not. Set network = true under [permissions], or remove the code that needs it."
+  },
+  {
+    "rule": "permission-not-used",
+    "severity": "warning",
+    "file": "arandu.mod.toml",
+    "line": 1,
+    "message": "example/billing declares filesystem = true and does not use it",
+    "why": "asking for more than you need is how a permission model erodes into everyone declaring everything. Set filesystem = false."
+  },
+  {
+    "rule": "permission-not-declared",
+    "severity": "error",
+    "file": "arandu.mod.toml",
+    "line": 1,
+    "message": "example/billing uses migrations and declares migrations = false",
+    "why": "the code owns tables, and an installer who did not expect that will not know to run aru migrate. Set migrations = true under [permissions], or remove the code that needs it."
+  },
+  {
+    "rule": "retired-module",
+    "severity": "warning",
+    "file": "bootstrap/queue.go",
+    "line": 7,
+    "message": "this file imports github.com/arandu-io/queue, and the repository behind it was deleted",
+    "why": "what github.com/arandu-io/queue held now lives in github.com/arandu-io/hesape/queue, and the two are not kept in step. The proxy still serves the old module, so nothing breaks today -- which is why this is worth saying now: the project stays on a copy nobody maintains, and every fix and every new driver lands on the other one. Import github.com/arandu-io/hesape/queue instead."
+  },
+  {
+    "rule": "retired-module",
+    "severity": "warning",
+    "file": "bootstrap/queue.go",
+    "line": 8,
+    "message": "this file imports github.com/arandu-io/queue/kv, and the repository behind it was deleted",
+    "why": "what github.com/arandu-io/queue held now lives in github.com/arandu-io/hesape/queue, and the two are not kept in step. The proxy still serves the old module, so nothing breaks today -- which is why this is worth saying now: the project stays on a copy nobody maintains, and every fix and every new driver lands on the other one. Import github.com/arandu-io/hesape/queue instead."
+  },
+  {
+    "rule": "migrations-not-linked",
+    "severity": "warning",
+    "file": "database/migrations/0001_01_01_000000_create_charges_table.go",
+    "line": 17,
+    "message": "nothing in this project imports example.test/p/database/migrations, so the init that registers CreateChargesTable never runs",
+    "why": "Go leaves a package nobody imports out of the binary, so all 2 migration(s) here are absent from it and the registry `aru migrate` reads is empty. It does not fail: it reports that there is nothing to apply, which is the same thing it says about a database that is already migrated, and the schema is never created. Blank-import the package where the application is wired -- `_ \"example.test/p/database/migrations\"` in bootstrap/app.go."
+  },
+  {
+    "rule": "rollback-does-nothing",
+    "severity": "warning",
+    "file": "database/migrations/0001_01_01_000000_create_charges_table.go",
+    "line": 25,
+    "message": "CreateChargesTable creates a table and declares no Down",
+    "why": "A migration that declares neither a Down nor Irreversible cannot be rolled back, and `aru migrate:rollback` refuses it by name rather than reporting a change it did not make: the record is kept and the schema is left as it is. The rollback stops there, so every migration applied beside this one in the same batch stays applied too -- and that is found out by running the one command whose whole purpose is to undo, usually while something is already wrong. Write the Down that undoes this change, or declare Irreversible with the reason nothing can."
+  },
+  {
+    "rule": "added-column-not-nullable",
+    "severity": "warning",
+    "file": "database/migrations/0001_01_01_000001_add_settled_to_charges.go",
+    "line": 24,
+    "message": "settled_by is added to the existing table charges without Nullable() or a default",
+    "why": "A NOT NULL column added to a table that has rows fails on every row already there, so the migration does not apply at all. During a rollout it fails a second way: the previous binary is still inserting rows and does not know this column exists, so its next insert is rejected while it is still serving. Add it with .Nullable(), backfill the rows, and tighten it in a later migration."
+  },
+  {
+    "rule": "raw-output-is-not-a-component",
+    "severity": "warning",
+    "file": "resources/views/billing/index.kyse.go",
+    "line": 19,
+    "message": "{!! .Note !!} writes a value to the page, not a component",
+    "why": "the raw form escapes nothing, so whatever the expression holds arrives as markup. A component earns that: it is a function returning template.HTML, and what it interpolated was escaped when it was generated. A value has not been through anything -- a bio, a comment or a rendered Markdown body written here is stored cross-site scripting, and it runs for every reader of the page. Write it as {{ .Note }}, which escapes, or return it from a component."
+  },
+  {
+    "rule": "view-keeps-state-in-the-browser",
+    "severity": "error",
+    "file": "resources/views/billing/index.kyse.go",
+    "line": 25,
+    "message": "x-data holds state in the browser, and its value calls fetch()",
+    "why": "Nothing this project serves evaluates that attribute: the layout loads a behaviours file that dispatches on data- attributes and evaluates no expression, and the policy is script-src 'self' with no unsafe-eval, so a framework that compiles a directive out of a string cannot run beside it. Either the directive is inert and the screen silently does nothing, or the policy was relaxed to run a second client stack -- and then there are two state models, two loading states and two places to forget the CSRF token. Put the decision in a handler and swap the markup; what dies with the tab goes on a data- attribute, or in \u003cdetails\u003e and :focus-within."
+  },
+  {
+    "rule": "view-keeps-state-in-the-browser",
+    "severity": "error",
+    "file": "resources/views/billing/index.kyse.go",
+    "line": 26,
+    "message": "@click holds state in the browser",
+    "why": "Nothing this project serves evaluates that attribute: the layout loads a behaviours file that dispatches on data- attributes and evaluates no expression, and the policy is script-src 'self' with no unsafe-eval, so a framework that compiles a directive out of a string cannot run beside it. Either the directive is inert and the screen silently does nothing, or the policy was relaxed to run a second client stack -- and then there are two state models, two loading states and two places to forget the CSRF token. Put the decision in a handler and swap the markup; what dies with the tab goes on a data- attribute, or in \u003cdetails\u003e and :focus-within."
+  },
+  {
+    "rule": "view-keeps-state-in-the-browser",
+    "severity": "error",
+    "file": "resources/views/billing/index.kyse.go",
+    "line": 33,
+    "message": "x-data holds state in the browser",
+    "why": "Nothing this project serves evaluates that attribute: the layout loads a behaviours file that dispatches on data- attributes and evaluates no expression, and the policy is script-src 'self' with no unsafe-eval, so a framework that compiles a directive out of a string cannot run beside it. Either the directive is inert and the screen silently does nothing, or the policy was relaxed to run a second client stack -- and then there are two state models, two loading states and two places to forget the CSRF token. Put the decision in a handler and swap the markup; what dies with the tab goes on a data- attribute, or in \u003cdetails\u003e and :focus-within."
+  },
+  {
+    "rule": "view-keeps-state-in-the-browser",
+    "severity": "error",
+    "file": "resources/views/billing/index.kyse.go",
+    "line": 34,
+    "message": "@click holds state in the browser",
+    "why": "Nothing this project serves evaluates that attribute: the layout loads a behaviours file that dispatches on data- attributes and evaluates no expression, and the policy is script-src 'self' with no unsafe-eval, so a framework that compiles a directive out of a string cannot run beside it. Either the directive is inert and the screen silently does nothing, or the policy was relaxed to run a second client stack -- and then there are two state models, two loading states and two places to forget the CSRF token. Put the decision in a handler and swap the markup; what dies with the tab goes on a data- attribute, or in \u003cdetails\u003e and :focus-within."
+  }
+]

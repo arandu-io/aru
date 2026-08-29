@@ -1,6 +1,9 @@
 package doctor_test
 
 import (
+	"bytes"
+	"encoding/json"
+	"flag"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -9,6 +12,51 @@ import (
 
 	"github.com/arandu-io/aru/internal/doctor"
 )
+
+var updateFindingsGolden = flag.Bool("update-findings-golden", false, "rewrite the Doctor findings compatibility golden")
+
+func TestDoctorRunFindingsMatchTheIndependentCompatibilityGolden(t *testing.T) {
+	root := fixture(t, "violations")
+	findings, err := doctor.Run(root, doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	type goldenFinding struct {
+		Rule     string `json:"rule"`
+		Severity string `json:"severity"`
+		File     string `json:"file"`
+		Line     int    `json:"line"`
+		Message  string `json:"message"`
+		Why      string `json:"why"`
+	}
+	stable := make([]goldenFinding, len(findings))
+	for i, finding := range findings {
+		stable[i] = goldenFinding{
+			Rule: finding.Rule, Severity: finding.Severity.String(),
+			File: finding.File, Line: finding.Line,
+			Message: finding.Message, Why: finding.Why,
+		}
+	}
+	got, err := json.MarshalIndent(stable, "", "  ")
+	if err != nil {
+		t.Fatalf("encode findings: %v", err)
+	}
+	got = append(got, '\n')
+	path := filepath.Join(root, "findings.golden.json")
+	if *updateFindingsGolden {
+		if err := os.WriteFile(path, got, 0o644); err != nil {
+			t.Fatalf("update findings golden: %v", err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read findings compatibility golden: %v; run go test ./tests/Unit/doctor -run TestDoctorRunFindingsMatchTheIndependentCompatibilityGolden -update-findings-golden", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Error("Doctor Run findings changed from the compatibility golden; review the finding diff before updating it")
+	}
+}
 
 func TestAnalyzePreservesRunFindingsAndBuildsADeterministicV1Graph(t *testing.T) {
 	root := fixture(t, "violations")
@@ -173,6 +221,119 @@ func TestProjectGraphClassifiesArtifactsNativeCapabilitiesAndRegisteredCommunity
 		}
 		if node.File == "" || node.Line < 1 || node.Column < 1 {
 			t.Errorf("artifact %q has no source location: %#v", node.ID, node)
+		}
+	}
+}
+
+func TestCommunityModulesComeOnlyFromProvenKernelRegisterCalls(t *testing.T) {
+	root := writeGraphFixture(t)
+	path := filepath.Join(root, "bootstrap", "metrics.go")
+	contents := `package bootstrap
+
+import (
+	collectors "example.org/metrics/collectors"
+	prometheus "example.org/metrics/registry"
+	search "example.org/search/module"
+	"github.com/arandu-io/framework/kernel"
+)
+
+func RegisterMetrics() {
+	prometheus.Register(collectors.NewModule())
+
+	k := kernel.New()
+	k.Register(search.NewModule())
+}
+`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("write non-kernel registry fixture: %v", err)
+	}
+
+	analysis, err := doctor.Analyze(root, doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	var community []string
+	communityIDs := map[string]bool{}
+	for _, group := range analysis.Graph.Groups {
+		if group.ID == "community-modules" {
+			for _, id := range group.NodeIDs {
+				communityIDs[id] = true
+			}
+		}
+	}
+	for _, node := range analysis.Graph.Nodes {
+		if communityIDs[node.ID] {
+			community = append(community, node.Label)
+		}
+	}
+	sort.Strings(community)
+	if want := []string{"example.org/community/audit", "example.org/search/module"}; !reflect.DeepEqual(community, want) {
+		t.Errorf("community modules = %v, want only modules registered on proven Kernel receivers: %v", community, want)
+	}
+}
+
+func TestCommunityModulesFailClosedWhenTheProjectModuleIdentityIsUnknown(t *testing.T) {
+	root := writeGraphFixture(t)
+	if err := os.Remove(filepath.Join(root, "go.mod")); err != nil {
+		t.Fatalf("remove module identity: %v", err)
+	}
+
+	analysis, err := doctor.Analyze(root, doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	for _, group := range analysis.Graph.Groups {
+		if group.ID == "community-modules" && len(group.NodeIDs) != 0 {
+			t.Errorf("unknown module identity produced community module IDs %v", group.NodeIDs)
+		}
+	}
+}
+
+func TestDuplicateImportAliasesResolveInSourceOrderDuringIntermediateEdits(t *testing.T) {
+	root := writeGraphFixture(t)
+	contents := `package bootstrap
+
+import (
+	"github.com/arandu-io/framework/kernel"
+	module "example.org/first"
+	module "example.org/second"
+	module "example.org/third"
+	module "example.org/fourth"
+	module "example.org/fifth"
+	module "example.org/sixth"
+	module "example.org/seventh"
+	module "example.org/eighth"
+)
+
+func Boot(k *kernel.Kernel) {
+	k.Register(module.NewModule())
+}
+`
+	if err := os.WriteFile(filepath.Join(root, "bootstrap", "app.go"), []byte(contents), 0o644); err != nil {
+		t.Fatalf("write duplicate-alias fixture: %v", err)
+	}
+
+	for attempt := 0; attempt < 32; attempt++ {
+		analysis, err := doctor.Analyze(root, doctor.Conventional)
+		if err != nil {
+			t.Fatalf("Analyze attempt %d: %v", attempt, err)
+		}
+		var labels []string
+		communityIDs := map[string]bool{}
+		for _, group := range analysis.Graph.Groups {
+			if group.ID == "community-modules" {
+				for _, id := range group.NodeIDs {
+					communityIDs[id] = true
+				}
+			}
+		}
+		for _, node := range analysis.Graph.Nodes {
+			if communityIDs[node.ID] {
+				labels = append(labels, node.Label)
+			}
+		}
+		if want := []string{"example.org/first"}; !reflect.DeepEqual(labels, want) {
+			t.Fatalf("attempt %d resolved duplicate alias to %v, want first AST import %v", attempt, labels, want)
 		}
 	}
 }

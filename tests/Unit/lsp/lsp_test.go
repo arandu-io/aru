@@ -281,6 +281,51 @@ func TestCompletionOffersEveryKyseDirective(t *testing.T) {
 	}
 }
 
+func TestPartiallyTypedDirectiveCompletionKeepsTheExistingAtSignAtUTF16Position(t *testing.T) {
+	const uri = "file:///workspace/resources/views/home.kyse.go"
+	input := frames(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go","languageId":"kyse","version":1,"text":"💥@fo"}}}`,
+		`{"jsonrpc":"2.0","id":"partial","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go"},"position":{"line":0,"character":5}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var output bytes.Buffer
+	if err := lsp.Serve(bytes.NewReader(input), &output); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+
+	for _, body := range readFrames(t, output.Bytes()) {
+		var message struct {
+			ID     json.RawMessage `json:"id"`
+			Result json.RawMessage `json:"result"`
+		}
+		if err := json.Unmarshal(body, &message); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if string(message.ID) != `"partial"` {
+			continue
+		}
+		var items []struct {
+			Label      string `json:"label"`
+			InsertText string `json:"insertText"`
+		}
+		if err := json.Unmarshal(message.Result, &items); err != nil {
+			t.Fatalf("decode completion items: %v", err)
+		}
+		for _, item := range items {
+			if item.Label == "@foreach" {
+				if item.InsertText != "foreach" {
+					t.Errorf("@foreach insertText = %q, want foreach so %s stays with one at-sign", item.InsertText, uri)
+				}
+				return
+			}
+		}
+		t.Fatal("completion did not offer @foreach for @fo")
+	}
+	t.Fatal("partial completion request received no response")
+}
+
 func TestProjectGraphUsesTheInitializedRootAndReturnsClickableZeroBasedLocations(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "project with spaces")
 	writeProjectGraphFixture(t, root)
@@ -361,6 +406,66 @@ func TestProjectGraphUsesTheInitializedRootAndReturnsClickableZeroBasedLocations
 	}
 }
 
+func TestSecondInitializeIsRejectedAndCannotReplaceTheOriginalRoot(t *testing.T) {
+	firstRoot := filepath.Join(t.TempDir(), "first")
+	secondRoot := filepath.Join(t.TempDir(), "second")
+	writeProjectGraphFixture(t, firstRoot)
+	writeProjectGraphFixture(t, secondRoot)
+	firstURI := (&url.URL{Scheme: "file", Path: firstRoot}).String()
+	secondURI := (&url.URL{Scheme: "file", Path: secondRoot}).String()
+	input := frames(
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":"first","method":"initialize","params":{"rootUri":%q}}`, firstURI),
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":"second","method":"initialize","params":{"rootUri":%q}}`, secondURI),
+		`{"jsonrpc":"2.0","id":"graph","method":"arandu/projectGraph"}`,
+		`{"jsonrpc":"2.0","id":"shutdown","method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var output bytes.Buffer
+	if err := lsp.Serve(bytes.NewReader(input), &output); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+
+	secondRejected := false
+	graphUsesFirstRoot := false
+	for _, body := range readFrames(t, output.Bytes()) {
+		var message struct {
+			ID     json.RawMessage `json:"id"`
+			Result json.RawMessage `json:"result"`
+			Error  *struct {
+				Code int `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(body, &message); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		switch string(message.ID) {
+		case `"second"`:
+			secondRejected = message.Error != nil && message.Error.Code == -32600
+		case `"graph"`:
+			var graph doctor.ProjectGraph
+			if err := json.Unmarshal(message.Result, &graph); err != nil {
+				t.Fatalf("decode project graph: %v", err)
+			}
+			for _, node := range graph.Nodes {
+				if node.Kind != "model" {
+					continue
+				}
+				location, err := url.Parse(node.File)
+				if err != nil {
+					t.Fatalf("parse model URI: %v", err)
+				}
+				graphUsesFirstRoot = strings.HasPrefix(filepath.Clean(location.Path), filepath.Clean(firstRoot)+string(filepath.Separator))
+			}
+		}
+	}
+	if !secondRejected {
+		t.Error("a second initialize did not receive JSON-RPC Invalid Request (-32600)")
+	}
+	if !graphUsesFirstRoot {
+		t.Error("the second initialize replaced the original project root")
+	}
+}
+
 func TestRequestsRespectInitializationShutdownAndMethodErrors(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -429,6 +534,179 @@ func TestRequestsRespectInitializationShutdownAndMethodErrors(t *testing.T) {
 				t.Fatalf("request id %s received no response", test.id)
 			}
 		})
+	}
+}
+
+func TestMalformedJSONAndInvalidParamsDoNotTerminateTheServer(t *testing.T) {
+	input := frames(
+		`{"jsonrpc":"2.0",`,
+		`{"jsonrpc":"2.0","id":"initialize","method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":42}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///workspace/home.kyse.go"},"contentChanges":[]}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":false}}`,
+		`{"jsonrpc":"2.0","id":"bad-params","method":"textDocument/completion","params":[]}`,
+		`{"jsonrpc":"2.0","id":"still-alive","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/home.kyse.go"},"position":{"line":0,"character":0}}}`,
+		`{"jsonrpc":"2.0","id":"shutdown","method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var output bytes.Buffer
+	if err := lsp.Serve(bytes.NewReader(input), &output); err != nil {
+		t.Fatalf("serve terminated on recoverable client input: %v", err)
+	}
+
+	messages := readFrames(t, output.Bytes())
+	if len(messages) != 5 {
+		t.Fatalf("protocol messages = %d, want parse error, initialize, invalid params, completion and shutdown", len(messages))
+	}
+	codes := map[string]int{}
+	completionAnswered := false
+	for _, body := range messages {
+		var message struct {
+			ID     json.RawMessage `json:"id"`
+			Result json.RawMessage `json:"result"`
+			Error  *struct {
+				Code int `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(body, &message); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if message.Error != nil {
+			codes[string(message.ID)] = message.Error.Code
+		}
+		if string(message.ID) == `"still-alive"` && len(message.Result) > 0 {
+			completionAnswered = true
+		}
+	}
+	if got := codes["null"]; got != -32700 {
+		t.Errorf("malformed JSON error code = %d, want -32700", got)
+	}
+	if got := codes[`"bad-params"`]; got != -32602 {
+		t.Errorf("invalid request params error code = %d, want -32602", got)
+	}
+	if !completionAnswered {
+		t.Error("valid request after malformed notifications received no response")
+	}
+}
+
+func TestValidJSONWithAnInvalidJSONRPCEnvelopeGetsInvalidRequest(t *testing.T) {
+	input := frames(
+		`[]`,
+		`{}`,
+		`null`,
+		`{"jsonrpc":"1.0","id":"wrong-version","method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","id":"initialize","method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","id":"shutdown","method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var output bytes.Buffer
+	if err := lsp.Serve(bytes.NewReader(input), &output); err != nil {
+		t.Fatalf("serve after invalid JSON-RPC envelopes: %v", err)
+	}
+
+	messages := readFrames(t, output.Bytes())
+	if len(messages) != 6 {
+		t.Fatalf("responses = %d, want four invalid requests, initialize and shutdown", len(messages))
+	}
+	for i := 0; i < 4; i++ {
+		var message struct {
+			ID    json.RawMessage `json:"id"`
+			Error *struct {
+				Code int `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(messages[i], &message); err != nil {
+			t.Fatalf("decode invalid-request response %d: %v", i, err)
+		}
+		if message.Error == nil || message.Error.Code != -32600 {
+			t.Errorf("response %d error = %#v, want Invalid Request (-32600)", i, message.Error)
+		}
+		if i < 3 && string(message.ID) != "null" {
+			t.Errorf("response %d ID = %s, want null", i, message.ID)
+		}
+		if i == 3 && string(message.ID) != `"wrong-version"` {
+			t.Errorf("wrong-version response ID = %s", message.ID)
+		}
+	}
+}
+
+func TestStructurallyInvalidLSPParamsAreIgnoredOrRejectedWithoutSideEffects(t *testing.T) {
+	input := frames(
+		`{"jsonrpc":"2.0","id":"invalid-initialize","method":"initialize","params":null}`,
+		`{"jsonrpc":"2.0","id":"initialize","method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go","languageId":"kyse","version":1}}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":""},"contentChanges":[{"text":"@if"}]}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go","version":2},"contentChanges":[{}]}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didClose","params":null}`,
+		`{"jsonrpc":"2.0","id":"missing-position","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go"}}}`,
+		`{"jsonrpc":"2.0","id":"empty-position","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go"},"position":{}}}`,
+		`{"jsonrpc":"2.0","id":"negative-position","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go"},"position":{"line":-1,"character":0}}}`,
+		`{"jsonrpc":"2.0","id":"empty-document","method":"textDocument/completion","params":{}}`,
+		`{"jsonrpc":"2.0","id":"still-alive","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go"},"position":{"line":0,"character":0}}}`,
+		`{"jsonrpc":"2.0","id":"shutdown","method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var output bytes.Buffer
+	if err := lsp.Serve(bytes.NewReader(input), &output); err != nil {
+		t.Fatalf("serve after structurally invalid params: %v", err)
+	}
+
+	messages := readFrames(t, output.Bytes())
+	if len(messages) != 8 {
+		t.Fatalf("protocol messages = %d, want five param errors, initialize, live completion and shutdown", len(messages))
+	}
+	wantIDs := []string{`"invalid-initialize"`, `"initialize"`, `"missing-position"`, `"empty-position"`, `"negative-position"`, `"empty-document"`, `"still-alive"`, `"shutdown"`}
+	for i, body := range messages {
+		var message struct {
+			ID    json.RawMessage `json:"id"`
+			Error *struct {
+				Code int `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(body, &message); err != nil {
+			t.Fatalf("decode response %d: %v", i, err)
+		}
+		if got := string(message.ID); got != wantIDs[i] {
+			t.Errorf("response %d ID = %s, want %s; invalid notifications must produce no output", i, got, wantIDs[i])
+		}
+		if (i == 0 || i >= 2 && i <= 5) && (message.Error == nil || message.Error.Code != -32602) {
+			t.Errorf("response %d error = %#v, want Invalid params (-32602)", i, message.Error)
+		}
+	}
+}
+
+func TestRequestOnlyMethodsAreIgnoredWhenSentAsNotifications(t *testing.T) {
+	input := frames(
+		`{"jsonrpc":"2.0","method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","id":"initialize","method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/home.kyse.go"},"position":{"line":0,"character":0}}}`,
+		`{"jsonrpc":"2.0","method":"arandu/projectGraph"}`,
+		`{"jsonrpc":"2.0","method":"shutdown"}`,
+		`{"jsonrpc":"2.0","id":"still-alive","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/home.kyse.go"},"position":{"line":0,"character":0}}}`,
+		`{"jsonrpc":"2.0","id":"shutdown","method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var output bytes.Buffer
+	if err := lsp.Serve(bytes.NewReader(input), &output); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+
+	messages := readFrames(t, output.Bytes())
+	if len(messages) != 3 {
+		t.Fatalf("responses = %d, want only initialize, live completion and shutdown", len(messages))
+	}
+	wantIDs := []string{`"initialize"`, `"still-alive"`, `"shutdown"`}
+	for i, body := range messages {
+		var message struct {
+			ID json.RawMessage `json:"id"`
+		}
+		if err := json.Unmarshal(body, &message); err != nil {
+			t.Fatalf("decode response %d: %v", i, err)
+		}
+		if got := string(message.ID); got != wantIDs[i] {
+			t.Errorf("response %d ID = %s, want %s", i, got, wantIDs[i])
+		}
 	}
 }
 

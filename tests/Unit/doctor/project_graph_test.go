@@ -1,0 +1,367 @@
+package doctor_test
+
+import (
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"testing"
+
+	"github.com/arandu-io/aru/internal/doctor"
+)
+
+func TestAnalyzePreservesRunFindingsAndBuildsADeterministicV1Graph(t *testing.T) {
+	root := fixture(t, "violations")
+	wantFindings, err := doctor.Run(root, doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	first, err := doctor.Analyze(root, doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Analyze first run: %v", err)
+	}
+	second, err := doctor.Analyze(root, doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Analyze second run: %v", err)
+	}
+
+	if !reflect.DeepEqual(first.Findings, wantFindings) {
+		t.Fatalf("Analyze findings differ from Run\nAnalyze: %#v\nRun: %#v", first.Findings, wantFindings)
+	}
+	if !reflect.DeepEqual(first.Graph, second.Graph) {
+		t.Fatalf("two graph builds differ\nfirst: %#v\nsecond: %#v", first.Graph, second.Graph)
+	}
+	if first.Graph.SchemaVersion != 1 {
+		t.Fatalf("schema version = %d, want 1", first.Graph.SchemaVersion)
+	}
+
+	wantGroups := []struct {
+		id    string
+		label string
+	}{
+		{"application-features", "Application Features"},
+		{"http", "HTTP"},
+		{"database", "Database"},
+		{"views", "Views"},
+		{"async", "Async"},
+		{"console", "Console"},
+		{"native-capabilities", "Native Capabilities"},
+		{"community-modules", "Community Modules"},
+		{"diagnostics", "Diagnostics"},
+	}
+	if len(first.Graph.Groups) != len(wantGroups) {
+		t.Fatalf("group count = %d, want exactly %d", len(first.Graph.Groups), len(wantGroups))
+	}
+	for i, want := range wantGroups {
+		got := first.Graph.Groups[i]
+		if got.ID != want.id || got.Label != want.label {
+			t.Errorf("group %d = %q/%q, want %q/%q", i, got.ID, got.Label, want.id, want.label)
+		}
+		if !sortedStrings(got.NodeIDs) {
+			t.Errorf("group %q node IDs are not sorted: %v", got.ID, got.NodeIDs)
+		}
+	}
+	if !sortedNodes(first.Graph.Nodes) {
+		t.Errorf("graph nodes are not sorted by ID: %#v", first.Graph.Nodes)
+	}
+	if !sortedEdges(first.Graph.Edges) {
+		t.Errorf("graph edges are not sorted: %#v", first.Graph.Edges)
+	}
+
+	diagnostics := first.Graph.Groups[len(first.Graph.Groups)-1]
+	if len(diagnostics.NodeIDs) != len(first.Findings) {
+		t.Fatalf("diagnostic nodes = %d, findings = %d", len(diagnostics.NodeIDs), len(first.Findings))
+	}
+	nodes := make(map[string]doctor.Node, len(first.Graph.Nodes))
+	for _, node := range first.Graph.Nodes {
+		nodes[node.ID] = node
+	}
+	for _, id := range diagnostics.NodeIDs {
+		node, ok := nodes[id]
+		if !ok {
+			t.Errorf("diagnostics references missing node %q", id)
+			continue
+		}
+		if node.Kind != "diagnostic" || node.Level == "" || node.File == "" || node.Line < 1 || node.Column < 1 {
+			t.Errorf("diagnostic node %q is incomplete: %#v", id, node)
+		}
+	}
+}
+
+func TestProjectGraphClassifiesArtifactsNativeCapabilitiesAndRegisteredCommunityModules(t *testing.T) {
+	root := writeGraphFixture(t)
+	analysis, err := doctor.Analyze(root, doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	nodes := make(map[string]doctor.Node, len(analysis.Graph.Nodes))
+	for _, node := range analysis.Graph.Nodes {
+		nodes[node.ID] = node
+	}
+	groups := make(map[string]doctor.Group, len(analysis.Graph.Groups))
+	for _, group := range analysis.Graph.Groups {
+		groups[group.ID] = group
+	}
+	kinds := func(groupID string) map[string]bool {
+		out := map[string]bool{}
+		for _, id := range groups[groupID].NodeIDs {
+			out[nodes[id].Kind] = true
+		}
+		return out
+	}
+	for groupID, wantKinds := range map[string][]string{
+		"application-features": {"feature", "policy", "service"},
+		"http":                 {"controller", "request", "route"},
+		"database":             {"migration", "model", "seeder"},
+		"views":                {"view"},
+		"async":                {"event", "job"},
+		"console":              {"command", "console-route"},
+	} {
+		got := kinds(groupID)
+		for _, want := range wantKinds {
+			if !got[want] {
+				t.Errorf("group %q kinds = %v, missing %q", groupID, got, want)
+			}
+		}
+	}
+
+	var native []string
+	for _, id := range groups["native-capabilities"].NodeIDs {
+		native = append(native, nodes[id].Label)
+	}
+	sort.Strings(native)
+	if want := []string{"database", "queue", "view"}; !reflect.DeepEqual(native, want) {
+		t.Errorf("native capabilities = %v, want %v", native, want)
+	}
+
+	var community []string
+	for _, id := range groups["community-modules"].NodeIDs {
+		community = append(community, nodes[id].Label)
+	}
+	if want := []string{"example.org/community/audit"}; !reflect.DeepEqual(community, want) {
+		t.Errorf("community modules = %v, want only directly registered external module %v", community, want)
+	}
+	for _, module := range community {
+		if module == "github.com/arandu-io/framework/modules/auth" {
+			t.Fatal("the legacy first-party auth package was classified as a community module")
+		}
+	}
+
+	contains := 0
+	for _, edge := range analysis.Graph.Edges {
+		if edge.Kind != "contains" {
+			t.Errorf("edge %#v has a v1 kind other than contains", edge)
+		}
+		from, fromOK := nodes[edge.From]
+		if !fromOK || from.Kind != "feature" {
+			t.Errorf("edge %#v does not start at a feature", edge)
+		}
+		if _, toOK := nodes[edge.To]; !toOK {
+			t.Errorf("edge %#v ends at a missing node", edge)
+		}
+		contains++
+	}
+	if contains == 0 {
+		t.Fatal("the Invoice feature contains no artifacts")
+	}
+
+	for _, node := range analysis.Graph.Nodes {
+		if node.Kind == "native-capability" || node.Kind == "community-module" || node.Kind == "diagnostic" {
+			continue
+		}
+		if node.File == "" || node.Line < 1 || node.Column < 1 {
+			t.Errorf("artifact %q has no source location: %#v", node.ID, node)
+		}
+	}
+}
+
+func TestProjectGraphIDsDoNotCollapseDistinctPathsWithTheSameSlug(t *testing.T) {
+	root := writeGraphFixture(t)
+	files := map[string]string{
+		"app/Services/A-B.go": `package services
+
+type HyphenatedService struct{}
+`,
+		"app/Services/A/B.go": `package a
+
+type NestedService struct{}
+`,
+	}
+	for name, contents := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("create collision fixture directory: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatalf("write collision fixture %s: %v", name, err)
+		}
+	}
+
+	analysis, err := doctor.Analyze(root, doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	wantFiles := map[string]bool{
+		"app/Services/A-B.go": false,
+		"app/Services/A/B.go": false,
+	}
+	ids := map[string]bool{}
+	for _, node := range analysis.Graph.Nodes {
+		if node.Kind != "service" {
+			continue
+		}
+		if _, wanted := wantFiles[node.File]; !wanted {
+			continue
+		}
+		wantFiles[node.File] = true
+		if ids[node.ID] {
+			t.Errorf("distinct service paths share node ID %q", node.ID)
+		}
+		ids[node.ID] = true
+	}
+	for file, found := range wantFiles {
+		if !found {
+			t.Errorf("graph silently dropped colliding path %q", file)
+		}
+	}
+}
+
+func writeGraphFixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	files := map[string]string{
+		"go.mod": `module example.test/project
+
+go 1.26
+`,
+		"arandu.mod.toml": `name = "example/project"
+framework = ">= 0.3"
+profiles = ["conventional"]
+
+[permissions]
+network = false
+filesystem = false
+exec = false
+migrations = true
+`,
+		"app/Models/Invoice.go": `package models
+
+import "github.com/arandu-io/hesape/database/model"
+
+type Invoice struct { model.Base }
+`,
+		"app/Policies/InvoicePolicy.go": `package policies
+
+type InvoicePolicy struct{}
+`,
+		"app/Services/InvoiceService.go": `package services
+
+type InvoiceService struct{}
+`,
+		"app/Http/Controllers/InvoiceController.go": `package controllers
+
+import "github.com/arandu-io/hesape/view/components"
+
+type InvoiceController struct { Button components.ButtonProps }
+`,
+		"app/Http/Requests/InvoiceRequest.go": `package requests
+
+type InvoiceRequest struct{}
+`,
+		"app/Jobs/SendInvoiceJob.go": `package jobs
+
+import "github.com/arandu-io/hesape/queue/jobs"
+
+type SendInvoiceJob struct { Payload jobs.Job }
+`,
+		"app/Events/InvoicePaidEvent.go": `package events
+
+type InvoicePaidEvent struct{}
+`,
+		"app/Console/Commands/CloseInvoicesCommand.go": `package commands
+
+type CloseInvoicesCommand struct{}
+`,
+		"database/migrations/create_invoices.go": `package migrations
+
+type CreateInvoicesTable struct{}
+`,
+		"database/seeders/InvoiceSeeder.go": `package seeders
+
+type InvoiceSeeder struct{}
+`,
+		"routes/web.go": `package routes
+
+func Web() {}
+`,
+		"routes/console.go": `package routes
+
+func Console() {}
+`,
+		"resources/views/invoices/index.kyse.go": `//go:build kyse
+
+package invoices
+
+<h1>Invoices</h1>
+`,
+		"bootstrap/app.go": `package bootstrap
+
+import (
+	"github.com/arandu-io/framework/kernel"
+	legacy "github.com/arandu-io/framework/modules/auth"
+	local "example.test/project/modules/local"
+	audit "example.org/community/audit"
+)
+
+func Boot(k *kernel.Kernel) {
+	k.Register(
+		audit.NewModule(),
+		legacy.NewModule(),
+		local.NewModule(),
+	)
+}
+`,
+	}
+	for name, body := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", name, err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	return root
+}
+
+func sortedStrings(values []string) bool {
+	for i := 1; i < len(values); i++ {
+		if values[i-1] > values[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func sortedNodes(nodes []doctor.Node) bool {
+	for i := 1; i < len(nodes); i++ {
+		if nodes[i-1].ID > nodes[i].ID {
+			return false
+		}
+	}
+	return true
+}
+
+func sortedEdges(edges []doctor.Edge) bool {
+	for i := 1; i < len(edges); i++ {
+		previous, current := edges[i-1], edges[i]
+		if previous.From > current.From ||
+			previous.From == current.From && previous.To > current.To ||
+			previous.From == current.From && previous.To == current.To && previous.Kind > current.Kind {
+			return false
+		}
+	}
+	return true
+}

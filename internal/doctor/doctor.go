@@ -271,26 +271,21 @@ func classify(rel string) (category, entity string) {
 	return parts[len(parts)-2], base
 }
 
-// Run analyzes the project rooted at dir against one profile.
-//
-// Every rule runs on both profiles except the three that only make sense on
-// Performance, so asking for a profile adds checks and never removes any.
-//
-// Findings come back sorted by file and line, so the output is stable and a diff
-// between two runs means something.
-func Run(dir string, profile Profile) ([]Finding, error) {
+// Analyze loads the project rooted at dir once and returns its findings and
+// navigable project graph for one profile.
+func Analyze(dir string, profile Profile) (Analysis, error) {
 	files, unreadable, err := parseProject(dir)
 	if err != nil {
-		return nil, err
+		return Analysis{}, err
 	}
 
 	declared, err := manifest.Read(dir)
 	if err != nil {
-		return nil, err
+		return Analysis{}, err
 	}
 	views, err := parseViews(dir)
 	if err != nil {
-		return nil, err
+		return Analysis{}, err
 	}
 	p := &project{
 		root: dir, profile: profile, files: files, modulePath: readModulePath(dir),
@@ -308,7 +303,25 @@ func Run(dir string, profile Profile) ([]Finding, error) {
 		}
 		return findings[i].Line < findings[j].Line
 	})
-	return findings, nil
+	return Analysis{
+		Findings: findings,
+		Graph:    buildProjectGraph(p, findings),
+	}, nil
+}
+
+// Run analyzes the project rooted at dir against one profile.
+//
+// Every rule runs on both profiles except the three that only make sense on
+// Performance, so asking for a profile adds checks and never removes any.
+//
+// Findings come back sorted by file and line, so the output is stable and a diff
+// between two runs means something.
+func Run(dir string, profile Profile) ([]Finding, error) {
+	analysis, err := Analyze(dir, profile)
+	if err != nil {
+		return nil, err
+	}
+	return analysis.Findings, nil
 }
 
 // readModulePath answers what go.mod declares, or empty.

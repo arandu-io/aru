@@ -6,10 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/arandu-io/aru/internal/doctor"
 	"github.com/arandu-io/aru/internal/kyse"
 	"github.com/arandu-io/aru/internal/lsp"
 )
@@ -220,7 +224,10 @@ func TestDiagnosticRangesUseUTF16AndExcludeTheCarriageReturn(t *testing.T) {
 func TestCompletionOffersEveryKyseDirective(t *testing.T) {
 	input := frames(
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
-		`{"jsonrpc":"2.0","id":"completion-1","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go"},"position":{"line":4,"character":1}}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go","languageId":"kyse","version":1,"text":"💥@"}}}`,
+		`{"jsonrpc":"2.0","id":"triggered","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go"},"position":{"line":0,"character":3}}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go","version":2},"contentChanges":[{"text":""}]}}`,
+		`{"jsonrpc":"2.0","id":"manual","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go"},"position":{"line":0,"character":0}}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
 		`{"jsonrpc":"2.0","method":"exit"}`,
 	)
@@ -230,11 +237,12 @@ func TestCompletionOffersEveryKyseDirective(t *testing.T) {
 		t.Fatalf("serve: %v", err)
 	}
 
-	var items []struct {
+	type completion struct {
 		Label      string `json:"label"`
 		Kind       int    `json:"kind"`
 		InsertText string `json:"insertText"`
 	}
+	itemsByID := map[string][]completion{}
 	for _, body := range readFrames(t, output.Bytes()) {
 		var message struct {
 			ID     json.RawMessage `json:"id"`
@@ -243,25 +251,216 @@ func TestCompletionOffersEveryKyseDirective(t *testing.T) {
 		if err := json.Unmarshal(body, &message); err != nil {
 			t.Fatalf("decode protocol message: %v", err)
 		}
-		if string(message.ID) != `"completion-1"` {
+		id := string(message.ID)
+		if id != `"triggered"` && id != `"manual"` {
 			continue
 		}
+		var items []completion
 		if err := json.Unmarshal(message.Result, &items); err != nil {
 			t.Fatalf("decode completion items: %v", err)
 		}
+		itemsByID[id] = items
 	}
 
 	directives := kyse.Directives()
-	if len(items) != len(directives) {
-		t.Fatalf("completion items = %d, want every one of %d Kyse directives", len(items), len(directives))
-	}
-	for i, directive := range directives {
-		wantLabel := "@" + directive
-		if items[i].Label != wantLabel || items[i].InsertText != directive {
-			t.Errorf("completion %d = label %q, insert %q; want label %q after an existing @", i, items[i].Label, items[i].InsertText, wantLabel)
+	for id, wantPrefix := range map[string]string{`"triggered"`: "", `"manual"`: "@"} {
+		items := itemsByID[id]
+		if len(items) != len(directives) {
+			t.Fatalf("completion %s items = %d, want every one of %d Kyse directives", id, len(items), len(directives))
 		}
-		if items[i].Kind != 14 {
-			t.Errorf("completion %q kind = %d, want keyword (14)", items[i].Label, items[i].Kind)
+		for i, directive := range directives {
+			wantLabel := "@" + directive
+			wantInsert := wantPrefix + directive
+			if items[i].Label != wantLabel || items[i].InsertText != wantInsert {
+				t.Errorf("completion %s item %d = label %q, insert %q; want %q/%q", id, i, items[i].Label, items[i].InsertText, wantLabel, wantInsert)
+			}
+			if items[i].Kind != 14 {
+				t.Errorf("completion %q kind = %d, want keyword (14)", items[i].Label, items[i].Kind)
+			}
+		}
+	}
+}
+
+func TestProjectGraphUsesTheInitializedRootAndReturnsClickableZeroBasedLocations(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "project with spaces")
+	writeProjectGraphFixture(t, root)
+	rootURI := (&url.URL{Scheme: "file", Path: root}).String()
+	initialize, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params":  map[string]string{"rootUri": rootURI},
+	})
+	if err != nil {
+		t.Fatalf("encode initialize request: %v", err)
+	}
+	input := frames(
+		string(initialize),
+		`{"jsonrpc":"2.0","id":"graph-1","method":"arandu/projectGraph"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var output bytes.Buffer
+	if err := lsp.Serve(bytes.NewReader(input), &output); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+
+	var graph doctor.ProjectGraph
+	found := false
+	for _, body := range readFrames(t, output.Bytes()) {
+		var message struct {
+			ID     json.RawMessage `json:"id"`
+			Result json.RawMessage `json:"result"`
+		}
+		if err := json.Unmarshal(body, &message); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if string(message.ID) != `"graph-1"` {
+			continue
+		}
+		if err := json.Unmarshal(message.Result, &graph); err != nil {
+			t.Fatalf("decode project graph: %v", err)
+		}
+		found = true
+	}
+	if !found {
+		t.Fatal("arandu/projectGraph did not answer its request")
+	}
+	if graph.SchemaVersion != 1 || len(graph.Groups) != 9 {
+		t.Fatalf("graph schema/groups = %d/%d, want 1/9", graph.SchemaVersion, len(graph.Groups))
+	}
+
+	modelFound := false
+	for _, node := range graph.Nodes {
+		if node.File == "" {
+			continue
+		}
+		location, err := url.Parse(node.File)
+		if err != nil || location.Scheme != "file" {
+			t.Errorf("node %q file = %q, want a clickable file URI", node.ID, node.File)
+			continue
+		}
+		if !strings.HasPrefix(filepath.Clean(location.Path), filepath.Clean(root)+string(filepath.Separator)) {
+			t.Errorf("node %q points outside initialized root: %q", node.ID, location.Path)
+		}
+		if node.Line < 0 || node.Column < 0 {
+			t.Errorf("node %q has negative protocol position %d:%d", node.ID, node.Line, node.Column)
+		}
+		if node.Kind == "model" {
+			modelFound = true
+			if node.Line != 2 || node.Column != 0 {
+				t.Errorf("model location = %d:%d, want zero-based 2:0", node.Line, node.Column)
+			}
+			if !strings.HasSuffix(location.Path, "/app/Models/Invoice.go") {
+				t.Errorf("model URI path = %q", location.Path)
+			}
+		}
+	}
+	if !modelFound {
+		t.Fatal("project graph contains no model node")
+	}
+}
+
+func TestRequestsRespectInitializationShutdownAndMethodErrors(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []byte
+		id       string
+		wantCode int
+	}{
+		{
+			name: "request before initialize",
+			input: frames(
+				`{"jsonrpc":"2.0","id":"before","method":"textDocument/completion","params":{}}`,
+				`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+				`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+				`{"jsonrpc":"2.0","method":"exit"}`,
+			),
+			id: `"before"`, wantCode: -32002,
+		},
+		{
+			name: "request after shutdown",
+			input: frames(
+				`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+				`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+				`{"jsonrpc":"2.0","id":"after","method":"textDocument/completion","params":{}}`,
+				`{"jsonrpc":"2.0","method":"exit"}`,
+			),
+			id: `"after"`, wantCode: -32600,
+		},
+		{
+			name: "unknown request",
+			input: frames(
+				`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+				`{"jsonrpc":"2.0","method":"arandu/unknownNotification"}`,
+				`{"jsonrpc":"2.0","id":"unknown","method":"arandu/unknownRequest"}`,
+				`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+				`{"jsonrpc":"2.0","method":"exit"}`,
+			),
+			id: `"unknown"`, wantCode: -32601,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			if err := lsp.Serve(bytes.NewReader(test.input), &output); err != nil {
+				t.Fatalf("serve: %v", err)
+			}
+			found := false
+			for _, body := range readFrames(t, output.Bytes()) {
+				var response struct {
+					ID    json.RawMessage `json:"id"`
+					Error *struct {
+						Code int `json:"code"`
+					} `json:"error"`
+				}
+				if err := json.Unmarshal(body, &response); err != nil {
+					t.Fatalf("decode response: %v", err)
+				}
+				if string(response.ID) != test.id {
+					continue
+				}
+				found = true
+				if response.Error == nil || response.Error.Code != test.wantCode {
+					t.Errorf("response error = %#v, want code %d", response.Error, test.wantCode)
+				}
+			}
+			if !found {
+				t.Fatalf("request id %s received no response", test.id)
+			}
+		})
+	}
+}
+
+func writeProjectGraphFixture(t *testing.T, root string) {
+	t.Helper()
+	files := map[string]string{
+		"go.mod": `module example.test/editor
+
+go 1.26
+`,
+		"arandu.mod.toml": `name = "example/editor"
+framework = ">= 0.3"
+profiles = ["conventional"]
+
+[permissions]
+network = false
+filesystem = false
+exec = false
+migrations = true
+`,
+		"app/Models/Invoice.go": `package models
+
+type Invoice struct{}
+`,
+	}
+	for name, contents := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("create fixture directory: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatalf("write fixture %s: %v", name, err)
 		}
 	}
 }

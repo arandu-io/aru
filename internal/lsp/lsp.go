@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode/utf16"
 
+	"github.com/arandu-io/aru/internal/doctor"
 	"github.com/arandu-io/aru/internal/kyse"
 )
 
@@ -21,7 +23,10 @@ const maxFrameSize = 16 << 20
 // responses and notifications to out. Messages are processed in input order.
 func Serve(in io.Reader, out io.Writer) error {
 	reader := bufio.NewReader(in)
+	initialized := false
 	shutdown := false
+	rootURI := ""
+	documents := map[string]string{}
 	for {
 		body, err := readFrame(reader)
 		if err == io.EOF {
@@ -35,9 +40,47 @@ func Serve(in io.Reader, out io.Writer) error {
 		if err := json.Unmarshal(body, &message); err != nil {
 			return fmt.Errorf("decode JSON-RPC message: %w", err)
 		}
+		isRequest := len(message.ID) > 0
+
+		if message.Method == "exit" {
+			if !shutdown {
+				return fmt.Errorf("exit received before shutdown")
+			}
+			return nil
+		}
+		if shutdown {
+			if isRequest {
+				if err := writeError(out, message.ID, -32600, "Invalid Request"); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		if !initialized && message.Method != "initialize" {
+			if isRequest {
+				if err := writeError(out, message.ID, -32002, "Server not initialized"); err != nil {
+					return err
+				}
+			}
+			continue
+		}
 
 		switch message.Method {
 		case "initialize":
+			var params initializeParams
+			if len(message.Params) > 0 {
+				if err := json.Unmarshal(message.Params, &params); err != nil {
+					if isRequest {
+						if err := writeError(out, message.ID, -32602, "Invalid params"); err != nil {
+							return err
+						}
+						continue
+					}
+					return fmt.Errorf("decode initialize params: %w", err)
+				}
+			}
+			rootURI = params.RootURI
+			initialized = true
 			result := initializeResult{
 				Capabilities: serverCapabilities{
 					PositionEncoding: "utf-16",
@@ -58,16 +101,12 @@ func Serve(in io.Reader, out io.Writer) error {
 				return err
 			}
 			shutdown = true
-		case "exit":
-			if !shutdown {
-				return fmt.Errorf("exit received before shutdown")
-			}
-			return nil
 		case "textDocument/didOpen":
 			var params didOpenParams
 			if err := json.Unmarshal(message.Params, &params); err != nil {
 				return fmt.Errorf("decode didOpen params: %w", err)
 			}
+			documents[params.TextDocument.URI] = params.TextDocument.Text
 			if err := publishDiagnostics(out, params.TextDocument.URI, params.TextDocument.Text); err != nil {
 				return err
 			}
@@ -80,6 +119,7 @@ func Serve(in io.Reader, out io.Writer) error {
 				return fmt.Errorf("didChange has no content changes")
 			}
 			text := params.ContentChanges[len(params.ContentChanges)-1].Text
+			documents[params.TextDocument.URI] = text
 			if err := publishDiagnostics(out, params.TextDocument.URI, text); err != nil {
 				return err
 			}
@@ -88,6 +128,7 @@ func Serve(in io.Reader, out io.Writer) error {
 			if err := json.Unmarshal(message.Params, &params); err != nil {
 				return fmt.Errorf("decode didClose params: %w", err)
 			}
+			delete(documents, params.TextDocument.URI)
 			if err := writeFrame(out, notification{
 				JSONRPC: "2.0",
 				Method:  "textDocument/publishDiagnostics",
@@ -99,17 +140,40 @@ func Serve(in io.Reader, out io.Writer) error {
 				return err
 			}
 		case "textDocument/completion":
-			directives := kyse.Directives()
-			items := make([]completionItem, len(directives))
-			for i, directive := range directives {
-				items[i] = completionItem{
-					Label:      "@" + directive,
-					Kind:       14,
-					InsertText: directive,
+			var params completionParams
+			if err := json.Unmarshal(message.Params, &params); err != nil {
+				if err := writeError(out, message.ID, -32602, "Invalid params"); err != nil {
+					return err
 				}
+				continue
 			}
+			items := completionItems(documents[params.TextDocument.URI], params.Position)
 			if err := writeResult(out, message.ID, items); err != nil {
 				return err
+			}
+		case "arandu/projectGraph":
+			if rootURI == "" {
+				if err := writeError(out, message.ID, -32602, "initialize rootUri is required"); err != nil {
+					return err
+				}
+				continue
+			}
+			analysis, err := doctor.Analyze(sourcePath(rootURI), doctor.Conventional)
+			if err != nil {
+				if err := writeError(out, message.ID, -32603, "Project analysis failed: "+err.Error()); err != nil {
+					return err
+				}
+				continue
+			}
+			graph := projectGraphForProtocol(sourcePath(rootURI), analysis.Graph)
+			if err := writeResult(out, message.ID, graph); err != nil {
+				return err
+			}
+		default:
+			if isRequest {
+				if err := writeError(out, message.ID, -32601, "Method not found"); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -125,7 +189,13 @@ type request struct {
 type response struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id"`
-	Result  json.RawMessage `json:"result"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *responseError  `json:"error,omitempty"`
+}
+
+type responseError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
 }
 
 type notification struct {
@@ -136,6 +206,10 @@ type notification struct {
 
 type initializeResult struct {
 	Capabilities serverCapabilities `json:"capabilities"`
+}
+
+type initializeParams struct {
+	RootURI string `json:"rootUri"`
 }
 
 type serverCapabilities struct {
@@ -157,6 +231,11 @@ type completionItem struct {
 	Label      string `json:"label"`
 	Kind       int    `json:"kind"`
 	InsertText string `json:"insertText"`
+}
+
+type completionParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+	Position     position               `json:"position"`
 }
 
 type textDocumentIdentifier struct {
@@ -274,12 +353,66 @@ func utf16Length(value string) int {
 	return len(utf16.Encode([]rune(value)))
 }
 
+func completionItems(source string, at position) []completionItem {
+	insertPrefix := "@"
+	if previous, ok := runeBeforeUTF16Position(sourceLine(source, at.Line), at.Character); ok && previous == '@' {
+		insertPrefix = ""
+	}
+	directives := kyse.Directives()
+	items := make([]completionItem, len(directives))
+	for i, directive := range directives {
+		items[i] = completionItem{
+			Label:      "@" + directive,
+			Kind:       14,
+			InsertText: insertPrefix + directive,
+		}
+	}
+	return items
+}
+
+func runeBeforeUTF16Position(line string, character int) (rune, bool) {
+	if character <= 0 {
+		return 0, false
+	}
+	units := 0
+	for _, current := range line {
+		units += utf16Length(string(current))
+		if units == character {
+			return current, true
+		}
+		if units > character {
+			return 0, false
+		}
+	}
+	return 0, false
+}
+
 func sourcePath(uri string) string {
 	parsed, err := url.Parse(uri)
 	if err != nil || parsed.Scheme != "file" {
 		return uri
 	}
 	return parsed.Path
+}
+
+func projectGraphForProtocol(root string, graph doctor.ProjectGraph) doctor.ProjectGraph {
+	for i := range graph.Nodes {
+		node := &graph.Nodes[i]
+		if node.File != "" {
+			path := filepath.FromSlash(node.File)
+			if !filepath.IsAbs(path) {
+				path = filepath.Join(root, path)
+			}
+			node.File = (&url.URL{Scheme: "file", Path: filepath.Clean(path)}).String()
+		}
+		if node.Line > 0 {
+			node.Line--
+		}
+		if node.Column > 0 {
+			node.Column--
+		}
+	}
+	return graph
 }
 
 func readFrame(reader *bufio.Reader) ([]byte, error) {
@@ -335,6 +468,14 @@ func writeResult(out io.Writer, id json.RawMessage, result any) error {
 		JSONRPC: "2.0",
 		ID:      bytes.Clone(id),
 		Result:  encodedResult,
+	})
+}
+
+func writeError(out io.Writer, id json.RawMessage, code int, message string) error {
+	return writeFrame(out, response{
+		JSONRPC: "2.0",
+		ID:      bytes.Clone(id),
+		Error:   &responseError{Code: code, Message: message},
 	})
 }
 

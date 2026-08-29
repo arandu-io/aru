@@ -1,6 +1,6 @@
 ---
 name: purchase-orders
-description: Work with the PurchaseOrder module of this Arandu application. Use when the request mentions purchaseorders, when a purchase-orders route is involved, or when reading or changing purchaseorder records. Covers what the module exposes, which roles may take which action, and the rule that a repository call here cannot be made without a Grant the policy issued.
+description: Work with the PurchaseOrder module of this Arandu application. Use when the request mentions purchaseorders, when a purchase-orders route is involved, or when reading or changing purchaseorder records. Covers what the module exposes, which roles may take which action, and the rule that the Service authorizes before it reaches the Hesape Model.
 license: MIT
 ---
 
@@ -15,13 +15,12 @@ what the specification can say goes between the `// arandu:begin custom` and
 
 | file | what it holds |
 | --- | --- |
-| `app/Models/PurchaseOrder.go` | the entity |
+| `app/Models/PurchaseOrder.go` | the entity and its Hesape Model entry point |
 | `app/Policies/PurchaseOrderPolicy.go` | who may do what, and the only thing that issues a Grant |
-| `app/Repositories/PurchaseOrderRepository.go` | the queries. Every method takes a Grant before the id |
-| `app/Services/PurchaseOrderService.go` | the domain, between the controller and the repository |
+| `app/Services/PurchaseOrderService.go` | the domain and the only consumer of the Model entry point |
 | `app/Http/Controllers/PurchaseOrderController.go` | the actions the routes dispatch to |
 | `app/Http/Requests/PurchaseOrderRequest.go` | the input contract. Authorization stays in the Policy |
-| `tests/Unit/PurchaseOrder_test.go` | that every repository method demands its Grant |
+| `tests/Unit/PurchaseOrder_test.go` | that reads authorize before the Model is queried |
 
 ## Its fields
 
@@ -34,27 +33,27 @@ what the specification can say goes between the `// arandu:begin custom` and
 | `notes` | `text` |
 | `delivery_date` | `date` |
 
-Every query is scoped by `data.Tenant(g)`. The tenant comes from the Grant and
-never from a path segment, a body, a query or a header.
+Every query uses the Model's `tenant_id` scope. Builder terminals take the
+Grant, and its tenant never comes from a path segment, a body, a query or a header.
 
 ## Reaching a record
 
 There is one way, and the compiler is what says so.
 
 ```go
-g, err := policy.View(ctx, subject, id)   // the Policy decides and issues
+g, err := security.Authorize(ctx, policy, subject, action, models.PurchaseOrder{})
 if err != nil {
     return err
 }
-record, err := repo.Find(ctx, g, id)      // the repository demands it
+record, err := models.PurchaseOrders(db).NewQuery().WhereKey(id).First(ctx, g)
 ```
 
-A repository method takes `security.Grant` before the id, and nothing outside the
-security package can build one. So a handler that skips the Policy has nothing
-to pass and does not compile. If you are about to remove that parameter to make
-something build, stop: it is the only thing making the query safe.
+Every Builder terminal takes `security.Grant`, and nothing outside the security
+package can build one. The Service owns the database handle, authorizes first,
+and then spends that Grant on the Model. A Controller has neither dependency and
+cannot grow a second persistence path.
 
-Reads are not exempt. `List`, `Find`, a report and an export all require a Grant.
+Reads are not exempt. `List`, `First`, a report and an export all require a Grant.
 
 ## What the policy allows
 

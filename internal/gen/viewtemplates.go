@@ -39,7 +39,7 @@ const viewIndexTemplate = `//go:build kyse
 
 package <%.ViewsPackage%>
 
-import "github.com/arandu-io/framework/view"
+import "github.com/arandu-io/hesape/view"
 
 @go
 // <%.ViewData "index"%> is what <%.Controller%>.Index hands this page.
@@ -130,7 +130,7 @@ const viewShowTemplate = `//go:build kyse
 
 package <%.ViewsPackage%>
 
-import "github.com/arandu-io/framework/view"
+import "github.com/arandu-io/hesape/view"
 
 @go
 // <%.ViewData "show"%> is what <%.Controller%>.Show hands this page.
@@ -194,7 +194,7 @@ package <%.ViewsPackage%>
 import (
 	"github.com/arandu-io/kyse/components"
 
-	"github.com/arandu-io/framework/view"
+	"github.com/arandu-io/hesape/view"
 )
 
 @go
@@ -287,7 +287,7 @@ package <%.ViewsPackage%>
 import (
 	"github.com/arandu-io/kyse/components"
 
-	"github.com/arandu-io/framework/view"
+	"github.com/arandu-io/hesape/view"
 )
 
 @go

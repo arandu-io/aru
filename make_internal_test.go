@@ -305,10 +305,9 @@ func TestARequestThatCollidesIsRefusedByTypeAndNotByPath(t *testing.T) {
 
 // TestTheModuleWiringNamesTheImportsItsSnippetNeeds.
 //
-// The snippet the message prints calls services and repositories, and the file
-// it says to paste into imports neither. Pasted as printed, the project stops
-// compiling with "undefined: services" -- an instruction that does not compile,
-// which is what the function's own comment says is worse than no instruction.
+// The snippet the message prints calls the service constructor, and the file it
+// says to paste into does not import that package yet. Pasted as printed, the
+// project must compile on the same Model-first path the generated service uses.
 func TestTheModuleWiringNamesTheImportsItsSnippetNeeds(t *testing.T) {
 	spec := gen.Module{
 		Name:       "invoice",
@@ -317,22 +316,15 @@ func TestTheModuleWiringNamesTheImportsItsSnippetNeeds(t *testing.T) {
 	}
 	message := wiring(spec, 12)
 
-	// The snippet is what makes the imports necessary. If it stops calling the
-	// two packages, this test is measuring the wrong thing and should be read
-	// again rather than deleted.
-	for _, call := range []string{"services.New", "repositories.New"} {
-		if !strings.Contains(message, call) {
-			t.Fatalf("the snippet no longer calls %q, so this test no longer describes it:\n%s", call, message)
-		}
+	if !strings.Contains(message, "services.New") {
+		t.Fatalf("the snippet no longer calls the service constructor:\n%s", message)
 	}
 
-	for _, want := range []string{
-		`"example.test/project/app/Repositories"`,
-		`"example.test/project/app/Services"`,
-	} {
-		if !strings.Contains(message, want) {
-			t.Errorf("the message does not print the import %s, which its own snippet needs:\n%s", want, message)
-		}
+	if want := `"example.test/project/app/Services"`; !strings.Contains(message, want) {
+		t.Errorf("the message does not print the import %s, which its own snippet needs:\n%s", want, message)
+	}
+	if strings.Contains(message, "/app/Repositories") || strings.Contains(message, "repositories.New") {
+		t.Errorf("the Model-first wiring still introduces a CRUD repository:\n%s", message)
 	}
 }
 
@@ -512,11 +504,11 @@ func TestMakeTestWritesTheTestMakeModuleWrites(t *testing.T) {
 	// What it asserts, and not only that it exists. A stub that declared a Test
 	// function and checked nothing would satisfy every line above.
 	for _, want := range []string{
-		"func TestEveryPurchaseOrderMethodRequiresItsGrant(t *testing.T)",
+		"func TestEveryPurchaseOrderReadRequiresAuthorization(t *testing.T)",
 		"security.ErrForbidden",
-		`security.SystemGrant("some.other.action", "t1")`,
+		"services.NewPurchaseOrderService(nil)",
+		"model.Builder[models.PurchaseOrder]",
 		"func TestThePurchaseOrderPolicyDeniesWhatItDoesNotKnow(t *testing.T)",
-		"models.ErrPurchaseOrderSort",
 	} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("the generated test does not carry %q, so it proves less than it claims", want)
@@ -578,11 +570,10 @@ func TestTheGeneratedTestSatisfiesTheLayoutChecks(t *testing.T) {
 // TestMakeTestRefusesATestThatWouldNotCompile covers the failure that costs the
 // most.
 //
-// The generated file names three packages, and Go has no way to skip an
-// assertion that does not build: a test written against a repository nobody
-// wrote stops `go test ./...` on that package and reports nothing about any
-// other test in the project. So each of the three is checked before anything is
-// written, and the refusal names the file and the command that creates it.
+// The generated file names the Model, Service and Policy packages, and Go has
+// no way to skip an assertion that does not build. Each subject is checked
+// before anything is written, and the refusal names the missing file and the
+// command that creates it.
 func TestMakeTestRefusesATestThatWouldNotCompile(t *testing.T) {
 	for _, c := range []struct {
 		what    string
@@ -591,8 +582,8 @@ func TestMakeTestRefusesATestThatWouldNotCompile(t *testing.T) {
 	}{
 		{"no model", filepath.Join("app", "Models", "PurchaseOrder.go"),
 			[]string{"app/Models/PurchaseOrder.go", "aru make:model"}},
-		{"no repository", filepath.Join("app", "Repositories", "PurchaseOrderRepository.go"),
-			[]string{"app/Repositories/PurchaseOrderRepository.go", "aru make:module"}},
+		{"no service", filepath.Join("app", "Services", "PurchaseOrderService.go"),
+			[]string{"app/Services/PurchaseOrderService.go", "aru make:module"}},
 		{"no policy", filepath.Join("app", "Policies", "PurchaseOrderPolicy.go"),
 			[]string{"app/Policies/PurchaseOrderPolicy.go", "aru make:policy"}},
 	} {
@@ -626,10 +617,10 @@ func TestMakeTestRefusesATestThatWouldNotCompile(t *testing.T) {
 // TestMakeTestRefusesAnEntityThatDoesNotDeclareWhatTheTestNames is the half a
 // stat cannot catch.
 //
-// A model written before the sort allowlist existed is a file that is there and
-// does not declare Err<Entity>Sort, and the emitted test names that symbol. The
-// check reads the file rather than only finding it, so the answer is the missing
-// identifier rather than a compiler error two commands later.
+// A plain model written before the Model-first path is a file that is there but
+// does not embed model.Model[Entity], which the emitted interface proof needs.
+// The check reads the file rather than only finding it, so the answer is the
+// missing boundary rather than a compiler error two commands later.
 func TestMakeTestRefusesAnEntityThatDoesNotDeclareWhatTheTestNames(t *testing.T) {
 	root := projectWithModule(t, "purchase_order")
 	t.Chdir(root)
@@ -639,9 +630,9 @@ func TestMakeTestRefusesAnEntityThatDoesNotDeclareWhatTheTestNames(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	stripped := strings.ReplaceAll(string(body), "ErrPurchaseOrderSort", "ErrSomethingElse")
+	stripped := strings.ReplaceAll(string(body), "model.Model[PurchaseOrder]", "legacyModel")
 	if stripped == string(body) {
-		t.Fatal("the generated model no longer declares ErrPurchaseOrderSort, so this test measures nothing")
+		t.Fatal("the generated model no longer embeds model.Model[PurchaseOrder], so this test measures nothing")
 	}
 	if err := os.WriteFile(model, []byte(stripped), 0o644); err != nil {
 		t.Fatal(err)
@@ -651,8 +642,8 @@ func TestMakeTestRefusesAnEntityThatDoesNotDeclareWhatTheTestNames(t *testing.T)
 	if code == 0 {
 		t.Fatal("make:test wrote a test naming a symbol the model does not declare")
 	}
-	if !strings.Contains(stderr, "ErrPurchaseOrderSort") {
-		t.Errorf("the refusal does not name the missing identifier: %q", stderr)
+	if !strings.Contains(stderr, "model.Model[PurchaseOrder]") {
+		t.Errorf("the refusal does not name the missing Model boundary: %q", stderr)
 	}
 }
 

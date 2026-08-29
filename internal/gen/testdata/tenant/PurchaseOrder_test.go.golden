@@ -7,56 +7,48 @@ import (
 
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/database/model"
 
 	models "example.test/project/app/Models"
 	policies "example.test/project/app/Policies"
-	repositories "example.test/project/app/Repositories"
+	services "example.test/project/app/Services"
 )
 
-// These tests need no database: every repository method checks the Grant before
-// touching the handle, which is exactly the property under test.
-func purchaseOrderRepoWithoutDB() *repositories.PurchaseOrderRepository {
-	return repositories.NewPurchaseOrderRepository(nil)
+// purchaseOrderPersistent is the Model-first persistence boundary this module
+// depends on. The proof below fails at compile time if the generated entity
+// stops embedding the Hesape model or if CRUD grows a second persistence path.
+type purchaseOrderPersistent interface {
+	Save(context.Context, security.Grant) (bool, error)
+	NewQuery() *model.Builder[models.PurchaseOrder]
 }
 
-// TestEveryPurchaseOrderMethodRequiresItsGrant is the framework thesis at runtime:
-// the zero Grant -- the only one a caller outside the security package can build
-// -- never gets through, and a grant for one action does not open another.
-func TestEveryPurchaseOrderMethodRequiresItsGrant(t *testing.T) {
-	repo := purchaseOrderRepoWithoutDB()
-	ctx := context.Background()
-	var zero security.Grant
+var _ purchaseOrderPersistent = (*models.PurchaseOrder)(nil)
 
-	calls := map[string]func(security.Grant) error{
-		"Find": func(g security.Grant) error {
-			_, err := repo.Find(ctx, g, "id")
+// TestEveryPurchaseOrderReadRequiresAuthorization needs no database: the service
+// authorizes each read before it asks the Model for a query. A nil handle turns
+// an accidental query-before-policy into an immediate test failure.
+func TestEveryPurchaseOrderReadRequiresAuthorization(t *testing.T) {
+	svc := services.NewPurchaseOrderService(nil)
+	ctx := context.Background()
+	var anonymous security.Subject
+
+	calls := map[string]func() error{
+		"Get": func() error {
+			_, err := svc.Get(ctx, anonymous, "id")
 			return err
 		},
-		"List": func(g security.Grant) error {
-			_, err := repo.List(ctx, g, data.Query{})
+		"List": func() error {
+			_, err := svc.List(ctx, anonymous, data.Query{})
 			return err
 		},
-		"Create": func(g security.Grant) error {
-			_, err := repo.Create(ctx, g, models.PurchaseOrder{})
-			return err
-		},
-		"Update": func(g security.Grant) error {
-			_, err := repo.Update(ctx, g, models.PurchaseOrder{})
-			return err
-		},
-		"Delete": func(g security.Grant) error {
-			return repo.Delete(ctx, g, "id")
+		"Delete": func() error {
+			return svc.Delete(ctx, anonymous, "id")
 		},
 	}
 
 	for name, call := range calls {
-		t.Run(name+" with no grant", func(t *testing.T) {
-			if err := call(zero); !errors.Is(err, security.ErrForbidden) {
-				t.Fatalf("error = %v, want ErrForbidden", err)
-			}
-		})
-		t.Run(name+" with a grant for another action", func(t *testing.T) {
-			if err := call(security.SystemGrant("some.other.action", "t1")); !errors.Is(err, security.ErrForbidden) {
+		t.Run(name+" with no subject", func(t *testing.T) {
+			if err := call(); !errors.Is(err, security.ErrForbidden) {
 				t.Fatalf("error = %v, want ErrForbidden", err)
 			}
 		})
@@ -78,21 +70,6 @@ func TestThePurchaseOrderPolicyDeniesWhatItDoesNotKnow(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("an action with no rule was allowed: the policy falls through to allowed")
-	}
-}
-
-// TestPurchaseOrderListRejectsSortOutsideTheAllowlist keeps the one door a column
-// name could come through closed.
-func TestPurchaseOrderListRejectsSortOutsideTheAllowlist(t *testing.T) {
-	repo := purchaseOrderRepoWithoutDB()
-	// PurchaseOrderList, because listing is its own permission: a role may be
-	// allowed to open the record it was given and not to page through every one.
-	g := security.SystemGrant(policies.PurchaseOrderList, "t1")
-
-	_, err := repo.List(context.Background(), g, data.Query{Sort: "1; DROP TABLE purchase_orders"})
-
-	if !errors.Is(err, models.ErrPurchaseOrderSort) {
-		t.Fatalf("error = %v, want ErrPurchaseOrderSort", err)
 	}
 }
 

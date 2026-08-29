@@ -10,9 +10,9 @@ import (
 // updated_at, in every place that has to agree about it.
 //
 // It used to appear nowhere in this generator. The model had no field, so the
-// migration created no column, so the repository wrote no value -- and the
-// model layer, which defaults UpdatedAtColumn to "updated_at" and guards the
-// stamp on hasColumn, found no field and skipped the stamp without a word.
+// migration created no column, so the persistence layer wrote no value -- and
+// the model, which defaults UpdatedAtColumn to "updated_at" and guards the stamp
+// on hasColumn, found no field and skipped the stamp without a word.
 //
 // That is the shape of the defect worth a test of its own: four files that have
 // to agree, none of which fails when they do not. Every assertion below is one
@@ -37,7 +37,7 @@ func rendered(t *testing.T, name string) string {
 func TestTheModelDeclaresUpdatedAt(t *testing.T) {
 	model := rendered(t, "app/Models/PurchaseOrder.go")
 
-	if !strings.Contains(model, "UpdatedAt") && strings.Contains(model, "`db:\"updated_at\"`") {
+	if !strings.Contains(model, "UpdatedAt") || !strings.Contains(model, "`db:\"updated_at\"`") {
 		t.Errorf("the model has no UpdatedAt with its column tag:\n%s", model)
 	}
 	// Every column carries a tag, so that renaming a Go field is a compile
@@ -60,19 +60,17 @@ func TestTheMigrationCreatesUpdatedAt(t *testing.T) {
 	}
 }
 
-// TestTheRepositoryWritesUpdatedAtOnBothPaths is the half that was wrong twice:
-// Create never wrote the column, and Update stamped no timestamp at all.
-func TestTheRepositoryWritesUpdatedAtOnBothPaths(t *testing.T) {
-	repo := rendered(t, "app/Repositories/PurchaseOrderRepository.go")
+// TestTheModelSavesOnBothWritePaths keeps timestamp ownership on the embedded
+// Model. Save stamps created_at/updated_at for a new instance and updated_at for
+// an existing one, so Create and Update must both use it.
+func TestTheModelSavesOnBothWritePaths(t *testing.T) {
+	service := rendered(t, "app/Services/PurchaseOrderService.go")
 
-	if !strings.Contains(repo, "updated_at") {
-		t.Fatalf("the repository never names updated_at:\n%s", repo)
+	if !strings.Contains(service, "candidate.Save(ctx, g)") {
+		t.Errorf("Create does not save through the timestamp-aware Model:\n%s", service)
 	}
-	if !strings.Contains(repo, "p.UpdatedAt = p.CreatedAt") {
-		t.Error("Create does not stamp updated_at; a row that was never updated has no value in a NOT NULL column")
-	}
-	if !strings.Contains(repo, "updated_at = ? WHERE id = ?") {
-		t.Error("Update does not stamp updated_at, which makes the column a lie")
+	if !strings.Contains(service, "stored.Save(ctx, g)") {
+		t.Errorf("Update does not save through the timestamp-aware Model:\n%s", service)
 	}
 }
 

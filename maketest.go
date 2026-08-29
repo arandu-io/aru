@@ -72,11 +72,10 @@ func makeTest(args []string, stdout, stderr io.Writer) error {
 	}
 
 	fmt.Fprintf(stdout, `
-It runs without a database. Every repository method checks the Grant before it
-touches the handle, which is the property under test: the zero Grant never gets
-through, and a grant for one action does not open another. Two more come with
-it -- that %sPolicy refuses an action nobody wrote a rule for, and that List
-refuses a sort column outside the allowlist.
+It runs without a database. Every read reaches the Policy before the Model, so
+an anonymous subject is refused before a nil database handle can be touched.
+The compile-time assertion also keeps %s on the Hesape Model-first boundary,
+and the policy test refuses an action nobody wrote a rule for.
 
 Tests for the rules you write go between the arandu:begin custom markers, and
 survive --force.
@@ -86,27 +85,25 @@ survive --force.
 
 // subjectOfTheTest refuses to write a test whose subject is not there.
 //
-// The generated file names three packages and one identifier in each, and Go
-// offers no way to skip an assertion that does not compile: a test written
-// against a repository nobody wrote is a package that fails to build, and
-// `go test ./...` then reports nothing about any other test in the project
-// either. Finding that out here costs one read per file.
+// The generated file names three application packages and one identifier in
+// each, and Go offers no way to skip an assertion that does not compile: a test
+// written against a missing Model, Service or Policy makes the package fail to
+// build. Finding that out here costs one read per file.
 //
 // The identifier is checked and not only the file, because the three come from
-// the generator together: a model without Err<Entity>Sort is one written before
-// the sort allowlist existed, and the test would name a symbol that is not
-// there.
+// the generator together: an older plain struct does not satisfy the Model
+// interface the generated test names even if its file has the expected name.
 func subjectOfTheTest(root string, m gen.Module) error {
 	for _, want := range []struct{ path, declares, fix string }{
 		{
 			filepath.Join("app", "Models", m.Entity()+".go"),
-			"Err" + m.Entity() + "Sort",
+			"model.Model[" + m.Entity() + "]",
 			fmt.Sprintf("Write the entity with `aru make:model %s --fields \"name:string!\"`", m.Entity()),
 		},
 		{
-			filepath.Join("app", "Repositories", m.RepositoryType()+".go"),
-			"New" + m.RepositoryType(),
-			fmt.Sprintf("A repository comes with the module: `aru make:module %s --fields \"name:string!\"`", m.Name),
+			filepath.Join("app", "Services", m.ServiceType()+".go"),
+			"New" + m.ServiceType(),
+			fmt.Sprintf("A service comes with the module: `aru make:module %s --fields \"name:string!\"`", m.Name),
 		},
 		{
 			filepath.Join("app", "Policies", m.PolicyType()+".go"),

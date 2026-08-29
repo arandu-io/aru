@@ -4,17 +4,19 @@ import (
 	"errors"
 	"log/slog"
 	"time"
+
+	"github.com/arandu-io/framework/data"
+	"github.com/arandu-io/hesape/database/model"
 )
 
-// PurchaseOrder is the entity. It has no persistence methods: this is not Active
-// Record, and a type that can save itself can save itself from anywhere.
+// PurchaseOrder is one row of purchase_orders.
 //
-// Coming from an ORM, this is the difference that costs the most to find late:
-// there is no finder, no save and no query builder on this type. The table is
-// reached by PurchaseOrderRepository, and every method of a repository -- Find and
-// List included -- takes a security.Grant that only a Policy can issue. The
-// model is data; the Policy is the door.
+// It embeds the model, so a row returned by a query carries the connection and
+// can be saved again. Build new rows through PurchaseOrders: a struct literal has
+// no connection and its write methods return model.ErrUnwired.
 type PurchaseOrder struct {
+	model.Model[PurchaseOrder]
+
 	ID            string    `db:"id"`
 	Reference     string    `db:"reference"`
 	SupplierEmail string    `db:"supplier_email"`
@@ -26,13 +28,22 @@ type PurchaseOrder struct {
 	UpdatedAt     time.Time `db:"updated_at"`
 }
 
-// What can go wrong with a purchase_order, declared beside the entity rather than
-// inside the repository.
+// PurchaseOrders returns the configured model for purchase_orders.
 //
-// The controller maps them to a status code and the repository returns them, so
-// both need to name them -- and a controller that imported the repository to
-// reach an error would be a controller with a door to the data layer, which is
-// the one thing the tree exists to prevent.
+// The primary key is application-generated text, so it does not increment.
+// The tenant scope is disabled explicitly because this table is global.
+func PurchaseOrders(db *data.DB) *model.Model[PurchaseOrder] {
+	m := model.NewModel[PurchaseOrder]("purchase_orders", db, db.GetQueryGrammar(), db.GetPostProcessor())
+	m.KeyType = "string"
+	m.Incrementing = false
+	m.TenantColumn = ""
+	return m
+}
+
+// What can go wrong with a purchase_order, declared beside the entity.
+//
+// The controller maps them to a status code and the service returns them, so
+// both need to name them without giving the controller a door to the data layer.
 var (
 	// ErrPurchaseOrderNotFound is returned when no row matches.
 	ErrPurchaseOrderNotFound = errors.New("purchase_order: not found")

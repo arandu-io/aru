@@ -70,8 +70,8 @@ func TestGolden(t *testing.T) {
 			// the test rather than quietly rewriting the corpus. Adding one to
 			// the generator means changing this number by hand, which is the
 			// review the number exists to force.
-			if len(files) != 13 {
-				t.Fatalf("generated %d files, want 13", len(files))
+			if len(files) != 12 {
+				t.Fatalf("generated %d files, want 12", len(files))
 			}
 
 			// The generated files name the golden files, so what this loop can
@@ -144,43 +144,62 @@ func TestGeneratedCodeIsDeterministic(t *testing.T) {
 	}
 }
 
-// TestEveryRepositoryMethodChecksTheGrant reads the generated source and refuses
-// a method that reaches the database without checking first. It is a crude test
-// on purpose: it would catch a template edit that quietly drops the check, which
-// is the one change nobody would notice in review.
-func TestEveryRepositoryMethodChecksTheGrant(t *testing.T) {
+// TestEveryServiceMethodAuthorizesBeforeTheModel reads the generated source and
+// refuses a service method that reaches persistence before authorization. It is
+// deliberately structural: a nil database test can prove the denial path, but
+// this keeps the intended order visible in every emitted method.
+func TestEveryServiceMethodAuthorizesBeforeTheModel(t *testing.T) {
 	files, err := gen.Generate(spec(true))
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
 
-	var repo string
+	var service string
 	for _, f := range files {
-		if strings.HasSuffix(f.Path, "Repository.go") {
-			repo = string(f.Content)
+		if strings.HasSuffix(f.Path, "Service.go") {
+			service = string(f.Content)
 		}
 	}
-	if repo == "" {
-		t.Fatal("no repository was generated")
+	if service == "" {
+		t.Fatal("no service was generated")
 	}
 
-	// The receiver carries the entity now: app/Repositories/ is one package for
-	// every entity, and `Repo` would collide on the second module generated.
-	entity := spec(true).Entity()
-
-	for _, method := range []string{"func (r *" + entity + "Repository) Find", "func (r *" + entity + "Repository) List",
-		"func (r *" + entity + "Repository) Create", "func (r *" + entity + "Repository) Update", "func (r *" + entity + "Repository) Delete"} {
-		i := strings.Index(repo, method)
+	for _, method := range []string{"Create", "Get", "List"} {
+		declaration := "func (s *PurchaseOrderService) " + method
+		i := strings.Index(service, declaration)
 		if i < 0 {
-			t.Errorf("%s is missing", method)
+			t.Errorf("%s is missing", declaration)
 			continue
 		}
-		body := repo[i:]
+		body := service[i:]
 		if end := strings.Index(body[1:], "\nfunc "); end > 0 {
 			body = body[:end]
 		}
-		if !strings.Contains(body, "g.Check(") {
-			t.Errorf("%s reaches the database without checking the Grant", method)
+		authorized := strings.Index(body, "security.Authorize(")
+		model := strings.Index(body, "models.PurchaseOrders(s.db)")
+		if authorized < 0 || model < 0 || authorized > model {
+			t.Errorf("%s does not authorize before reaching the Model", declaration)
+		}
+	}
+
+	for _, path := range []struct {
+		method, terminal string
+	}{{"Update", "stored.Save(ctx, g)"}, {"Delete", "stored.Delete(ctx, g)"}} {
+		declaration := "func (s *PurchaseOrderService) " + path.method
+		i := strings.Index(service, declaration)
+		if i < 0 {
+			t.Errorf("%s is missing", declaration)
+			continue
+		}
+		body := service[i:]
+		if end := strings.Index(body[1:], "\nfunc "); end > 0 {
+			body = body[:end]
+		}
+		read := strings.Index(body, "s.Get(ctx, actor")
+		authorized := strings.Index(body, "security.Authorize(")
+		terminal := strings.Index(body, path.terminal)
+		if read < 0 || authorized < read || terminal < authorized {
+			t.Errorf("%s does not read, authorize and then write through the Model", declaration)
 		}
 	}
 }
@@ -217,24 +236,18 @@ func TestTheGeneratedPolicyDeniesByDefault(t *testing.T) {
 	t.Fatal("no policy was generated")
 }
 
-// TestTenantScopesEveryQuery: with --tenant, no statement may read without the
-// tenant from the Grant.
+// TestTenantScopesEveryQuery: a tenant Model retains Hesape's tenant_id default,
+// while a global Model must opt out explicitly. Every Builder terminal then
+// applies that configuration from the Grant.
 func TestTenantScopesEveryQuery(t *testing.T) {
-	files, err := gen.Generate(spec(true))
-	if err != nil {
-		t.Fatalf("Generate: %v", err)
+	tenant := byName(t, spec(true))["PurchaseOrder.go"]
+	if strings.Contains(tenant, `m.TenantColumn = ""`) {
+		t.Error("the tenant Model disables its mandatory tenant scope")
 	}
 
-	for _, f := range files {
-		if !strings.HasSuffix(f.Path, "Repository.go") {
-			continue
-		}
-		repo := string(f.Content)
-		if strings.Count(repo, "data.Tenant(g)") < 4 {
-			t.Errorf("the tenant from the Grant appears %d times; every statement needs it",
-				strings.Count(repo, "data.Tenant(g)"))
-		}
-		return
+	global := byName(t, spec(false))["PurchaseOrder.go"]
+	if !strings.Contains(global, `m.TenantColumn = ""`) {
+		t.Error("the global Model does not opt out of the tenant scope explicitly")
 	}
 }
 

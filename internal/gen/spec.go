@@ -421,7 +421,7 @@ func (m Module) Plural() string { return exported(m.Table()) }
 // Unexported is the entity with a lowercase initial: "purchaseOrder".
 //
 // Every module now generates into shared packages -- app/Models, app/Policies,
-// app/Repositories -- so an unexported package-level name has to carry the
+// app/Services -- so an unexported package-level name has to carry the
 // entity or the second module fails to compile.
 func (m Module) Unexported() string {
 	e := m.Entity()
@@ -502,7 +502,8 @@ func (m Module) ModelsImport() string { return m.ModulePath + "/app/Models" }
 // PoliciesImport is the import path of app/Policies.
 func (m Module) PoliciesImport() string { return m.ModulePath + "/app/Policies" }
 
-// RepositoriesImport is the import path of app/Repositories.
+// RepositoriesImport is the legacy import path used by granular commands that
+// still target an application-owned repository. Native modules do not emit one.
 func (m Module) RepositoriesImport() string { return m.ModulePath + "/app/Repositories" }
 
 // ServicesImport is the import path of app/Services.

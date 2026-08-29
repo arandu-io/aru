@@ -1,19 +1,17 @@
 package gen
 
 // The templates below emit into the conventional tree: app/Models, app/Policies,
-// app/Repositories, app/Services, app/Http/Requests, app/Http/Controllers,
-// database/migrations and resources/views. There is no modules/<name>/, and the
-// reason is recognition: the developer this framework is for opens a project and
-// looks for app/Http/Controllers.
+// app/Services, app/Http/Requests, app/Http/Controllers, database/migrations and
+// resources/views. There is no modules/<name>/, and the reason is recognition:
+// the developer this framework is for opens a project and looks for
+// app/Http/Controllers.
 //
-// Every one of them emits the mandatory path: Validate, Authorize, Grant,
-// Repository. There is no template that reaches a repository without a Grant,
-// because there is no way to write one that compiles.
+// Together they emit the mandatory path: Validate, Authorize, Grant, Model. The
+// service owns the database handle and no generated controller reaches it.
 //
 // One consequence of the flat tree runs through all of them: a package holds
 // every module's files, so no unexported package-level name can be generic. What
-// would otherwise be `columns`, `sortable` and `NewID` is `invoiceColumns`,
-// `invoiceSortable` and a method on the repository -- or, where the framework
+// would otherwise be `sortable` is `invoiceSortable` -- or, where the framework
 // already has it, `data.NewID`.
 
 const modelTemplate = `package models
@@ -22,17 +20,19 @@ import (
 	"errors"
 	"log/slog"
 	"time"
+
+	"github.com/arandu-io/framework/data"
+	"github.com/arandu-io/hesape/database/model"
 )
 
-// {{.Entity}} is the entity. It has no persistence methods: this is not Active
-// Record, and a type that can save itself can save itself from anywhere.
+// {{.Entity}} is one row of {{.Table}}.
 //
-// Coming from an ORM, this is the difference that costs the most to find late:
-// there is no finder, no save and no query builder on this type. The table is
-// reached by {{.Entity}}Repository, and every method of a repository -- Find and
-// List included -- takes a security.Grant that only a Policy can issue. The
-// model is data; the Policy is the door.
+// It embeds the model, so a row returned by a query carries the connection and
+// can be saved again. Build new rows through {{.Plural}}: a struct literal has
+// no connection and its write methods return model.ErrUnwired.
 type {{.Entity}} struct {
+	model.Model[{{.Entity}}]
+
 	ID        string    ` + "`" + `db:"id"` + "`" + `
 {{- if .Tenant}}
 	TenantID  string    ` + "`" + `db:"tenant_id"` + "`" + `
@@ -44,13 +44,24 @@ type {{.Entity}} struct {
 	UpdatedAt time.Time ` + "`" + `db:"updated_at"` + "`" + `
 }
 
-// What can go wrong with a {{.Name}}, declared beside the entity rather than
-// inside the repository.
+// {{.Plural}} returns the configured model for {{.Table}}.
 //
-// The controller maps them to a status code and the repository returns them, so
-// both need to name them -- and a controller that imported the repository to
-// reach an error would be a controller with a door to the data layer, which is
-// the one thing the tree exists to prevent.
+// The primary key is application-generated text, so it does not increment.
+// The tenant scope is {{if .Tenant}}left at its tenant_id default{{else}}disabled explicitly because this table is global{{end}}.
+func {{.Plural}}(db *data.DB) *model.Model[{{.Entity}}] {
+	m := model.NewModel[{{.Entity}}]({{quote .Table}}, db, db.GetQueryGrammar(), db.GetPostProcessor())
+	m.KeyType = "string"
+	m.Incrementing = false
+{{- if not .Tenant}}
+	m.TenantColumn = ""
+{{- end}}
+	return m
+}
+
+// What can go wrong with a {{.Name}}, declared beside the entity.
+//
+// The controller maps them to a status code and the service returns them, so
+// both need to name them without giving the controller a door to the data layer.
 var (
 	// Err{{.Entity}}NotFound is returned when no row matches{{if .Tenant}}, including when the row
 	// exists in another tenant -- the two are deliberately indistinguishable{{end}}.
@@ -159,21 +170,21 @@ func ({{.PolicyType}}) Can(ctx context.Context, s security.Subject, a security.A
 }
 `
 
-const repositoryTemplate = `package repositories
+const serviceTemplate = `package services
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/arandu-io/framework/data"
+	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/database/model"
 
 	models "{{.ModelsImport}}"
 	policies "{{.PoliciesImport}}"
+	requests "{{.RequestsImport}}"
 )
 
 // Pagination bounds for {{.Table}}. A request that asks for everything gets the
@@ -184,65 +195,110 @@ const (
 	{{.Unexported}}MaxLimit     = 200
 )
 
-// {{.RepositoryType}} is the only door to the {{.Table}} table.
-//
-// Every method starts with g.Check. The Grant is required by the signature, so
-// forgetting it is a compile error, and the check proves the grant was issued for
-// this exact action -- which catches copy-paste between methods.
-//
-// The SQL uses "?" placeholders and types every supported database shares, so
-// these statements run unchanged on SQLite and PostgreSQL.
-type {{.RepositoryType}} struct {
-	db *data.DB
-}
-
-// New{{.RepositoryType}} returns a repository over an instrumented handle.
-func New{{.RepositoryType}}(db *data.DB) *{{.RepositoryType}} { return &{{.RepositoryType}}{db: db} }
-
-// Compile-time proof of the contract.
-var _ data.Repository[models.{{.Entity}}, string] = (*{{.RepositoryType}})(nil)
-
-const {{.Unexported}}Columns = ` + "`" + `id, {{if .Tenant}}tenant_id, {{end}}{{range .Fields}}{{.Column}}, {{end}}created_at, updated_at` + "`" + `
-
-// Find returns one {{.Name}} by id{{if .Tenant}}, scoped to the grant's tenant{{end}}.
-func (r *{{.RepositoryType}}) Find(ctx context.Context, g security.Grant, id string) (models.{{.Entity}}, error) {
-	if err := g.Check(policies.{{.Entity}}View); err != nil {
-		return models.{{.Entity}}{}, err
-	}
-{{- if .Tenant}}
-	// The tenant comes from the Grant, never from the request.
-	row := r.db.QueryRowContext(ctx,
-		` + "`" + `SELECT ` + "`" + `+{{.Unexported}}Columns+` + "`" + ` FROM {{.Table}} WHERE id = ? AND tenant_id = ?` + "`" + `,
-		id, data.Tenant(g))
-{{- else}}
-	row := r.db.QueryRowContext(ctx,
-		` + "`" + `SELECT ` + "`" + `+{{.Unexported}}Columns+` + "`" + ` FROM {{.Table}} WHERE id = ?` + "`" + `, id)
-{{- end}}
-	return r.scan(row)
-}
-
-// {{.Unexported}}Sortable is the ordering allowlist. A sort field is a column name, and a
-// column name taken from the request is injection through a door nobody watches.
+// {{.Unexported}}Sortable is the ordering allowlist. A sort field is a column
+// name, and a column name taken from the request is injection through a door
+// nobody watches.
 var {{.Unexported}}Sortable = map[string]string{
-	"": "created_at",
+	"":           "created_at",
 	"created_at": "created_at",
 {{- range .Sortable}}
 	"{{.Column}}": "{{.Column}}",
 {{- end}}
 }
 
-// List returns a page of {{.Table}}{{if .Tenant}} in the grant's tenant{{end}}.
-//
-// Pagination is keyset based: OFFSET grows more expensive with every page and
-// skips rows when data changes underneath it.
-func (r *{{.RepositoryType}}) List(ctx context.Context, g security.Grant, q data.Query) ([]models.{{.Entity}}, error) {
-	// {{.Entity}}List, not {{.Entity}}View. The specification can grant them to
-	// different roles -- "a support agent may open the record it was given, but
-	// may not page through every record there is" -- and checking view here made
-	// the list permission decorative: whoever could read one could read all of them.
-	if err := g.Check(policies.{{.Entity}}List); err != nil {
+// {{.ServiceType}} holds the business rules. It receives its dependencies through
+// the constructor -- explicit wiring, no container.
+type {{.ServiceType}} struct {
+	db     *data.DB
+	policy policies.{{.PolicyType}}
+}
+
+// New{{.ServiceType}} wires the service.
+func New{{.ServiceType}}(db *data.DB) *{{.ServiceType}} {
+	return &{{.ServiceType}}{db: db}
+}
+
+// Create walks the mandatory path: validate, Authorize, Grant, Model.
+// There is no other order that compiles.
+func (s *{{.ServiceType}}) Create(ctx context.Context, actor security.Subject, in requests.{{.StoreRequest}}) (*models.{{.Entity}}, error) {
+	if errs := in.Validate(); errs.Any() {
+		return nil, errs
+	}
+
+	proposed := models.{{.Entity}}{}
+{{- range .Fields}}
+{{- if .IsEmail}}
+	proposed.{{.GoName}} = s.normalize(in.{{.GoName}})
+{{- else}}
+	proposed.{{.GoName}} = {{.Bind "in"}}
+{{- end}}
+{{- end}}
+
+	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}Create, proposed)
+	if err != nil {
 		return nil, err
 	}
+	if proposed.ID, err = data.NewID(); err != nil {
+		return nil, err
+	}
+{{- if .Tenant}}
+	// The tenant comes from the Grant, never from the request or the subject
+	// directly. The model writes the same value over the insert attributes.
+	proposed.TenantID = data.Tenant(g)
+{{- end}}
+
+	instance, err := models.{{.Plural}}(s.db).NewInstance(nil, false)
+	if err != nil {
+		return nil, err
+	}
+	candidate := instance.Entity
+	candidate.ID = proposed.ID
+{{- if .Tenant}}
+	candidate.TenantID = proposed.TenantID
+{{- end}}
+{{- range .Fields}}
+	candidate.{{.GoName}} = proposed.{{.GoName}}
+{{- end}}
+	if _, err := candidate.Save(ctx, g); err != nil {
+		if s.conflict(err) {
+			return nil, models.Err{{.Entity}}Conflict
+		}
+		return nil, err
+	}
+	// Guarded: the entity is a struct value, and boxing it into ` + "`" + `any` + "`" + ` allocates
+	// at the call site even though RecordEvent is a no-op on a nil Collector.
+	if col := observability.FromContext(ctx); col != nil {
+		col.RecordEvent("{{.Name}}.created", candidate)
+	}
+	return candidate, nil
+}
+
+// Get returns one {{.Name}}.
+func (s *{{.ServiceType}}) Get(ctx context.Context, actor security.Subject, id string) (*models.{{.Entity}}, error) {
+	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}View, models.{{.Entity}}{})
+	if err != nil {
+		return nil, err
+	}
+	found, err := models.{{.Plural}}(s.db).NewQuery().WhereKey(id).First(ctx, g)
+	if err != nil {
+		return nil, err
+	}
+	if found == nil {
+		return nil, models.Err{{.Entity}}NotFound
+	}
+	if _, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}View, *found); err != nil {
+		return nil, err
+	}
+	return found, nil
+}
+
+// List returns a page of {{.Table}}.
+func (s *{{.ServiceType}}) List(ctx context.Context, actor security.Subject, q data.Query) ([]*models.{{.Entity}}, error) {
+	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}List, models.{{.Entity}}{})
+	if err != nil {
+		return nil, err
+	}
+
 	column, ok := {{.Unexported}}Sortable[q.Sort]
 	if !ok {
 		return nil, fmt.Errorf("%w: %q", models.Err{{.Entity}}Sort, q.Sort)
@@ -256,257 +312,25 @@ func (r *{{.RepositoryType}}) List(ctx context.Context, g security.Grant, q data
 		limit = {{.Unexported}}MaxLimit
 	}
 
-{{if .Tenant}}	query := ` + "`" + `SELECT ` + "`" + ` + {{.Unexported}}Columns + ` + "`" + ` FROM {{.Table}} WHERE tenant_id = ?` + "`" + `
-	args := []any{data.Tenant(g)}
+	rows := models.{{.Plural}}(s.db)
+	page := rows.NewQuery()
 	if q.Cursor != "" {
-		// The predicate names the column the ORDER BY names. It used to be
-		// hardcoded to created_at while the ordering followed q.Sort, so any
-		// sort other than the default computed the page boundary on one
-		// ordering and returned the rows in another -- pages that skipped rows
-		// and pages that repeated them, silently. The column comes from the
-		// allowlist above, never from the request.
-		query += ` + "`" + ` AND (` + "`" + ` + column + ` + "`" + ` > (SELECT ` + "`" + ` + column + ` + "`" + ` FROM {{.Table}} WHERE id = ? AND tenant_id = ?)
-		            OR (` + "`" + ` + column + ` + "`" + ` = (SELECT ` + "`" + ` + column + ` + "`" + ` FROM {{.Table}} WHERE id = ? AND tenant_id = ?) AND id > ?))` + "`" + `
-		args = append(args, q.Cursor, args[0], q.Cursor, args[0], q.Cursor)
-	}
-{{else}}	query := ` + "`" + `SELECT ` + "`" + ` + {{.Unexported}}Columns + ` + "`" + ` FROM {{.Table}} WHERE 1 = 1` + "`" + `
-	var args []any
-	if q.Cursor != "" {
-		// See the tenant branch: the predicate follows q.Sort, not created_at.
-		query += ` + "`" + ` AND (` + "`" + ` + column + ` + "`" + ` > (SELECT ` + "`" + ` + column + ` + "`" + ` FROM {{.Table}} WHERE id = ?)
-		            OR (` + "`" + ` + column + ` + "`" + ` = (SELECT ` + "`" + ` + column + ` + "`" + ` FROM {{.Table}} WHERE id = ?) AND id > ?))` + "`" + `
-		args = append(args, q.Cursor, q.Cursor, q.Cursor)
-	}
-{{end}}	query += ` + "`" + ` ORDER BY ` + "`" + ` + column + ` + "`" + `, id LIMIT ?` + "`" + `
-	args = append(args, limit)
-
-	rows, err := r.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var out []models.{{.Entity}}
-	for rows.Next() {
-		{{.Receiver}}, err := r.scan(rows)
+		anchor, err := rows.NewQuery().WhereKey(q.Cursor).Value(ctx, g, column)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, {{.Receiver}})
-	}
-	return out, rows.Err()
-}
-
-// Create inserts the {{.Name}} and returns it as stored.
-func (r *{{.RepositoryType}}) Create(ctx context.Context, g security.Grant, {{.Receiver}} models.{{.Entity}}) (models.{{.Entity}}, error) {
-	if err := g.Check(policies.{{.Entity}}Create); err != nil {
-		return models.{{.Entity}}{}, err
-	}
-
-	var err error
-	if {{.Receiver}}.ID == "" {
-		// The id comes from the application, not from a database default:
-		// gen_random_uuid, UUID() and randomblob are three spellings of one idea,
-		// and depending on any of them would tie the schema to one engine.
-		if {{.Receiver}}.ID, err = data.NewID(); err != nil {
-			return models.{{.Entity}}{}, err
+		if anchor == nil {
+			return nil, nil
 		}
-	}
-{{- if .Tenant}}
-	{{.Receiver}}.TenantID = data.Tenant(g)
-{{- end}}
-{{- range .Fields}}{{if .IsEmail}}
-	{{$.Receiver}}.{{.GoName}} = r.normalize({{$.Receiver}}.{{.GoName}})
-{{- end}}{{end}}
-	// Both stamps are the repository's, and they are the same instant on insert:
-	// a row that was never updated has updated_at equal to created_at, which is
-	// what "not updated since it was written" reads as.
-	{{.Receiver}}.CreatedAt = time.Now().UTC()
-	{{.Receiver}}.UpdatedAt = {{.Receiver}}.CreatedAt
-
-	_, err = r.db.ExecContext(ctx,
-		` + "`" + `INSERT INTO {{.Table}} (` + "`" + `+{{.Unexported}}Columns+` + "`" + `) VALUES ({{if .Tenant}}?, {{end}}?{{range .Fields}}, ?{{end}}, ?, ?)` + "`" + `,
-		{{.Receiver}}.ID, {{if .Tenant}}{{.Receiver}}.TenantID, {{end}}{{range .Fields}}{{.Bind $.Receiver}}, {{end}}{{.Receiver}}.CreatedAt, {{.Receiver}}.UpdatedAt)
-	if err != nil {
-		if r.conflict(err) {
-			return models.{{.Entity}}{}, models.Err{{.Entity}}Conflict
-		}
-		return models.{{.Entity}}{}, err
-	}
-	return {{.Receiver}}, nil
-}
-
-// Update writes the mutable fields.{{if .Tenant}} The tenant is not one of them:
-// moving a row between tenants is not an update, it is a migration.{{end}}
-func (r *{{.RepositoryType}}) Update(ctx context.Context, g security.Grant, {{.Receiver}} models.{{.Entity}}) (models.{{.Entity}}, error) {
-	if err := g.Check(policies.{{.Entity}}Update); err != nil {
-		return models.{{.Entity}}{}, err
-	}
-{{- range .Fields}}{{if .IsEmail}}
-	{{$.Receiver}}.{{.GoName}} = r.normalize({{$.Receiver}}.{{.GoName}})
-{{- end}}{{end}}
-
-	// The stamp is the repository's here, not the caller's: an update that left
-	// updated_at alone would make the column a lie, and the caller has no reason
-	// to remember a column the schema owns.
-	{{.Receiver}}.UpdatedAt = time.Now().UTC()
-
-	res, err := r.db.ExecContext(ctx,
-		` + "`" + `UPDATE {{.Table}} SET {{range .Fields}}{{.Column}} = ?, {{end}}updated_at = ? WHERE id = ?{{if .Tenant}} AND tenant_id = ?{{end}}` + "`" + `,
-		{{range .Fields}}{{.Bind $.Receiver}}, {{end}}{{.Receiver}}.UpdatedAt, {{.Receiver}}.ID{{if .Tenant}}, data.Tenant(g){{end}})
-	if err != nil {
-		if r.conflict(err) {
-			return models.{{.Entity}}{}, models.Err{{.Entity}}Conflict
-		}
-		return models.{{.Entity}}{}, err
-	}
-	if n, err := res.RowsAffected(); err == nil && n == 0 {
-		return models.{{.Entity}}{}, models.Err{{.Entity}}NotFound
-	}
-	return {{.Receiver}}, nil
-}
-
-// Delete removes one {{.Name}}{{if .Tenant}} within the grant's tenant{{end}}.
-func (r *{{.RepositoryType}}) Delete(ctx context.Context, g security.Grant, id string) error {
-	if err := g.Check(policies.{{.Entity}}Delete); err != nil {
-		return err
-	}
-	res, err := r.db.ExecContext(ctx,
-		` + "`" + `DELETE FROM {{.Table}} WHERE id = ?{{if .Tenant}} AND tenant_id = ?{{end}}` + "`" + `, id{{if .Tenant}}, data.Tenant(g){{end}})
-	if err != nil {
-		return err
-	}
-	if n, err := res.RowsAffected(); err == nil && n == 0 {
-		return models.Err{{.Entity}}NotFound
-	}
-	return nil
-}
-
-// Health reports whether the repository can reach its storage.
-//
-// Nothing calls it out of the box. It is here so AppServiceProvider can
-// implement kernel.Health over the repositories it owns, which is what puts this
-// table on /_arandu/health and on the error page's diagnosis.
-func (r *{{.RepositoryType}}) Health(ctx context.Context) error { return r.db.PingContext(ctx) }
-
-// scan reads one row.
-//
-// It takes the interface inline rather than a named one, and it is a method
-// rather than a function, for the same reason as the helpers below: every
-// repository of the application shares this package, and a second module
-// declaring rowScanner would not compile.
-func (r *{{.RepositoryType}}) scan(row interface{ Scan(dest ...any) error }) (models.{{.Entity}}, error) {
-	var {{.Receiver}} models.{{.Entity}}
-	err := row.Scan(&{{.Receiver}}.ID, {{if .Tenant}}&{{.Receiver}}.TenantID, {{end}}{{range .Fields}}&{{$.Receiver}}.{{.GoName}}, {{end}}&{{.Receiver}}.CreatedAt, &{{.Receiver}}.UpdatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return models.{{.Entity}}{}, models.Err{{.Entity}}NotFound
-	}
-	if err != nil {
-		return models.{{.Entity}}{}, err
-	}
-	return {{.Receiver}}, nil
-}
-
-// normalize lowercases and trims, which is what keeps a plain UNIQUE index
-// case-insensitive on every engine.
-func (r *{{.RepositoryType}}) normalize(s string) string {
-	return strings.ToLower(strings.TrimSpace(s))
-}
-
-// conflict recognizes a duplicate key across engines by message, which is the
-// price of not importing a driver into a repository.
-func (r *{{.RepositoryType}}) conflict(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "unique constraint") ||
-		strings.Contains(msg, "duplicate key") ||
-		strings.Contains(msg, "duplicate entry")
-}
-
-// arandu:begin custom
-// Queries beyond the five above go here, and survive regeneration. Keep the
-// g.Check as the first line of each one.
-// arandu:end custom
-`
-
-const serviceTemplate = `package services
-
-import (
-	"context"
-
-	"github.com/arandu-io/framework/data"
-	"github.com/arandu-io/framework/observability"
-	"github.com/arandu-io/framework/security"
-
-	models "{{.ModelsImport}}"
-	policies "{{.PoliciesImport}}"
-	repositories "{{.RepositoriesImport}}"
-	requests "{{.RequestsImport}}"
-)
-
-// {{.ServiceType}} holds the business rules. It receives its dependencies through
-// the constructor -- explicit wiring, no container.
-type {{.ServiceType}} struct {
-	repo   *repositories.{{.RepositoryType}}
-	policy policies.{{.PolicyType}}
-}
-
-// New{{.ServiceType}} wires the service.
-func New{{.ServiceType}}(repo *repositories.{{.RepositoryType}}) *{{.ServiceType}} {
-	return &{{.ServiceType}}{repo: repo}
-}
-
-// Create walks the mandatory path: validate, Authorize, Grant, Repository.
-// There is no other order that compiles.
-func (s *{{.ServiceType}}) Create(ctx context.Context, actor security.Subject, in requests.{{.StoreRequest}}) (models.{{.Entity}}, error) {
-	if errs := in.Validate(); errs.Any() {
-		return models.{{.Entity}}{}, errs
+		page = page.Where(func(after *model.Builder[models.{{.Entity}}]) {
+			after.Where(column, ">", anchor).
+				OrWhere(func(equal *model.Builder[models.{{.Entity}}]) {
+					equal.Where(column, "=", anchor).Where("id", ">", q.Cursor)
+				})
+		})
 	}
 
-	candidate := models.{{.Entity}}{
-{{- if .Tenant}}
-		TenantID: actor.Tenant,
-{{- end}}
-{{- range .Fields}}
-		{{.GoName}}: in.{{.GoName}},
-{{- end}}
-	}
-
-	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}Create, candidate)
-	if err != nil {
-		return models.{{.Entity}}{}, err
-	}
-
-	created, err := s.repo.Create(ctx, g, candidate)
-	if err != nil {
-		return models.{{.Entity}}{}, err
-	}
-	// Guarded: the entity is a struct value, and boxing it into ` + "`" + `any` + "`" + ` allocates
-	// at the call site even though RecordEvent is a no-op on a nil Collector.
-	if col := observability.FromContext(ctx); col != nil {
-		col.RecordEvent("{{.Name}}.created", created)
-	}
-	return created, nil
-}
-
-// Get returns one {{.Name}}.
-func (s *{{.ServiceType}}) Get(ctx context.Context, actor security.Subject, id string) (models.{{.Entity}}, error) {
-	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}View, models.{{.Entity}}{})
-	if err != nil {
-		return models.{{.Entity}}{}, err
-	}
-	return s.repo.Find(ctx, g, id)
-}
-
-// List returns a page of {{.Table}}.
-func (s *{{.ServiceType}}) List(ctx context.Context, actor security.Subject, q data.Query) ([]models.{{.Entity}}, error) {
-	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}List, models.{{.Entity}}{})
-	if err != nil {
-		return nil, err
-	}
-	return s.repo.List(ctx, g, q)
+	return page.OrderBy(column).OrderBy("id").Limit(limit).Get(ctx, g)
 }
 
 // Update changes the mutable fields.
@@ -514,53 +338,76 @@ func (s *{{.ServiceType}}) List(ctx context.Context, actor security.Subject, q d
 // It reads before writing, so the policy decides against the stored row rather
 // than against what the client claims the row is. Skipping this is how a check
 // passes on attacker-supplied data.
-func (s *{{.ServiceType}}) Update(ctx context.Context, actor security.Subject, in requests.{{.UpdateRequest}}) (models.{{.Entity}}, error) {
+func (s *{{.ServiceType}}) Update(ctx context.Context, actor security.Subject, in requests.{{.UpdateRequest}}) (*models.{{.Entity}}, error) {
 	if errs := in.Validate(); errs.Any() {
-		return models.{{.Entity}}{}, errs
+		return nil, errs
 	}
 
-	view, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}View, models.{{.Entity}}{})
+	stored, err := s.Get(ctx, actor, in.ID)
 	if err != nil {
-		return models.{{.Entity}}{}, err
-	}
-	stored, err := s.repo.Find(ctx, view, in.ID)
-	if err != nil {
-		return models.{{.Entity}}{}, err
+		return nil, err
 	}
 
-	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}Update, stored)
+	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}Update, *stored)
 	if err != nil {
-		return models.{{.Entity}}{}, err
+		return nil, err
 	}
 
 {{- range .Fields}}
-	stored.{{.GoName}} = in.{{.GoName}}
+{{- if .IsEmail}}
+	stored.{{.GoName}} = s.normalize(in.{{.GoName}})
+{{- else}}
+	stored.{{.GoName}} = {{.Bind "in"}}
 {{- end}}
-	return s.repo.Update(ctx, g, stored)
+{{- end}}
+	if _, err := stored.Save(ctx, g); err != nil {
+		if s.conflict(err) {
+			return nil, models.Err{{.Entity}}Conflict
+		}
+		return nil, err
+	}
+	return stored, nil
 }
 
 // Delete removes a {{.Name}}.
 func (s *{{.ServiceType}}) Delete(ctx context.Context, actor security.Subject, id string) error {
-	view, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}View, models.{{.Entity}}{})
-	if err != nil {
-		return err
-	}
-	stored, err := s.repo.Find(ctx, view, id)
+	stored, err := s.Get(ctx, actor, id)
 	if err != nil {
 		return err
 	}
 
-	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}Delete, stored)
+	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}Delete, *stored)
 	if err != nil {
 		return err
 	}
-	if err := s.repo.Delete(ctx, g, id); err != nil {
+	deleted, err := stored.Delete(ctx, g)
+	if err != nil {
 		return err
+	}
+	if !deleted {
+		return models.Err{{.Entity}}NotFound
 	}
 	if col := observability.FromContext(ctx); col != nil {
 		col.RecordEvent("{{.Name}}.deleted", stored)
 	}
 	return nil
+}
+
+// normalize lowercases and trims text whose uniqueness is case-insensitive.
+func (s *{{.ServiceType}}) normalize(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+// conflict recognizes a duplicate key across engines by message, which is the
+// price of keeping database drivers outside the service.
+func (s *{{.ServiceType}}) conflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "unique constraint") ||
+		strings.Contains(message, "duplicate key") ||
+		strings.Contains(message, "duplicate entry")
 }
 
 // arandu:begin custom
@@ -669,7 +516,7 @@ import (
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
-	"github.com/arandu-io/framework/view"
+	"github.com/arandu-io/hesape/view"
 
 	requests "{{.RequestsImport}}"
 	models "{{.ModelsImport}}"
@@ -716,7 +563,7 @@ var (
 )
 
 // {{.Unexported}}PerPage is how many records the listing asks for when the request
-// does not say. The repository has a bound of its own: this one is about the
+// does not say. The service has a bound of its own: this one is about the
 // screen, that one is about the database.
 const {{.Unexported}}PerPage = 25
 
@@ -924,7 +771,7 @@ func (c *{{.Controller}}) Destroy(ctx *fhttp.Context) error {
 // The address is settled here too, for the same reason and one more: the view
 // has no route table, so a link written there could only be a literal. This
 // takes the context so it can ask for the route by name.
-func (c *{{.Controller}}) row(ctx *fhttp.Context, {{.Receiver}} models.{{.Entity}}) views.{{.RowStruct}} {
+func (c *{{.Controller}}) row(ctx *fhttp.Context, {{.Receiver}} *models.{{.Entity}}) views.{{.RowStruct}} {
 	return views.{{.RowStruct}}{
 		ID:  {{.Receiver}}.ID,
 		URL: ctx.URL("{{.RouteName "show"}}", {{.Receiver}}.ID),
@@ -936,7 +783,7 @@ func (c *{{.Controller}}) row(ctx *fhttp.Context, {{.Receiver}} models.{{.Entity
 }
 
 // form fills the edit form from the stored record.
-func (c *{{.Controller}}) form({{.Receiver}} models.{{.Entity}}) views.{{.FormStruct}} {
+func (c *{{.Controller}}) form({{.Receiver}} *models.{{.Entity}}) views.{{.FormStruct}} {
 	return views.{{.FormStruct}}{
 		ID: {{.Receiver}}.ID,
 {{- range .Fields}}
@@ -1129,56 +976,48 @@ import (
 
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/database/model"
 
 	models "{{.ModelsImport}}"
 	policies "{{.PoliciesImport}}"
-	repositories "{{.RepositoriesImport}}"
+	services "{{.ServicesImport}}"
 )
 
-// These tests need no database: every repository method checks the Grant before
-// touching the handle, which is exactly the property under test.
-func {{.Unexported}}RepoWithoutDB() *repositories.{{.RepositoryType}} {
-	return repositories.New{{.RepositoryType}}(nil)
+// {{.Unexported}}Persistent is the Model-first persistence boundary this module
+// depends on. The proof below fails at compile time if the generated entity
+// stops embedding the Hesape model or if CRUD grows a second persistence path.
+type {{.Unexported}}Persistent interface {
+	Save(context.Context, security.Grant) (bool, error)
+	NewQuery() *model.Builder[models.{{.Entity}}]
 }
 
-// TestEvery{{.Entity}}MethodRequiresItsGrant is the framework thesis at runtime:
-// the zero Grant -- the only one a caller outside the security package can build
-// -- never gets through, and a grant for one action does not open another.
-func TestEvery{{.Entity}}MethodRequiresItsGrant(t *testing.T) {
-	repo := {{.Unexported}}RepoWithoutDB()
-	ctx := context.Background()
-	var zero security.Grant
+var _ {{.Unexported}}Persistent = (*models.{{.Entity}})(nil)
 
-	calls := map[string]func(security.Grant) error{
-		"Find": func(g security.Grant) error {
-			_, err := repo.Find(ctx, g, "id")
+// TestEvery{{.Entity}}ReadRequiresAuthorization needs no database: the service
+// authorizes each read before it asks the Model for a query. A nil handle turns
+// an accidental query-before-policy into an immediate test failure.
+func TestEvery{{.Entity}}ReadRequiresAuthorization(t *testing.T) {
+	svc := services.New{{.ServiceType}}(nil)
+	ctx := context.Background()
+	var anonymous security.Subject
+
+	calls := map[string]func() error{
+		"Get": func() error {
+			_, err := svc.Get(ctx, anonymous, "id")
 			return err
 		},
-		"List": func(g security.Grant) error {
-			_, err := repo.List(ctx, g, data.Query{})
+		"List": func() error {
+			_, err := svc.List(ctx, anonymous, data.Query{})
 			return err
 		},
-		"Create": func(g security.Grant) error {
-			_, err := repo.Create(ctx, g, models.{{.Entity}}{})
-			return err
-		},
-		"Update": func(g security.Grant) error {
-			_, err := repo.Update(ctx, g, models.{{.Entity}}{})
-			return err
-		},
-		"Delete": func(g security.Grant) error {
-			return repo.Delete(ctx, g, "id")
+		"Delete": func() error {
+			return svc.Delete(ctx, anonymous, "id")
 		},
 	}
 
 	for name, call := range calls {
-		t.Run(name+" with no grant", func(t *testing.T) {
-			if err := call(zero); !errors.Is(err, security.ErrForbidden) {
-				t.Fatalf("error = %v, want ErrForbidden", err)
-			}
-		})
-		t.Run(name+" with a grant for another action", func(t *testing.T) {
-			if err := call(security.SystemGrant("some.other.action", "t1")); !errors.Is(err, security.ErrForbidden) {
+		t.Run(name+" with no subject", func(t *testing.T) {
+			if err := call(); !errors.Is(err, security.ErrForbidden) {
 				t.Fatalf("error = %v, want ErrForbidden", err)
 			}
 		})
@@ -1202,22 +1041,6 @@ func TestThe{{.Entity}}PolicyDeniesWhatItDoesNotKnow(t *testing.T) {
 		t.Fatal("an action with no rule was allowed: the policy falls through to allowed")
 	}
 }
-
-// Test{{.Entity}}ListRejectsSortOutsideTheAllowlist keeps the one door a column
-// name could come through closed.
-func Test{{.Entity}}ListRejectsSortOutsideTheAllowlist(t *testing.T) {
-	repo := {{.Unexported}}RepoWithoutDB()
-	// {{.Entity}}List, because listing is its own permission: a role may be
-	// allowed to open the record it was given and not to page through every one.
-	g := security.SystemGrant(policies.{{.Entity}}List, "t1")
-
-	_, err := repo.List(context.Background(), g, data.Query{Sort: "1; DROP TABLE {{.Table}}"})
-
-	if !errors.Is(err, models.Err{{.Entity}}Sort) {
-		t.Fatalf("error = %v, want Err{{.Entity}}Sort", err)
-	}
-}
-
 // arandu:begin custom
 // Tests for the rules you wrote go here, and survive regeneration.
 // arandu:end custom
@@ -1236,7 +1059,7 @@ func Test{{.Entity}}ListRejectsSortOutsideTheAllowlist(t *testing.T) {
 // names the situation rather than the subject.
 const skillTemplate = `---
 name: {{ .Resource }}
-description: Work with the {{ .Entity }} module of this Arandu application. Use when the request mentions {{ .Entity | lower }}s, when a {{ .Resource }} route is involved, or when reading or changing {{ .Entity | lower }} records. Covers what the module exposes, which roles may take which action, and the rule that a repository call here cannot be made without a Grant the policy issued.
+description: Work with the {{ .Entity }} module of this Arandu application. Use when the request mentions {{ .Entity | lower }}s, when a {{ .Resource }} route is involved, or when reading or changing {{ .Entity | lower }} records. Covers what the module exposes, which roles may take which action, and the rule that the Service authorizes before it reaches the Hesape Model.
 license: MIT
 ---
 
@@ -1251,13 +1074,12 @@ what the specification can say goes between the ` + "`" + `// arandu:begin custo
 
 | file | what it holds |
 | --- | --- |
-| ` + "`" + `app/Models/{{ .Entity }}.go` + "`" + ` | the entity |
+| ` + "`" + `app/Models/{{ .Entity }}.go` + "`" + ` | the entity and its Hesape Model entry point |
 | ` + "`" + `app/Policies/{{ .Entity }}Policy.go` + "`" + ` | who may do what, and the only thing that issues a Grant |
-| ` + "`" + `app/Repositories/{{ .Entity }}Repository.go` + "`" + ` | the queries. Every method takes a Grant before the id |
-| ` + "`" + `app/Services/{{ .Entity }}Service.go` + "`" + ` | the domain, between the controller and the repository |
+| ` + "`" + `app/Services/{{ .Entity }}Service.go` + "`" + ` | the domain and the only consumer of the Model entry point |
 | ` + "`" + `app/Http/Controllers/{{ .Entity }}Controller.go` + "`" + ` | the actions the routes dispatch to |
 | ` + "`" + `app/Http/Requests/{{ .Entity }}Request.go` + "`" + ` | the input contract. Authorization stays in the Policy |
-| ` + "`" + `tests/Unit/{{ .Entity }}_test.go` + "`" + ` | that every repository method demands its Grant |
+| ` + "`" + `tests/Unit/{{ .Entity }}_test.go` + "`" + ` | that reads authorize before the Model is queried |
 
 ## Its fields
 
@@ -1266,8 +1088,8 @@ what the specification can say goes between the ` + "`" + `// arandu:begin custo
 {{ range .Fields }}| ` + "`" + `{{ .Name }}` + "`" + ` | ` + "`" + `{{ .Type }}` + "`" + ` |
 {{ end }}
 {{- if .Tenant }}
-Every query is scoped by ` + "`" + `data.Tenant(g)` + "`" + `. The tenant comes from the Grant and
-never from a path segment, a body, a query or a header.
+Every query uses the Model's ` + "`" + `tenant_id` + "`" + ` scope. Builder terminals take the
+Grant, and its tenant never comes from a path segment, a body, a query or a header.
 {{- else }}
 This module is not tenant-scoped. That was declared in the specification, so a
 query here is global on purpose rather than by omission.
@@ -1278,19 +1100,19 @@ query here is global on purpose rather than by omission.
 There is one way, and the compiler is what says so.
 
 ` + "```" + `go
-g, err := policy.View(ctx, subject, id)   // the Policy decides and issues
+g, err := security.Authorize(ctx, policy, subject, action, models.{{ .Entity }}{})
 if err != nil {
     return err
 }
-record, err := repo.Find(ctx, g, id)      // the repository demands it
+record, err := models.{{ .Plural }}(db).NewQuery().WhereKey(id).First(ctx, g)
 ` + "```" + `
 
-A repository method takes ` + "`" + `security.Grant` + "`" + ` before the id, and nothing outside the
-security package can build one. So a handler that skips the Policy has nothing
-to pass and does not compile. If you are about to remove that parameter to make
-something build, stop: it is the only thing making the query safe.
+Every Builder terminal takes ` + "`" + `security.Grant` + "`" + `, and nothing outside the security
+package can build one. The Service owns the database handle, authorizes first,
+and then spends that Grant on the Model. A Controller has neither dependency and
+cannot grow a second persistence path.
 
-Reads are not exempt. ` + "`" + `List` + "`" + `, ` + "`" + `Find` + "`" + `, a report and an export all require a Grant.
+Reads are not exempt. ` + "`" + `List` + "`" + `, ` + "`" + `First` + "`" + `, a report and an export all require a Grant.
 
 ## What the policy allows
 

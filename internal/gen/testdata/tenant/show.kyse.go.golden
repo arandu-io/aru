@@ -2,7 +2,7 @@
 
 package purchaseorders
 
-import "github.com/arandu-io/framework/view"
+import "github.com/arandu-io/hesape/view"
 
 @go
 // PurchaseOrdersShowData is what PurchaseOrderController.Show hands this page.

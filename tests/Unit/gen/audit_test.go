@@ -19,18 +19,19 @@ import (
 // so pages skipped rows and repeated rows, silently and with no error.
 func TestTheCursorFollowsTheSortColumn(t *testing.T) {
 	for _, tenant := range []bool{true, false} {
-		repo := byName(t, spec(tenant))["PurchaseOrderRepository.go"]
+		service := byName(t, spec(tenant))["PurchaseOrderService.go"]
 
-		if strings.Contains(repo, "SELECT created_at FROM") {
+		if strings.Contains(service, "SELECT created_at FROM") {
 			t.Errorf("tenant=%v: the cursor still reads created_at instead of the sorted column", tenant)
 		}
-		if !strings.Contains(repo, "` + column + `") {
+		if !strings.Contains(service, `after.Where(column, ">", anchor)`) ||
+			!strings.Contains(service, `equal.Where(column, "=", anchor)`) {
 			t.Errorf("tenant=%v: the cursor predicate does not name the sorted column", tenant)
 		}
 		// The ordering and the predicate have to be the same column, so both
 		// sides of the comparison come from the allowlist and neither from the
 		// request.
-		if !strings.Contains(repo, "ORDER BY ` + column + `") {
+		if !strings.Contains(service, `page.OrderBy(column).OrderBy("id")`) {
 			t.Errorf("tenant=%v: the ORDER BY no longer uses the allowlisted column", tenant)
 		}
 	}
@@ -41,13 +42,6 @@ func TestTheCursorFollowsTheSortColumn(t *testing.T) {
 // could open one record could page through every record there is.
 func TestListingIsItsOwnPermission(t *testing.T) {
 	files := byName(t, spec(true))
-
-	repo := files["PurchaseOrderRepository.go"]
-	// The action constant carries the entity now: PurchaseOrderList, not
-	// ActionList. app/Policies/ is one package for every entity.
-	if !strings.Contains(repo, "PurchaseOrderList") {
-		t.Error("Repo.List does not check the list permission")
-	}
 
 	service := files["PurchaseOrderService.go"]
 	if !strings.Contains(service, "PurchaseOrderList") {

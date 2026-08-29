@@ -2,79 +2,162 @@ package services
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/database/model"
 
 	requests "example.test/project/app/Http/Requests"
 	models "example.test/project/app/Models"
 	policies "example.test/project/app/Policies"
-	repositories "example.test/project/app/Repositories"
 )
+
+// Pagination bounds for purchase_orders. A request that asks for everything gets the
+// maximum, never everything: an unbounded query is how one page load takes a
+// database down.
+const (
+	purchaseOrderDefaultLimit = 50
+	purchaseOrderMaxLimit     = 200
+)
+
+// purchaseOrderSortable is the ordering allowlist. A sort field is a column
+// name, and a column name taken from the request is injection through a door
+// nobody watches.
+var purchaseOrderSortable = map[string]string{
+	"":               "created_at",
+	"created_at":     "created_at",
+	"reference":      "reference",
+	"supplier_email": "supplier_email",
+	"notes":          "notes",
+	"delivery_date":  "delivery_date",
+}
 
 // PurchaseOrderService holds the business rules. It receives its dependencies through
 // the constructor -- explicit wiring, no container.
 type PurchaseOrderService struct {
-	repo   *repositories.PurchaseOrderRepository
+	db     *data.DB
 	policy policies.PurchaseOrderPolicy
 }
 
 // NewPurchaseOrderService wires the service.
-func NewPurchaseOrderService(repo *repositories.PurchaseOrderRepository) *PurchaseOrderService {
-	return &PurchaseOrderService{repo: repo}
+func NewPurchaseOrderService(db *data.DB) *PurchaseOrderService {
+	return &PurchaseOrderService{db: db}
 }
 
-// Create walks the mandatory path: validate, Authorize, Grant, Repository.
+// Create walks the mandatory path: validate, Authorize, Grant, Model.
 // There is no other order that compiles.
-func (s *PurchaseOrderService) Create(ctx context.Context, actor security.Subject, in requests.StorePurchaseOrder) (models.PurchaseOrder, error) {
+func (s *PurchaseOrderService) Create(ctx context.Context, actor security.Subject, in requests.StorePurchaseOrder) (*models.PurchaseOrder, error) {
 	if errs := in.Validate(); errs.Any() {
-		return models.PurchaseOrder{}, errs
+		return nil, errs
 	}
 
-	candidate := models.PurchaseOrder{
-		TenantID:      actor.Tenant,
-		Reference:     in.Reference,
-		SupplierEmail: in.SupplierEmail,
-		Total:         in.Total,
-		Approved:      in.Approved,
-		Notes:         in.Notes,
-		DeliveryDate:  in.DeliveryDate,
-	}
+	proposed := models.PurchaseOrder{}
+	proposed.Reference = in.Reference
+	proposed.SupplierEmail = s.normalize(in.SupplierEmail)
+	proposed.Total = in.Total
+	proposed.Approved = in.Approved
+	proposed.Notes = in.Notes
+	proposed.DeliveryDate = data.Day(in.DeliveryDate)
 
-	g, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderCreate, candidate)
+	g, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderCreate, proposed)
 	if err != nil {
-		return models.PurchaseOrder{}, err
+		return nil, err
 	}
+	if proposed.ID, err = data.NewID(); err != nil {
+		return nil, err
+	}
+	// The tenant comes from the Grant, never from the request or the subject
+	// directly. The model writes the same value over the insert attributes.
+	proposed.TenantID = data.Tenant(g)
 
-	created, err := s.repo.Create(ctx, g, candidate)
+	instance, err := models.PurchaseOrders(s.db).NewInstance(nil, false)
 	if err != nil {
-		return models.PurchaseOrder{}, err
+		return nil, err
+	}
+	candidate := instance.Entity
+	candidate.ID = proposed.ID
+	candidate.TenantID = proposed.TenantID
+	candidate.Reference = proposed.Reference
+	candidate.SupplierEmail = proposed.SupplierEmail
+	candidate.Total = proposed.Total
+	candidate.Approved = proposed.Approved
+	candidate.Notes = proposed.Notes
+	candidate.DeliveryDate = proposed.DeliveryDate
+	if _, err := candidate.Save(ctx, g); err != nil {
+		if s.conflict(err) {
+			return nil, models.ErrPurchaseOrderConflict
+		}
+		return nil, err
 	}
 	// Guarded: the entity is a struct value, and boxing it into `any` allocates
 	// at the call site even though RecordEvent is a no-op on a nil Collector.
 	if col := observability.FromContext(ctx); col != nil {
-		col.RecordEvent("purchase_order.created", created)
+		col.RecordEvent("purchase_order.created", candidate)
 	}
-	return created, nil
+	return candidate, nil
 }
 
 // Get returns one purchase_order.
-func (s *PurchaseOrderService) Get(ctx context.Context, actor security.Subject, id string) (models.PurchaseOrder, error) {
+func (s *PurchaseOrderService) Get(ctx context.Context, actor security.Subject, id string) (*models.PurchaseOrder, error) {
 	g, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderView, models.PurchaseOrder{})
 	if err != nil {
-		return models.PurchaseOrder{}, err
+		return nil, err
 	}
-	return s.repo.Find(ctx, g, id)
+	found, err := models.PurchaseOrders(s.db).NewQuery().WhereKey(id).First(ctx, g)
+	if err != nil {
+		return nil, err
+	}
+	if found == nil {
+		return nil, models.ErrPurchaseOrderNotFound
+	}
+	if _, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderView, *found); err != nil {
+		return nil, err
+	}
+	return found, nil
 }
 
 // List returns a page of purchase_orders.
-func (s *PurchaseOrderService) List(ctx context.Context, actor security.Subject, q data.Query) ([]models.PurchaseOrder, error) {
+func (s *PurchaseOrderService) List(ctx context.Context, actor security.Subject, q data.Query) ([]*models.PurchaseOrder, error) {
 	g, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderList, models.PurchaseOrder{})
 	if err != nil {
 		return nil, err
 	}
-	return s.repo.List(ctx, g, q)
+
+	column, ok := purchaseOrderSortable[q.Sort]
+	if !ok {
+		return nil, fmt.Errorf("%w: %q", models.ErrPurchaseOrderSort, q.Sort)
+	}
+
+	limit := q.Limit
+	switch {
+	case limit <= 0:
+		limit = purchaseOrderDefaultLimit
+	case limit > purchaseOrderMaxLimit:
+		limit = purchaseOrderMaxLimit
+	}
+
+	rows := models.PurchaseOrders(s.db)
+	page := rows.NewQuery()
+	if q.Cursor != "" {
+		anchor, err := rows.NewQuery().WhereKey(q.Cursor).Value(ctx, g, column)
+		if err != nil {
+			return nil, err
+		}
+		if anchor == nil {
+			return nil, nil
+		}
+		page = page.Where(func(after *model.Builder[models.PurchaseOrder]) {
+			after.Where(column, ">", anchor).
+				OrWhere(func(equal *model.Builder[models.PurchaseOrder]) {
+					equal.Where(column, "=", anchor).Where("id", ">", q.Cursor)
+				})
+		})
+	}
+
+	return page.OrderBy(column).OrderBy("id").Limit(limit).Get(ctx, g)
 }
 
 // Update changes the mutable fields.
@@ -82,55 +165,74 @@ func (s *PurchaseOrderService) List(ctx context.Context, actor security.Subject,
 // It reads before writing, so the policy decides against the stored row rather
 // than against what the client claims the row is. Skipping this is how a check
 // passes on attacker-supplied data.
-func (s *PurchaseOrderService) Update(ctx context.Context, actor security.Subject, in requests.UpdatePurchaseOrder) (models.PurchaseOrder, error) {
+func (s *PurchaseOrderService) Update(ctx context.Context, actor security.Subject, in requests.UpdatePurchaseOrder) (*models.PurchaseOrder, error) {
 	if errs := in.Validate(); errs.Any() {
-		return models.PurchaseOrder{}, errs
+		return nil, errs
 	}
 
-	view, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderView, models.PurchaseOrder{})
+	stored, err := s.Get(ctx, actor, in.ID)
 	if err != nil {
-		return models.PurchaseOrder{}, err
-	}
-	stored, err := s.repo.Find(ctx, view, in.ID)
-	if err != nil {
-		return models.PurchaseOrder{}, err
+		return nil, err
 	}
 
-	g, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderUpdate, stored)
+	g, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderUpdate, *stored)
 	if err != nil {
-		return models.PurchaseOrder{}, err
+		return nil, err
 	}
 	stored.Reference = in.Reference
-	stored.SupplierEmail = in.SupplierEmail
+	stored.SupplierEmail = s.normalize(in.SupplierEmail)
 	stored.Total = in.Total
 	stored.Approved = in.Approved
 	stored.Notes = in.Notes
-	stored.DeliveryDate = in.DeliveryDate
-	return s.repo.Update(ctx, g, stored)
+	stored.DeliveryDate = data.Day(in.DeliveryDate)
+	if _, err := stored.Save(ctx, g); err != nil {
+		if s.conflict(err) {
+			return nil, models.ErrPurchaseOrderConflict
+		}
+		return nil, err
+	}
+	return stored, nil
 }
 
 // Delete removes a purchase_order.
 func (s *PurchaseOrderService) Delete(ctx context.Context, actor security.Subject, id string) error {
-	view, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderView, models.PurchaseOrder{})
-	if err != nil {
-		return err
-	}
-	stored, err := s.repo.Find(ctx, view, id)
+	stored, err := s.Get(ctx, actor, id)
 	if err != nil {
 		return err
 	}
 
-	g, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderDelete, stored)
+	g, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderDelete, *stored)
 	if err != nil {
 		return err
 	}
-	if err := s.repo.Delete(ctx, g, id); err != nil {
+	deleted, err := stored.Delete(ctx, g)
+	if err != nil {
 		return err
+	}
+	if !deleted {
+		return models.ErrPurchaseOrderNotFound
 	}
 	if col := observability.FromContext(ctx); col != nil {
 		col.RecordEvent("purchase_order.deleted", stored)
 	}
 	return nil
+}
+
+// normalize lowercases and trims text whose uniqueness is case-insensitive.
+func (s *PurchaseOrderService) normalize(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+// conflict recognizes a duplicate key across engines by message, which is the
+// price of keeping database drivers outside the service.
+func (s *PurchaseOrderService) conflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "unique constraint") ||
+		strings.Contains(message, "duplicate key") ||
+		strings.Contains(message, "duplicate entry")
 }
 
 // arandu:begin custom

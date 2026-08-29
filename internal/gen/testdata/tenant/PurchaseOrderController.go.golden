@@ -12,7 +12,7 @@ import (
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/framework/validation"
-	"github.com/arandu-io/framework/view"
+	"github.com/arandu-io/hesape/view"
 
 	requests "example.test/project/app/Http/Requests"
 	models "example.test/project/app/Models"
@@ -59,7 +59,7 @@ var (
 )
 
 // purchaseOrderPerPage is how many records the listing asks for when the request
-// does not say. The repository has a bound of its own: this one is about the
+// does not say. The service has a bound of its own: this one is about the
 // screen, that one is about the database.
 const purchaseOrderPerPage = 25
 
@@ -296,7 +296,7 @@ func (c *PurchaseOrderController) token(ctx *fhttp.Context) (string, error) {
 // The address is settled here too, for the same reason and one more: the view
 // has no route table, so a link written there could only be a literal. This
 // takes the context so it can ask for the route by name.
-func (c *PurchaseOrderController) row(ctx *fhttp.Context, p models.PurchaseOrder) views.PurchaseOrderRow {
+func (c *PurchaseOrderController) row(ctx *fhttp.Context, p *models.PurchaseOrder) views.PurchaseOrderRow {
 	return views.PurchaseOrderRow{
 		ID:            p.ID,
 		URL:           ctx.URL("purchase-orders.show", p.ID),
@@ -311,7 +311,7 @@ func (c *PurchaseOrderController) row(ctx *fhttp.Context, p models.PurchaseOrder
 }
 
 // form fills the edit form from the stored record.
-func (c *PurchaseOrderController) form(p models.PurchaseOrder) views.PurchaseOrderForm {
+func (c *PurchaseOrderController) form(p *models.PurchaseOrder) views.PurchaseOrderForm {
 	return views.PurchaseOrderForm{
 		ID:            p.ID,
 		Reference:     p.Reference,

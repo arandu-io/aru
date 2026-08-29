@@ -68,11 +68,14 @@ func TestGenerateProducesTheModule(t *testing.T) {
 		"app/Http/Controllers/InvoiceController.go",
 		"app/Models/Invoice.go",
 		"app/Policies/InvoicePolicy.go",
-		"app/Repositories/InvoiceRepository.go",
+		"app/Services/InvoiceService.go",
 	} {
 		if _, err := os.Stat(filepath.Join(root, want)); err != nil {
 			t.Errorf("%s was not generated", want)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "app", "Repositories", "InvoiceRepository.go")); !os.IsNotExist(err) {
+		t.Errorf("generate wrote a CRUD repository on the native Model-first path: %v", err)
 	}
 
 	// The fields reached the entity with the right Go types. Whitespace is

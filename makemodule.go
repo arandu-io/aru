@@ -11,7 +11,7 @@ import (
 	"github.com/arandu-io/aru/internal/gen"
 )
 
-// makeModule generates a module: entity, policy, repository, service, request,
+// makeModule generates a module: Model-backed entity, policy, service, request,
 // routes, handlers and tests.
 //
 // It calls no model. The same flags produce the same bytes, which is what makes
@@ -133,15 +133,14 @@ Then, by hand, because the wiring is meant to be readable:
 
       r.Resource(%q, d.%s)
 
-  bootstrap/app.go -- the two imports, which the file does not have yet
+  bootstrap/app.go -- the import, which the file does not have yet
 
-      "%s/app/Repositories"
       "%s/app/Services"
 
   bootstrap/app.go -- in the routes.Deps literal
 
       %s: controllers.New%s(
-          services.New%s(repositories.New%s(db)), sessions, csrf),
+          services.New%s(db), sessions, csrf),
 %s
 The migration is not one of them: %s registers itself in its own init, and
 nothing lists it. What it needs is to be linked -- something has to import
@@ -156,9 +155,9 @@ Then:
 		m.PolicyType(),
 		m.Entity(), m.Controller(),
 		m.Resource(), m.Entity(),
-		m.ModulePath, m.ModulePath,
+		m.ModulePath,
 		m.Entity(), m.Controller(),
-		m.ServiceType(), m.RepositoryType(),
+		m.ServiceType(),
 		tenantClaim(m),
 		m.MigrationType())
 }

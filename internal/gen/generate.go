@@ -41,7 +41,6 @@ func Generate(m Module) ([]File, error) {
 		{filepath.Join("app", "Http", "Controllers", m.Entity()+"Controller.go"), controllerTemplate + controllerSessionTemplate},
 		{filepath.Join("app", "Models", m.Entity()+".go"), modelTemplate},
 		{filepath.Join("app", "Policies", m.Entity()+"Policy.go"), policyTemplate},
-		{filepath.Join("app", "Repositories", m.Entity()+"Repository.go"), repositoryTemplate},
 		{filepath.Join("app", "Services", m.Entity()+"Service.go"), serviceTemplate},
 		{filepath.Join("app", "Http", "Requests", m.Entity()+"Request.go"), requestTemplate + requestRulesTemplate},
 		// The skill an assistant reads when it meets this module.
@@ -111,17 +110,17 @@ func Generate(m Module) ([]File, error) {
 // RenderTest produces the module's unit test.
 //
 // It takes the Module rather than a specification of its own, because the file
-// is written entirely out of the module's names: the repository it constructs,
-// the policy constant it asks a grant for, the sort error it expects back. A
-// struct carrying those again would be the same names with a second place to
-// spell them differently. No field is read, so a caller holding the name and the
-// project module path holds everything this needs.
+// is written entirely out of the module's names: the Model boundary it proves,
+// the Service it constructs and the Policy it exercises. A struct carrying
+// those again would be the same names with a second place to spell them
+// differently. No field is read, so a caller holding the name and the project
+// module path holds everything this needs.
 //
 // The file lands in tests/Unit rather than beside the controller. tests/Unit is
 // for what is checked without booting and tests/Feature for what boots the
-// application and makes a request, and what this one checks -- that every
-// repository method demands its Grant, and that the policy denies an action
-// nobody wrote a rule for -- needs neither a server nor a database.
+// application and makes a request. What this one checks -- that the service
+// asks the Policy before it reaches the model, and that the policy denies an
+// action nobody wrote a rule for -- needs neither a server nor a database.
 //
 // The name is <Entity>_test.go and not <Entity>Test.go. A file whose name does
 // not end in _test.go is compiled into its package, so the test would ship
@@ -147,8 +146,8 @@ type ModelParts struct{ Migration, Factory, Seeder, Policy, Request bool }
 // Everything is ModelParts with every part set, which is what --all means.
 //
 // It is the data side of a module and not the module: `aru make:module` writes
-// the controller, the service, the repository, the views and the route wiring
-// as well, and this writes what belongs to the entity itself.
+// the controller, the service, the views and the route wiring as well, and this
+// writes what belongs to the entity itself.
 func Everything() ModelParts {
 	return ModelParts{Migration: true, Factory: true, Seeder: true, Policy: true, Request: true}
 }
@@ -159,12 +158,9 @@ func Everything() ModelParts {
 // a model written by make:module are the same bytes, because they are the same
 // file. A second template would be a second shape of one thing.
 //
-// What it never writes is a repository. A repository pulls a policy with it --
-// `aru doctor` reports repository-without-policy as an Error -- and the generated
-// policy denies everything, which pulls a service to issue the Grant. A
-// --repository flag would be `aru make:module` with an arbitrary subset missing,
-// and the mandatory path (validate, Authorize, Grant, Repository) is indivisible
-// by construction.
+// What it never writes is a service. A model generated on its own is the data
+// shape and its query entry point; the use-case path that validates, authorizes
+// and spends the Grant belongs to `aru make:module`.
 func GenerateModel(m Module, parts ModelParts) ([]File, error) {
 	if err := m.Validate(); err != nil {
 		return nil, err

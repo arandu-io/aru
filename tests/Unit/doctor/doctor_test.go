@@ -1105,27 +1105,22 @@ func TestTheGeneratorsOwnConcatenationIsQuiet(t *testing.T) {
 
 // TestAModuleWhoseWritesNeedAnotherModulesTableIsCaught.
 //
-// auth.Register publishes a domain event inside the transaction that creates the
-// account, so it cannot commit without the outbox table. That table travels with
-// events.NewModule(), and both shipped bootstraps register it -- but nothing
-// connects the two, so an application that drops the line while tidying compiles,
-// passes its tests, and answers 500 to the first person who signs up, with
-// "no such table: outbox" on the screen where a failure is least recoverable.
+// The application stores a domain event inside the transaction that performs a
+// write, so it cannot commit without the outbox table. That table travels with
+// events.NewModule(), but nothing connects the two, so an application that drops
+// the provider while tidying compiles, passes its tests, and answers 500 on the
+// first write, with "no such table: outbox" at runtime.
 func TestAModuleWhoseWritesNeedAnotherModulesTableIsCaught(t *testing.T) {
 	findings := gaps(t)
 
 	caught := findRule(findings, "outbox-not-registered")
 	if caught == nil {
-		t.Fatalf("a project registering auth and no outbox table was not caught:\n%v", findings)
+		t.Fatalf("a project writing to an outbox with no outbox table was not caught:\n%v", findings)
 	}
 	if caught.Severity != doctor.Error {
 		t.Error("a sign-up that fails every time is a warning: nothing about it works, and CI would pass")
 	}
-	// auth.NewService and not auth.New, which this fixture also calls: the
-	// registration builds nothing and can sit in a controller, while the service
-	// is what constructs the outbox and sits in the bootstrap -- which is the
-	// file the explanation below tells the reader to edit.
-	if !strings.Contains(caught.Message, "auth.NewService") {
+	if !strings.Contains(caught.Message, "events.NewOutbox") {
 		t.Errorf("the finding does not name what needs the table: %q", caught.Message)
 	}
 	// The reader has to be able to fix it without going to look for the name of
@@ -1155,9 +1150,9 @@ func TestAModuleWhoseWritesNeedAnotherModulesTableIsCaught(t *testing.T) {
 }
 
 // The other half, and the one that decides whether the rule is usable: the shape
-// both shipped bootstraps have -- auth and the events module registered together
-// -- has to come back silent. A rule that fires on the correct wiring is how a
-// tool teaches people to ignore it.
+// both shipped bootstraps have -- an outbox writer and the events module
+// registered together -- has to come back silent. A rule that fires on the
+// correct wiring is how a tool teaches people to ignore it.
 func TestRegisteringTheOutboxNextToWhatWritesToItIsSilent(t *testing.T) {
 	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {

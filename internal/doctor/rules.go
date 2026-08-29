@@ -2058,15 +2058,17 @@ func multiTenantTables(p *project) map[string]bool {
 	return out
 }
 
-// outboxWriters are the calls that put a domain event in the outbox, and
-// therefore cannot commit without the table.
+// outboxWriters are imported functions that put a domain event in the outbox,
+// and therefore cannot commit without the table. Import identity matters: the
+// application aliases framework/events as frameevents, while a local value
+// called events must not become a writer by spelling alone.
 //
 // The value is the sentence that says what stops working, because the two are
 // not the same failure to the person reading the report: one is a module of the
 // framework that publishes on its own, and the other is the application's own
 // code choosing to.
 // auth.NewService is in the list and auth.New is too, and they are not ranked
-// the same -- see outboxWriterRank. NewService is where the Outbox is actually
+// the same. NewService is where the Outbox is actually
 // constructed, from the repository's handle; New is the registration and builds
 // nothing, taking a service somebody else made.
 //
@@ -2077,27 +2079,37 @@ func multiTenantTables(p *project) map[string]bool {
 // finding that names one file and asks for a change in another is one the reader
 // has to re-derive, and the file it named is not even wrong -- it is just not
 // where anything is missing.
-var outboxWriters = map[string]string{
-	"auth.NewService": "the auth module publishes auth.user.registered inside the transaction that creates the account, so every sign-up fails",
-	"auth.New":        "the auth module publishes auth.user.registered inside the transaction that creates the account, so every sign-up fails",
-	// events.NewOutbox is what auth.NewService builds internally and what a
-	// module written by hand builds directly. Reaching for it is the same
-	// commitment.
-	"events.NewOutbox": "this code stores domain events in the same transaction as the write that produced them, so that write fails",
+type outboxFunction struct {
+	display string
+	breaks  string
+	rank    int
 }
 
-// outboxWriterRank decides which call a single finding points at.
-//
-// A construction beats a registration, because construction is where the
-// commitment is made and it sits in the bootstrap, next to the line the reader
-// has to add. A registration is kept in the list so that a project handed its
-// service from another package is still covered, and ranked below so it is only
-// used when there is nothing better.
-func outboxWriterRank(call string) int {
-	if call == "auth.New" {
-		return 1
-	}
-	return 0
+type importedFunction struct {
+	pkg  string
+	name string
+}
+
+var outboxWriters = map[importedFunction]outboxFunction{
+	{pkg: "github.com/arandu-io/framework/events", name: "NewOutbox"}: {
+		display: "events.NewOutbox",
+		breaks:  "this code stores domain events in the same transaction as the write that produced them, so that write fails",
+	},
+	{pkg: "github.com/arandu-io/hesape/events", name: "NewOutbox"}: {
+		display: "events.NewOutbox",
+		breaks:  "this code stores domain events in the same transaction as the write that produced them, so that write fails",
+	},
+	// The legacy module remains recognizable for applications that have not yet
+	// migrated. Canonical fixtures do not import it and no new rule depends on it.
+	{pkg: "github.com/arandu-io/framework/modules/auth", name: "NewService"}: {
+		display: "auth.NewService",
+		breaks:  "the legacy auth module publishes auth.user.registered inside the transaction that creates the account, so every sign-up fails",
+	},
+	{pkg: "github.com/arandu-io/framework/modules/auth", name: "New"}: {
+		display: "auth.New",
+		breaks:  "the legacy auth module publishes auth.user.registered inside the transaction that creates the account, so every sign-up fails",
+		rank:    1,
+	},
 }
 
 // outboxProviders are the registrations that bring the table.
@@ -2106,9 +2118,27 @@ func outboxWriterRank(call string) int {
 // something publishes: events.WithRelay carries the same Migrations. A rule that
 // knew only NewModule would fire on the more advanced of the two correct
 // wirings, which is how a tool teaches people to ignore it.
-var outboxProviders = map[string]bool{
-	"events.NewModule": true,
-	"events.WithRelay": true,
+var outboxProviders = map[importedFunction]bool{
+	{pkg: "github.com/arandu-io/framework/events", name: "NewModule"}: true,
+	{pkg: "github.com/arandu-io/framework/events", name: "WithRelay"}: true,
+}
+
+// importedFunction resolves a package function call through the file's import
+// table. It accepts aliases and dot imports, and rejects methods and lookalike
+// local values whose qualifier is not an imported package.
+func (f *file) importedFunction(called string) (importedFunction, bool) {
+	local, name, qualified := strings.Cut(called, ".")
+	switch {
+	case !qualified:
+		local, name = ".", called
+	case strings.Contains(name, "."):
+		return importedFunction{}, false
+	}
+	pkg, imported := f.importPath(local)
+	if !imported {
+		return importedFunction{}, false
+	}
+	return importedFunction{pkg: pkg, name: name}, true
 }
 
 // 16. A module whose writes need another module's table.
@@ -2147,6 +2177,7 @@ func theOutboxTableTravelsWithWhatWritesToIt(p *project) []Finding {
 		line   int
 		call   string
 		breaks string
+		rank   int
 	}
 
 	var writers []writer
@@ -2157,16 +2188,23 @@ func theOutboxTableTravelsWithWhatWritesToIt(p *project) []Finding {
 			continue
 		}
 		f.calls(func(call *ast.CallExpr, name string) {
-			if outboxProviders[name] {
+			fn, imported := f.importedFunction(name)
+			if !imported {
+				return
+			}
+			if outboxProviders[fn] {
 				provided = true
 				return
 			}
-			breaks, writes := outboxWriters[name]
+			definition, writes := outboxWriters[fn]
 			if !writes {
 				return
 			}
 			file, line := f.at(call)
-			writers = append(writers, writer{file: file, line: line, call: name, breaks: breaks})
+			writers = append(writers, writer{
+				file: file, line: line, call: definition.display,
+				breaks: definition.breaks, rank: definition.rank,
+			})
 		})
 	}
 
@@ -2179,9 +2217,9 @@ func theOutboxTableTravelsWithWhatWritesToIt(p *project) []Finding {
 	// is one line in one file; a report that states it three times, once per call
 	// site, is three entries somebody has to read to learn they all say the same
 	// thing. The call site chosen is only where the report points, so it is the
-	// most useful one: see outboxWriterRank.
+	// most useful one: constructions have the lower rank in outboxWriters.
 	sort.SliceStable(writers, func(i, j int) bool {
-		if a, b := outboxWriterRank(writers[i].call), outboxWriterRank(writers[j].call); a != b {
+		if a, b := writers[i].rank, writers[j].rank; a != b {
 			return a < b
 		}
 		if writers[i].file != writers[j].file {

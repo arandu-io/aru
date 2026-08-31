@@ -504,8 +504,12 @@ func TestIsNamedCallSeparatesAComponentFromAValue(t *testing.T) {
 		{"Badge(BadgeProps{Label: x})", true, "a component from the same package"},
 		{"icons.Tag(icons.Props{Label: \"Close (esc)\"})", true, "a parenthesis inside a string literal is not a parenthesis"},
 		{"mailui.Layout(mailui.LayoutProps{\n\tBrand: .BrandName,\n})", true, "a call the parser joined from several lines"},
+		{".Rich(\"home.hero.body\")", true, "a method on the page data is a call: the dot says where the name is found, not what came back"},
+		{".RichWith(\"home.hero.body\", translation.Replace{\"n\": 3})", true, "the same, with arguments of its own"},
+		{".Chrome.Rich(\"x\")", true, "a method one level down is still a call"},
 
 		{".Body", false, "a field of the page data, which is a value"},
+		{".Rich", false, "the method itself, without its argument list, is a value -- and one that prints a function address"},
 		{".Invoice.Notes", false, "a field one level down is still a value"},
 		{"body", false, "a local variable is a value"},
 		{"\"<b>x</b>\"", false, "a string literal is a value, however it was written"},

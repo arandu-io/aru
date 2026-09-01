@@ -221,15 +221,16 @@ var blockDirectives = map[string]string{
 
 // inlineDirectives take arguments and emit in place.
 var inlineDirectives = map[string]bool{
-	"extends":  true,
-	"yield":    true,
-	"include":  true,
-	"csrf":     true,
-	"elseif":   true,
-	"else":     true,
-	"continue": true,
-	"break":    true,
-	"empty":    true,
+	"extends":    true,
+	"yield":      true,
+	"include":    true,
+	"csrf":       true,
+	"attributes": true,
+	"elseif":     true,
+	"else":       true,
+	"continue":   true,
+	"break":      true,
+	"empty":      true,
 }
 
 // Directives returns every directive kyse knows, block and inline, sorted.

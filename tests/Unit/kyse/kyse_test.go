@@ -424,17 +424,22 @@ func TestEveryDirectiveEmitsSomething(t *testing.T) {
 	// out the other side; the ones that emit a call are proved by the call.
 	type probe struct{ source, wants string }
 	body := map[string]probe{
-		"if":       {"@if(d.Ok)\nMARCADOR\n@endif\n", "MARCADOR"},
-		"foreach":  {"@foreach(.Items as it)\nMARCADOR\n@endforeach\n", "MARCADOR"},
-		"for":      {"@for(i := 0; i < d.N; i++)\nMARCADOR\n@endfor\n", "MARCADOR"},
-		"while":    {"@while(d.Ok)\nMARCADOR\n@endwhile\n", "MARCADOR"},
-		"yield":    {"@yield('MARCADOR')\n", "MARCADOR"},
-		"include":  {"@include('MARCADOR')\n", "MARCADOR"},
-		"csrf":     {"@csrf\n", "kyse__view.CSRF("},
-		"forelse":  {"@forelse(.Items as it)\nMARCADOR\n@empty\nVAZIO\n@endforelse\n", "MARCADOR"},
-		"continue": {"@foreach(.Items as it)\n@continue\n@endforeach\n", "continue"},
-		"break":    {"@foreach(.Items as it)\n@break\n@endforeach\n", "break"},
-		"empty":    {"@forelse(.Items as it)\nX\n@empty\nMARCADOR\n@endforelse\n", "MARCADOR"},
+		"if":      {"@if(d.Ok)\nMARCADOR\n@endif\n", "MARCADOR"},
+		"foreach": {"@foreach(.Items as it)\nMARCADOR\n@endforeach\n", "MARCADOR"},
+		"for":     {"@for(i := 0; i < d.N; i++)\nMARCADOR\n@endfor\n", "MARCADOR"},
+		"while":   {"@while(d.Ok)\nMARCADOR\n@endwhile\n", "MARCADOR"},
+		"yield":   {"@yield('MARCADOR')\n", "MARCADOR"},
+		"include": {"@include('MARCADOR')\n", "MARCADOR"},
+		"csrf":    {"@csrf\n", "kyse__view.CSRF("},
+		// The only one that has to be written inside a tag: it writes the names
+		// of attributes, so anywhere else is refused at build time. On a line of
+		// its own, like every directive and like the @if that already writes a
+		// conditional attribute inside a tag.
+		"attributes": {"<div\n@attributes(d.Attrs)\n></div>\n", "kyse__view.Attributes("},
+		"forelse":    {"@forelse(.Items as it)\nMARCADOR\n@empty\nVAZIO\n@endforelse\n", "MARCADOR"},
+		"continue":   {"@foreach(.Items as it)\n@continue\n@endforeach\n", "continue"},
+		"break":      {"@foreach(.Items as it)\n@break\n@endforeach\n", "break"},
+		"empty":      {"@forelse(.Items as it)\nX\n@empty\nMARCADOR\n@endforelse\n", "MARCADOR"},
 	}
 
 	for _, name := range kyse.Directives() {
@@ -448,7 +453,7 @@ func TestEveryDirectiveEmitsSomething(t *testing.T) {
 		}
 
 		t.Run(name, func(t *testing.T) {
-			full := "//go:build kyse\n\npackage views\n\n@go\ntype D struct {\n\tOk    bool\n\tN     int\n\tItems []string\n}\n@endgo\n\n" + p.source
+			full := "//go:build kyse\n\npackage views\n\n@go\ntype D struct {\n\tOk    bool\n\tN     int\n\tItems []string\n\tAttrs map[string]string\n}\n@endgo\n\n" + p.source
 			f, err := kyse.Parse(name+".kyse.go", full)
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
@@ -1048,9 +1053,24 @@ func TestAPositionWithNoEscapeRefusesTheView(t *testing.T) {
 			`<div class="{!! .V !!}">{{ .V }}</div>`,
 			"is not known here", 9,
 		},
+		{
+			"a set of attributes written in the body of an element",
+			"<div>\n@attributes(.A)\n</div>",
+			"the name of an attribute does not go", 10,
+		},
+		{
+			"a set of attributes written inside a value",
+			"<div class=\"\n@attributes(.A)\n\">x</div>",
+			"the name of an attribute does not go", 10,
+		},
+		{
+			"a set of attributes written after the position was lost",
+			"@if(.V != \"\")\n<span title=\"\n@endif\n<div\n@attributes(.A)\n>x</div>",
+			"the name of an attribute does not go", 13,
+		},
 	} {
 		t.Run(c.what, func(t *testing.T) {
-			source := "//go:build kyse\n\npackage views\n\n@go\ntype D struct{ V string }\n@endgo\n\n" + c.markup + "\n"
+			source := "//go:build kyse\n\npackage views\n\n@go\ntype D struct{ V string; A map[string]string }\n@endgo\n\n" + c.markup + "\n"
 			file, err := kyse.Parse("resources/views/home.kyse.go", source)
 			if err != nil {
 				t.Fatal(err)
@@ -1151,6 +1171,55 @@ type D struct{ V string }
 	want := []string{"url", "body", "body"}
 	if got := escapersIn(string(out)); !reflect.DeepEqual(got, want) {
 		t.Errorf("the escapes chosen are\n%v\nand the positions ask for\n%v\n%s", got, want, out)
+	}
+}
+
+// A set of attributes leaves the position where it found it, and an @if around
+// one does too.
+//
+// This is the property that separates @attributes from a component call written
+// inside a tag. A component returns markup this compiler cannot read, so the
+// position after it is a guess and is given up; view.Attributes answers a run of
+// complete attributes and nothing else, which leaves the tokenizer between
+// names -- exactly where it was.
+//
+// Without it the attribute after the call, and every interpolation in the rest
+// of the file, would be refused for a position nobody knows. The href below is
+// the assertion: it still gets the URL escape.
+func TestASetOfAttributesKeepsThePosition(t *testing.T) {
+	const source = `//go:build kyse
+
+package views
+
+@go
+type D struct{ V string; A map[string]string }
+@endgo
+
+<a
+	class="btn"
+	@attributes(.A)
+	@if(.V != "")
+		@attributes(.A)
+	@endif
+	href="{{ .V }}"
+>x</a>
+<p>{{ .V }}</p>
+`
+	file, err := kyse.Parse("resources/views/home.kyse.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := kyse.Generate(file, "home", "D", "storage/framework/views/home.go")
+	if err != nil {
+		t.Fatalf("a view writing a set of attributes inside a tag was refused: %v", err)
+	}
+
+	want := []string{"url", "body"}
+	if got := escapersIn(string(out)); !reflect.DeepEqual(got, want) {
+		t.Errorf("the escapes chosen are\n%v\nand the positions ask for\n%v\n%s", got, want, out)
+	}
+	if n := strings.Count(string(out), "kyse__view.Attributes("); n != 2 {
+		t.Errorf("the set is written %d times, want 2:\n%s", n, out)
 	}
 }
 

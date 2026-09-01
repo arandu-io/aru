@@ -1252,7 +1252,59 @@ func (g *generator) directive(n Node) {
 	case "csrf":
 		g.callsOut(n)
 		fmt.Fprintf(&g.out, "\tif %s == nil { %s = %s.CSRF(%s, %s) }\n", varErr, varErr, pkgView, varWriter, varData)
+
+	case "attributes":
+		g.attributes(n)
 	}
+}
+
+// attributes writes a set of attributes a caller handed a component, inside the
+// tag the component is drawing.
+//
+// # Why this is a directive and not an interpolation
+//
+// Every escape in this file is chosen by the position the value lands in, and
+// the position is read off the markup around it. That works because the view
+// wrote the markup: the attribute a value sits in is there, in the source, to be
+// read. A set of attributes has no attribute around it -- the names arrive with
+// the values -- so there is no position to read and nothing for the table of
+// ten to answer with.
+//
+// The escape moves with the name instead, into view.Attributes, which refuses
+// every name whose value a browser or a library would act on and escapes the
+// rest. That is the whole reason this is one call and not a loop: a view can
+// already write
+//
+//	@for(at := 0; at < .AttrCount(); at++)
+//		{{ .AttrName(at) }}="{{ .AttrValue(at) }}"
+//	@endfor
+//
+// and it compiles today -- the body is balanced, so the position survives it.
+// What it loses is the name: the scanner records the attribute a value sits in,
+// and there the name was written by the loop rather than by the view, so the
+// field is empty and attributeHoldsURL and attributeHoldsCode never fire. Every
+// value is escaped as if the attribute were inert, and a caller writing
+// href with a value somebody typed gets javascript: onto the page. Repeated at
+// every element of every component, with nothing at build time able to tell
+// which of them went outside the pattern.
+//
+// # Why the position is kept rather than given up
+//
+// A component's markup is opaque to this compiler, and opaque markup inside a
+// tag gives up the position for the rest of the file -- see opaque. This does
+// not, because what it writes is known: view.Attributes answers a run of
+// complete attributes and nothing else, which leaves the tokenizer exactly where
+// it was, between names. settled is that state, and it is the one @if(.Disabled)
+// disabled @endif already relies on.
+func (g *generator) attributes(n Node) {
+	if g.scan.position() != posAttributeName {
+		g.refuse(n.Line, "@attributes is written where the name of an attribute does not go",
+			"it writes attributes, so it belongs inside a tag, between the names -- not in the body of an element, not inside a value, and not after markup that left the position open.\n"+
+				"    Write it in the opening tag, beside the attributes the component writes itself.")
+		return
+	}
+	g.refusable(n.Line, pkgView+".Attributes", g.expr(n.Body))
+	g.scan = g.scan.settled()
 }
 
 // rejoin puts the position back where a block began, and gives it up when the
@@ -1289,6 +1341,12 @@ func (g *generator) rejoin(opened htmlScanner) {
 // with none at all, and one that is not a position but the absence of one. An
 // eleventh would mean a sixth escape, and a position answered with the escape
 // of a different one is the hole this exists to remove.
+//
+// @attributes is not an eleventh, and the difference is worth stating because
+// it looks like one. It writes into posAttributeName and is refused anywhere
+// else, so it adds no position. What it adds is a value whose *name* is data,
+// and a name that is data has no position to read -- which is why the check
+// moved with it, into view.Attributes, rather than being another row here.
 type htmlPosition int
 
 const (

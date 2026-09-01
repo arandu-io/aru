@@ -177,6 +177,17 @@ func stylesheetInput(root string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolving the stylesheet path: %w", err)
 	}
+	// The scoped blocks go after the import rather than into a file of their
+	// own. A generated stylesheet in the tree is one more thing to gitignore,
+	// to remember to @import, and to find edited by hand; this way what compiles
+	// them is the same Tailwind run that compiles everything else, and the
+	// project's stylesheet says nothing about a feature it does not have to know
+	// about.
+	scoped, err := scopedStylesheet(root)
+	if err != nil {
+		return "", err
+	}
+
 	input := "@import " + cssString(entry) + ";\n"
 	if dir != "" {
 		// Every .go under the module rather than a list of its directories. The
@@ -185,7 +196,7 @@ func stylesheetInput(root string) (string, error) {
 		// this function exists to avoid.
 		input += "@source " + cssString(filepath.Join(dir, "**", "*.go")) + ";\n"
 	}
-	return input, nil
+	return input + scoped, nil
 }
 
 // componentLibraryDir is where the imported component library's Go files are on

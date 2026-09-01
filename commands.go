@@ -361,6 +361,15 @@ var commands = []command{
 		run:   trace,
 	},
 	{
+		// The inventory, next to the two commands that read a running project:
+		// route:list says what answers, trace says what one request did, and this
+		// says what the application was wired with in the first place.
+		name:  "about",
+		usage: "aru about [--only=<section>]",
+		desc:  "report what the application has wired: drivers, modules and version",
+		run:   about,
+	},
+	{
 		name:  "doctor",
 		usage: "aru doctor [--strict] [--profile=performance]",
 		desc:  "check that the project honors the framework contracts",

@@ -31,9 +31,19 @@ const (
 // refusal names the line the person actually wrote.
 //
 // And the application's own package, because a screen assembled in Go rather
-// than in a view is a shape this framework supports. Anywhere else is not read,
-// which is the same boundary Tailwind draws for class names and is documented
-// in the same place.
+// than in a view is a shape this framework supports.
+//
+// Anywhere else is not read: a block written in internal/, in pkg/ or at the
+// root compiles to nothing, and the element carries a class no rule was emitted
+// for. That is the failure this pass exists to remove, so it is stated here and
+// in the upgrade guide rather than left to be discovered.
+//
+// It is NOT the same boundary Tailwind draws -- an earlier version of this
+// comment said it was, and the two differ in both directions. Tailwind reads
+// resources/views/**, their compiled output and the kyse module, and not app/;
+// this reads app/ and not resources/views/**, because the sources there are not
+// Go. What they have in common is only that both are decided at build time from
+// the text in the source.
 var styleRoots = []string{"storage/framework/views", "app"}
 
 // scopedStylesheet is the CSS compiled from every kyse.CSS block in the project,
@@ -80,7 +90,8 @@ func scopedStylesheet(root string) (string, error) {
 	var out strings.Builder
 	out.WriteString("\n/* Scoped component styles, compiled from kyse.CSS. */\n")
 	for _, text := range blocks {
-		out.WriteString(scopeRules(text, styleClass(text)))
+		rules, _ := scopeRules(text, styleClass(text))
+		out.WriteString(rules)
 	}
 	return out.String(), nil
 }
@@ -151,7 +162,16 @@ func readStyleBlocks(path string, found map[string]string, problems *[]string) e
 		return nil
 	}
 
-	names := styleNames(file)
+	names, dot := styleNames(file)
+	if dot {
+		where := fset.Position(file.Package)
+		*problems = append(*problems, fmt.Sprintf(
+			"%s:%d: %s is imported with a dot, and a scoped block written here would be lost.\n"+
+				"    A dot import writes CSS(…) with no package name, which this pass cannot tell from any "+
+				"other call of that name. Import it under its own name.",
+			where.Filename, where.Line, componentModule))
+		return nil
+	}
 	if len(names) == 0 {
 		return nil
 	}
@@ -186,11 +206,16 @@ func readStyleBlocks(path string, found map[string]string, problems *[]string) e
 				where.Filename, where.Line, styleFunc))
 			return true
 		}
-		if !strings.Contains(text, "&") {
+		// Asked of the substitution rather than of the text, so the two cannot
+		// disagree about what an & is. A block whose only ampersand is inside
+		// quotes, a comment or a url() has none that is a selector, and it read
+		// as scoped while compiling to a rule for the whole page.
+		if _, replaced := scopeRules(text, "probe"); replaced == 0 {
 			*problems = append(*problems, fmt.Sprintf(
-				"%s:%d: this scoped block has no & in it.\n"+
+				"%s:%d: this scoped block has no & that is a selector.\n"+
 					"    & is the component's own element, and a block without one is a rule that applies to "+
-					"the whole page under a name that says otherwise.",
+					"the whole page under a name that says otherwise. An & inside quotes, a comment or a "+
+					"url() is not one.",
 				where.Filename, where.Line))
 			return true
 		}
@@ -205,22 +230,32 @@ func readStyleBlocks(path string, found map[string]string, problems *[]string) e
 // usually one, and it is read from the import block rather than assumed, because
 // an alias is legal Go and a compiler that only knows one spelling emits no rule
 // for the file that used the other.
-func styleNames(file *ast.File) map[string]bool {
+func styleNames(file *ast.File) (map[string]bool, bool) {
 	names := map[string]bool{}
+	dot := false
 	for _, imported := range file.Imports {
 		path, err := strconv.Unquote(imported.Path.Value)
 		if err != nil || path != componentModule {
 			continue
 		}
 		if imported.Name != nil {
-			if imported.Name.Name != "_" && imported.Name.Name != "." {
+			switch imported.Name.Name {
+			case "_":
+			case ".":
+				// A dot import writes CSS("…") with no package in front of it,
+				// which is an Ident and never the SelectorExpr this walk looks
+				// for. Reported rather than searched for: finding it would mean
+				// resolving every bare call in the file against the package, and
+				// the third silent way to lose a block is not worth a resolver.
+				dot = true
+			default:
 				names[imported.Name.Name] = true
 			}
 			continue
 		}
 		names[path[strings.LastIndexByte(path, '/')+1:]] = true
 	}
-	return names
+	return names, dot
 }
 
 // stringLiteral is the text of an untyped string literal, and whether the
@@ -272,40 +307,75 @@ func styleClass(css string) string {
 }
 
 // scopeRules replaces & with the block's own class, which is what makes the
-// rules apply to one component and not to the page.
+// rules apply to one component and not to the page. It answers the rewritten
+// text and how many ampersands it actually replaced.
 //
 // It is a substitution and not a CSS parse, for the reason the rest of this
 // toolchain avoids parsers it does not need: the block is a few lines somebody
 // wrote about one element, and a parser here would be a second CSS
-// implementation to keep in step with the one that actually compiles the
-// stylesheet.
+// implementation to keep in step with the one that compiles the stylesheet.
 //
-// An & inside quotes is left alone -- content: "&" is an ampersand on the page,
-// not a selector -- which is the one case the substitution would otherwise get
-// wrong. An & inside a comment is replaced, harmlessly, since the comment does
-// not reach the output either way.
-func scopeRules(css, class string) string {
+// # The three places an & is not a selector
+//
+// Inside quotes -- content: "&" is an ampersand on the page. Inside a comment.
+// And inside an unquoted url(), where the query string of
+// url(/i/x.png?a=1&b=2) is two parameters and not a selector.
+//
+// The comment case is the one that was wrong first, and it was wrong in the
+// direction that matters. This read quotes and not comments, so an apostrophe in
+// English prose -- /* the card's own gap */ -- opened quote mode and nothing
+// closed it: every & after that comment was left alone, the element got a class,
+// and the stylesheet got a bare & at the top. The count is the other half of
+// that fix: the caller refuses a block this substituted nothing in, so the guard
+// and the substitution can no longer disagree about what an & is.
+func scopeRules(css, class string) (string, int) {
 	var out strings.Builder
 	out.Grow(len(css) + 32)
 
 	var quote byte
+	inComment := false
+	inURL := false
+	replaced := 0
+
 	for i := 0; i < len(css); i++ {
 		c := css[i]
 		switch {
+		case inComment:
+			if c == '*' && i+1 < len(css) && css[i+1] == '/' {
+				out.WriteByte(c)
+				i++
+				c = css[i]
+				inComment = false
+			}
 		case quote != 0:
 			if c == '\\' && i+1 < len(css) {
 				out.WriteByte(c)
 				i++
-				out.WriteByte(css[i])
-				continue
+				c = css[i]
+				break
 			}
 			if c == quote {
 				quote = 0
 			}
+		case inURL:
+			if c == ')' {
+				inURL = false
+			}
+		case c == '/' && i+1 < len(css) && css[i+1] == '*':
+			out.WriteByte(c)
+			i++
+			c = css[i]
+			inComment = true
 		case c == '\'' || c == '"':
 			quote = c
 		case c == '&':
 			out.WriteString("." + class)
+			replaced++
+			continue
+		case opensURL(css[i:]):
+			out.WriteString(css[i : i+4])
+			i += 3
+			inURL = true
 			continue
 		}
 		out.WriteByte(c)
@@ -313,7 +383,12 @@ func scopeRules(css, class string) string {
 
 	text := strings.TrimSpace(out.String())
 	if text == "" {
-		return ""
+		return "", replaced
 	}
-	return text + "\n"
+	return text + "\n", replaced
+}
+
+// opensURL reports whether the text begins with a url( token, in any case.
+func opensURL(text string) bool {
+	return len(text) >= 4 && strings.EqualFold(text[:4], "url(")
 }

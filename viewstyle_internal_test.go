@@ -123,7 +123,7 @@ var _ = kyse.CSS("p { color: red; }")
 	if err == nil {
 		t.Fatal("a block with no & was accepted")
 	}
-	if !strings.Contains(err.Error(), "no & in it") {
+	if !strings.Contains(err.Error(), "no & that is a selector") {
 		t.Errorf("the refusal does not say why: %v", err)
 	}
 }
@@ -155,13 +155,89 @@ var _ = kyse.CSS("& { gap: 6px; }" +
 // wrong if it does not look at quotes, and it is worth the eight lines that
 // avoid it: content: "&" is an ampersand on the page.
 func TestAnAmpersandInsideQuotesIsNotASelector(t *testing.T) {
-	got := scopeRules(`&::after { content: "&"; }`, "k-abc123abc123")
+	got, replaced := scopeRules(`&::after { content: "&"; }`, "k-abc123abc123")
 
 	if want := `.k-abc123abc123::after`; !strings.Contains(got, want) {
 		t.Errorf("the selector was not scoped: %s", got)
 	}
 	if want := `content: "&";`; !strings.Contains(got, want) {
 		t.Errorf("the ampersand inside the quotes was replaced: %s", got)
+	}
+	if replaced != 1 {
+		t.Errorf("scopeRules replaced %d ampersands, want 1", replaced)
+	}
+}
+
+// TestAnApostropheInACommentDoesNotSwallowTheBlock is the defect the quote
+// scanner shipped with.
+//
+// It read quotes and knew nothing of comments, so the apostrophe in ordinary
+// English prose opened quote mode and nothing ever closed it: every & below the
+// comment was left alone, the element still got its class, and the stylesheet
+// got a bare & at the top of a rule that then applied to nothing.
+func TestAnApostropheInACommentDoesNotSwallowTheBlock(t *testing.T) {
+	got, replaced := scopeRules("/* the card's own gap */\n& { gap: 6px; }", "k-abc123abc123")
+
+	if replaced != 1 {
+		t.Fatalf("scopeRules replaced %d ampersands, want 1:\n%s", replaced, got)
+	}
+	if strings.Contains(got, "& {") {
+		t.Errorf("the selector after the comment was left unscoped:\n%s", got)
+	}
+}
+
+// TestAnAmpersandInAQueryStringIsNotASelector: the & of url(x?a=1&b=2) separates
+// two parameters, and replacing it writes an address nothing serves.
+func TestAnAmpersandInAQueryStringIsNotASelector(t *testing.T) {
+	got, _ := scopeRules("& { background-image: url(/i/x.png?a=1&b=2); }", "k-abc123abc123")
+
+	if !strings.Contains(got, "url(/i/x.png?a=1&b=2)") {
+		t.Errorf("the query string was rewritten:\n%s", got)
+	}
+	if !strings.Contains(got, ".k-abc123abc123 {") {
+		t.Errorf("the selector was not scoped:\n%s", got)
+	}
+}
+
+// TestABlockWhoseOnlyAmpersandIsNotASelectorIsRefused closes the gap between the
+// guard and the substitution. The guard used to ask whether the text contained
+// an &; this asks whether the substitution found one, which is the same question
+// the output answers.
+func TestABlockWhoseOnlyAmpersandIsNotASelectorIsRefused(t *testing.T) {
+	for _, block := range []string{
+		`a::after { content: "&"; }`,
+		"/* a & b */\np { color: red; }",
+		"p { background-image: url(/i/x.png?a=1&b=2); }",
+	} {
+		root := writeStyleProject(t, map[string]string{
+			"app/x.go": "package app\n\nimport \"github.com/arandu-io/kyse\"\n\nvar _ = kyse.CSS(`" + block + "`)\n",
+		})
+		if _, err := scopedStylesheet(root); err == nil {
+			t.Errorf("a block whose only & is not a selector was accepted: %s", block)
+		}
+	}
+}
+
+// TestADotImportIsRefusedRatherThanLost. A dot import writes CSS(…) with no
+// package in front, which this pass cannot tell from any other call of that
+// name -- so the block would compile to nothing and the element would carry a
+// class no rule was emitted for.
+func TestADotImportIsRefusedRatherThanLost(t *testing.T) {
+	root := writeStyleProject(t, map[string]string{
+		"app/x.go": `package app
+
+import . "github.com/arandu-io/kyse"
+
+var _ = CSS("& { gap: 6px; }")
+`,
+	})
+
+	_, err := scopedStylesheet(root)
+	if err == nil {
+		t.Fatal("a dot import was accepted, and the block in it would be lost")
+	}
+	if !strings.Contains(err.Error(), "imported with a dot") {
+		t.Errorf("the refusal does not say why: %v", err)
 	}
 }
 

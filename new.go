@@ -19,7 +19,7 @@ import (
 // projects.
 const (
 	skeletonRepo    = "https://github.com/arandu-io/arandu.git"
-	skeletonVersion = "v0.10.0"
+	skeletonVersion = "v0.10.1"
 )
 
 // newProject creates a project from the skeleton.

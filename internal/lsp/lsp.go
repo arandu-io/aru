@@ -619,7 +619,7 @@ func htmlAttributeNamePosition(source string, at position) bool {
 	if tag == "" || strings.HasPrefix(tag, "/") || strings.HasPrefix(tag, "!") || strings.HasPrefix(tag, "?") {
 		return false
 	}
-	return strings.IndexAny(tag, " \t\r\n") >= 0
+	return strings.ContainsAny(tag, " \t\r\n")
 }
 
 func sourcePrefixAtUTF16Position(source string, at position) (string, bool) {

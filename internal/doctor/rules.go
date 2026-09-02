@@ -2545,8 +2545,22 @@ func rawInterpolations(f *kyse.File) []kyse.Node {
 // Closing at the END is what makes it the whole expression rather than the start
 // of one. `components.Alert(x) + .Body` opens a call and does not end with it,
 // and the half that would reach the page unescaped is the half after the plus.
+//
+// A leading dot is a call too. `.Rich("home.hero.body")` is a method on the page
+// data, and the dot is how a view names anything the page carries -- it says
+// where the name is looked up, not what kind of thing came back. What separates a
+// component from a value here is the argument list, and `.Body` does not have
+// one: it stays a value and the rule still reports it.
+//
+// This read `.Rich(...)` as a value until 31/08/2026, and the cost was on the
+// page rather than in a report. A catalogue line holding <code> was written as
+// {{ .Rich(...) }} to satisfy the warning, the body escaper escaped what Rich had
+// already made safe, and five pages in three languages printed "&lt;code&gt;" to
+// their readers. A rule that pushes correct code into a broken shape is worse
+// than the rule not existing.
 func isNamedCall(expr string) bool {
 	expr = strings.TrimSpace(expr)
+	expr = strings.TrimPrefix(expr, ".")
 
 	i := 0
 	for {

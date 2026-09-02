@@ -17,7 +17,10 @@ import (
 // a project, not a library. Nobody depends on it, which is what
 // lets the framework evolve without fighting the directory layout of older
 // projects.
-const skeletonRepo = "https://github.com/arandu-io/arandu.git"
+const (
+	skeletonRepo    = "https://github.com/arandu-io/arandu.git"
+	skeletonVersion = "v0.10.0"
+)
 
 // newProject creates a project from the skeleton.
 //
@@ -57,7 +60,7 @@ func newProject(args []string, stdout, stderr io.Writer) error {
 	}
 
 	fmt.Fprintf(stdout, "fetching the skeleton\n")
-	clone := exec.Command("git", "clone", "--depth", "1", "--quiet", skeletonRepo, name)
+	clone := exec.Command("git", "clone", "--branch", skeletonVersion, "--single-branch", "--depth", "1", "--quiet", skeletonRepo, name)
 	clone.Stderr = stderr
 	if err := clone.Run(); err != nil {
 		return fmt.Errorf("cloning the skeleton: %w", err)

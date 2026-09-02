@@ -2,6 +2,7 @@ package gen_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/arandu-io/aru/internal/gen"
 	"github.com/arandu-io/aru/internal/kyse"
-	"github.com/arandu-io/aru/tests"
 )
 
 // published is what the generated code is compiled against: the tags a project
@@ -28,15 +28,21 @@ import (
 // The cost is that these three lines go stale the day the skeleton moves, and
 // that is what TestThePinnedTagsMatchTheSkeleton answers.
 var published = map[string]string{
-	"github.com/arandu-io/framework": "v0.41.0",
-	"github.com/arandu-io/hesape":    "v0.19.1",
-	"github.com/arandu-io/kyse":      "v0.14.0",
+	"github.com/arandu-io/framework": "v0.42.0",
+	"github.com/arandu-io/hesape":    "v0.21.0",
+	"github.com/arandu-io/kyse":      "v0.15.1",
 }
 
 // generatedModulePath is the module path the fixtures already generate imports
 // for, so the emitted `example.test/project/app/Models` resolves to the package
 // written beside it.
 const generatedModulePath = "example.test/project"
+
+// publishedSkeletonModule is the immutable project release `aru new` hands to
+// a person. Keeping the literal here makes the generator harness compare its
+// dependency graph with the independently published project rather than with a
+// sibling checkout that a build agent does not have.
+const publishedSkeletonModule = "github.com/arandu-io/arandu@v0.10.0"
 
 // TestTheGeneratedModuleCompiles hands every generator's output to the Go
 // compiler.
@@ -188,23 +194,17 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 
 // TestThePinnedTagsMatchTheSkeleton is the alarm on the constants above.
 //
-// The versions cannot be read out of the skeleton at test time: the machine
-// that runs this in CI has this repository and nothing else, and a test that
-// looked for a sibling checkout would skip there -- in the one place the answer
-// matters. So they are written down, and checked here against the skeleton
-// whenever it happens to be beside this repository, which is every developer's
-// machine and none of the build agents.
+// The versions are read from the same immutable skeleton release that `aru new`
+// clones. A sibling checkout is mutable and absent from build agents, so using
+// one here would either compare against the wrong project or silently skip in
+// the one place the answer matters.
 func TestThePinnedTagsMatchTheSkeleton(t *testing.T) {
-	path := filepath.Join(filepath.Dir(tests.Root(t)), "arandu", "go.mod")
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Skipf("no project skeleton at %s: the pinned tags cannot be checked from here", path)
-	}
+	body := publishedSkeletonGoMod(t)
 
 	for module, want := range published {
-		got := requiredVersion(string(body), module)
+		got := requiredVersion(body, module)
 		if got == "" {
-			t.Errorf("%s does not require %s, and the compile harness pins it at %s", path, module, want)
+			t.Errorf("%s does not require %s, and the compile harness pins it at %s", publishedSkeletonModule, module, want)
 			continue
 		}
 		if got != want {
@@ -212,6 +212,45 @@ func TestThePinnedTagsMatchTheSkeleton(t *testing.T) {
 				module, want, got)
 		}
 	}
+}
+
+func publishedSkeletonGoMod(t *testing.T) string {
+	t.Helper()
+
+	tool, err := exec.LookPath("go")
+	if err != nil {
+		skeletonUnavailable(t, "the Go toolchain is unavailable: %v", err)
+	}
+	cmd := exec.Command(tool, "mod", "download", "-json", publishedSkeletonModule)
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOTOOLCHAIN=local")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		skeletonUnavailable(t, "%s could not be downloaded: %v\n%s", publishedSkeletonModule, err, out)
+	}
+
+	var downloaded struct {
+		GoMod string
+		Error string
+	}
+	if err := json.Unmarshal(out, &downloaded); err != nil {
+		t.Fatalf("decode %s metadata: %v\n%s", publishedSkeletonModule, err, out)
+	}
+	if downloaded.Error != "" {
+		skeletonUnavailable(t, "%s could not be downloaded: %s", publishedSkeletonModule, downloaded.Error)
+	}
+	body, err := os.ReadFile(downloaded.GoMod)
+	if err != nil {
+		t.Fatalf("read %s go.mod: %v", publishedSkeletonModule, err)
+	}
+	return string(body)
+}
+
+func skeletonUnavailable(t *testing.T, format string, args ...any) {
+	t.Helper()
+	if os.Getenv("CI") != "" {
+		t.Fatalf(format, args...)
+	}
+	t.Skipf(format, args...)
 }
 
 // compiled is the specification the harness generates from.

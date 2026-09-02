@@ -69,8 +69,8 @@ func TestInitializeAdvertisesKyseDocumentSyncAndCompletion(t *testing.T) {
 	if initialize.Result.Capabilities.TextDocumentSync.Change != 1 {
 		t.Errorf("text sync kind = %d, want full document sync (1)", initialize.Result.Capabilities.TextDocumentSync.Change)
 	}
-	if got := initialize.Result.Capabilities.CompletionProvider.TriggerCharacters; len(got) != 1 || got[0] != "@" {
-		t.Errorf("completion triggers = %v, want [@]", got)
+	if got := initialize.Result.Capabilities.CompletionProvider.TriggerCharacters; len(got) != 2 || got[0] != "@" || got[1] != "-" {
+		t.Errorf("completion triggers = %v, want [@ -]", got)
 	}
 
 	var shutdown struct {
@@ -324,6 +324,117 @@ func TestPartiallyTypedDirectiveCompletionKeepsTheExistingAtSignAtUTF16Position(
 		t.Fatal("completion did not offer @foreach for @fo")
 	}
 	t.Fatal("partial completion request received no response")
+}
+
+func TestCompletionDescribesHTMXAttributesInsideAnOpeningTag(t *testing.T) {
+	const uri = "file:///workspace/resources/views/home.kyse.go"
+	input := frames(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go","languageId":"kyse","version":1,"text":"<button hx-"}}}`,
+		`{"jsonrpc":"2.0","id":"attributes","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go"},"position":{"line":0,"character":11}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var output bytes.Buffer
+	if err := lsp.Serve(bytes.NewReader(input), &output); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+
+	type completion struct {
+		Label         string `json:"label"`
+		Kind          int    `json:"kind"`
+		Detail        string `json:"detail"`
+		Documentation string `json:"documentation"`
+		InsertText    string `json:"insertText"`
+		SortText      string `json:"sortText"`
+	}
+	for _, body := range readFrames(t, output.Bytes()) {
+		var message struct {
+			ID     json.RawMessage `json:"id"`
+			Result json.RawMessage `json:"result"`
+		}
+		if err := json.Unmarshal(body, &message); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if string(message.ID) != `"attributes"` {
+			continue
+		}
+		var items []completion
+		if err := json.Unmarshal(message.Result, &items); err != nil {
+			t.Fatalf("decode completion items: %v", err)
+		}
+		if len(items) < 10 {
+			t.Fatalf("HTMX completion count = %d, want the request and swap attributes", len(items))
+		}
+		for _, item := range items {
+			if item.Label != "hx-get" {
+				continue
+			}
+			if item.Kind != 10 {
+				t.Errorf("hx-get kind = %d, want property (10)", item.Kind)
+			}
+			if item.Detail != "Issues a GET request" || item.Documentation == "" {
+				t.Errorf("hx-get editor copy = detail %q, documentation %q", item.Detail, item.Documentation)
+			}
+			if item.InsertText != "hx-get" || item.SortText == "" {
+				t.Errorf("hx-get insertion = %q sort=%q", item.InsertText, item.SortText)
+			}
+			return
+		}
+		t.Fatal("completion did not offer hx-get")
+	}
+	t.Fatal("HTMX completion request received no response for " + uri)
+}
+
+func TestHTMXCompletionStaysOutOfTextAndAttributeValues(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		text      string
+		character int
+	}{
+		{name: "text", text: "<p>hx-", character: 6},
+		{name: "attribute value", text: `<button title="hx-`, character: 18},
+		{name: "closing tag", text: "</hx-", character: 5},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			input := frames(
+				`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+				fmt.Sprintf(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go","languageId":"kyse","version":1,"text":%q}}}`, test.text),
+				fmt.Sprintf(`{"jsonrpc":"2.0","id":"completion","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go"},"position":{"line":0,"character":%d}}}`, test.character),
+				`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+				`{"jsonrpc":"2.0","method":"exit"}`,
+			)
+			var output bytes.Buffer
+			if err := lsp.Serve(bytes.NewReader(input), &output); err != nil {
+				t.Fatalf("serve: %v", err)
+			}
+			for _, body := range readFrames(t, output.Bytes()) {
+				var message struct {
+					ID     json.RawMessage `json:"id"`
+					Result json.RawMessage `json:"result"`
+				}
+				if err := json.Unmarshal(body, &message); err != nil {
+					t.Fatalf("decode response: %v", err)
+				}
+				if string(message.ID) != `"completion"` {
+					continue
+				}
+				var items []struct {
+					Label string `json:"label"`
+				}
+				if err := json.Unmarshal(message.Result, &items); err != nil {
+					t.Fatalf("decode completion items: %v", err)
+				}
+				for _, item := range items {
+					if strings.HasPrefix(item.Label, "hx-") {
+						t.Fatalf("completion offered %q outside an HTML attribute name", item.Label)
+					}
+				}
+				return
+			}
+			t.Fatal("completion request received no response")
+		})
+	}
 }
 
 func TestProjectGraphUsesTheInitializedRootAndReturnsClickableZeroBasedLocations(t *testing.T) {

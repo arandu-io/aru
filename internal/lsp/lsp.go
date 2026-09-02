@@ -121,7 +121,7 @@ func Serve(in io.Reader, out io.Writer) error {
 						Change:    1,
 					},
 					CompletionProvider: completionOptions{
-						TriggerCharacters: []string{"@"},
+						TriggerCharacters: []string{"@", "-"},
 					},
 				},
 			}
@@ -364,9 +364,12 @@ type completionOptions struct {
 }
 
 type completionItem struct {
-	Label      string `json:"label"`
-	Kind       int    `json:"kind"`
-	InsertText string `json:"insertText"`
+	Label         string `json:"label"`
+	Kind          int    `json:"kind"`
+	Detail        string `json:"detail,omitempty"`
+	Documentation string `json:"documentation,omitempty"`
+	InsertText    string `json:"insertText"`
+	SortText      string `json:"sortText,omitempty"`
 }
 
 type completionParams struct {
@@ -502,6 +505,10 @@ func utf16Length(value string) int {
 }
 
 func completionItems(source string, at position) []completionItem {
+	if htmlAttributeNamePosition(source, at) {
+		return htmxCompletionItems()
+	}
+
 	insertPrefix := "@"
 	if directiveAtSignBeforeUTF16Position(sourceLine(source, at.Line), at.Character) {
 		insertPrefix = ""
@@ -511,11 +518,144 @@ func completionItems(source string, at position) []completionItem {
 	for i, directive := range directives {
 		items[i] = completionItem{
 			Label:      "@" + directive,
-			Kind:       14,
+			Kind:       completionItemKindKeyword,
 			InsertText: insertPrefix + directive,
 		}
 	}
 	return items
+}
+
+const (
+	completionItemKindProperty = 10
+	completionItemKindKeyword  = 14
+)
+
+type htmxAttribute struct {
+	name          string
+	detail        string
+	documentation string
+}
+
+var htmxAttributes = []htmxAttribute{
+	{name: "hx-get", detail: "Issues a GET request", documentation: "Requests HTML with GET and swaps the response into the page."},
+	{name: "hx-post", detail: "Issues a POST request", documentation: "Submits the element with POST and swaps the returned HTML."},
+	{name: "hx-put", detail: "Issues a PUT request", documentation: "Sends a PUT request and swaps the returned HTML."},
+	{name: "hx-patch", detail: "Issues a PATCH request", documentation: "Sends a PATCH request and swaps the returned HTML."},
+	{name: "hx-delete", detail: "Issues a DELETE request", documentation: "Sends a DELETE request and swaps the returned HTML."},
+	{name: "hx-target", detail: "Selects the swap target", documentation: "Chooses which element receives the response."},
+	{name: "hx-swap", detail: "Controls the response swap", documentation: "Chooses how and when the returned HTML replaces existing content."},
+	{name: "hx-trigger", detail: "Defines what starts the request", documentation: "Declares the event and timing that trigger the request."},
+	{name: "hx-boost", detail: "Boosts links and forms", documentation: "Turns normal navigation or submission into an HTML request."},
+	{name: "hx-indicator", detail: "Selects the request indicator", documentation: "Chooses the element shown while the request is in flight."},
+	{name: "hx-include", detail: "Includes additional values", documentation: "Adds values from other elements to the request."},
+	{name: "hx-params", detail: "Filters submitted parameters", documentation: "Includes or excludes named request parameters."},
+	{name: "hx-push-url", detail: "Updates browser history", documentation: "Pushes a URL into browser history after the response is swapped."},
+}
+
+func htmxCompletionItems() []completionItem {
+	items := make([]completionItem, len(htmxAttributes))
+	for index, attribute := range htmxAttributes {
+		items[index] = completionItem{
+			Label:         attribute.name,
+			Kind:          completionItemKindProperty,
+			Detail:        attribute.detail,
+			Documentation: attribute.documentation,
+			InsertText:    attribute.name,
+			SortText:      fmt.Sprintf("%02d-%s", index, attribute.name),
+		}
+	}
+	return items
+}
+
+func htmlAttributeNamePosition(source string, at position) bool {
+	prefix, ok := sourcePrefixAtUTF16Position(source, at)
+	if !ok {
+		return false
+	}
+
+	insideTag := false
+	quote := byte(0)
+	tagStart := -1
+	for index := 0; index < len(prefix); index++ {
+		if !insideTag {
+			if prefix[index] != '<' {
+				continue
+			}
+			if strings.HasPrefix(prefix[index:], "<!--") {
+				end := strings.Index(prefix[index+4:], "-->")
+				if end < 0 {
+					return false
+				}
+				index += end + 6
+				continue
+			}
+			insideTag = true
+			tagStart = index + 1
+			continue
+		}
+
+		current := prefix[index]
+		if quote != 0 {
+			if current == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch current {
+		case '\'', '"':
+			quote = current
+		case '>':
+			insideTag = false
+			tagStart = -1
+		case '<':
+			tagStart = index + 1
+		}
+	}
+	if !insideTag || quote != 0 || tagStart < 0 {
+		return false
+	}
+
+	tag := strings.TrimSpace(prefix[tagStart:])
+	if tag == "" || strings.HasPrefix(tag, "/") || strings.HasPrefix(tag, "!") || strings.HasPrefix(tag, "?") {
+		return false
+	}
+	return strings.IndexAny(tag, " \t\r\n") >= 0
+}
+
+func sourcePrefixAtUTF16Position(source string, at position) (string, bool) {
+	lines := strings.Split(source, "\n")
+	if at.Line < 0 || at.Line >= len(lines) {
+		return "", false
+	}
+	line := strings.TrimSuffix(lines[at.Line], "\r")
+	prefix, ok := linePrefixAtUTF16Position(line, at.Character)
+	if !ok {
+		return "", false
+	}
+	if at.Line == 0 {
+		return prefix, true
+	}
+	return strings.Join(lines[:at.Line], "\n") + "\n" + prefix, true
+}
+
+func linePrefixAtUTF16Position(line string, character int) (string, bool) {
+	if character < 0 {
+		return "", false
+	}
+	units := 0
+	var prefix strings.Builder
+	for _, current := range line {
+		width := utf16Length(string(current))
+		if units+width > character {
+			return "", false
+		}
+		units += width
+		prefix.WriteRune(current)
+		if units == character {
+			return prefix.String(), true
+		}
+	}
+	return prefix.String(), units == character
 }
 
 func directiveAtSignBeforeUTF16Position(line string, character int) bool {

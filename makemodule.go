@@ -37,7 +37,7 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 	}
 	if name == "" {
 		if fs.NArg() == 0 {
-			return fmt.Errorf("usage: aru make:module <name> --fields %q\n%s",
+			return fmt.Errorf("usage: aru make:module <name> --fields %q [--tenant] [--force]\n%s",
 				"title:string!,amount:money", gen.TypeList())
 		}
 		name = fs.Arg(0)

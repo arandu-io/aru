@@ -5,7 +5,8 @@ import (
 	"strings"
 )
 
-// How arguments are read where the flag package cannot read them.
+// How arguments are read where the flag package cannot read them, and how every
+// command answers a request to explain itself.
 //
 // Almost everything in this binary parses with flag from the standard library.
 // The font commands cannot: flag stops at the first argument that is not a
@@ -72,4 +73,22 @@ func unknownFlag(command, arg string) error {
 	return fmt.Errorf("unknown flag %q\n\n"+
 		"A value attaches either way: --flag=value and --flag value are read the same.\n"+
 		"Run `aru %s --help` for the flags this command takes", arg, command)
+}
+
+// wantsHelp answers whether the arguments ask the command to explain itself.
+//
+// The scan stops at a bare --, because everything after it belongs to the
+// program the command starts rather than to the command: `aru serve -- --help`
+// is the application's --help, and answering it here would hide a flag this
+// binary knows nothing about.
+func wantsHelp(args []string) bool {
+	for _, arg := range args {
+		switch arg {
+		case "--":
+			return false
+		case "-h", "-help", "--help":
+			return true
+		}
+	}
+	return false
 }

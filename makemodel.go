@@ -48,7 +48,7 @@ func makeModel(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("make:model: %w", err)
 	}
 	if name == "" {
-		return fmt.Errorf("usage: aru make:model <Name> --fields %q\n%s",
+		return fmt.Errorf("usage: aru make:model <Name> --fields %q [--tenant] [--migration] [--factory] [--force]\n%s",
 			"reference:string!u,total:money", gen.TypeList())
 	}
 	if err := checkFlatTree("make:model", name); err != nil {
@@ -70,7 +70,7 @@ func makeModel(args []string, stdout, stderr io.Writer) error {
 	// struct is the schema, so a model with no fields describes nothing.
 	parsed, err := gen.ParseFields(*fields)
 	if err != nil {
-		return fmt.Errorf("make:model: %w\nusage: aru make:model <Name> --fields %q\n%s",
+		return fmt.Errorf("make:model: %w\nusage: aru make:model <Name> --fields %q [--tenant] [--migration] [--factory] [--force]\n%s",
 			err, "reference:string!u,total:money", gen.TypeList())
 	}
 

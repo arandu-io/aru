@@ -107,3 +107,123 @@ func TestAnUnknownFlagSaysHowAValueAttaches(t *testing.T) {
 		t.Errorf("the refusal does not say how a value attaches: %q", stderr)
 	}
 }
+
+// TestEveryCommandAnswersHelp walks the dispatch table, and it is the guard
+// against the next command being added without it.
+//
+// --help is the reflex, and a command that answers it with an error is one
+// whose explanation can only be found by getting the command wrong. Asserting
+// it of every entry rather than of a list is what makes the next entry pay.
+func TestEveryCommandAnswersHelp(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	for _, c := range commands {
+		for _, spelling := range []string{"--help", "-h"} {
+			code, stdout, stderr := exercise(t, c.name, spelling)
+			if code != 0 {
+				t.Errorf("aru %s %s exited %d: %s", c.name, spelling, code, stderr)
+				continue
+			}
+			if !strings.Contains(stdout, c.usage) {
+				t.Errorf("aru %s %s does not print its usage line: %q", c.name, spelling, stdout)
+			}
+			if !strings.Contains(stdout, c.desc) {
+				t.Errorf("aru %s %s does not print what it does: %q", c.name, spelling, stdout)
+			}
+		}
+	}
+}
+
+// TestFontAddExplainsTheTwoRolesUnderHelp: the explanation that was only
+// reachable by getting the command wrong is reachable by asking.
+//
+// Both halves are asserted because both are what the command refuses with, and
+// the point of --help printing them is that there is one copy of each.
+func TestFontAddExplainsTheTwoRolesUnderHelp(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	_, stdout, _ := exercise(t, "font:add", "--help")
+	for _, want := range []string{
+		"display is headings and the masthead",
+		"aru font:search grotesk",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("aru font:add --help does not carry %q: %q", want, stdout)
+		}
+	}
+}
+
+// TestTheApplicationsFlagsAreNotAnswered: `aru serve -- --help` asks the
+// application, and the scan for --help has to stop at the bare -- to leave it
+// alone.
+func TestTheApplicationsFlagsAreNotAnswered(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	code, stdout, stderr := exercise(t, "serve", "--", "--help")
+	if code == 0 {
+		t.Error("serve ran outside a project")
+	}
+	if strings.Contains(stdout, "usage: aru serve") {
+		t.Errorf("aru answered a flag addressed to the application: %q", stdout)
+	}
+	if !strings.Contains(stderr, "arandu.toml") {
+		t.Errorf("the command did not reach the project check: %q", stderr)
+	}
+}
+
+// TestAPrefixAnswersWithItsFamily: `aru font` names a family and no command.
+//
+// The whole table is not the answer. It is fifty-four lines, the five being
+// reached for are somewhere in it, and inside a project the name went to the
+// application's binary instead -- which lists its own commands and none of them
+// is a font command.
+func TestAPrefixAnswersWithItsFamily(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	code, _, stderr := exercise(t, "font")
+	if code == 0 {
+		t.Error("a family name with no command exited 0")
+	}
+	for _, want := range []string{"font:add", "font:search", "font:remove"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("the answer does not offer %s: %q", want, stderr)
+		}
+	}
+	if strings.Contains(stderr, "key:generate") {
+		t.Error("the whole table was printed, which is what buries the commands being reached for")
+	}
+}
+
+// TestTheRefusalRepeatsTheDispatchTable: a command that refuses for want of its
+// name says the line --help says.
+//
+// Each of these writes its own copy, and it has to stay a copy: a command
+// function cannot read the table it is listed in, because the table is a
+// package variable initialised from the function and Go refuses the cycle. So
+// nothing but this test holds the two together, and eight of them had already
+// drifted before anything printed both -- a flag in one and not the other, an
+// argument called <module> in one and <entity> in the other.
+func TestTheRefusalRepeatsTheDispatchTable(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	for _, name := range []string{
+		"new", "generate",
+		"make:module", "make:model", "make:migration", "make:controller",
+		"make:middleware", "make:request", "make:factory", "make:seeder",
+		"make:job", "make:mail", "make:command", "make:listener", "make:event",
+		"make:enum", "make:policy", "make:test",
+	} {
+		c, found := lookup(name)
+		if !found {
+			t.Errorf("%s is not in the dispatch table", name)
+			continue
+		}
+		code, _, stderr := exercise(t, name)
+		if code == 0 {
+			t.Errorf("%s exited 0 with no name", name)
+		}
+		if !strings.Contains(stderr, c.usage) {
+			t.Errorf("%s refuses with a usage line of its own:\n  table: %q\n  said:  %q", name, c.usage, stderr)
+		}
+	}
+}

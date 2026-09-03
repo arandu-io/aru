@@ -36,7 +36,7 @@ func makeTest(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("make:test: %w", err)
 	}
 	if name == "" {
-		return errors.New(`usage: aru make:test <Name> [--force]`)
+		return errors.New(`usage: aru make:test <Name> [--force] [--dry-run]`)
 	}
 	if err := checkFlatTree("make:test", name); err != nil {
 		return err

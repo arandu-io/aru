@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 )
 
@@ -12,7 +13,12 @@ type command struct {
 	name  string
 	usage string
 	desc  string
-	run   func(args []string, stdout, stderr io.Writer) error
+	// help is the longer explanation, for a command whose usage line is not the
+	// whole answer. Most leave it empty, and the one that fills it fills it from
+	// the strings its own refusals are written from rather than from a second
+	// copy written for this field.
+	help string
+	run  func(args []string, stdout, stderr io.Writer) error
 }
 
 // commands is the whole CLI surface. Everything listed here runs, because an
@@ -208,8 +214,9 @@ var commands = []command{
 	{
 		name: "font:add",
 		usage: `aru font:add "Young Serif" --as display [--weight 400..700] [--subset latin,latin-ext]` + "\n" +
-			`             aru font:add --file ./Arandu.woff2 --family "Arandu" --as display [--metrics-from ./Arandu.ttf]`,
+			`       aru font:add --file ./Arandu.woff2 --family "Arandu" --as display [--metrics-from ./Arandu.ttf]`,
 		desc: "vendor a font into the project, from the catalogue or from a file of your own",
+		help: fontAddHelp,
 		run:  fontAdd,
 	},
 	{
@@ -272,7 +279,7 @@ var commands = []command{
 	},
 	{
 		name:  "make:migration",
-		usage: `aru make:migration <name> [--create=<table> | --table=<table>] --fields "status:string"`,
+		usage: `aru make:migration <name> [--create=<table> | --table=<table>] --fields "status:string,paid_at:timestamp"`,
 		desc:  "generate one migration: a table, or columns added to one",
 		run:   makeMigration,
 	},
@@ -290,7 +297,7 @@ var commands = []command{
 	},
 	{
 		name:  "make:request",
-		usage: `aru make:request <Name> [--fields "reference:string!"] [--force]`,
+		usage: `aru make:request <Name> [--fields "reference:string!,total:money!"] [--force]`,
 		desc:  "generate one input contract; authorization stays in the Policy",
 		run:   makeRequest,
 	},
@@ -314,7 +321,7 @@ var commands = []command{
 	},
 	{
 		name:  `make:mail`,
-		usage: `aru make:mail <Name> [--subject "Welcome"] [--fields "name:string"] [--force]`,
+		usage: `aru make:mail <Name> [--subject "Welcome"] [--fields "name:string,link:string"] [--force]`,
 		desc:  "generate a mailable and the two views it renders, HTML and plain text",
 		run:   makeMail,
 	},
@@ -338,13 +345,13 @@ var commands = []command{
 	},
 	{
 		name:  "make:enum",
-		usage: "aru make:enum <Name> --values draft,sent,paid [--int] [--force]",
+		usage: "aru make:enum <Name> --values draft,sent,paid,void [--int] [--force]",
 		desc:  "generate a closed set of values, with the Scan/Value pair the column needs",
 		run:   makeEnum,
 	},
 	{
 		name:  "make:policy",
-		usage: "aru make:policy <entity>",
+		usage: "aru make:policy <module>",
 		desc:  "generate a policy for an existing entity",
 		run:   makePolicy,
 	},
@@ -386,15 +393,63 @@ func lookup(name string) (command, bool) {
 	return command{}, false
 }
 
+// subcommands answers the commands whose name is the given prefix followed by a
+// colon: font gives the font: family.
+//
+// A name that already carries a colon gets nothing back, because it named a
+// command and missed. Answering `aru make:contoller` with the whole make family
+// would bury the line that says the name is unknown under every name it is not.
+func subcommands(prefix string) []command {
+	if strings.Contains(prefix, ":") {
+		return nil
+	}
+	var found []command
+	for _, c := range commands {
+		if strings.HasPrefix(c.name, prefix+":") {
+			found = append(found, c)
+		}
+	}
+	return found
+}
+
+// explain writes what one command says about itself.
+//
+// It is one function rather than a branch in each command, because a command
+// that answered --help on its own would answer it in its own words, and the
+// difference between two of them is invisible until somebody reads both.
+func explain(c command, w io.Writer) {
+	fmt.Fprintf(w, "usage: %s\n\n%s\n", c.usage, c.desc)
+	if c.help != "" {
+		fmt.Fprintf(w, "\n%s\n", c.help)
+	}
+}
+
 // usage prints the command list. No emoji and no exclamation marks: the tone is
 // sober everywhere, including here.
 func usage(w io.Writer) {
 	fmt.Fprint(w, "arandu — a Go framework for web applications, services and REST APIs\n\nusage: aru <command> [arguments]\n\n")
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	for _, c := range commands {
-		fmt.Fprintf(tw, "  %s\t%s\n", c.name, c.desc)
-	}
+	list(tw, commands)
 	fmt.Fprint(tw, "\n  help\tthis list\n  version\tthe aru version\n")
 	_ = tw.Flush()
+}
+
+// listFamily prints one family of commands the way usage prints the whole
+// table.
+func listFamily(w io.Writer, of []command) {
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	list(tw, of)
+	_ = tw.Flush()
+}
+
+// list writes a name-and-description row per command.
+//
+// It takes the tabwriter rather than making one, because usage writes two more
+// rows after these and all of them have to be measured together: a second
+// writer would pad its own column and the two would not line up.
+func list(tw *tabwriter.Writer, of []command) {
+	for _, c := range of {
+		fmt.Fprintf(tw, "  %s\t%s\n", c.name, c.desc)
+	}
 }

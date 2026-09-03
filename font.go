@@ -40,6 +40,32 @@ const (
 	fontGoGen = "assets/fonts.go"
 )
 
+// The two things `aru font:add` has to explain: where a family comes from, and
+// what the two roles are.
+//
+// They are named rather than written where they are printed, because each is
+// said in three places -- the refusal for a missing family, the refusal of an
+// invalid role, and `aru font:add --help`. Three copies of a paragraph drift
+// apart, and nothing shows the drift until somebody reads two of them.
+const (
+	fontSources = `Anything in the catalogue, by the name it is published under. To find one:
+
+    aru font:search grotesk
+    aru font:search --category serif --variable
+    aru font:info "Young Serif"
+
+Or a file of your own:
+
+    aru font:add --file ./Arandu.woff2 --family "Arandu" --as display`
+
+	fontRoles = `display is headings and the masthead; body is running text. There are two,
+deliberately: a third would be a third file in every binary, and the answer to
+"what about captions" is a weight rather than a family.`
+
+	// fontAddHelp is the body `aru font:add --help` prints, under the usage line.
+	fontAddHelp = fontSources + "\n\n" + fontRoles
+)
+
 func fontAdd(args []string, stdout, stderr io.Writer) error {
 	root, err := projectRoot()
 	if err != nil {
@@ -49,22 +75,22 @@ func fontAdd(args []string, stdout, stderr io.Writer) error {
 	var family, role, weight, subsets, file, metricsFrom string
 	var rest []string
 	for i := 0; i < len(args); i++ {
-		switch args[i] {
+		switch flagName(args[i]) {
 		case "--as", "-a":
-			role, i = next(args, i)
+			role, i = flagValue(args, i)
 		case "--weight", "-w":
-			weight, i = next(args, i)
+			weight, i = flagValue(args, i)
 		case "--subset", "-s":
-			subsets, i = next(args, i)
+			subsets, i = flagValue(args, i)
 		case "--file", "-f":
-			file, i = next(args, i)
+			file, i = flagValue(args, i)
 		case "--family":
-			family, i = next(args, i)
+			family, i = flagValue(args, i)
 		case "--metrics-from":
-			metricsFrom, i = next(args, i)
+			metricsFrom, i = flagValue(args, i)
 		default:
 			if strings.HasPrefix(args[i], "-") {
-				return fmt.Errorf("unknown flag %q", args[i])
+				return unknownFlag("font:add", args[i])
 			}
 			rest = append(rest, args[i])
 		}
@@ -82,22 +108,10 @@ func fontAdd(args []string, stdout, stderr io.Writer) error {
     aru font:add "Young Serif" --as display
     aru font:add "Public Sans" --as body --weight 400..700
 
-Anything in the catalogue, by the name it is published under. To find one:
-
-    aru font:search grotesk
-    aru font:search --category serif --variable
-    aru font:info "Young Serif"
-
-Or a file of your own:
-
-    aru font:add --file ./Arandu.woff2 --family "Arandu" --as display`)
+%s`, fontSources)
 	}
 	if !fonts.Role(role).Valid() {
-		return fmt.Errorf(`--as must be display or body, and %q is neither.
-
-display is headings and the masthead; body is running text. There are two,
-deliberately: a third would be a third file in every binary, and the answer to
-"what about captions" is a weight rather than a family.`, role)
+		return fmt.Errorf("--as must be display or body, and %q is neither.\n\n%s", role, fontRoles)
 	}
 
 	var subsetList []string
@@ -406,11 +420,4 @@ func size(n int) string {
 		return fmt.Sprintf("%d B", n)
 	}
 	return fmt.Sprintf("%.1f KB", float64(n)/1024)
-}
-
-func next(args []string, i int) (string, int) {
-	if i+1 < len(args) {
-		return args[i+1], i + 1
-	}
-	return "", i
 }

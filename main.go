@@ -49,6 +49,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	cmd, ok := lookup(name)
 	if !ok {
+		// A family name with no command behind it -- `aru font` rather than `aru
+		// font:add`. Answered here, before anything is delegated: inside a
+		// project the name would otherwise go to the application's binary, which
+		// replies with the commands it knows and none of them is the one being
+		// reached for. Outside one it would print the whole table, with the ones
+		// wanted somewhere in the middle of it.
+		if of := subcommands(name); len(of) > 0 {
+			fmt.Fprintf(stderr, "%s is a family of commands, not a command:\n\n", name)
+			listFamily(stderr, of)
+			return 1
+		}
+
 		// Not one of ours, so it may be one of the application's.
 		//
 		// routes/console.go is where a project declares its own commands, and
@@ -70,6 +82,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", name)
 		usage(stderr)
 		return 1
+	}
+
+	// --help is answered before the command runs, so that every one of them
+	// answers it and none has to remember to. A command reached this way has not
+	// looked at its arguments, found a project or touched a file.
+	if wantsHelp(rest) {
+		explain(cmd, stdout)
+		return 0
 	}
 
 	if err := cmd.run(rest, stdout, stderr); err != nil {

@@ -126,6 +126,18 @@ generator that patches them is a generator whose output nobody can explain.
 description is a phrase in lower case with no full stop, because `aru help`
 prints it in a column.
 
+The usage line is printed, so write it as the answer to `aru <name> --help`.
+`run` in `main.go` answers `--help` and `-h` for every entry before the command
+runs, out of `usage` and `desc` — so do not write a `--help` case inside a
+command, and do not add a second usage string to its own refusal: the two drift,
+and `TestTheRefusalRepeatsTheDispatchTable` is what catches it. A command whose
+usage line is not the whole answer fills the optional `help` field, and fills it
+from the strings its refusals already use rather than from a fresh copy —
+`font:add` is the one that does.
+
+The scan for `--help` stops at a bare `--`, so `aru serve -- --help` still
+belongs to the application.
+
 **8. Run the gates.**
 
 ## What fails if you get it wrong
@@ -142,6 +154,10 @@ pass.
 - **`TestUsageIsSober`** (`main_internal_test.go:34`) reads `aru help` and fails
   on `!`, `🚀`, `✨` or `🎉`. The tone rule is checked at the one place users
   read it.
+- **`TestEveryCommandAnswersHelp`** (`flags_internal_test.go`) runs every entry
+  with `--help` and with `-h`, and fails unless it exits zero having printed its
+  usage line and its description. Every one of the fifty-five failed both
+  spellings before it existed.
 - **`TestUnknownCommandFails`** and **`TestDelegationRequiresAProject`** cover
   the two errors a person actually meets.
 

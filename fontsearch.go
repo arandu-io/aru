@@ -24,22 +24,28 @@ func fontSearch(args []string, stdout, stderr io.Writer) error {
 
 	var words []string
 	for i := 0; i < len(args); i++ {
-		switch args[i] {
+		switch flagName(args[i]) {
 		case "--category", "-c":
-			category, i = next(args, i)
+			category, i = flagValue(args, i)
 		case "--limit", "-n":
 			var raw string
-			raw, i = next(args, i)
+			raw, i = flagValue(args, i)
 			if n, err := strconv.Atoi(raw); err == nil && n > 0 {
 				limit = n
 			}
 		case "--variable", "-v":
+			if err := noValue(args[i]); err != nil {
+				return err
+			}
 			variableOnly = true
 		case "--all":
+			if err := noValue(args[i]); err != nil {
+				return err
+			}
 			limit = 0
 		default:
 			if strings.HasPrefix(args[i], "-") {
-				return fmt.Errorf("unknown flag %q", args[i])
+				return unknownFlag("font:search", args[i])
 			}
 			words = append(words, args[i])
 		}

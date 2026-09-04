@@ -170,6 +170,109 @@ func TestDocumentChangesPublishKyseDiagnosticsAndCloseClearsThem(t *testing.T) {
 	}
 }
 
+// goController is a controller as short as one can be and still be Go: no kyse
+// build tag, because a controller is not a view.
+const goController = "package controllers\n\nfunc (c *Home) Show(ctx *Context) error {\n\treturn ctx.View(\"home\", views.HomeData{})\n}\n"
+
+// TestOpeningGoSourceDoesNotRunItThroughTheViewParser is what opening a
+// controller costs.
+//
+// The view parser's first rule is that a view opens with a kyse build tag, so
+// without a gate every Go file a person opens comes back with an error on line
+// one -- about a language the file is not written in, from a server they did
+// not know was reading it. The second case is the proof that the gate is what
+// produces the silence: the same text, named as a view, is rejected.
+func TestOpeningGoSourceDoesNotRunItThroughTheViewParser(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		uri        string
+		languageID string
+		want       int
+	}{
+		{
+			name:       "opened as the controller it is",
+			uri:        "file:///workspace/app/Http/Controllers/HomeController.go",
+			languageID: "go",
+			want:       0,
+		},
+		{
+			name:       "opened as the view it is not",
+			uri:        "file:///workspace/resources/views/home.kyse.go",
+			languageID: "kyse",
+			want:       1,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			input := frames(
+				`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+				fmt.Sprintf(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":%q,"languageId":%q,"version":1,"text":%q}}}`, test.uri, test.languageID, goController),
+				`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+				`{"jsonrpc":"2.0","method":"exit"}`,
+			)
+			var output bytes.Buffer
+			if err := lsp.Serve(bytes.NewReader(input), &output); err != nil {
+				t.Fatalf("serve: %v", err)
+			}
+
+			published := false
+			for _, body := range readFrames(t, output.Bytes()) {
+				var message struct {
+					Method string `json:"method"`
+					Params struct {
+						URI         string `json:"uri"`
+						Diagnostics []struct {
+							Message string `json:"message"`
+						} `json:"diagnostics"`
+					} `json:"params"`
+				}
+				if err := json.Unmarshal(body, &message); err != nil {
+					t.Fatalf("decode protocol message: %v", err)
+				}
+				if message.Method != "textDocument/publishDiagnostics" || message.Params.URI != test.uri {
+					continue
+				}
+				published = true
+				if len(message.Params.Diagnostics) != test.want {
+					t.Fatalf("opening %s published %d diagnostics, want %d", test.uri, len(message.Params.Diagnostics), test.want)
+				}
+				for _, problem := range message.Params.Diagnostics {
+					if !strings.Contains(problem.Message, "//go:build kyse") {
+						t.Errorf("diagnostic message = %q, want the missing build tag", problem.Message)
+					}
+				}
+			}
+			if !published {
+				t.Fatal("opening the document published no diagnostics at all, so the state of the file is never cleared")
+			}
+		})
+	}
+}
+
+// TestCompletionAnswersNothingInGoSource keeps the two servers off each other's
+// vocabulary.
+//
+// Go source has a language server that knows the types in it. A second list of
+// directives and asset names arriving beside its identifiers would not be a
+// better completion, it would be two completions -- and the person filters both
+// with the same keystrokes.
+func TestCompletionAnswersNothingInGoSource(t *testing.T) {
+	initialize := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`
+
+	items := runCompletionIn(t, initialize,
+		"file:///workspace/app/Http/Controllers/HomeController.go", "go", goController, 3, 8)
+	if len(items) != 0 {
+		t.Errorf("completion in a controller offered %d items, want none: %v", len(items), labelsOf(items))
+	}
+
+	// The same request in a view still answers, which is what says the silence
+	// above is the language and not a broken completion.
+	inView := runCompletionIn(t, initialize,
+		"file:///workspace/resources/views/home.kyse.go", "kyse", "//go:build kyse\n\npackage views\n\n@", 4, 1)
+	if len(inView) == 0 {
+		t.Error("completion in a view offered nothing, so the test above proves nothing")
+	}
+}
+
 func TestDiagnosticRangesUseUTF16AndExcludeTheCarriageReturn(t *testing.T) {
 	input := frames(
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
@@ -501,10 +604,17 @@ func htmxCompletionAt(t *testing.T, text string, line, character int) []completi
 // caller needs: the project-backed families answer only when a root was named.
 func runCompletion(t *testing.T, initialize, text string, line, character int) []completionShape {
 	t.Helper()
+	return runCompletionIn(t, initialize, "file:///workspace/resources/views/home.kyse.go", "kyse", text, line, character)
+}
+
+// runCompletionIn drives one completion request against a named document,
+// which is what decides the language the answer is in.
+func runCompletionIn(t *testing.T, initialize, uri, languageID, text string, line, character int) []completionShape {
+	t.Helper()
 	input := frames(
 		initialize,
-		fmt.Sprintf(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go","languageId":"kyse","version":1,"text":%q}}}`, text),
-		fmt.Sprintf(`{"jsonrpc":"2.0","id":"completion","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go"},"position":{"line":%d,"character":%d}}}`, line, character),
+		fmt.Sprintf(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":%q,"languageId":%q,"version":1,"text":%q}}}`, uri, languageID, text),
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":"completion","method":"textDocument/completion","params":{"textDocument":{"uri":%q},"position":{"line":%d,"character":%d}}}`, uri, line, character),
 		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
 		`{"jsonrpc":"2.0","method":"exit"}`,
 	)

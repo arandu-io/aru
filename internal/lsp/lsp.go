@@ -214,7 +214,13 @@ func Serve(in io.Reader, out io.Writer) error {
 				continue
 			}
 			at := position{Line: *params.Position.Line, Character: *params.Position.Character}
-			items := workspace.completionItems(documents[params.TextDocument.URI], at)
+			// Go source is completed by the Go language server, which knows the
+			// types. Offering the view vocabulary there would put directives and
+			// asset names in a list beside identifiers that actually compile.
+			items := []completionItem{}
+			if !goSourceDocument(params.TextDocument.URI) {
+				items = workspace.completionItems(documents[params.TextDocument.URI], at)
+			}
 			if err := writeResult(out, message.ID, items); err != nil {
 				return err
 			}
@@ -229,7 +235,17 @@ func Serve(in io.Reader, out io.Writer) error {
 				continue
 			}
 			at := position{Line: *params.Position.Line, Character: *params.Position.Character}
-			locations := workspace.definitionsFor(documents[params.TextDocument.URI], at)
+			source := documents[params.TextDocument.URI]
+			// The two languages are asked different questions. A view names
+			// components and layouts, and both resolve here; Go source is the Go
+			// language server's, and the one thing it cannot resolve there is
+			// the view a string names.
+			var locations []protocolLocation
+			if goSourceDocument(params.TextDocument.URI) {
+				locations = workspace.viewDefinitionsInGoSource(source, at)
+			} else {
+				locations = workspace.definitionsFor(source, at)
+			}
 			if err := writeResult(out, message.ID, locations); err != nil {
 				return err
 			}
@@ -488,8 +504,24 @@ func publishDiagnostics(out io.Writer, uri, source string) error {
 	})
 }
 
+// goSourceDocument reports whether a document is Go the compiler reads.
+//
+// A `.kyse.go` ends in `.go` and is not Go -- it carries markup below the
+// package clause -- so the longer suffix is what decides, and it is checked
+// first.
+func goSourceDocument(uri string) bool {
+	name := sourcePath(uri)
+	return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, ".kyse.go")
+}
+
 func diagnosticsFor(uri, source string) []diagnostic {
 	diagnostics := make([]diagnostic, 0)
+	// Go source is not markup, and the view parser reads it as markup: a
+	// controller run through it comes back as a file of errors about a language
+	// it is not written in.
+	if goSourceDocument(uri) {
+		return diagnostics
+	}
 	_, err := kyse.Parse(sourcePath(uri), source)
 	if err == nil {
 		return diagnostics

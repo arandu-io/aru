@@ -75,6 +75,39 @@ import "example.test/app/resources/views/components"
 @endsection
 `
 
+// homeController is the other half of the round trip a view completes.
+//
+// A view names a layout and a component; a controller names the view, and it
+// names it with a string. Every other position in this file is Go the Go
+// language server resolves, and several of them are written to look like the
+// one that is not: the same call appears in a doc comment, a package function
+// of the same name is called without a receiver, and a string with the view's
+// exact spelling is passed to something else.
+const homeController = `package controllers
+
+import (
+	"errors"
+
+	"example.test/app/resources/views"
+)
+
+// Home renders the landing page.
+//
+// It answers with ctx.View("home", …), which is written on this line as prose
+// about the call rather than as the call.
+type Home struct {
+	title string
+}
+
+func (c *Home) Show(ctx *Context) error {
+	if c.title == "" {
+		return errors.New("home")
+	}
+	_ = View("home")
+	return ctx.View("home", views.HomeData{Title: c.title})
+}
+`
+
 func writeDefinitionFixture(t *testing.T, root string) {
 	t.Helper()
 	files := map[string]string{
@@ -115,11 +148,22 @@ type protocolLocation struct {
 // an edit they have not saved must not be sent to the file as it was on disk.
 func definitionAt(t *testing.T, root, text string, line, character int) []protocolLocation {
 	t.Helper()
+	return definitionAtURI(t, root, "file:///doc/home.kyse.go", "kyse", text, line, character)
+}
+
+// definitionAtURI drives one go-to-definition against a named document.
+//
+// The name is what the server decides the language from, and it decides two
+// different behaviours: a view is parsed as markup and answers about
+// components and layouts, while Go source is not parsed at all and answers
+// about exactly one string.
+func definitionAtURI(t *testing.T, root, uri, languageID, text string, line, character int) []protocolLocation {
+	t.Helper()
 	rootURI := (&url.URL{Scheme: "file", Path: root}).String()
 	input := frames(
 		fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"rootUri":%q}}`, rootURI),
-		fmt.Sprintf(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///doc/home.kyse.go","languageId":"kyse","version":1,"text":%q}}}`, text),
-		fmt.Sprintf(`{"jsonrpc":"2.0","id":"definition","method":"textDocument/definition","params":{"textDocument":{"uri":"file:///doc/home.kyse.go"},"position":{"line":%d,"character":%d}}}`, line, character),
+		fmt.Sprintf(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":%q,"languageId":%q,"version":1,"text":%q}}}`, uri, languageID, text),
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":"definition","method":"textDocument/definition","params":{"textDocument":{"uri":%q},"position":{"line":%d,"character":%d}}}`, uri, line, character),
 		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
 		`{"jsonrpc":"2.0","method":"exit"}`,
 	)
@@ -247,6 +291,180 @@ func TestDefinitionOpensTheLayoutNamedByExtends(t *testing.T) {
 	}
 	if got := locations[0].Range.Start.Line; got != 0 {
 		t.Errorf("definition landed on line %d, want the top of the layout", got)
+	}
+}
+
+// definitionInController drives one go-to-definition against a controller,
+// which is Go source and not a view.
+func definitionInController(t *testing.T, root, text string, line, character int) []protocolLocation {
+	t.Helper()
+	return definitionAtURI(t, root, "file:///doc/HomeController.go", "go", text, line, character)
+}
+
+// TestDefinitionOpensTheViewAControllerNames is the click this feature exists
+// for.
+//
+// `ctx.View("home", …)` is where a request stops being Go and becomes a page,
+// and the string is the only thing in the file that says which page. The Go
+// language server resolves the method, the receiver and the data type, and it
+// resolves the argument to nothing, because nothing in the type of a string
+// says it is a filename.
+func TestDefinitionOpensTheViewAControllerNames(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "project")
+	writeDefinitionFixture(t, root)
+
+	for _, test := range []struct {
+		name   string
+		text   string
+		needle string
+		offset int
+		want   string
+	}{
+		{
+			name:   "the view beside the data it is rendered with",
+			text:   homeController,
+			needle: `ctx.View("home", views.HomeData`,
+			offset: 12,
+			want:   filepath.Join(root, "resources", "views", "home.kyse.go"),
+		},
+		{
+			name:   "a dotted name, which is a path under resources/views",
+			text:   strings.Replace(homeController, `ctx.View("home", views.HomeData`, `ctx.View("layouts.app", views.HomeData`, 1),
+			needle: `ctx.View("layouts.app"`,
+			offset: 13,
+			want:   filepath.Join(root, "resources", "views", "layouts", "app.kyse.go"),
+		},
+		{
+			// A call long enough to wrap is the ordinary shape once a page takes
+			// more than two fields, and the argument is the same argument.
+			name: "a call written across several lines",
+			text: strings.Replace(homeController,
+				`return ctx.View("home", views.HomeData{Title: c.title})`,
+				"return ctx.View(\n\t\t\"home\",\n\t\tviews.HomeData{Title: c.title},\n\t)", 1),
+			needle: "\t\t\"home\",",
+			offset: 4,
+			want:   filepath.Join(root, "resources", "views", "home.kyse.go"),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			line, character := offsetOf(t, test.text, test.needle)
+			locations := definitionInController(t, root, test.text, line, character+test.offset)
+			if len(locations) != 1 {
+				t.Fatalf("definition returned %d locations, want the view", len(locations))
+			}
+			if got := pathOf(t, locations[0].URI); got != test.want {
+				t.Errorf("definition opened %q, want %q", got, test.want)
+			}
+			if _, err := os.Stat(test.want); err != nil {
+				t.Errorf("definition named a file that does not exist: %v", err)
+			}
+			if got := locations[0].Range.Start.Line; got != 0 {
+				t.Errorf("definition landed on line %d, want the top of the view", got)
+			}
+		})
+	}
+}
+
+// TestDefinitionInAControllerAnswersOnlyTheViewName is what keeps this from
+// being noise.
+//
+// Every position below is one the Go language server already answers, and an
+// answer offered beside it does not replace it: the editor shows two
+// destinations and the person has to decide which server understood their own
+// code. So the rule is one string and nothing else, and each case is a way of
+// looking like that string without being it.
+func TestDefinitionInAControllerAnswersOnlyTheViewName(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "project")
+	writeDefinitionFixture(t, root)
+
+	for _, test := range []struct {
+		name   string
+		text   string
+		needle string
+		offset int
+		why    string
+	}{
+		{
+			name:   "the context the method is called on",
+			text:   homeController,
+			needle: `ctx.View("home", views.HomeData`,
+			offset: 1,
+			why:    "a receiver is a value, and the Go language server resolves it",
+		},
+		{
+			name:   "the method itself",
+			text:   homeController,
+			needle: `ctx.View("home", views.HomeData`,
+			offset: 5,
+			why:    "View is a method on a type, which is the other server's answer",
+		},
+		{
+			name:   "the type the view is rendered with",
+			text:   homeController,
+			needle: `views.HomeData{Title`,
+			offset: 8,
+			why:    "a struct type is declared in Go and resolved as Go",
+		},
+		{
+			name:   "a field of the receiver",
+			text:   homeController,
+			needle: `Title: c.title}`,
+			offset: 9,
+			why:    "a field is a field",
+		},
+		{
+			name:   "the declaration of the controller",
+			text:   homeController,
+			needle: `type Home struct`,
+			offset: 6,
+			why:    "a type declaration is where the other server sends people already",
+		},
+		{
+			name:   "the same call written in a doc comment",
+			text:   homeController,
+			needle: `ctx.View("home", …)`,
+			offset: 12,
+			why:    "a comment is prose, and prose that quotes a call does not make one",
+		},
+		{
+			name:   "a string with the view's spelling passed to something else",
+			text:   homeController,
+			needle: `errors.New("home")`,
+			offset: 14,
+			why:    "the argument of errors.New is a message, and it names no file",
+		},
+		{
+			name:   "a call to a function of the same name without a receiver",
+			text:   homeController,
+			needle: `_ = View("home")`,
+			offset: 12,
+			why:    "a package function called View is some other function, and where it looks is unknown here",
+		},
+		{
+			name:   "a view the project does not have",
+			text:   strings.Replace(homeController, `ctx.View("home", views`, `ctx.View("dashboard", views`, 1),
+			needle: `ctx.View("dashboard"`,
+			offset: 13,
+			why:    "resources/views/dashboard.kyse.go was never written",
+		},
+		{
+			name:   "a view name that climbs out of the tree",
+			text:   strings.Replace(homeController, `ctx.View("home", views`, `ctx.View("../../etc/passwd", views`, 1),
+			needle: `ctx.View("../../etc/passwd"`,
+			offset: 13,
+			why:    "a view name is a path under resources/views and never above it",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			line, character := offsetOf(t, test.text, test.needle)
+			locations := definitionInController(t, root, test.text, line, character+test.offset)
+			if len(locations) != 0 {
+				t.Errorf("definition returned %d locations for %s; %s", len(locations), test.needle, test.why)
+				for _, at := range locations {
+					t.Errorf("    it offered %s:%d", at.URI, at.Range.Start.Line)
+				}
+			}
+		})
 	}
 }
 

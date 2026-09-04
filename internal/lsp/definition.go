@@ -1,6 +1,8 @@
 package lsp
 
 import (
+	"go/scanner"
+	"go/token"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -353,7 +355,35 @@ func (p *project) definitionsFor(source string, at position) []protocolLocation 
 	if !ok {
 		return []protocolLocation{}
 	}
+	return locationsFor(found)
+}
 
+// viewDefinitionsInGoSource resolves the view a controller names, and nothing
+// else in the file.
+//
+// Go source already has a language server, and it answers every identifier in
+// it. The one thing it cannot answer is a string: `ctx.View("home")` names a
+// file, and nothing in the type of that argument says so. Answering any other
+// position here would not replace that server's answer, it would arrive beside
+// it -- and a person who clicks a type and is offered two destinations has to
+// decide which server was right about their own code.
+func (p *project) viewDefinitionsInGoSource(source string, at position) []protocolLocation {
+	if p == nil {
+		return []protocolLocation{}
+	}
+	name, ok := viewArgumentAt(source, at)
+	if !ok {
+		return []protocolLocation{}
+	}
+	found, ok := p.viewLocation(name)
+	if !ok {
+		return []protocolLocation{}
+	}
+	return locationsFor(found)
+}
+
+// locationsFor turns a place on this disk into the one place an editor opens.
+func locationsFor(found location) []protocolLocation {
 	uri, err := fileURIFromPath(found.file, nativeFilePathStyle())
 	if err != nil {
 		return []protocolLocation{}
@@ -366,6 +396,66 @@ func (p *project) definitionsFor(source string, at position) []protocolLocation 
 			End:   position{Line: line},
 		},
 	}}
+}
+
+// viewMethod is the method a controller renders through. Its first argument is
+// the name of a view.
+const viewMethod = "View"
+
+// scannedToken is one token of Go source and, when it has one, its text.
+type scannedToken struct {
+	kind    token.Token
+	literal string
+}
+
+// viewArgumentAt reads the view name a controller passes to ctx.View when the
+// cursor is inside the quotes.
+//
+// The file is tokenized rather than searched, and each of the three things a
+// search gets wrong is one a controller contains daily: the same call written
+// in a doc comment is prose and not a call, a call broken across lines is still
+// one call, and the name is what the literal unquotes to rather than what lies
+// between the first two quote characters.
+//
+// The selector is required. A bare `View("home")` would be some other function
+// of the file's own package, and this server knows nothing about where that one
+// looks.
+func viewArgumentAt(source string, at position) (string, bool) {
+	prefix, ok := sourcePrefixAtUTF16Position(source, at)
+	if !ok {
+		return "", false
+	}
+	offset := len(prefix)
+
+	fileSet := token.NewFileSet()
+	file := fileSet.AddFile("", -1, len(source))
+	var reader scanner.Scanner
+	// Errors are dropped rather than reported: the buffer is a file being
+	// typed, and the argument of a call above the broken line is still readable.
+	reader.Init(file, []byte(source), nil, 0)
+
+	// What makes a string a view name is the three tokens in front of it --
+	// `.`, `View`, `(` -- and a scanner reads forwards only, so they are carried
+	// along rather than looked back at.
+	var window [3]scannedToken
+	for {
+		pos, kind, literal := reader.Scan()
+		if kind == token.EOF {
+			return "", false
+		}
+		start := file.Offset(pos)
+		if kind == token.STRING && offset > start && offset < start+len(literal) &&
+			window[0].kind == token.PERIOD &&
+			window[1].kind == token.IDENT && window[1].literal == viewMethod &&
+			window[2].kind == token.LPAREN {
+			name, err := strconv.Unquote(literal)
+			if err != nil || name == "" {
+				return "", false
+			}
+			return name, true
+		}
+		window[0], window[1], window[2] = window[1], window[2], scannedToken{kind: kind, literal: literal}
+	}
 }
 
 // viewLocation maps a dotted view name to the file that declares it.

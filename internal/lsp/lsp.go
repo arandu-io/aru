@@ -25,6 +25,11 @@ func Serve(in io.Reader, out io.Writer) error {
 	initialized := false
 	shutdown := false
 	rootURI := ""
+	// workspace is what the tree on disk declares, and stays nil until an
+	// initialize names a root that resolves. Everything that answers about the
+	// project checks it, so a client that opened no folder gets an empty answer
+	// rather than one read from whatever directory the process was started in.
+	var workspace *project
 	documents := map[string]string{}
 	for {
 		body, err := readFrame(reader)
@@ -112,6 +117,12 @@ func Serve(in io.Reader, out io.Writer) error {
 				}
 			}
 			rootURI = params.RootURI
+			if rootURI != "" {
+				root, err := pathFromFileURI(rootURI, nativeFilePathStyle())
+				if err == nil {
+					workspace = newProject(root)
+				}
+			}
 			initialized = true
 			result := initializeResult{
 				Capabilities: serverCapabilities{
@@ -120,6 +131,7 @@ func Serve(in io.Reader, out io.Writer) error {
 						OpenClose: true,
 						Change:    1,
 					},
+					DefinitionProvider: true,
 					CompletionProvider: completionOptions{
 						TriggerCharacters: []string{"@", "-"},
 					},
@@ -206,6 +218,21 @@ func Serve(in io.Reader, out io.Writer) error {
 			if err := writeResult(out, message.ID, items); err != nil {
 				return err
 			}
+		case "textDocument/definition":
+			var params completionParams
+			if !decodeObjectParams(message.Params, &params) || !validCompletionParams(params) {
+				if isRequest {
+					if err := writeError(out, message.ID, -32602, "Invalid params"); err != nil {
+						return err
+					}
+				}
+				continue
+			}
+			at := position{Line: *params.Position.Line, Character: *params.Position.Character}
+			locations := workspace.definitionsFor(documents[params.TextDocument.URI], at)
+			if err := writeResult(out, message.ID, locations); err != nil {
+				return err
+			}
 		case "arandu/projectGraph":
 			if rootURI == "" {
 				if err := writeError(out, message.ID, -32602, "initialize rootUri is required"); err != nil {
@@ -249,7 +276,7 @@ func Serve(in io.Reader, out io.Writer) error {
 
 func requestOnlyMethod(method string) bool {
 	switch method {
-	case "initialize", "shutdown", "textDocument/completion", "arandu/projectGraph":
+	case "initialize", "shutdown", "textDocument/completion", "textDocument/definition", "arandu/projectGraph":
 		return true
 	default:
 		return false
@@ -349,9 +376,20 @@ type initializeParams struct {
 }
 
 type serverCapabilities struct {
-	PositionEncoding   string                  `json:"positionEncoding"`
-	TextDocumentSync   textDocumentSyncOptions `json:"textDocumentSync"`
-	CompletionProvider completionOptions       `json:"completionProvider"`
+	PositionEncoding string                  `json:"positionEncoding"`
+	TextDocumentSync textDocumentSyncOptions `json:"textDocumentSync"`
+	// DefinitionProvider is what makes go-to-definition appear in an editor.
+	// A client registers the feature from this alone, so the whole of what
+	// the adapter has to do about it is nothing.
+	DefinitionProvider bool              `json:"definitionProvider"`
+	CompletionProvider completionOptions `json:"completionProvider"`
+}
+
+// protocolLocation is one place an editor can open, in the protocol's
+// zero-based coordinates.
+type protocolLocation struct {
+	URI   string        `json:"uri"`
+	Range protocolRange `json:"range"`
 }
 
 type textDocumentSyncOptions struct {

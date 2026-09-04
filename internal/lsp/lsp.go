@@ -214,7 +214,7 @@ func Serve(in io.Reader, out io.Writer) error {
 				continue
 			}
 			at := position{Line: *params.Position.Line, Character: *params.Position.Character}
-			items := completionItems(documents[params.TextDocument.URI], at)
+			items := workspace.completionItems(documents[params.TextDocument.URI], at)
 			if err := writeResult(out, message.ID, items); err != nil {
 				return err
 			}
@@ -543,7 +543,29 @@ func utf16Length(value string) int {
 	return len(utf16.Encode([]rune(value)))
 }
 
-func completionItems(source string, at position) []completionItem {
+// completionItems chooses which vocabulary the cursor is in.
+//
+// The order is most specific first. An asset name and a package member are
+// decided by what encloses the cursor -- a particular call, a particular
+// qualifier -- and answering either of them with the directive list would be
+// answering a question nobody asked.
+//
+// Both project-backed families return nothing when the tree cannot answer, and
+// the fall-through is the vocabulary that is true of every view: the directives
+// the compiler knows and the attributes the runtime serves.
+func (p *project) completionItems(source string, at position) []completionItem {
+	if assetCompletionAt(source, at) {
+		if items := p.assetCompletionItems(); len(items) > 0 {
+			return items
+		}
+		return []completionItem{}
+	}
+	if qualifier, ok := memberCompletionAt(source, at); ok {
+		if items := p.memberCompletionItems(source, qualifier); len(items) > 0 {
+			return items
+		}
+		return []completionItem{}
+	}
 	if htmlAttributeNamePosition(source, at) {
 		return htmxCompletionItems()
 	}

@@ -494,8 +494,15 @@ type completionShape struct {
 // marshal is invisible to a test that skips the encoding.
 func htmxCompletionAt(t *testing.T, text string, line, character int) []completionShape {
 	t.Helper()
+	return runCompletion(t, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`, text, line, character)
+}
+
+// runCompletion drives one completion request, with whatever initialize the
+// caller needs: the project-backed families answer only when a root was named.
+func runCompletion(t *testing.T, initialize, text string, line, character int) []completionShape {
+	t.Helper()
 	input := frames(
-		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+		initialize,
 		fmt.Sprintf(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go","languageId":"kyse","version":1,"text":%q}}}`, text),
 		fmt.Sprintf(`{"jsonrpc":"2.0","id":"completion","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go"},"position":{"line":%d,"character":%d}}}`, line, character),
 		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,

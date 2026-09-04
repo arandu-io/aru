@@ -30,10 +30,22 @@ type project struct {
 	moduleAt fileStamp
 
 	packages map[string]*packageIndex
+
+	// assetStamps is what every Go file of the tree looked like when it was
+	// last read for RegisterAsset calls, and assetsByFile is what those reads
+	// found. Keeping them apart is what lets the walk re-read only the files
+	// that changed instead of the whole tree.
+	assetStamps  map[string]fileStamp
+	assetsByFile map[string][]string
 }
 
 func newProject(root string) *project {
-	return &project{root: root, packages: map[string]*packageIndex{}}
+	return &project{
+		root:         root,
+		packages:     map[string]*packageIndex{},
+		assetStamps:  map[string]fileStamp{},
+		assetsByFile: map[string][]string{},
+	}
 }
 
 // fileStamp is what a file looked like when it was last read.

@@ -341,6 +341,56 @@ func TestTheGeneratedActionsDoNotAnswerSuccess(t *testing.T) {
 	}
 }
 
+// TestTheGeneratedControllerNamesBothResponseFormats closes a gap that was
+// discovery and nothing else.
+//
+// Both formats have been in the framework the whole time and neither is
+// reachable by reading a generated controller: a person writing one has no way
+// to learn that the second exists short of reading the framework's source.
+//
+// The pointer is a sentence in the doc comment rather than a second action or a
+// flag. Emitting two responses when almost every endpoint answers in one format
+// would put a branch nobody asked for into every controller, and a generated
+// line somebody deletes on sight teaches nothing.
+func TestTheGeneratedControllerNamesBothResponseFormats(t *testing.T) {
+	for _, kind := range []gen.Kind{gen.KindPlain, gen.KindResource, gen.KindInvokable} {
+		files, err := gen.GenerateController(controllerStub(kind))
+		if err != nil {
+			t.Fatalf("GenerateController: %v", err)
+		}
+		body := string(files[0].Content)
+		// Joined, because a doc comment is wrapped to a width and a sentence
+		// that reads as one thing is written across two lines. A test that
+		// matched the wrapping would fail on a reflow that changed nothing.
+		prose := strings.Join(strings.Fields(strings.ReplaceAll(body, "//", " ")), " ")
+
+		for _, mention := range []string{"ctx.JSON", "ctx.TOON", "JsonResource"} {
+			if !strings.Contains(prose, mention) {
+				t.Errorf("%s: the generated controller never mentions %s", kind, mention)
+			}
+		}
+
+		// JSON is the format everything else is written in and TOON is the
+		// opt-in case. Presenting them as interchangeable would teach the
+		// wrong default at the moment somebody is choosing one.
+		if !strings.Contains(prose, "JSON stays the format everything else is written in") {
+			t.Errorf("%s: the controller does not say which of the two is the default", kind)
+		}
+		if !strings.Contains(prose, "never from a request header") {
+			t.Errorf("%s: the controller does not say the format is chosen in code", kind)
+		}
+
+		// No automatic negotiation, in the generated code or in what it
+		// suggests: a controller that read Accept would pick the format for
+		// the caller, and the caller is the one who knows the payload.
+		for _, forbidden := range []string{"Accept", "Negotiate", "negotiat"} {
+			if strings.Contains(prose, forbidden) {
+				t.Errorf("%s: the generated controller mentions %q, and the format is never negotiated", kind, forbidden)
+			}
+		}
+	}
+}
+
 // TestTheGeneratedRequestHasNoAuthorize is the thesis of the product in one
 // assertion: there is one path to a yes, and a FormRequest is not on it.
 func TestTheGeneratedRequestHasNoAuthorize(t *testing.T) {

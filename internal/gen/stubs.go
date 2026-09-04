@@ -171,6 +171,11 @@ import (
 // handle, so a controller that reached the data layer would be a controller
 // that skipped the service, and therefore skipped the policy. ` + "`" + `aru
 // doctor` + "`" + ` refuses it.
+//
+// An action answers with ctx.View for a screen and ctx.JSON for data. ctx.TOON
+// answers the same JsonResource in the token-oriented form, for a payload going
+// to a language model; it is chosen here in the code and never from a request
+// header, and JSON stays the format everything else is written in.
 type {{.Type}} struct {
 	Controller
 

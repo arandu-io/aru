@@ -214,7 +214,7 @@ const nativeView = "github.com/arandu-io/hesape/view"
 // Renaming every import into the reserved namespace closed the half of the
 // shadowing hole that a package name opened, and withdrew a name in the same
 // stroke. `view` was never only the generator's: a view writes
-// `view.URL("app.css")` in a link, embeds `view.Page` in the struct it draws,
+// `view.AssetURL("app.css")` in a link, embeds `view.Page` in the struct it draws,
 // and registers an asset of its own from an `@go` block. Every one of those
 // resolved through the import the generated file already carried, and a rename
 // that takes a published name away without saying so fails the same way the

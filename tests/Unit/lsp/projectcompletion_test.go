@@ -26,7 +26,7 @@ import "embed"
 
 var files embed.FS
 
-func URL(name string) string { return name }
+func AssetURL(name string) string { return name }
 `
 
 	projectAssets = `package js
@@ -45,8 +45,8 @@ const assetView = `//go:build kyse
 
 package layouts
 
-<link rel="stylesheet" href="{{ view.URL(" }}">
-<p>view.URL("not a call, this is prose") </p>
+<link rel="stylesheet" href="{{ view.AssetURL(" }}">
+<p>view.AssetURL("not a call, this is prose") </p>
 `
 
 func writeCompletionFixture(t *testing.T) (root string) {
@@ -105,8 +105,8 @@ func labelsOf(items []completionShape) []string {
 func TestCompletionOffersTheAssetNamesViewURLWillAccept(t *testing.T) {
 	root := writeCompletionFixture(t)
 
-	line, character := offsetOf(t, assetView, `view.URL("`)
-	items := completionIn(t, root, assetView, line, character+len(`view.URL("`))
+	line, character := offsetOf(t, assetView, `view.AssetURL("`)
+	items := completionIn(t, root, assetView, line, character+len(`view.AssetURL("`))
 
 	got := labelsOf(items)
 	want := []string{"app.css", "custom.js", "htmx.min.js", "ui.js"}
@@ -148,9 +148,9 @@ func TestAssetCompletionStaysInsideTheCallItIsAbout(t *testing.T) {
 	}{
 		{
 			name:   "after the argument is already written",
-			text:   "//go:build kyse\n\npackage layouts\n\n<link href=\"{{ view.URL(\"app.css\") }}\">\n",
-			needle: `view.URL("app.css")`,
-			offset: len(`view.URL("app.css")`),
+			text:   "//go:build kyse\n\npackage layouts\n\n<link href=\"{{ view.AssetURL(\"app.css\") }}\">\n",
+			needle: `view.AssetURL("app.css")`,
+			offset: len(`view.AssetURL("app.css")`),
 		},
 		{
 			name:   "in a different call that also ends in URL",

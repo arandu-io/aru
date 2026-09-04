@@ -302,7 +302,7 @@ package layouts
 <html>
 <head>
 <title>{{ .Title() }}</title>
-<link rel="stylesheet" href="{{ view.URL("app.css") }}">
+<link rel="stylesheet" href="{{ view.AssetURL("app.css") }}">
 </head>
 <body>
 @yield('content')
@@ -440,7 +440,7 @@ func TestAViewThatCallsThePackageAndBindsItsNameIsRefused(t *testing.T) {
 
 package layouts
 
-<link rel="stylesheet" href="{{ view.URL("app.css") }}">
+<link rel="stylesheet" href="{{ view.AssetURL("app.css") }}">
 @foreach(.Nav() as view)
 <a href="{{ view }}">{{ view }}</a>
 @endforeach
@@ -537,7 +537,7 @@ func CSRF(w io.Writer, data any) error { return nil }
 // package has to be in scope under its own name.
 type Page struct{ PageTitle string }
 
-func URL(name string) string { return "" }
+func AssetURL(name string) string { return "" }
 
 func Text(v any) string { return "" }
 

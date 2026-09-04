@@ -370,6 +370,7 @@ type completionItem struct {
 	Documentation string `json:"documentation,omitempty"`
 	InsertText    string `json:"insertText"`
 	SortText      string `json:"sortText,omitempty"`
+	Tags          []int  `json:"tags,omitempty"`
 }
 
 type completionParams struct {
@@ -530,27 +531,23 @@ const (
 	completionItemKindKeyword  = 14
 )
 
+// htmxAttribute is one row of the table htmxgen writes.
+//
+// The table is generated rather than typed because the hand-written one covered
+// thirteen of the thirty-five attributes and had no way of saying so.
 type htmxAttribute struct {
 	name          string
 	detail        string
 	documentation string
+	// deprecated marks an attribute HTMX still answers to and no longer
+	// recommends. It is offered, and it is offered struck through: leaving it
+	// out would make an attribute already written in a view look unknown.
+	deprecated bool
 }
 
-var htmxAttributes = []htmxAttribute{
-	{name: "hx-get", detail: "Issues a GET request", documentation: "Requests HTML with GET and swaps the response into the page."},
-	{name: "hx-post", detail: "Issues a POST request", documentation: "Submits the element with POST and swaps the returned HTML."},
-	{name: "hx-put", detail: "Issues a PUT request", documentation: "Sends a PUT request and swaps the returned HTML."},
-	{name: "hx-patch", detail: "Issues a PATCH request", documentation: "Sends a PATCH request and swaps the returned HTML."},
-	{name: "hx-delete", detail: "Issues a DELETE request", documentation: "Sends a DELETE request and swaps the returned HTML."},
-	{name: "hx-target", detail: "Selects the swap target", documentation: "Chooses which element receives the response."},
-	{name: "hx-swap", detail: "Controls the response swap", documentation: "Chooses how and when the returned HTML replaces existing content."},
-	{name: "hx-trigger", detail: "Defines what starts the request", documentation: "Declares the event and timing that trigger the request."},
-	{name: "hx-boost", detail: "Boosts links and forms", documentation: "Turns normal navigation or submission into an HTML request."},
-	{name: "hx-indicator", detail: "Selects the request indicator", documentation: "Chooses the element shown while the request is in flight."},
-	{name: "hx-include", detail: "Includes additional values", documentation: "Adds values from other elements to the request."},
-	{name: "hx-params", detail: "Filters submitted parameters", documentation: "Includes or excludes named request parameters."},
-	{name: "hx-push-url", detail: "Updates browser history", documentation: "Pushes a URL into browser history after the response is swapped."},
-}
+// completionItemTagDeprecated is the protocol's tag for an item an editor
+// should draw struck through.
+const completionItemTagDeprecated = 1
 
 func htmxCompletionItems() []completionItem {
 	items := make([]completionItem, len(htmxAttributes))
@@ -562,6 +559,9 @@ func htmxCompletionItems() []completionItem {
 			Documentation: attribute.documentation,
 			InsertText:    attribute.name,
 			SortText:      fmt.Sprintf("%02d-%s", index, attribute.name),
+		}
+		if attribute.deprecated {
+			items[index].Tags = []int{completionItemTagDeprecated}
 		}
 	}
 	return items

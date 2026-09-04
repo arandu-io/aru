@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -347,6 +348,7 @@ func TestCompletionDescribesHTMXAttributesInsideAnOpeningTag(t *testing.T) {
 		Documentation string `json:"documentation"`
 		InsertText    string `json:"insertText"`
 		SortText      string `json:"sortText"`
+		Tags          []int  `json:"tags"`
 	}
 	for _, body := range readFrames(t, output.Bytes()) {
 		var message struct {
@@ -373,17 +375,155 @@ func TestCompletionDescribesHTMXAttributesInsideAnOpeningTag(t *testing.T) {
 			if item.Kind != 10 {
 				t.Errorf("hx-get kind = %d, want property (10)", item.Kind)
 			}
-			if item.Detail != "Issues a GET request" || item.Documentation == "" {
+			if item.Detail == "" || item.Documentation == "" {
 				t.Errorf("hx-get editor copy = detail %q, documentation %q", item.Detail, item.Documentation)
+			}
+			if !strings.Contains(item.Documentation, "https://htmx.org/attributes/hx-get/") {
+				t.Errorf("hx-get documentation does not name the page it came from: %q", item.Documentation)
 			}
 			if item.InsertText != "hx-get" || item.SortText == "" {
 				t.Errorf("hx-get insertion = %q sort=%q", item.InsertText, item.SortText)
+			}
+			if len(item.Tags) != 0 {
+				t.Errorf("hx-get tags = %v, want none: it is not deprecated", item.Tags)
 			}
 			return
 		}
 		t.Fatal("completion did not offer hx-get")
 	}
 	t.Fatal("HTMX completion request received no response for " + uri)
+}
+
+// htmxAttributeNames is every attribute HTMX 2 declares, written out here so
+// the suite states the set independently of the table it checks.
+//
+// The table is generated from the metadata HTMX publishes, and a generator that
+// silently emitted half of them would be a table the server offers without
+// anything noticing -- which is what the hand-written thirteen were. Comparing
+// against a second copy of the list is the only way this check says anything.
+var htmxAttributeNames = []string{
+	"hx-boost", "hx-confirm", "hx-delete", "hx-disable", "hx-disabled-elt",
+	"hx-disinherit", "hx-encoding", "hx-ext", "hx-get", "hx-headers",
+	"hx-history", "hx-history-elt", "hx-include", "hx-indicator", "hx-inherit",
+	"hx-on", "hx-params", "hx-patch", "hx-post", "hx-preserve",
+	"hx-prompt", "hx-push-url", "hx-put", "hx-replace-url", "hx-request",
+	"hx-select", "hx-select-oob", "hx-swap", "hx-swap-oob", "hx-sync",
+	"hx-target", "hx-trigger", "hx-validate", "hx-vals", "hx-vars",
+}
+
+func TestCompletionOffersEveryHTMXAttributeAndMarksTheDeprecatedOne(t *testing.T) {
+	items := htmxCompletionAt(t, "<button hx-", 0, 11)
+
+	offered := make(map[string]completionShape, len(items))
+	for _, item := range items {
+		offered[item.Label] = item
+	}
+	if len(offered) != len(htmxAttributeNames) {
+		t.Errorf("HTMX completion offered %d attributes, want %d", len(offered), len(htmxAttributeNames))
+	}
+	for _, name := range htmxAttributeNames {
+		item, found := offered[name]
+		if !found {
+			t.Errorf("completion did not offer %s", name)
+			continue
+		}
+		if item.Detail == "" {
+			t.Errorf("%s has no detail, so the popup shows a bare name", name)
+		}
+		if item.InsertText != name {
+			t.Errorf("%s inserts %q", name, item.InsertText)
+		}
+	}
+	for label := range offered {
+		if !slices.Contains(htmxAttributeNames, label) {
+			t.Errorf("completion offered %q, which HTMX does not declare", label)
+		}
+	}
+
+	// hx-vars is the one HTMX deprecated in favour of hx-vals. It stays on the
+	// list because a view that already uses it must not read as unknown, and it
+	// carries the tag so the editor draws it struck through.
+	if tags := offered["hx-vars"].Tags; len(tags) != 1 || tags[0] != 1 {
+		t.Errorf("hx-vars tags = %v, want the deprecated tag [1]", tags)
+	}
+	for _, name := range htmxAttributeNames {
+		if name == "hx-vars" {
+			continue
+		}
+		if tags := offered[name].Tags; len(tags) != 0 {
+			t.Errorf("%s tags = %v, want none", name, tags)
+		}
+	}
+}
+
+// TestHTMXCompletionOffersNoAlpineOrAngularAttribute is the negative the list
+// itself cannot state.
+//
+// The table is built by reading a file, and a generator that read the wrong
+// section of it would produce a plausible list of attributes from a framework
+// this stack refuses to serve. Naming the prefixes is what makes the check fail
+// on that rather than pass on any list at all.
+func TestHTMXCompletionOffersNoAlpineOrAngularAttribute(t *testing.T) {
+	for _, item := range htmxCompletionAt(t, "<button hx-", 0, 11) {
+		if !strings.HasPrefix(item.Label, "hx-") {
+			t.Errorf("HTMX completion offered %q, which is not an HTMX attribute", item.Label)
+		}
+		for _, foreign := range []string{"x-", "v-", "ng-", "data-x-", "@click", ":class"} {
+			if strings.HasPrefix(item.Label, foreign) {
+				t.Errorf("completion offered %q, an attribute of a framework this stack does not serve", item.Label)
+			}
+		}
+	}
+}
+
+type completionShape struct {
+	Label         string `json:"label"`
+	Kind          int    `json:"kind"`
+	Detail        string `json:"detail"`
+	Documentation string `json:"documentation"`
+	InsertText    string `json:"insertText"`
+	SortText      string `json:"sortText"`
+	Tags          []int  `json:"tags"`
+}
+
+// htmxCompletionAt drives one completion request over the protocol and returns
+// what came back.
+//
+// It goes through Serve rather than calling into the package, because what an
+// editor receives is the JSON and not the Go value: a field that does not
+// marshal is invisible to a test that skips the encoding.
+func htmxCompletionAt(t *testing.T, text string, line, character int) []completionShape {
+	t.Helper()
+	input := frames(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+		fmt.Sprintf(`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go","languageId":"kyse","version":1,"text":%q}}}`, text),
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":"completion","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go"},"position":{"line":%d,"character":%d}}}`, line, character),
+		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
+		`{"jsonrpc":"2.0","method":"exit"}`,
+	)
+	var output bytes.Buffer
+	if err := lsp.Serve(bytes.NewReader(input), &output); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	for _, body := range readFrames(t, output.Bytes()) {
+		var message struct {
+			ID     json.RawMessage `json:"id"`
+			Result json.RawMessage `json:"result"`
+		}
+		if err := json.Unmarshal(body, &message); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if string(message.ID) != `"completion"` {
+			continue
+		}
+		var items []completionShape
+		if err := json.Unmarshal(message.Result, &items); err != nil {
+			t.Fatalf("decode completion items: %v", err)
+		}
+		return items
+	}
+	t.Fatal("completion request received no response")
+	return nil
 }
 
 func TestHTMXCompletionStaysOutOfTextAndAttributeValues(t *testing.T) {

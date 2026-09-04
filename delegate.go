@@ -57,7 +57,7 @@ func delegate(subcommand string) func([]string, io.Writer, io.Writer) error {
 		}
 
 		full := append([]string{"run", appPackage, subcommand}, args...)
-		cmd := exec.Command("go", full...)
+		cmd := goCommand(full...)
 		cmd.Dir = root
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr

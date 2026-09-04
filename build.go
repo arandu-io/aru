@@ -72,13 +72,15 @@ func buildBinary(root, name, version, output string, stdout, stderr io.Writer) e
 	// what the error page reads.
 	ldflags := fmt.Sprintf("-s -w -X main.version=%s -X main.commit=%s", version, commit(root))
 
-	cmd := exec.Command("go", "build", "-trimpath", "-ldflags", ldflags, "-o", output, appPackage)
+	trimCache(stderr)
+
+	cmd := goCommand("build", "-trimpath", "-ldflags", ldflags, "-o", output, appPackage)
 	cmd.Dir = root
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	// CGO off is what makes the binary static, and what lets a distroless image
 	// run it. The SQLite driver in the skeleton is pure Go for this reason.
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+	cmd.Env = append(cmd.Env, "CGO_ENABLED=0")
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("build failed")

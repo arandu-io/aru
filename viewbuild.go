@@ -302,7 +302,7 @@ func listComponentLibrary(root string) (dir, version string, err error) {
 // fetched said the exit status of a program the person did not know was
 // running. The explanation is folded into the error instead.
 func goOutput(dir string, args ...string) (string, error) {
-	cmd := exec.Command("go", args...)
+	cmd := goCommand(args...)
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

@@ -237,9 +237,9 @@ func Serve(in io.Reader, out io.Writer) error {
 			at := position{Line: *params.Position.Line, Character: *params.Position.Character}
 			source := documents[params.TextDocument.URI]
 			// The two languages are asked different questions. A view names
-			// components and layouts, and both resolve here; Go source is the Go
-			// language server's, and the one thing it cannot resolve there is
-			// the view a string names.
+			// components, layouts and assets, and all of them resolve here; Go
+			// source is the Go language server's, and the one thing it cannot
+			// resolve there is the view a string names.
 			var locations []protocolLocation
 			if goSourceDocument(params.TextDocument.URI) {
 				locations = workspace.viewDefinitionsInGoSource(source, at)

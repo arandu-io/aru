@@ -108,6 +108,18 @@ func (c *Home) Show(ctx *Context) error {
 }
 `
 
+// assetLinkView writes the two asset references a layout writes, with the
+// argument closed: a name being typed is a completion, and a name already
+// written is a click.
+const assetLinkView = `//go:build kyse
+
+package layouts
+
+<link rel="stylesheet" href="{{ view.URL("app.css") }}">
+<script src="{{ view.URL("custom.js") }}" defer></script>
+<p>A layout writes view.URL("app.css") here, and here it is prose.</p>
+`
+
 func writeDefinitionFixture(t *testing.T, root string) {
 	t.Helper()
 	files := map[string]string{
@@ -155,8 +167,8 @@ func definitionAt(t *testing.T, root, text string, line, character int) []protoc
 //
 // The name is what the server decides the language from, and it decides two
 // different behaviours: a view is parsed as markup and answers about
-// components and layouts, while Go source is not parsed at all and answers
-// about exactly one string.
+// components, layouts and assets, while Go source is not parsed at all and
+// answers about exactly one string.
 func definitionAtURI(t *testing.T, root, uri, languageID, text string, line, character int) []protocolLocation {
 	t.Helper()
 	rootURI := (&url.URL{Scheme: "file", Path: root}).String()
@@ -458,6 +470,109 @@ func TestDefinitionInAControllerAnswersOnlyTheViewName(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			line, character := offsetOf(t, test.text, test.needle)
 			locations := definitionInController(t, root, test.text, line, character+test.offset)
+			if len(locations) != 0 {
+				t.Errorf("definition returned %d locations for %s; %s", len(locations), test.needle, test.why)
+				for _, at := range locations {
+					t.Errorf("    it offered %s:%d", at.URI, at.Range.Start.Line)
+				}
+			}
+		})
+	}
+}
+
+// TestDefinitionOpensTheAssetNamedByViewURL is the other name a view writes as
+// a string.
+//
+// The two kinds of asset are answered by two different files, and each is the
+// file the name is decided in. A framework asset is served exactly as it is
+// embedded, so the embedded file is all of it; a registered one is bytes and a
+// content type chosen at the call, so the call is where its behaviour lives.
+func TestDefinitionOpensTheAssetNamedByViewURL(t *testing.T) {
+	root := writeCompletionFixture(t)
+	cache := filepath.Join(filepath.Dir(root), "modcache")
+
+	for _, test := range []struct {
+		name   string
+		needle string
+		want   string
+		line   int
+	}{
+		{
+			name:   "an asset the project registers",
+			needle: `view.URL("custom.js")`,
+			want:   filepath.Join(root, "resources", "js", "js.go"),
+			// The RegisterAsset call is the sixth line of the fixture and the
+			// protocol counts from zero. The line is the point: it is where the
+			// content type and the bytes are decided.
+			line: 5,
+		},
+		{
+			name:   "an asset the framework embeds",
+			needle: `view.URL("app.css")`,
+			want:   filepath.Join(cache, "github.com", "arandu-io", "hesape@v1.0.0", "view", "assets", "app.css"),
+			line:   0,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			line, character := offsetOf(t, assetLinkView, test.needle)
+			locations := definitionAt(t, root, assetLinkView, line, character+12)
+			if len(locations) != 1 {
+				t.Fatalf("definition returned %d locations, want the asset", len(locations))
+			}
+			if got := pathOf(t, locations[0].URI); got != test.want {
+				t.Errorf("definition opened %q, want %q", got, test.want)
+			}
+			if _, err := os.Stat(test.want); err != nil {
+				t.Errorf("definition named a file that does not exist: %v", err)
+			}
+			if got := locations[0].Range.Start.Line; got != test.line {
+				t.Errorf("definition landed on line %d, want %d", got, test.line)
+			}
+		})
+	}
+}
+
+// TestAssetDefinitionRefusesANameViewURLWouldRefuse fixes the negative, and it
+// is the one that matters more than the positive.
+//
+// view.URL panics on a name it was not given. A destination invented for such a
+// name is evidence that the asset exists, handed to somebody who is about to
+// ship a page that will not load.
+func TestAssetDefinitionRefusesANameViewURLWouldRefuse(t *testing.T) {
+	root := writeCompletionFixture(t)
+
+	for _, test := range []struct {
+		name   string
+		text   string
+		needle string
+		offset int
+		why    string
+	}{
+		{
+			name:   "a file beside the assets that is not embedded",
+			text:   strings.Replace(assetLinkView, `view.URL("app.css")`, `view.URL("app.src.css")`, 1),
+			needle: `view.URL("app.src.css")`,
+			offset: 12,
+			why:    "app.src.css is in the directory and not in the embed directive, so view.URL rejects it",
+		},
+		{
+			name:   "a name nothing registers",
+			text:   strings.Replace(assetLinkView, `view.URL("custom.js")`, `view.URL("legacy.js")`, 1),
+			needle: `view.URL("legacy.js")`,
+			offset: 12,
+			why:    "no RegisterAsset call and no embed directive names it",
+		},
+		{
+			name:   "the same call written as prose in the markup",
+			text:   assetLinkView,
+			needle: `A layout writes view.URL("app.css")`,
+			offset: 28,
+			why:    "text is text, and a paragraph that mentions the call does not make one",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			line, character := offsetOf(t, test.text, test.needle)
+			locations := definitionAt(t, root, test.text, line, character+test.offset)
 			if len(locations) != 0 {
 				t.Errorf("definition returned %d locations for %s; %s", len(locations), test.needle, test.why)
 				for _, at := range locations {

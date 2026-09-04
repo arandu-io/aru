@@ -18,6 +18,8 @@ const (
 	targetQualified
 	// targetViewName is the argument of @extends or @include.
 	targetViewName
+	// targetAssetName is the argument of view.URL.
+	targetAssetName
 )
 
 // cursorTarget is the thing under the cursor, named but not yet resolved.
@@ -30,15 +32,21 @@ type cursorTarget struct {
 	qualifier string
 	name      string
 	viewName  string
+	assetName string
 }
 
 // targetAt reads what the cursor is on.
 //
-// The two contexts are the two ways a view names something declared elsewhere.
-// A directive argument is a view name, and a qualified identifier inside an
-// interpolation, a directive's arguments or an `@go` block is a package member.
-// Everywhere else -- text, a tag, an attribute value, a comment -- is markup,
-// and markup names nothing.
+// The three contexts are the three ways a view names something declared
+// elsewhere. A directive argument is a view name; the argument of view.URL is
+// an asset name; and a qualified identifier inside an interpolation, a
+// directive's arguments or an `@go` block is a package member. Everywhere else
+// -- text, a tag, an attribute value, a comment -- is markup, and markup names
+// nothing.
+//
+// The asset name is read before the identifier because the same call satisfies
+// both readings: in `view.URL("app.css")` the cursor is on a string that sits
+// next to a qualifier, and only the narrower reading is about the string.
 func targetAt(source string, at position) cursorTarget {
 	prefix, ok := sourcePrefixAtUTF16Position(source, at)
 	if !ok {
@@ -52,7 +60,55 @@ func targetAt(source string, at position) cursorTarget {
 	if !insideGoExpression(source, offset) {
 		return cursorTarget{}
 	}
+	if target, found := assetNameTargetAt(source, offset); found {
+		return target
+	}
 	return qualifiedTargetAt(source, offset)
+}
+
+// assetNameTargetAt reads the quoted argument of view.URL when the cursor is
+// inside the quotes.
+//
+// A line can hold more than one call -- a layout writes a stylesheet and a
+// script on adjacent lines and sometimes on the same one -- so every call on
+// the line is measured, and the answer is the one whose quotes the cursor is
+// actually between.
+func assetNameTargetAt(source string, offset int) (cursorTarget, bool) {
+	lineStart := strings.LastIndexByte(source[:offset], '\n') + 1
+	line := source[lineStart:]
+	if end := strings.IndexByte(line, '\n'); end >= 0 {
+		line = line[:end]
+	}
+	within := offset - lineStart
+
+	for at := 0; at < len(line); {
+		call := strings.Index(line[at:], assetCall)
+		if call < 0 {
+			return cursorTarget{}, false
+		}
+		open := at + call + len(assetCall)
+		for open < len(line) && (line[open] == ' ' || line[open] == '\t') {
+			open++
+		}
+		if open >= len(line) || line[open] != '"' {
+			at = open + 1
+			continue
+		}
+		end := strings.IndexByte(line[open+1:], '"')
+		if end < 0 {
+			return cursorTarget{}, false
+		}
+		end += open + 1
+		if within > open && within <= end {
+			name, err := strconv.Unquote(line[open : end+1])
+			if err != nil || name == "" {
+				return cursorTarget{}, false
+			}
+			return cursorTarget{kind: targetAssetName, assetName: name}, true
+		}
+		at = end + 1
+	}
+	return cursorTarget{}, false
 }
 
 // viewNameTargetAt reads the quoted argument of @extends or @include when the
@@ -347,6 +403,8 @@ func (p *project) definitionsFor(source string, at position) []protocolLocation 
 	switch target.kind {
 	case targetViewName:
 		found, ok = p.viewLocation(target.viewName)
+	case targetAssetName:
+		found, ok = p.assetLocation(target.assetName)
 	case targetQualified:
 		found, ok = p.memberLocation(viewImports(source), target)
 	default:
@@ -473,6 +531,22 @@ func (p *project) viewLocation(name string) (location, bool) {
 		return location{}, false
 	}
 	return location{file: file, line: 1}, true
+}
+
+// assetLocation maps an asset name to the file that put it there.
+//
+// The set of names is the set view.URL answers to, and it is read from the same
+// two places the completion list is: the registration calls of this tree and
+// the embed directive of the framework's view package. A name outside that set
+// resolves to nothing, and it has to -- view.URL panics on an unregistered
+// name, so opening a plausible file for one would be evidence for an asset that
+// does not exist.
+func (p *project) assetLocation(name string) (location, bool) {
+	source, registered := p.assetNames()[name]
+	if !registered || source.file == "" {
+		return location{}, false
+	}
+	return location{file: source.file, line: max(source.line, 1)}, true
 }
 
 // memberLocation resolves `package.Name` through the view's own import block.

@@ -126,17 +126,27 @@ func (p *project) assetCompletionItems() []completionItem {
 		items = append(items, completionItem{
 			Label:      name,
 			Kind:       completionItemKindFile,
-			Detail:     names[name],
+			Detail:     names[name].detail,
 			InsertText: name,
 		})
 	}
 	return items
 }
 
-// assetSources maps every registered asset name to where it came from, which
-// is what the popup shows beside it: a name a person does not recognise is
-// answered by the file that put it there.
-type assetSources map[string]string
+// assetSource is where one asset name came from.
+//
+// The detail is what the popup shows beside the name: a name a person does not
+// recognise is answered by the file that put it there. The file and line are
+// the same answer for somebody who clicked instead of typing, so both readings
+// come out of one walk of the tree.
+type assetSource struct {
+	detail string
+	file   string
+	line   int
+}
+
+// assetSources maps every registered asset name to where it came from.
+type assetSources map[string]assetSource
 
 func (a assetSources) sorted() []string {
 	out := make([]string, 0, len(a))
@@ -155,16 +165,25 @@ func (a assetSources) sorted() []string {
 // beside it also holds sources that are not embedded, and offering one of those
 // would suggest the exact argument that panics. The project's own are the
 // literal names it passes to RegisterAsset.
+//
+// Each is answered by a different file, and both are the file a person came to
+// see. A framework asset is served exactly as it is embedded, so the embedded
+// file is the whole of it; a registered one is bytes plus a content type chosen
+// at the call, so the call is where its behaviour is decided.
 func (p *project) assetNames() assetSources {
 	names := assetSources{}
 	if dir, found := p.packageDir(viewPackagePath); found {
-		for _, name := range embeddedAssetNames(dir) {
-			names[name] = "framework asset"
+		for name, pattern := range embeddedAssets(dir) {
+			names[name] = assetSource{
+				detail: "framework asset",
+				file:   filepath.Join(dir, filepath.FromSlash(pattern)),
+				line:   1,
+			}
 		}
 	}
 	for file, registered := range p.registeredAssets() {
-		for _, name := range registered {
-			names[name] = p.relativeTo(file)
+		for _, asset := range registered {
+			names[asset.name] = assetSource{detail: p.relativeTo(file), file: file, line: asset.line}
 		}
 	}
 	return names
@@ -173,12 +192,13 @@ func (p *project) assetNames() assetSources {
 // viewPackagePath is where the framework's embedded assets are declared.
 const viewPackagePath = "github.com/arandu-io/hesape/view"
 
-func embeddedAssetNames(dir string) []string {
+// embeddedAssets maps each embedded file's name to its path within the package.
+func embeddedAssets(dir string) map[string]string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
 	}
-	var names []string
+	names := map[string]string{}
 	for _, entry := range entries {
 		if entry.IsDir() || !indexableGoFile(entry.Name()) {
 			continue
@@ -195,7 +215,7 @@ func embeddedAssetNames(dir string) []string {
 			}
 			for _, pattern := range strings.Fields(rest) {
 				if base := path.Base(pattern); base != "" && strings.Contains(base, ".") {
-					names = append(names, base)
+					names[base] = pattern
 				}
 			}
 		}
@@ -218,7 +238,7 @@ func (p *project) relativeTo(file string) string {
 // that mention the call. Reading them all every time costs 150ms on a tree of
 // thirteen hundred files, which a person experiences as the editor stalling;
 // stat-only it is under ten.
-func (p *project) registeredAssets() map[string][]string {
+func (p *project) registeredAssets() map[string][]registeredAsset {
 	seen := map[string]bool{}
 	filepath.WalkDir(p.root, func(at string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -274,6 +294,14 @@ func skippedAssetDir(name string) bool {
 	return false
 }
 
+// registeredAsset is one name a file registers, and the line it registers it
+// on: the line, and not the file alone, because a package may register several
+// and the content type of each is decided at its own call.
+type registeredAsset struct {
+	name string
+	line int
+}
+
 // readRegisteredAssets reads the string literals one file passes to
 // RegisterAsset.
 //
@@ -281,17 +309,18 @@ func skippedAssetDir(name string) bool {
 // that mention the call rather than for the whole tree. A name built from a
 // variable is not read: what it will be is not decidable here, and guessing
 // would put a name in the list that view.URL rejects.
-func readRegisteredAssets(path string) []string {
+func readRegisteredAssets(path string) []registeredAsset {
 	body, err := os.ReadFile(path)
 	if err != nil || !bytes.Contains(body, []byte("RegisterAsset")) {
 		return nil
 	}
-	file, err := parser.ParseFile(token.NewFileSet(), path, body, parser.SkipObjectResolution)
+	fileSet := token.NewFileSet()
+	file, err := parser.ParseFile(fileSet, path, body, parser.SkipObjectResolution)
 	if err != nil {
 		return nil
 	}
 
-	var names []string
+	var assets []registeredAsset
 	ast.Inspect(file, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
 		if !ok || len(call.Args) == 0 {
@@ -306,9 +335,12 @@ func readRegisteredAssets(path string) []string {
 			return true
 		}
 		if name, err := strconv.Unquote(literal.Value); err == nil && name != "" {
-			names = append(names, name)
+			// The position is read unadjusted, because a `//line` directive
+			// names a file relative to a module root and the answer wanted here
+			// is a line of the file actually on disk.
+			assets = append(assets, registeredAsset{name: name, line: fileSet.PositionFor(literal.Pos(), false).Line})
 		}
 		return true
 	})
-	return names
+	return assets
 }

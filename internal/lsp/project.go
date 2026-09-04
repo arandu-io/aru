@@ -36,7 +36,7 @@ type project struct {
 	// found. Keeping them apart is what lets the walk re-read only the files
 	// that changed instead of the whole tree.
 	assetStamps  map[string]fileStamp
-	assetsByFile map[string][]string
+	assetsByFile map[string][]registeredAsset
 }
 
 func newProject(root string) *project {
@@ -44,7 +44,7 @@ func newProject(root string) *project {
 		root:         root,
 		packages:     map[string]*packageIndex{},
 		assetStamps:  map[string]fileStamp{},
-		assetsByFile: map[string][]string{},
+		assetsByFile: map[string][]registeredAsset{},
 	}
 }
 

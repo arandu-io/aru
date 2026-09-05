@@ -303,6 +303,65 @@ func TestTheQueueCommandsReachTheProject(t *testing.T) {
 	}
 }
 
+// TestVendorPublishReachesTheProject proves the handover, and the flags survive
+// it.
+//
+// Which modules a project registered is written in its bootstrap and nowhere
+// else, so this command can only forward -- and the way forwarding breaks is
+// silent: a command wired to a subcommand nobody dispatches appears in
+// `aru help`, exits zero, and publishes nothing.
+//
+// The flags are passed through rather than parsed here, and that has to be
+// proved rather than assumed: this binary knows what --tag and --apply mean
+// and must still hand them on untouched, because the side that acts on them is
+// the application.
+func TestVendorPublishReachesTheProject(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go is not on PATH, so nothing could be delegated")
+	}
+	probeProject(t)
+
+	code, stdout, stderr := exercise(t, "vendor:publish", "--tag=view", "--apply")
+	if code != 0 {
+		t.Fatalf("vendor:publish exited %d inside a project: %s", code, stderr)
+	}
+	if got, want := stdout, "argv: vendor:publish --tag=view --apply\n"; got != want {
+		t.Errorf("the project binary received %q, want %q", got, want)
+	}
+}
+
+// TestVendorPublishPreviewsBeforeItWrites reads the command's own description
+// of itself.
+//
+// The guarantee is that nothing is written until it is asked for, and a person
+// meets that guarantee in one place: the usage line and the help text. A
+// command that applied by default would still pass every other test in this
+// file, so what is checked here is the promise rather than the plumbing -- and
+// the six tags, because that set is closed and a seventh word appearing in this
+// text would be the first sign it stopped being.
+func TestVendorPublishPreviewsBeforeItWrites(t *testing.T) {
+	c, found := lookup("vendor:publish")
+	if !found {
+		t.Fatal("vendor:publish is not a command, so a module cannot publish anything")
+	}
+	for _, want := range []string{"--tag=<tag>", "--apply", "--force"} {
+		if !strings.Contains(c.usage, want) {
+			t.Errorf("the usage line does not offer %s: %q", want, c.usage)
+		}
+	}
+	if !strings.Contains(c.help, "Nothing is written until --apply") {
+		t.Error("the help does not say that the preview is what running it does")
+	}
+	if !strings.Contains(c.help, "conflict") {
+		t.Error("the help does not say what happens to a file somebody edited")
+	}
+	for _, tag := range []string{"view", "component", "config", "migration", "translation", "asset"} {
+		if !strings.Contains(c.help, tag) {
+			t.Errorf("the help does not name the %s tag", tag)
+		}
+	}
+}
+
 // TestTheDeadLetterCommandsAreReachable is the gap this family closes, named.
 //
 // A job that gave up is inspected with queue:failed and put back with

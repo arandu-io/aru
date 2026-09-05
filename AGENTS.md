@@ -9,16 +9,16 @@ live inside it that share almost no code:
 
 | | where | what it is |
 | --- | --- | --- |
-| the commands | the root package `main` | 54 entries in one slice, 22 of which forward to the project's own binary |
+| the commands | the root package `main` | 57 entries in one slice, 23 of which forward to the project's own binary |
 | the view compiler | `internal/kyse` | a `.kyse.go` becomes Go, and the Go it writes has to compile |
 | the language server | `internal/lsp` and `lsp.go` | `aru lsp` serves Kyse diagnostics and completion over standard input and output |
-| the checker | `internal/doctor` | 27 rule functions reading a project's parsed AST, emitting 33 rule names of their own and 4 borrowed from `internal/testlayout` |
+| the checker | `internal/doctor` | 29 rule functions reading a project's parsed AST, emitting 35 rule names of their own and 4 borrowed from `internal/testlayout` |
 
 ```sh
-grep -c '^\t\tname:' commands.go                                      # 54
-grep -c 'run:   delegate(' commands.go                                # 22
+grep -c '^\t\tname:' commands.go                                      # 57
+grep -c 'run:   delegate(' commands.go                                # 23
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go \
-	internal/testlayout/testlayout.go | sort -u | wc -l           # 37
+	internal/testlayout/testlayout.go | sort -u | wc -l           # 39
 ```
 
 The last command reads both files because the sentence above it counts both.
@@ -105,13 +105,20 @@ files.
 ```sh
 GOWORK=off go list -deps -f '{{if .Module}}{{if not .Standard}}{{.Module.Path}}{{end}}{{end}}' ./... | sort -u
 # github.com/arandu-io/aru
+# github.com/arandu-io/hesape
 # gopkg.in/yaml.v3
 ```
 
-One direct dependency, for the specification format, because the standard
-library has no YAML parser. `.github/workflows/ci.yml` runs exactly that query
-and fails a pull request that adds a second. There is no CLI framework here:
-`flag` from the standard library, and a slice of structs for the dispatch table.
+Two direct dependencies, and the allow-list in `.github/workflows/ci.yml` names
+both. It runs exactly that query and fails a pull request that adds a third.
+There is no CLI framework here: `flag` from the standard library, and a slice of
+structs for the dispatch table.
+
+`yaml.v3` is for the specification format, because the standard library has no
+YAML parser. `hesape` is the component the generator calls: `publish.Merge`
+carries a custom block across a regeneration, and that answer used to be written
+here as well — two implementations of "was the file I edited overwritten?" agree
+until the day they do not.
 
 The CLI may have dependencies and the framework may not — that separation is the
 reason the CLI is a module of its own, and it only holds while this list stays

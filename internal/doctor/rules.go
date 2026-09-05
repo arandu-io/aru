@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/arandu-io/aru/internal/gen"
 	"github.com/arandu-io/aru/internal/kyse"
 	"github.com/arandu-io/aru/internal/manifest"
 	"github.com/arandu-io/aru/internal/testlayout"
@@ -43,6 +44,8 @@ var rules = []func(*project) []Finding{
 	repositoryNeedsPolicy,
 	repositoryMethodNeedsGrant,
 	policyMustBeOpened,
+	actionsAreConstants,
+	enumRulesAreDerived,
 	controllerMustNotReachData,
 	controllerMustNotReachTheRepository,
 	tenantMustComeFromTheGrant,
@@ -388,6 +391,349 @@ func takesGrant(fn *ast.FuncDecl) bool {
 		}
 	}
 	return false
+}
+
+// An action assembled where it is used, rather than named by a constant.
+//
+// The type is a string, so anything at all can become one, and two things stop
+// working when something does.
+//
+// Grant.Check compares the action a Grant was issued for against the action the
+// method demands. A demand that first exists once the process is running cannot
+// be compared with anything in review, and what it produces is a refusal on a
+// path nobody can trace back to a line -- which is the shape of bug that gets
+// answered by widening the policy.
+//
+// And the catalogue a permission screen is built from is this source read back,
+// by `aru action:list`. An action the source does not state is a permission
+// nobody can be given, so the screen is missing a row that the code enforces.
+//
+// It reports only what it can point at: a call, a concatenation with something
+// that is not a literal, a parameter, a variable of the same function, a field,
+// an element. A bare identifier that is none of those is left alone, because it
+// may be a constant declared in another file of the same package -- see
+// assembledFrom, which says so where the decision is made.
+func actionsAreConstants(p *project) []Finding {
+	var out []Finding
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+		spellings := f.actionTypeSpellings()
+		if len(spellings) == 0 {
+			continue
+		}
+		for _, use := range f.actionUses(spellings) {
+			built, assembled := assembledFrom(f, use.scope, use.value)
+			if !assembled {
+				continue
+			}
+			file, line := f.at(use.at)
+			out = append(out, Finding{
+				Rule: "action-not-a-constant", Severity: Error,
+				File: file, Line: line,
+				Message: "the action here is built from " + built,
+				Why:     "Grant.Check compares the action a Grant was issued for with the action the method demands, so an action that first exists while the process runs is refused on a path nobody can trace back to a line -- and `aru action:list` reads the source, so a permission screen has no row to offer for it. Name it: `const InvoiceDelete security.Action = \"invoice.delete\"`, and pass the constant.",
+			})
+		}
+	}
+	return out
+}
+
+// A validation rule that repeats a set the field's type already declares.
+//
+// `enum` reads the cases off a typed value, so the list beside it is a second
+// copy of something nothing compares. The two ways it goes wrong are not the
+// same failure. A case in the list that the type does not declare fails the
+// rule for every value, whatever was submitted, because a list written against
+// a different type cannot be honoured -- that is broken today. A list that
+// agrees is merely the copy that drifts, and the day somebody adds a case to
+// the type it becomes the first one.
+//
+// It says nothing about an integer-backed set, and that is the honest answer
+// rather than a wrong one. Such a list is written in shown spellings, the
+// column holds numbers, and turning one into the other needs the switch inside
+// the type -- so nobody can say from here whether the list is right.
+//
+// It says nothing when the field's type cannot be identified, or when two
+// enums declare a field of the same name: a rule that guessed which one would
+// report a divergence between a list and a set that has nothing to do with it.
+func enumRulesAreDerived(p *project) []Finding {
+	types := p.enumTypes()
+	if len(types) == 0 {
+		return nil
+	}
+	fields := p.enumFields(types)
+
+	var out []Finding
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+		for _, written := range f.enumRules() {
+			declared, one := fields[written.field]
+			if !one {
+				continue
+			}
+			set := types[declared]
+			if set.integer {
+				continue
+			}
+
+			file, line := f.at(written.at)
+			if unknown := missingFrom(written.cases, set.cases); len(unknown) > 0 {
+				out = append(out, Finding{
+					Rule: "enum-rule-not-derived", Severity: Error,
+					File: file, Line: line,
+					Message: "the enum rule on " + written.field + " lists " + strings.Join(unknown, ", ") + ", which " + set.name + " does not declare",
+					Why:     "a list naming a case the type cannot produce was written against a different set, so the rule refuses the field whatever was submitted -- every form carrying it fails with a message about allowed values that names values nobody can send. Drop the list: `enum` alone reads the cases off " + set.name + ", declared at " + set.file + ".",
+				})
+				continue
+			}
+			out = append(out, Finding{
+				Rule: "enum-rule-not-derived", Severity: Warning,
+				File: file, Line: line,
+				Message: "the enum rule on " + written.field + " repeats what " + set.name + " already declares",
+				Why:     "the cases exist in two places and nothing compares them, so a case added to the type and not to this line is accepted by the column and refused by the form -- with no failure anywhere until somebody submits it. Drop the list: `enum` alone reads the cases off " + set.name + ", declared at " + set.file + ".",
+			})
+		}
+	}
+	return out
+}
+
+// enumSet is a closed set the project declares.
+type enumSet struct {
+	// name is the type: "InvoiceStatus".
+	name string
+	// integer records that the set is backed by a number, which is what makes
+	// the list beside it unanswerable rather than merely repeated.
+	integer bool
+	// cases are the stored values, and empty for an integer-backed set: what a
+	// rule string lists there are shown spellings, which are not these.
+	cases []string
+	// file is where the type is declared, so a finding can send somebody to it.
+	file string
+}
+
+// enumTypes reads the closed sets a project declares, by type name.
+//
+// app/Enums is where they live, because that is where `aru make:enum` writes
+// them and the conventional tree is what every rule here reads. A type declared
+// somewhere else is not read, which under-reports rather than guessing at every
+// named string type in the project.
+func (p *project) enumTypes() map[string]enumSet {
+	out := map[string]enumSet{}
+	for _, f := range p.files {
+		if f.category != "Enums" || f.isTest {
+			continue
+		}
+		for _, decl := range f.ast.Decls {
+			group, isGen := decl.(*ast.GenDecl)
+			if !isGen || group.Tok != token.TYPE {
+				continue
+			}
+			for _, s := range group.Specs {
+				spec, isType := s.(*ast.TypeSpec)
+				if !isType {
+					continue
+				}
+				base, named := spec.Type.(*ast.Ident)
+				if !named {
+					continue
+				}
+				switch base.Name {
+				case "string":
+					out[spec.Name.Name] = enumSet{name: spec.Name.Name, cases: f.enumCases(spec.Name.Name), file: f.rel}
+				case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64":
+					out[spec.Name.Name] = enumSet{name: spec.Name.Name, integer: true, file: f.rel}
+				}
+			}
+		}
+	}
+	return out
+}
+
+// enumCases reads the stored values of one type's constants.
+func (f *file) enumCases(typeName string) []string {
+	var out []string
+	for _, decl := range f.ast.Decls {
+		group, isGen := decl.(*ast.GenDecl)
+		if !isGen || group.Tok != token.CONST {
+			continue
+		}
+		for _, s := range group.Specs {
+			spec, isValue := s.(*ast.ValueSpec)
+			if !isValue || exprName(spec.Type) != typeName {
+				continue
+			}
+			for i := range spec.Names {
+				if i >= len(spec.Values) {
+					continue
+				}
+				if value, literal := stringValue(spec.Values[i]); literal {
+					out = append(out, value)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// enumFields maps the name a form input carries to the one enum type that
+// declares it, and leaves out every name two of them share.
+//
+// The struct field is the link between a rule string and a type: a rule set is
+// keyed by the input name, and the type is on the field it fills. Two types
+// declaring a field of the same name make that link ambiguous, and the entry is
+// dropped rather than resolved -- comparing a list against the wrong set would
+// report a divergence that is not one.
+func (p *project) enumFields(types map[string]enumSet) map[string]string {
+	seen := map[string]map[string]bool{}
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+		ast.Inspect(f.ast, func(n ast.Node) bool {
+			structType, isStruct := n.(*ast.StructType)
+			if !isStruct || structType.Fields == nil {
+				return true
+			}
+			for _, field := range structType.Fields.List {
+				name := exprName(field.Type)
+				if i := strings.LastIndex(name, "."); i >= 0 {
+					name = name[i+1:]
+				}
+				if _, declared := types[name]; !declared {
+					continue
+				}
+				for _, ident := range field.Names {
+					input := gen.Normalize(ident.Name)
+					if seen[input] == nil {
+						seen[input] = map[string]bool{}
+					}
+					seen[input][name] = true
+				}
+			}
+			return true
+		})
+	}
+
+	out := map[string]string{}
+	for input, candidates := range seen {
+		if len(candidates) != 1 {
+			continue
+		}
+		for name := range candidates {
+			out[input] = name
+		}
+	}
+	return out
+}
+
+// writtenEnumRule is one hand-written list, with the input it was written
+// against.
+type writtenEnumRule struct {
+	field string
+	cases []string
+	at    ast.Node
+}
+
+// enumRules reads the enum rules a file writes with a list.
+//
+// A rule set is a map literal of the validation package's own type, keyed by
+// the input name, and that shape is what identifies it: a bare map of strings
+// somewhere else in the project is not a rule set, and reading one as though it
+// were would report on a table that has nothing to do with validation.
+//
+// `enum` with no list is the derived form and is what this rule asks for, so it
+// is passed over rather than reported.
+func (f *file) enumRules() []writtenEnumRule {
+	spellings := f.validationRulesSpellings()
+	if len(spellings) == 0 {
+		return nil
+	}
+
+	var out []writtenEnumRule
+	ast.Inspect(f.ast, func(n ast.Node) bool {
+		literal, isLiteral := n.(*ast.CompositeLit)
+		if !isLiteral || !spellings[exprName(literal.Type)] {
+			return true
+		}
+		for _, element := range literal.Elts {
+			pair, isPair := element.(*ast.KeyValueExpr)
+			if !isPair {
+				continue
+			}
+			field, named := stringValue(pair.Key)
+			if !named {
+				continue
+			}
+			cases, listed := enumCasesListed(pair.Value)
+			if !listed {
+				continue
+			}
+			out = append(out, writtenEnumRule{field: field, cases: cases, at: pair})
+		}
+		return true
+	})
+	return out
+}
+
+// validationRulesSpellings answers how this file can spell the rule set type.
+func (f *file) validationRulesSpellings() map[string]bool {
+	out := map[string]bool{}
+	for _, path := range []string{frameworkValidation, hesapeValidation} {
+		local, imported := f.imports[path]
+		if !imported || local == "_" {
+			continue
+		}
+		if local == "." {
+			out["Rules"] = true
+			continue
+		}
+		out[local+".Rules"] = true
+	}
+	return out
+}
+
+// enumCasesListed reads the cases an enum rule names, and reports whether the
+// string held one at all.
+func enumCasesListed(e ast.Expr) ([]string, bool) {
+	text, literal := stringValue(e)
+	if !literal {
+		return nil, false
+	}
+	for _, rule := range strings.Split(text, "|") {
+		name, args, hasArgs := strings.Cut(strings.TrimSpace(rule), ":")
+		if name != "enum" || !hasArgs {
+			continue
+		}
+		var cases []string
+		for _, c := range strings.Split(args, ",") {
+			if c = strings.TrimSpace(c); c != "" {
+				cases = append(cases, c)
+			}
+		}
+		if len(cases) > 0 {
+			return cases, true
+		}
+	}
+	return nil, false
+}
+
+// missingFrom returns the names in list that the set does not hold.
+func missingFrom(list, set []string) []string {
+	holds := make(map[string]bool, len(set))
+	for _, name := range set {
+		holds[name] = true
+	}
+	var out []string
+	for _, name := range list {
+		if !holds[name] {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // 3. A generated policy denies everything. Left that way, the entity is

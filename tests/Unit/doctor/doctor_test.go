@@ -49,6 +49,13 @@ func TestPlantedViolationsAreCaught(t *testing.T) {
 		// nothing.
 		"tenant-from-header":        "any client can send the header",
 		"resource-not-reauthorized": "the row was read and not re-authorized",
+		// An action assembled while the process runs cannot be compared with
+		// anything in review, and cannot be offered by a permission screen
+		// either -- the catalogue is this source read back.
+		"action-not-a-constant": "an action that exists nowhere in the source",
+		// The cases live in the type and again in the rule string, and nothing
+		// compares them until somebody submits the value that differs.
+		"enum-rule-not-derived": "a list of cases beside a type that already declares them",
 		// Nothing fails on this one today, which is why nothing else would ever
 		// report it: the proxy still serves the deleted module, so the build is
 		// green over a dependency with no repository behind it.

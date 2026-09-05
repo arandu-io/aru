@@ -194,6 +194,18 @@ var commands = []command{
 		run:   delegate("db:seed"),
 	},
 	{
+		// It forwards for the same reason migrate does: what a module offers a
+		// project is declared by the module, and the list of modules exists only
+		// inside the application. A CLI compiled separately would have to guess
+		// it, and would be wrong in the first project that registers one
+		// conditionally.
+		name:  "vendor:publish",
+		usage: "aru vendor:publish [--tag=<tag>] [--apply] [--force]",
+		desc:  "show what the registered modules would publish into the project, and write it",
+		help:  vendorPublishHelp,
+		run:   delegate("vendor:publish"),
+	},
+	{
 		name:  "dev",
 		usage: "aru dev [-- flags for the application]",
 		desc:  "build the views, run the application, and restart it on every change",
@@ -368,6 +380,16 @@ var commands = []command{
 		run:   trace,
 	},
 	{
+		// It reads the source rather than the running project, which is the one
+		// difference from route:list worth knowing before typing it: a screen
+		// that hands out permissions has to be able to offer the ones belonging
+		// to modules the application has not wired yet.
+		name:  "action:list",
+		usage: "aru action:list [--module=<name>]",
+		desc:  "list the actions the source declares, with the constant and the line of each",
+		run:   actionList,
+	},
+	{
 		// The inventory, next to the two commands that read a running project:
 		// route:list says what answers, trace says what one request did, and this
 		// says what the application was wired with in the first place.
@@ -383,6 +405,32 @@ var commands = []command{
 		run:   runDoctor,
 	},
 }
+
+// vendorPublishHelp is the body `aru vendor:publish --help` prints, under the
+// usage line.
+//
+// It names the six tags and the two modes because both are closed sets: a
+// seventh tag does not arrive by demand, and there is no third thing the
+// command can do. Everything else about a publication -- which modules offer
+// one, where each file lands -- is the application's answer, and this command
+// is the way to ask it.
+const vendorPublishHelp = `Nothing is written until --apply. Without it the command reads the registered
+modules, works out what each file would become, and prints the list: create,
+update, unchanged, conflict. Running it twice writes nothing the second time.
+
+A conflict is a file that was changed outside its arandu:begin custom markers,
+or that this mechanism never wrote. It is reported and left alone. --force
+publishes over one, and even then the custom blocks are carried forward: what
+--force gives up is the edit made outside them.
+
+--tag takes one of six, and there are no others:
+
+    view          a page or a layout the project is meant to edit
+    component     a piece a view composes
+    config        configuration the project owns once it is published
+    migration     a schema change the project applies and keeps
+    translation   a catalogue of sentences
+    asset         a file served as it is: an image, a font, a stylesheet`
 
 func lookup(name string) (command, bool) {
 	for _, c := range commands {

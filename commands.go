@@ -380,6 +380,16 @@ var commands = []command{
 		run:   trace,
 	},
 	{
+		// It reads the source rather than the running project, which is the one
+		// difference from route:list worth knowing before typing it: a screen
+		// that hands out permissions has to be able to offer the ones belonging
+		// to modules the application has not wired yet.
+		name:  "action:list",
+		usage: "aru action:list [--module=<name>]",
+		desc:  "list the actions the source declares, with the constant and the line of each",
+		run:   actionList,
+	},
+	{
 		// The inventory, next to the two commands that read a running project:
 		// route:list says what answers, trace says what one request did, and this
 		// says what the application was wired with in the first place.

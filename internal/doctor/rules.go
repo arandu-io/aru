@@ -43,6 +43,7 @@ var rules = []func(*project) []Finding{
 	repositoryNeedsPolicy,
 	repositoryMethodNeedsGrant,
 	policyMustBeOpened,
+	actionsAreConstants,
 	controllerMustNotReachData,
 	controllerMustNotReachTheRepository,
 	tenantMustComeFromTheGrant,
@@ -388,6 +389,53 @@ func takesGrant(fn *ast.FuncDecl) bool {
 		}
 	}
 	return false
+}
+
+// An action assembled where it is used, rather than named by a constant.
+//
+// The type is a string, so anything at all can become one, and two things stop
+// working when something does.
+//
+// Grant.Check compares the action a Grant was issued for against the action the
+// method demands. A demand that first exists once the process is running cannot
+// be compared with anything in review, and what it produces is a refusal on a
+// path nobody can trace back to a line -- which is the shape of bug that gets
+// answered by widening the policy.
+//
+// And the catalogue a permission screen is built from is this source read back,
+// by `aru action:list`. An action the source does not state is a permission
+// nobody can be given, so the screen is missing a row that the code enforces.
+//
+// It reports only what it can point at: a call, a concatenation with something
+// that is not a literal, a parameter, a variable of the same function, a field,
+// an element. A bare identifier that is none of those is left alone, because it
+// may be a constant declared in another file of the same package -- see
+// assembledFrom, which says so where the decision is made.
+func actionsAreConstants(p *project) []Finding {
+	var out []Finding
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+		spellings := f.actionTypeSpellings()
+		if len(spellings) == 0 {
+			continue
+		}
+		for _, use := range f.actionUses(spellings) {
+			built, assembled := assembledFrom(f, use.scope, use.value)
+			if !assembled {
+				continue
+			}
+			file, line := f.at(use.at)
+			out = append(out, Finding{
+				Rule: "action-not-a-constant", Severity: Error,
+				File: file, Line: line,
+				Message: "the action here is built from " + built,
+				Why:     "Grant.Check compares the action a Grant was issued for with the action the method demands, so an action that first exists while the process runs is refused on a path nobody can trace back to a line -- and `aru action:list` reads the source, so a permission screen has no row to offer for it. Name it: `const InvoiceDelete security.Action = \"invoice.delete\"`, and pass the constant.",
+			})
+		}
+	}
+	return out
 }
 
 // 3. A generated policy denies everything. Left that way, the entity is

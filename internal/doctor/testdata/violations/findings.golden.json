@@ -304,6 +304,38 @@
     "why": "it is built to be linked into a test binary: it calls t.Fatal, reads fixtures and pulls in the testing package. Imported from a file the compiler puts in the application, all of that is inside what gets deployed. Move the helper into a package that ships, or call it only from a test."
   },
   {
+    "rule": "action-not-a-constant",
+    "severity": "error",
+    "file": "app/Services/PermissionService.go",
+    "line": 15,
+    "message": "the action here is built from a concatenation",
+    "why": "Grant.Check compares the action a Grant was issued for with the action the method demands, so an action that first exists while the process runs is refused on a path nobody can trace back to a line -- and `aru action:list` reads the source, so a permission screen has no row to offer for it. Name it: `const InvoiceDelete security.Action = \"invoice.delete\"`, and pass the constant."
+  },
+  {
+    "rule": "action-not-a-constant",
+    "severity": "error",
+    "file": "app/Services/PermissionService.go",
+    "line": 20,
+    "message": "the action here is built from what fmt.Sprintf returned",
+    "why": "Grant.Check compares the action a Grant was issued for with the action the method demands, so an action that first exists while the process runs is refused on a path nobody can trace back to a line -- and `aru action:list` reads the source, so a permission screen has no row to offer for it. Name it: `const InvoiceDelete security.Action = \"invoice.delete\"`, and pass the constant."
+  },
+  {
+    "rule": "action-not-a-constant",
+    "severity": "error",
+    "file": "app/Services/PermissionService.go",
+    "line": 28,
+    "message": "the action here is built from an element of verbs",
+    "why": "Grant.Check compares the action a Grant was issued for with the action the method demands, so an action that first exists while the process runs is refused on a path nobody can trace back to a line -- and `aru action:list` reads the source, so a permission screen has no row to offer for it. Name it: `const InvoiceDelete security.Action = \"invoice.delete\"`, and pass the constant."
+  },
+  {
+    "rule": "action-not-a-constant",
+    "severity": "error",
+    "file": "app/Services/PermissionService.go",
+    "line": 34,
+    "message": "the action here is built from a concatenation",
+    "why": "Grant.Check compares the action a Grant was issued for with the action the method demands, so an action that first exists while the process runs is refused on a path nobody can trace back to a line -- and `aru action:list` reads the source, so a permission screen has no row to offer for it. Name it: `const InvoiceDelete security.Action = \"invoice.delete\"`, and pass the constant."
+  },
+  {
     "rule": "permission-not-declared",
     "severity": "error",
     "file": "arandu.mod.toml",

@@ -22,7 +22,7 @@ const (
 // assetCall is the expression whose argument view.URL will accept, and the
 // reason completing it is worth the walk below: an unregistered name is not a
 // broken link, it is a panic, so a typo takes the page down.
-const assetCall = "view.AssetURL("
+const assetCall = "view.Asset("
 
 // memberCompletionAt reads the qualifier of a `package.` the cursor sits after.
 //
@@ -57,7 +57,7 @@ func memberCompletionAt(source string, at position) (string, bool) {
 // takes.
 //
 // Two conditions, and both are needed. The call has to be somewhere a view
-// writes Go, because `view.AssetURL("…")` typed into a paragraph is a sentence about
+// writes Go, because `view.Asset("…")` typed into a paragraph is a sentence about
 // the call and not the call. And the string has to still be open at the cursor:
 // once it is closed the name is written, and offering the list again would
 // replace an argument that is already right.

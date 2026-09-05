@@ -45,7 +45,7 @@ type cursorTarget struct {
 // nothing.
 //
 // The asset name is read before the identifier because the same call satisfies
-// both readings: in `view.AssetURL("app.css")` the cursor is on a string that sits
+// both readings: in `view.Asset("app.css")` the cursor is on a string that sits
 // next to a qualifier, and only the narrower reading is about the string.
 func targetAt(source string, at position) cursorTarget {
 	prefix, ok := sourcePrefixAtUTF16Position(source, at)

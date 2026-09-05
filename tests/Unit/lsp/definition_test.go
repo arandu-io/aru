@@ -115,9 +115,9 @@ const assetLinkView = `//go:build kyse
 
 package layouts
 
-<link rel="stylesheet" href="{{ view.AssetURL("app.css") }}">
-<script src="{{ view.AssetURL("custom.js") }}" defer></script>
-<p>A layout writes view.AssetURL("app.css") here, and here it is prose.</p>
+<link rel="stylesheet" href="{{ view.Asset("app.css") }}">
+<script src="{{ view.Asset("custom.js") }}" defer></script>
+<p>A layout writes view.Asset("app.css") here, and here it is prose.</p>
 `
 
 func writeDefinitionFixture(t *testing.T, root string) {
@@ -499,7 +499,7 @@ func TestDefinitionOpensTheAssetNamedByViewURL(t *testing.T) {
 	}{
 		{
 			name:   "an asset the project registers",
-			needle: `view.AssetURL("custom.js")`,
+			needle: `view.Asset("custom.js")`,
 			want:   filepath.Join(root, "resources", "js", "js.go"),
 			// The RegisterAsset call is the sixth line of the fixture and the
 			// protocol counts from zero. The line is the point: it is where the
@@ -508,7 +508,7 @@ func TestDefinitionOpensTheAssetNamedByViewURL(t *testing.T) {
 		},
 		{
 			name:   "an asset the framework embeds",
-			needle: `view.AssetURL("app.css")`,
+			needle: `view.Asset("app.css")`,
 			want:   filepath.Join(cache, "github.com", "arandu-io", "hesape@v1.0.0", "view", "assets", "app.css"),
 			line:   0,
 		},
@@ -519,7 +519,7 @@ func TestDefinitionOpensTheAssetNamedByViewURL(t *testing.T) {
 			// literal offset encodes the length of the function name, so
 			// renaming the call moves the cursor out of the string and the
 			// test reports "no definition" for a server that answers -- which
-			// is what a literal 12 did when view.URL became view.AssetURL.
+			// is what a literal 12 did when view.URL became view.Asset.
 			line, character := offsetOf(t, assetLinkView, test.needle)
 			locations := definitionAt(t, root, assetLinkView, line, character+strings.Index(test.needle, `"`)+2)
 			if len(locations) != 1 {
@@ -556,22 +556,22 @@ func TestAssetDefinitionRefusesANameViewURLWouldRefuse(t *testing.T) {
 	}{
 		{
 			name:   "a file beside the assets that is not embedded",
-			text:   strings.Replace(assetLinkView, `view.AssetURL("app.css")`, `view.AssetURL("app.src.css")`, 1),
-			needle: `view.AssetURL("app.src.css")`,
+			text:   strings.Replace(assetLinkView, `view.Asset("app.css")`, `view.Asset("app.src.css")`, 1),
+			needle: `view.Asset("app.src.css")`,
 			offset: 12,
 			why:    "app.src.css is in the directory and not in the embed directive, so view.URL rejects it",
 		},
 		{
 			name:   "a name nothing registers",
-			text:   strings.Replace(assetLinkView, `view.AssetURL("custom.js")`, `view.AssetURL("legacy.js")`, 1),
-			needle: `view.AssetURL("legacy.js")`,
+			text:   strings.Replace(assetLinkView, `view.Asset("custom.js")`, `view.Asset("legacy.js")`, 1),
+			needle: `view.Asset("legacy.js")`,
 			offset: 12,
 			why:    "no RegisterAsset call and no embed directive names it",
 		},
 		{
 			name:   "the same call written as prose in the markup",
 			text:   assetLinkView,
-			needle: `A layout writes view.AssetURL("app.css")`,
+			needle: `A layout writes view.Asset("app.css")`,
 			offset: 28,
 			why:    "text is text, and a paragraph that mentions the call does not make one",
 		},

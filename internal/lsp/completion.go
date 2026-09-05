@@ -240,7 +240,10 @@ func (p *project) relativeTo(file string) string {
 // stat-only it is under ten.
 func (p *project) registeredAssets() map[string][]registeredAsset {
 	seen := map[string]bool{}
-	filepath.WalkDir(p.root, func(at string, entry fs.DirEntry, err error) error {
+	// The error is discarded because the callback never returns one: an
+	// unreadable entry is skipped rather than reported, since a completion list
+	// missing one name is an answer and a failed walk is none.
+	_ = filepath.WalkDir(p.root, func(at string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}

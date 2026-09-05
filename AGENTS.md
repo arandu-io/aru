@@ -105,13 +105,20 @@ files.
 ```sh
 GOWORK=off go list -deps -f '{{if .Module}}{{if not .Standard}}{{.Module.Path}}{{end}}{{end}}' ./... | sort -u
 # github.com/arandu-io/aru
+# github.com/arandu-io/hesape
 # gopkg.in/yaml.v3
 ```
 
-One direct dependency, for the specification format, because the standard
-library has no YAML parser. `.github/workflows/ci.yml` runs exactly that query
-and fails a pull request that adds a second. There is no CLI framework here:
-`flag` from the standard library, and a slice of structs for the dispatch table.
+Two direct dependencies, and the allow-list in `.github/workflows/ci.yml` names
+both. It runs exactly that query and fails a pull request that adds a third.
+There is no CLI framework here: `flag` from the standard library, and a slice of
+structs for the dispatch table.
+
+`yaml.v3` is for the specification format, because the standard library has no
+YAML parser. `hesape` is the component the generator calls: `publish.Merge`
+carries a custom block across a regeneration, and that answer used to be written
+here as well — two implementations of "was the file I edited overwritten?" agree
+until the day they do not.
 
 The CLI may have dependencies and the framework may not — that separation is the
 reason the CLI is a module of its own, and it only holds while this list stays

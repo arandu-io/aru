@@ -7,11 +7,12 @@ import (
 	"go/format"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"text/template"
+
+	"github.com/arandu-io/hesape/publish"
 )
 
 // File is one generated file.
@@ -291,37 +292,6 @@ func render(name, tmpl string, data any) ([]byte, error) {
 	return formatted, nil
 }
 
-// customBlock matches the region a regeneration must preserve.
-//
-// This is the escape hatch: whatever is outside the standard shape is written in
-// Go, inside the markers, and survives regeneration. Without it the
-// generator is a one-time tool -- nobody regenerates a file that eats their work.
-var customBlock = regexp.MustCompile(`(?s)// arandu:begin custom\n(.*?)// arandu:end custom`)
-
-// Merge carries the custom blocks of the existing file into the newly generated
-// one, in order.
-//
-// Blocks are matched by position, not by name, which is the honest limitation:
-// reordering the generated file would shuffle them. That is why the marker
-// appears once per file, at the end, where new blocks are appended rather than
-// inserted.
-func Merge(existing, generated []byte) []byte {
-	old := customBlock.FindAllSubmatch(existing, -1)
-	if len(old) == 0 {
-		return generated
-	}
-
-	i := 0
-	return customBlock.ReplaceAllFunc(generated, func(match []byte) []byte {
-		if i >= len(old) {
-			return match
-		}
-		body := old[i][1]
-		i++
-		return []byte("// arandu:begin custom\n" + string(body) + "// arandu:end custom")
-	})
-}
-
 // Write writes the files, preserving custom blocks in the ones that already
 // exist. It returns what it wrote and what it skipped.
 //
@@ -357,7 +327,11 @@ func Write(root string, files []File, force bool) (written, skipped []string, er
 
 		content := f.Content
 		if existing, readErr := os.ReadFile(path); readErr == nil {
-			content = Merge(existing, f.Content)
+			// The path is handed over with the two versions because the marker
+			// is written in the syntax of the file: a view carries its custom
+			// block in view comments, and a Go comment in one would be printed
+			// to the reader of the page.
+			content = publish.Merge(f.Path, existing, f.Content)
 		}
 		if err := os.WriteFile(path, content, 0o644); err != nil {
 			return written, skipped, err

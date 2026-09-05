@@ -70,9 +70,15 @@ jobs:
       #
       # Checking against the list rather than against zero keeps the same
       # friction where it still makes sense.
+      #
+      # hesape is on the list for one reason, and it is the reason the list
+      # exists: the merge that carries a custom block across a regeneration was
+      # written twice, and two implementations of that answer "was the file I
+      # edited overwritten?" differently. It is the component now, and the
+      # generator here calls it rather than keeping the second copy.
       - name: dependency budget
         run: |
-          allowed="gopkg.in/yaml.v3"
+          allowed="gopkg.in/yaml.v3 github.com/arandu-io/hesape"
           extra=""
           # What the binary carries, not what go.sum mentions: `go list -m all`
           # includes the dependency's test dependency, which is never compiled.

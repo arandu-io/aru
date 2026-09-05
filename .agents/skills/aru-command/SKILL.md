@@ -11,7 +11,7 @@ command is in its entry: the name a person types, the usage line, the one-line
 description `aru help` prints, and the function that runs it.
 
 ```sh
-grep -c '^\t\tname:' commands.go        # 53
+grep -c '^\t\tname:' commands.go        # 56
 ```
 
 It is a slice and not a map on purpose. The order of `aru help` is part of the
@@ -34,7 +34,7 @@ registered?**
   of them.
 
 ```sh
-grep -c 'run:   delegate(' commands.go  # 22
+grep -c 'run:   delegate(' commands.go  # 23
 ```
 
 `serve` and `dev` are the exception, and they are one exception rather than two.

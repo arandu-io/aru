@@ -20,6 +20,13 @@ const (
 	hesapeAuth        = "github.com/arandu-io/hesape/auth"
 )
 
+// The two module paths that declare the rule set type, matched for the same
+// reason and in the same way: the framework re-exports what hesape declares.
+const (
+	frameworkValidation = "github.com/arandu-io/framework/validation"
+	hesapeValidation    = "github.com/arandu-io/hesape/validation"
+)
+
 // Action is one action the source states.
 //
 // It carries where it is written, because the catalogue is the code read back:

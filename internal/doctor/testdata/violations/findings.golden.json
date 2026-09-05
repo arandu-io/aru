@@ -128,6 +128,22 @@
     "why": "it is the one way past a policy, and its call sites are the audit. If this is a request path, the Grant should come from security.Authorize instead. If the escape is deliberate, write `//arandu:system-grant \u003creason\u003e` on the line, so the reason is read in review rather than inferred from the function name."
   },
   {
+    "rule": "enum-rule-not-derived",
+    "severity": "error",
+    "file": "app/Http/Requests/ChargeRequest.go",
+    "line": 24,
+    "message": "the enum rule on status lists voided, which ChargeStatus does not declare",
+    "why": "a list naming a case the type cannot produce was written against a different set, so the rule refuses the field whatever was submitted -- every form carrying it fails with a message about allowed values that names values nobody can send. Drop the list: `enum` alone reads the cases off ChargeStatus, declared at app/Enums/ChargeStatus.go."
+  },
+  {
+    "rule": "enum-rule-not-derived",
+    "severity": "warning",
+    "file": "app/Http/Requests/ChargeRequest.go",
+    "line": 25,
+    "message": "the enum rule on kind repeats what ChargeKind already declares",
+    "why": "the cases exist in two places and nothing compares them, so a case added to the type and not to this line is accepted by the column and refused by the form -- with no failure anywhere until somebody submits it. Drop the list: `enum` alone reads the cases off ChargeKind, declared at app/Enums/ChargeKind.go."
+  },
+  {
     "rule": "test-is-not-run",
     "severity": "warning",
     "file": "app/Jobs/RetryInvoiceTest.go",

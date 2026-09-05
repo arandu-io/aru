@@ -12,13 +12,13 @@ live inside it that share almost no code:
 | the commands | the root package `main` | 57 entries in one slice, 23 of which forward to the project's own binary |
 | the view compiler | `internal/kyse` | a `.kyse.go` becomes Go, and the Go it writes has to compile |
 | the language server | `internal/lsp` and `lsp.go` | `aru lsp` serves Kyse diagnostics and completion over standard input and output |
-| the checker | `internal/doctor` | 28 rule functions reading a project's parsed AST, emitting 34 rule names of their own and 4 borrowed from `internal/testlayout` |
+| the checker | `internal/doctor` | 29 rule functions reading a project's parsed AST, emitting 35 rule names of their own and 4 borrowed from `internal/testlayout` |
 
 ```sh
 grep -c '^\t\tname:' commands.go                                      # 57
 grep -c 'run:   delegate(' commands.go                                # 23
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go \
-	internal/testlayout/testlayout.go | sort -u | wc -l           # 38
+	internal/testlayout/testlayout.go | sort -u | wc -l           # 39
 ```
 
 The last command reads both files because the sentence above it counts both.

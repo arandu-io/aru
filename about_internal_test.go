@@ -39,7 +39,7 @@ func aboutPayload(t *testing.T) string {
       {"Name": "Database", "Value": "postgres"},
       {"Name": "Mail", "Value": "smtp"},
       {"Name": "Queue", "Value": "database"},
-      {"Name": "Session", "Value": "kv"}
+      {"Name": "Session", "Value": "redis"}
     ]},
     {"Name": "Modules", "Entries": [
       {"Name": "auth", "Value": "9 routes"},
@@ -66,12 +66,22 @@ func TestTheReportShowsWhatIsWired(t *testing.T) {
 
 	for _, want := range []string{
 		"Environment", "Acme", "local", "http://127.0.0.1:8080", "v0.4.1 (9f2c1ab)",
-		"Drivers", "Cache", "redis", "Database", "postgres", "Queue", "database", "Session", "kv",
+		"Drivers", "Cache", "redis", "Database", "postgres", "Queue", "database", "Session", "redis",
 		"Modules", "auth", "invoice",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the report does not show %q:\n%s", want, out)
 		}
+	}
+	var sessionRow string
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == "Session" {
+			sessionRow = strings.Join(fields, " ")
+		}
+	}
+	if sessionRow != "Session redis" {
+		t.Errorf("session driver row = %q, want Session redis", sessionRow)
 	}
 
 	// The order the application chose is the order printed: a report whose

@@ -4,7 +4,7 @@
 not for somebody using it: what a user needs is in `aru help`, and every command
 explains itself there.
 
-It is one Go module with one direct third-party dependency, and four things
+It is one Go module with two direct third-party dependencies, and four things
 live inside it that share almost no code:
 
 | | where | what it is |
@@ -106,11 +106,14 @@ files.
 GOWORK=off go list -deps -f '{{if .Module}}{{if not .Standard}}{{.Module.Path}}{{end}}{{end}}' ./... | sort -u
 # github.com/arandu-io/aru
 # github.com/arandu-io/hesape
+# github.com/evanw/esbuild
+# golang.org/x/sys
 # gopkg.in/yaml.v3
 ```
 
-Two direct dependencies, and the allow-list in `.github/workflows/ci.yml` names
-both. It runs exactly that query and fails a pull request that adds a third.
+Three direct dependencies: Hesape, YAML and esbuild. The allow-list in
+`.github/workflows/ci.yml` also names esbuild's transitive x/sys dependency.
+It runs that query and fails a pull request that adds anything else.
 There is no CLI framework here: `flag` from the standard library, and a slice of
 structs for the dispatch table.
 
@@ -136,7 +139,7 @@ way to spend an afternoon on something that will be rejected.
 | a suppression comment or allow-list for a doctor finding | nothing. A finding you cannot fix is a design question |
 | a downloaded binary for the view compiler | `internal/kyse`, compiled into `aru`. One fewer thing to pin, verify and cache |
 | a template engine with a runtime | a Go function that writes strings. A missing field is a compile error |
-| npm, a bundler, `node_modules` | nothing. CSS is the Tailwind standalone binary, downloaded and verified by `internal/toolchain` |
+| npm, Node, `node_modules`, CDN imports | esbuild's Go API bundles local JavaScript; CSS uses verified Tailwind standalone and esbuild minification. Generated Go registers the bytes with the existing asset transport |
 | a generator that edits `bootstrap/app.go` for you | the wiring is printed for you to paste. A generator that changes wiring behind you is one whose output nobody can explain |
 | `time.Now()` inside a generator | a date passed in. A golden file that tests the calendar fails on the first of the month |
 

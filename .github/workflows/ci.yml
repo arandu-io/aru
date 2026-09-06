@@ -78,7 +78,7 @@ jobs:
       # generator here calls it rather than keeping the second copy.
       - name: dependency budget
         run: |
-          allowed="gopkg.in/yaml.v3 github.com/arandu-io/hesape"
+          allowed="gopkg.in/yaml.v3 github.com/arandu-io/hesape github.com/evanw/esbuild golang.org/x/sys"
           extra=""
           # What the binary carries, not what go.sum mentions: `go list -m all`
           # includes the dependency's test dependency, which is never compiled.

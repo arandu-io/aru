@@ -220,7 +220,7 @@ var commands = []command{
 	{
 		name:  "view:build",
 		usage: "aru view:build",
-		desc:  "compile the templates and the stylesheet, with no Node involved",
+		desc:  "compile templates, CSS and JavaScript bundles without Node or npm",
 		run:   viewBuild,
 	},
 	{

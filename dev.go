@@ -374,12 +374,13 @@ func snapshot(root string) map[string]time.Time {
 	// writing identical bytes, which is an external binary's behaviour and not
 	// a guarantee. arandu.toml exists to raise that pin.
 	delete(state, filepath.Join(root, stylesheetOutput))
+	delete(state, filepath.Join(root, bundleOutput))
 	return state
 }
 
 func watched(path string) bool {
 	switch filepath.Ext(path) {
-	case ".go", ".css", ".sql":
+	case ".go", ".css", ".sql", ".js", ".mjs", ".ts":
 		return true
 	// Compiled into the binary by go:embed -- public/public.go, assets/fonts.go
 	// -- so a swap that is not watched is a swap that never appears, with no
@@ -388,7 +389,7 @@ func watched(path string) bool {
 	case ".svg", ".png", ".ico", ".webp", ".woff2", ".txt", ".json", ".toml":
 		return true
 	}
-	return filepath.Base(path) == ".env"
+	return filepath.Base(path) == ".env" || filepath.Base(path) == "go.mod" || filepath.Base(path) == "go.sum"
 }
 
 // isViewSource reports whether a path is a view somebody writes, as opposed to
@@ -398,7 +399,11 @@ func isViewSource(path string) bool { return strings.HasSuffix(path, viewSuffix)
 // isViewInput reports whether a change to this file has to go through
 // `aru view:build` before the server is restarted.
 func isViewInput(path string) bool {
-	return isViewSource(path) || filepath.Ext(path) == ".css"
+	switch filepath.Ext(path) {
+	case ".css", ".js", ".mjs", ".ts", ".json", ".toml":
+		return true
+	}
+	return isViewSource(path) || filepath.Base(path) == "go.mod" || filepath.Base(path) == "go.sum"
 }
 
 // diff reports whether anything changed, and whether the view layer has to be

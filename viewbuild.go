@@ -31,13 +31,11 @@ const stylesheetOutput = "assets/app.css"
 // copied -- and a second one would be a second way to draw a button.
 const componentLibrary = "github.com/arandu-io/kyse"
 
-// viewBuild turns every `.kyse.go` into Go and, when the project has its own
-// stylesheet, compiles the CSS.
+// viewBuild compiles templates, local JavaScript entry points and the stylesheet.
 //
 // The view compiler is kyse, which is part of this CLI; the CSS is the Tailwind
-// standalone binary aru downloads and verifies. Neither is Node, and neither is
-// optional at deploy time: what they produce is committed, so the server only
-// ever runs `go build`.
+// standalone binary aru downloads and verifies. esbuild runs through its Go API.
+// The outputs are committed so a fresh checkout can also use plain `go build`.
 func viewBuild(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("view:build", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -89,6 +87,9 @@ func buildViews(root string, stdout, stderr io.Writer) error {
 	if err := compileViews(root, stdout); err != nil {
 		return err
 	}
+	if err := buildScripts(root, stdout); err != nil {
+		return err
+	}
 
 	if !hasStylesheet(root) {
 		// A project with no stylesheet of its own has nothing to compile, and
@@ -121,9 +122,23 @@ func buildViews(root string, stdout, stderr io.Writer) error {
 	// compiles is the project's stylesheet plus a line the project never wrote.
 	// Writing that line into a file first would leave a generated stylesheet in
 	// the tree for somebody to edit or commit.
-	args := []string{"--input", "-", "--output", stylesheetOutput, "--minify"}
-	if err := runTool(root, tailwind, args, input, stdout, stderr); err != nil {
+	args := []string{"--input", "-", "--minify"}
+	var compiled bytes.Buffer
+	if err := runTool(root, tailwind, args, input, &compiled, stderr); err != nil {
 		return fmt.Errorf("tailwindcss: %w", err)
+	}
+	minified, err := minifyStylesheet(compiled.Bytes())
+	if err != nil {
+		return err
+	}
+	previous, err := os.ReadFile(filepath.Join(root, stylesheetOutput))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if !bytes.Equal(previous, minified) {
+		if err := writeAssetOutput(root, stylesheetOutput, minified); err != nil {
+			return err
+		}
 	}
 
 	fmt.Fprintf(stdout, "wrote %s\n", stylesheetOutput)

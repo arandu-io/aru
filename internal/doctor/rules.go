@@ -2393,17 +2393,36 @@ func multiTenantTables(p *project) map[string]bool {
 				}
 			}
 
-			// The two signals that need a repository to be read: one is the
-			// entity it is named after, and the other is the tenant it takes off
-			// the Grant.
+			// The signal that needs a repository to be read: the entity it is
+			// named after declares the column.
+			//
+			// # Why reading data.Tenant is not the second signal
+			//
+			// It used to be, and it read the wrong thing. data.Tenant(g) says
+			// the method scopes itself by the acting tenant; it says nothing
+			// about the table having a tenant_id column, and the two are not
+			// the same claim. A repository of tenants proves it: the row IS the
+			// tenant, so it scopes by comparing its own id --
+			//
+			//	if id != data.Tenant(g) { return errNotYours }
+			//
+			// -- which called data.Tenant, marked the tenants table as holding
+			// a column it cannot hold, and reported every statement in the file
+			// for a predicate no schema could satisfy. Four findings that could
+			// only be silenced with a directive claiming the statements cross
+			// tenants, which they do not. Reported by the Corujão.ai team,
+			// twice: the first correction moved the mechanism and left this.
+			//
+			// Nothing is lost by dropping it. A table whose column this signal
+			// would have inferred is already marked by the loop above, which
+			// reads the statements themselves: one of them naming tenant_id is
+			// the table saying it holds tenant_id, and that is evidence rather
+			// than inference.
 			if fn.Recv == nil || !isRepository(f, fn) {
 				return
 			}
 			entity := strings.TrimSuffix(strings.TrimSuffix(receiverType(fn), "Repository"), "Repo")
-			if entity == "" {
-				return
-			}
-			if !entities[entity] && !funcBodyContains(fn, func(n string) bool { return n == "data.Tenant" }) {
+			if entity == "" || !entities[entity] {
 				return
 			}
 			for _, sql := range statements {

@@ -195,7 +195,7 @@
     "rule": "repository-without-policy",
     "severity": "error",
     "file": "app/Repositories/BillingRepository.go",
-    "line": 1,
+    "line": 15,
     "message": "Billing has a repository and no policy",
     "why": "the entity is reachable and nobody decided who may reach it. Run `aru make:policy` or write app/Policies/BillingPolicy.go."
   },
@@ -243,7 +243,7 @@
     "rule": "repository-without-policy",
     "severity": "error",
     "file": "app/Repositories/SearchRepository.go",
-    "line": 1,
+    "line": 17,
     "message": "Search has a repository and no policy",
     "why": "the entity is reachable and nobody decided who may reach it. Run `aru make:policy` or write app/Policies/SearchPolicy.go."
   },

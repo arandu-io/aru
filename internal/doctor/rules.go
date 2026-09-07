@@ -126,13 +126,23 @@ func repositoriesAndPolicies(p *project) (map[string]entityPlace, map[string]boo
 		if f.isTest {
 			continue
 		}
-		switch f.category {
-		case "Repositories":
-			record(f.entity, entityPlace{f.rel, 1})
-		case "Policies":
-			if f.entity != "" {
-				policies[f.entity] = true
-			}
+		// A policy is recognised by its directory as well as by its type,
+		// because a policy file that declares nothing is still a policy file
+		// somebody wrote, and reading it as absent would ask for a second one.
+		//
+		// A repository is not, and that asymmetry is the point. A file in
+		// app/Repositories/ used to be read as an entity named after the file,
+		// so Support.go asked for SupportPolicy.go whether or not it declared a
+		// repository of anything -- and a helper, a shared query builder or a
+		// file of constants living beside the repositories became an entity
+		// nobody could write a policy for. Reported by the Corujão.ai team,
+		// whose workaround was to name such a file Repository.go, which passed
+		// only because TrimSuffix left the empty string.
+		//
+		// What declares a repository is a type whose name ends in Repository,
+		// and the walk below finds it wherever it is written.
+		if f.category == "Policies" && f.entity != "" {
+			policies[f.entity] = true
 		}
 
 		f.types(func(ts *ast.TypeSpec) {
@@ -2676,7 +2686,28 @@ func statementVerb(text string) (string, bool) {
 	return firstVerb(text, "SELECT ", "INSERT ", "UPDATE ", "DELETE ")
 }
 
-// firstVerb returns whichever of the verbs appears earliest in the text.
+// firstVerb returns whichever of the verbs appears earliest in the text, in a
+// string that is shaped like the statement that verb introduces.
+//
+// # Why the shape is asked for and the verb alone is not
+//
+// This reads every string literal in a function body, because a statement is
+// as often built into a variable as passed straight to the driver -- so
+// narrowing to "the argument of a call databaseCall recognises" would lose the
+// statement that the composer returns and the caller then executes, which is
+// the ordinary shape in this collection.
+//
+// The cost of reading every literal is that an error message beginning with a
+// verb was read as SQL. "update a row of transactions" uppercases to
+// "UPDATE A ROW OF TRANSACTIONS", matched "UPDATE ", and what followed was
+// taken for a table name. Reported by the Corujão.ai team, whose workaround was
+// a rule of style: never begin a sentence with a SQL verb.
+//
+// So the verb has to be followed by the clause that verb cannot be without.
+// UPDATE without SET assigns nothing, DELETE and SELECT without FROM name no
+// table, INSERT without INTO names none either. Prose passes the verb test and
+// fails this one, and a statement cannot fail it: those clauses are what make
+// it a statement.
 func firstVerb(text string, verbs ...string) (string, bool) {
 	upper := strings.ToUpper(text)
 	found, at := "", -1
@@ -2685,9 +2716,31 @@ func firstVerb(text string, verbs ...string) (string, bool) {
 		if i < 0 || (at >= 0 && i >= at) {
 			continue
 		}
+		if !hasClauseOf(upper[i:], verb) {
+			continue
+		}
 		found, at = strings.TrimSpace(verb), i
 	}
 	return found, found != ""
+}
+
+// hasClauseOf reports whether what follows a verb carries the clause that verb
+// requires.
+//
+// The rest of the string and not the whole of it, so a sentence that happens to
+// contain the word "from" earlier does not vouch for a verb after it.
+func hasClauseOf(rest, verb string) bool {
+	switch strings.TrimSpace(verb) {
+	case "UPDATE":
+		return strings.Contains(rest, " SET ")
+	case "INSERT":
+		return strings.Contains(rest, " INTO ")
+	default:
+		// SELECT and DELETE both name their table with FROM. A SELECT without
+		// one -- `SELECT 1` -- names no table, so no rule about tables has
+		// anything to say about it.
+		return strings.Contains(rest, " FROM ")
+	}
 }
 
 // tenantIsInThePredicate reports whether the tenant column is in the WHERE.

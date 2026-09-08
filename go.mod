@@ -28,7 +28,7 @@ retract v0.37.0 // Does not pin the skeleton and could clone an incompatible mov
 // pay for it.
 
 require (
-	github.com/arandu-io/hesape v0.33.0
+	github.com/arandu-io/hesape v0.34.0
 	github.com/evanw/esbuild v0.28.2
 	gopkg.in/yaml.v3 v3.0.1
 )

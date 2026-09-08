@@ -1,9 +1,5 @@
-github.com/arandu-io/hesape v0.25.0 h1:nQnTcss38ahOedrNg14FqDWZAlUZbCzicGiY/DGRkD8=
-github.com/arandu-io/hesape v0.25.0/go.mod h1:KNXJJuKrDIpWvJgNbE2LxtHkOqO4J6cqPkmMcNlxrL0=
-github.com/arandu-io/hesape v0.28.0 h1:NVQm4uV8oEWT+W6XwZS7CPYmqsTeoO2dwpE5e8OCqDk=
-github.com/arandu-io/hesape v0.28.0/go.mod h1:KNXJJuKrDIpWvJgNbE2LxtHkOqO4J6cqPkmMcNlxrL0=
-github.com/arandu-io/hesape v0.29.0 h1:rxembPnl9XuVqB/ILBf5A6zwKPmcsP2fMEuuKlIjEVI=
-github.com/arandu-io/hesape v0.29.0/go.mod h1:KNXJJuKrDIpWvJgNbE2LxtHkOqO4J6cqPkmMcNlxrL0=
+github.com/arandu-io/hesape v0.32.0 h1:xAZTIaSQDRbxDOrqdptI5DAl3e6+kOdXwhExs+vojxU=
+github.com/arandu-io/hesape v0.32.0/go.mod h1:KNXJJuKrDIpWvJgNbE2LxtHkOqO4J6cqPkmMcNlxrL0=
 github.com/evanw/esbuild v0.28.2 h1:A2uETn4jrQTcXaT/shwTDTYBxDjl7fV7nXmUrJxfA2w=
 github.com/evanw/esbuild v0.28.2/go.mod h1:D2vIQZqV/vIf/VRHtViaUtViZmG7o+kKmlBfVQuRi48=
 golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=

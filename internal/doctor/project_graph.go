@@ -4,10 +4,13 @@ import (
 	"encoding/base64"
 	"go/ast"
 	"go/token"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/arandu-io/aru/internal/gomod"
 )
 
 // Analysis is one Doctor load, with the findings and project graph derived
@@ -99,6 +102,12 @@ func (b *graphBuilder) addNode(group string, node Node) {
 	b.nodes[node.ID] = node
 	at := b.groupIndex[group]
 	b.groups[at].NodeIDs = append(b.groups[at].NodeIDs, node.ID)
+}
+
+// has reports whether a node with this ID is already in the graph.
+func (b *graphBuilder) has(id string) bool {
+	_, found := b.nodes[id]
+	return found
 }
 
 func (b *graphBuilder) addEdge(from, to string) {
@@ -359,7 +368,26 @@ func addNativeCapabilities(builder *graphBuilder, files []*file) {
 	}
 }
 
+// addCommunityModules puts every Arandu module of the community this project
+// depends on into the graph.
+//
+// Two ways in, and both are needed. A module registered on the kernel is wired
+// into the application and is found by reading bootstrap. A module used as a
+// library -- a service constructed from it, a catalogue built with it, a
+// registry it hands out -- is never registered anywhere, and reading only
+// bootstrap answered that a project depending on two of them had none.
+//
+// What separates such a module from any other Go dependency is that it carries
+// an arandu.mod.toml at its root. That is the ecosystem's own declaration, and
+// it is what the package skeleton ships: a name heuristic on the import path
+// would be a guess that rots the first time somebody names a module something
+// else.
 func addCommunityModules(builder *graphBuilder, p *project, files []*file) {
+	addRegisteredCommunityModules(builder, p, files)
+	addDependedCommunityModules(builder, p, files)
+}
+
+func addRegisteredCommunityModules(builder *graphBuilder, p *project, files []*file) {
 	for _, f := range files {
 		if f.isTest || !strings.HasPrefix(f.rel, "bootstrap/") {
 			continue
@@ -399,6 +427,104 @@ func addCommunityModules(builder *graphBuilder, p *project, files []*file) {
 			return false
 		})
 	}
+}
+
+// addDependedCommunityModules reads the imports of the project and keeps the
+// ones answered by a module that declares itself an Arandu module.
+//
+// The manifest is read from where the module actually sits: the tree itself for
+// a local replace, and the module cache otherwise. A module that is required and
+// not downloaded contributes nothing rather than a node pointing at a file that
+// is not there -- the graph is drawn from what is on this disk, and saying
+// nothing is the honest answer to not knowing.
+func addDependedCommunityModules(builder *graphBuilder, p *project, files []*file) {
+	manifest := readGoMod(p.root)
+	if manifest == nil {
+		return
+	}
+
+	seen := make(map[string]bool)
+	for _, f := range files {
+		if f.isTest {
+			continue
+		}
+		for _, spec := range f.ast.Imports {
+			importPath := strings.Trim(spec.Path.Value, "\"")
+			if !isExternalModule(importPath, p.modulePath) {
+				continue
+			}
+			modulePath, ok := owningModule(manifest, importPath)
+			if !ok || seen[modulePath] {
+				continue
+			}
+			seen[modulePath] = true
+			if builder.has("community-module:" + graphID(modulePath)) {
+				// Registered on the kernel, and already in the graph saying so.
+				// That is the more precise answer of the two: it says the module
+				// is wired into the application, not merely on the require list.
+				continue
+			}
+			if !declaresAranduManifest(manifest, p.root, modulePath) {
+				continue
+			}
+			position := f.fset.Position(spec.Pos())
+			builder.addNode("community-modules", Node{
+				ID: "community-module:" + graphID(modulePath), Kind: "community-module",
+				Label: modulePath, Detail: "Required in go.mod", File: f.rel,
+				Line: max(position.Line, 1), Column: max(position.Column, 1),
+			})
+		}
+	}
+}
+
+// readGoMod reads the project's go.mod, or nil when there is none to read.
+func readGoMod(root string) *gomod.File {
+	body, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return nil
+	}
+	return gomod.Parse(string(body))
+}
+
+// owningModule answers which required module provides an import path.
+//
+// The longest requirement wins, because a module and a nested module of it are
+// both prefixes of the same import and only the longer one owns the package.
+func owningModule(manifest *gomod.File, importPath string) (string, bool) {
+	best := ""
+	for modulePath := range manifest.Versions {
+		if _, ok := gomod.Under(importPath, modulePath); !ok {
+			continue
+		}
+		if len(modulePath) > len(best) {
+			best = modulePath
+		}
+	}
+	return best, best != ""
+}
+
+// declaresAranduManifest reports whether a module carries an arandu.mod.toml.
+func declaresAranduManifest(manifest *gomod.File, root, modulePath string) bool {
+	if target, replaced := manifest.Replaced[modulePath]; replaced {
+		dir := target
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(root, filepath.FromSlash(dir))
+		}
+		return fileExists(filepath.Join(dir, "arandu.mod.toml"))
+	}
+
+	version, required := manifest.Versions[modulePath]
+	cache := gomod.Cache()
+	if !required || cache == "" {
+		return false
+	}
+	at := filepath.Join(cache, filepath.FromSlash(gomod.EscapePath(modulePath)+"@"+version), "arandu.mod.toml")
+	return fileExists(at)
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 func kernelRegisterCall(f *file, call *ast.CallExpr) bool {

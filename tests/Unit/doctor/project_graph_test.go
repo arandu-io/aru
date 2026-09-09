@@ -188,8 +188,9 @@ func TestProjectGraphClassifiesArtifactsNativeCapabilitiesAndRegisteredCommunity
 	for _, id := range groups["community-modules"].NodeIDs {
 		community = append(community, nodes[id].Label)
 	}
-	if want := []string{"example.org/community/audit"}; !reflect.DeepEqual(community, want) {
-		t.Errorf("community modules = %v, want only directly registered external module %v", community, want)
+	sort.Strings(community)
+	if want := []string{"example.org/community/audit", "example.org/community/fleet"}; !reflect.DeepEqual(community, want) {
+		t.Errorf("community modules = %v, want the two external modules %v", community, want)
 	}
 	for _, module := range community {
 		if module == "github.com/arandu-io/framework/modules/auth" {
@@ -242,6 +243,11 @@ func RegisterMetrics() {
 
 	k := kernel.New()
 	k.Register(search.NewModule())
+
+	// A call on a kernel is not a kernel. Only Register and Use answer the
+	// kernel itself, and a module registered on what any other method returns
+	// belongs to that thing, not to this application.
+	k.Tasks().Register(collectors.NewModule())
 }
 `
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
@@ -267,7 +273,7 @@ func RegisterMetrics() {
 		}
 	}
 	sort.Strings(community)
-	if want := []string{"example.org/community/audit", "example.org/search/module"}; !reflect.DeepEqual(community, want) {
+	if want := []string{"example.org/community/audit", "example.org/community/fleet", "example.org/search/module"}; !reflect.DeepEqual(community, want) {
 		t.Errorf("community modules = %v, want only modules registered on proven Kernel receivers: %v", community, want)
 	}
 }
@@ -474,14 +480,23 @@ import (
 	legacy "github.com/arandu-io/framework/modules/auth"
 	local "example.test/project/modules/local"
 	audit "example.org/community/audit"
+	fleet "example.org/community/fleet"
 )
 
 func Boot(k *kernel.Kernel) {
-	k.Register(
-		audit.NewModule(),
-		legacy.NewModule(),
-		local.NewModule(),
-	)
+	fleetModule, err := fleet.New(fleet.Config{}, nil, nil)
+	if err != nil {
+		panic(err)
+	}
+	k.
+		Use().
+		Register(
+			audit.NewModule(),
+			legacy.NewModule(),
+			local.NewModule(),
+			fleetModule,
+		)
+	_ = k.Tasks
 }
 `,
 	}
@@ -495,6 +510,35 @@ func Boot(k *kernel.Kernel) {
 		}
 	}
 	return root
+}
+
+// TestAModuleRegisteredByIdentifierIsStillACommunityModule fixes the shape the
+// package skeleton produces, which is the shape the graph used to miss.
+//
+// A module whose constructor returns an error cannot be written inside the
+// variadic Register call: Go has no way to spell a two-value call there. So the
+// wiring is two statements, the constructor into a variable and the variable
+// into Register, and reading only the call form counted none of them. A project
+// wiring five community modules reported zero, and the panel said the project
+// had none rather than that it could not see them.
+func TestAModuleRegisteredByIdentifierIsStillACommunityModule(t *testing.T) {
+	root := writeGraphFixture(t)
+	analysis, err := doctor.Analyze(root, doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	var labels []string
+	for _, node := range analysis.Graph.Nodes {
+		if node.Kind == "community-module" {
+			labels = append(labels, node.Label)
+		}
+	}
+	sort.Strings(labels)
+
+	if want := []string{"example.org/community/audit", "example.org/community/fleet"}; !reflect.DeepEqual(labels, want) {
+		t.Fatalf("community modules = %v, want %v: the one registered by identifier is the shape every module built from the package skeleton takes", labels, want)
+	}
 }
 
 func sortedStrings(values []string) bool {

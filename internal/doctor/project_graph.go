@@ -364,6 +364,7 @@ func addCommunityModules(builder *graphBuilder, p *project, files []*file) {
 		if f.isTest || !strings.HasPrefix(f.rel, "bootstrap/") {
 			continue
 		}
+		built := builtModules(f)
 		ast.Inspect(f.ast, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
@@ -378,6 +379,9 @@ func addCommunityModules(builder *graphBuilder, p *project, files []*file) {
 			}
 			for _, argument := range call.Args {
 				alias, at, ok := registeredImportAlias(argument)
+				if !ok {
+					alias, at, ok = built.lookup(argument)
+				}
 				if !ok {
 					continue
 				}
@@ -405,13 +409,33 @@ func kernelRegisterCall(f *file, call *ast.CallExpr) bool {
 	return kernelExpression(f, selector.X)
 }
 
+// fluentKernelMethods are the kernel methods that answer the kernel.
+//
+// There are two, and the set is written out rather than inferred because
+// inferring it means accepting any method call on a kernel as a kernel -- which
+// would count a module registered on whatever k.Tasks() or k.Recorder()
+// returns. Register and Use are the whole of the fluent surface.
+var fluentKernelMethods = map[string]bool{"Register": true, "Use": true}
+
 func kernelExpression(f *file, expression ast.Expr) bool {
 	switch value := expression.(type) {
 	case *ast.Ident:
 		return value.Obj != nil && kernelDeclaration(f, value.Obj.Decl, value)
 	case *ast.CallExpr:
 		selector, ok := value.Fun.(*ast.SelectorExpr)
-		if !ok || selector.Sel.Name != "New" {
+		if !ok {
+			return false
+		}
+		if fluentKernelMethods[selector.Sel.Name] {
+			// The wiring is written as one chain -- k.Use(...).Register(...) --
+			// so the receiver of the Register call is the Use call, not the
+			// identifier. Both methods answer the kernel itself and nothing
+			// else does, which is what keeps this closed: a receiver like
+			// k.Tasks() is a call on a kernel too, and a module registered on
+			// whatever that returns is not a module of this application.
+			return kernelExpression(f, selector.X)
+		}
+		if selector.Sel.Name != "New" {
 			return false
 		}
 		alias, ok := selector.X.(*ast.Ident)
@@ -484,6 +508,64 @@ func registeredImportAlias(expression ast.Expr) (string, ast.Node, bool) {
 		return registeredImportAlias(value.X)
 	}
 	return "", nil, false
+}
+
+// builtModules maps a local variable to the package alias whose constructor
+// produced it.
+//
+// A module is registered by the identifier, not by the call, whenever its
+// constructor returns an error -- and every module the package skeleton
+// produces does, because a module that could be registered half-wired is a
+// module whose first request reports the missing half. Go has no way to spell
+// a two-value call inside a variadic argument list, so the shape is two
+// statements:
+//
+//	fleetModule, err := fleet.New(fleet.Config{...}, db, sessions)
+//	...
+//	k.Register(fleetModule)
+//
+// Reading only the call form saw an identifier with no selector on it and
+// counted nothing, which is how a project registering community modules
+// reported none of them. The lookup is per file, and bootstrap/app.go is where
+// both statements are: a module built in one file and registered in another is
+// not a shape the wiring takes, and guessing across files would name a variable
+// that happens to repeat.
+type moduleAliases map[string]string
+
+func builtModules(f *file) moduleAliases {
+	built := make(moduleAliases)
+	ast.Inspect(f.ast, func(n ast.Node) bool {
+		assign, ok := n.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		for i, left := range assign.Lhs {
+			name, ok := left.(*ast.Ident)
+			if !ok || name.Name == "_" || i >= len(assign.Rhs) {
+				continue
+			}
+			if alias, _, ok := registeredImportAlias(assign.Rhs[i]); ok {
+				built[name.Name] = alias
+			}
+		}
+		return true
+	})
+	return built
+}
+
+// lookup answers the alias a registered identifier was built from, and where to
+// point at it: the registration, not the construction, because the graph is
+// about what this application wires in.
+func (b moduleAliases) lookup(expression ast.Expr) (string, ast.Node, bool) {
+	identifier, ok := expression.(*ast.Ident)
+	if !ok {
+		return "", nil, false
+	}
+	alias, ok := b[identifier.Name]
+	if !ok {
+		return "", nil, false
+	}
+	return alias, identifier, true
 }
 
 func aliasName(alias *ast.Ident, at ast.Node, ok bool) (string, ast.Node, bool) {

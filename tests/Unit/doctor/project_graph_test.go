@@ -139,6 +139,9 @@ func TestAnalyzePreservesRunFindingsAndBuildsADeterministicV1Graph(t *testing.T)
 
 func TestProjectGraphClassifiesArtifactsNativeCapabilitiesAndRegisteredCommunityModules(t *testing.T) {
 	root := writeGraphFixture(t)
+	// An empty cache, so this test answers about what bootstrap declares and
+	// not about what happens to be downloaded on the machine running it.
+	t.Setenv("GOMODCACHE", t.TempDir())
 	analysis, err := doctor.Analyze(root, doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Analyze: %v", err)
@@ -228,6 +231,7 @@ func TestProjectGraphClassifiesArtifactsNativeCapabilitiesAndRegisteredCommunity
 
 func TestCommunityModulesComeOnlyFromProvenKernelRegisterCalls(t *testing.T) {
 	root := writeGraphFixture(t)
+	t.Setenv("GOMODCACHE", t.TempDir())
 	path := filepath.Join(root, "bootstrap", "metrics.go")
 	contents := `package bootstrap
 
@@ -402,6 +406,26 @@ func writeGraphFixture(t *testing.T) string {
 		"go.mod": `module example.test/project
 
 go 1.26
+
+require (
+	example.org/community/audit v0.9.0
+	example.org/community/reporting v1.2.0
+	example.org/driver/sql v1.0.0
+)
+`,
+		"app/Services/ReportService.go": `package services
+
+import (
+	reporting "example.org/community/reporting"
+	sql "example.org/driver/sql"
+)
+
+// A community module used as a library: constructed where it is needed and
+// registered nowhere. The ordinary driver beside it carries no manifest.
+func NewReportService() any {
+	_ = sql.Open
+	return reporting.NewRegistry()
+}
 `,
 		"arandu.mod.toml": `name = "example/project"
 framework = ">= 0.3"
@@ -512,6 +536,65 @@ func Boot(k *kernel.Kernel) {
 	return root
 }
 
+// TestAModuleUsedAsALibraryIsStillACommunityModule fixes the case that reported
+// zero on a real project.
+//
+// A community module is not always registered on the kernel. One that hands out
+// a service, a catalogue or a registry is constructed where it is used and
+// wired nowhere, so reading bootstrap answered that a project depending on two
+// of them had none -- with every other group of the panel populated, which
+// reads as "this project has no community modules" rather than "the panel
+// cannot see them".
+//
+// The signal is the arandu.mod.toml the module carries at its root, which is
+// what the package skeleton ships. A plain Go dependency has none and stays out.
+func TestAModuleUsedAsALibraryIsStillACommunityModule(t *testing.T) {
+	root := writeGraphFixture(t)
+	cache := t.TempDir()
+	t.Setenv("GOMODCACHE", cache)
+
+	// Two required modules in the cache: one declares itself an Arandu module,
+	// the other is an ordinary dependency.
+	for path, manifest := range map[string]bool{
+		"example.org/community/reporting@v1.2.0": true,
+		"example.org/community/audit@v0.9.0":     true,
+		"example.org/driver/sql@v1.0.0":          false,
+	} {
+		dir := filepath.Join(cache, filepath.FromSlash(path))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+		if !manifest {
+			continue
+		}
+		if err := os.WriteFile(filepath.Join(dir, "arandu.mod.toml"), []byte("[module]\nname = \"reporting\"\n"), 0o644); err != nil {
+			t.Fatalf("write manifest: %v", err)
+		}
+	}
+
+	analysis, err := doctor.Analyze(root, doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	details := map[string]string{}
+	for _, node := range analysis.Graph.Nodes {
+		if node.Kind == "community-module" {
+			details[node.Label] = node.Detail
+		}
+	}
+
+	if _, found := details["example.org/community/reporting"]; !found {
+		t.Errorf("a module used as a library and declaring arandu.mod.toml was not counted: %v", details)
+	}
+	if _, found := details["example.org/driver/sql"]; found {
+		t.Error("an ordinary Go dependency was counted as a community module")
+	}
+	if got := details["example.org/community/audit"]; got != "Registered in bootstrap" {
+		t.Errorf("a registered module reads %q, want the more precise Registered in bootstrap", got)
+	}
+}
+
 // TestAModuleRegisteredByIdentifierIsStillACommunityModule fixes the shape the
 // package skeleton produces, which is the shape the graph used to miss.
 //
@@ -523,6 +606,9 @@ func Boot(k *kernel.Kernel) {
 // had none rather than that it could not see them.
 func TestAModuleRegisteredByIdentifierIsStillACommunityModule(t *testing.T) {
 	root := writeGraphFixture(t)
+	// An empty cache, so this test answers about what bootstrap declares and
+	// not about what happens to be downloaded on the machine running it.
+	t.Setenv("GOMODCACHE", t.TempDir())
 	analysis, err := doctor.Analyze(root, doctor.Conventional)
 	if err != nil {
 		t.Fatalf("Analyze: %v", err)

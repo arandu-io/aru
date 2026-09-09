@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/arandu-io/aru/internal/gomod"
 	"github.com/arandu-io/aru/internal/kyse"
 )
 
@@ -26,7 +27,7 @@ import (
 type project struct {
 	root string
 
-	module   *moduleFile
+	module   *gomod.File
 	moduleAt fileStamp
 
 	packages map[string]*packageIndex
@@ -66,20 +67,12 @@ func stampFile(path string) fileStamp {
 	return fileStamp{size: info.Size(), modTime: info.ModTime().UnixNano(), found: true}
 }
 
-// moduleFile is the part of a go.mod this server reads: what the tree is
-// called, what it requires, and what it replaces.
-type moduleFile struct {
-	path     string
-	versions map[string]string
-	replaced map[string]string
-}
-
 // readModule reads go.mod, reusing the last read while the file is unchanged.
 //
 // The parse is deliberately small. What is needed is a module path, a version
 // per requirement and the local replacements, and a full go.mod reader would be
 // a dependency this module does not take.
-func (p *project) readModule() *moduleFile {
+func (p *project) readModule() *gomod.File {
 	path := filepath.Join(p.root, "go.mod")
 	stamp := stampFile(path)
 	if p.module != nil && stamp == p.moduleAt {
@@ -90,72 +83,8 @@ func (p *project) readModule() *moduleFile {
 		p.module, p.moduleAt = nil, stamp
 		return nil
 	}
-	p.module, p.moduleAt = parseModule(string(body)), stamp
+	p.module, p.moduleAt = gomod.Parse(string(body)), stamp
 	return p.module
-}
-
-func parseModule(source string) *moduleFile {
-	module := &moduleFile{versions: map[string]string{}, replaced: map[string]string{}}
-	block := ""
-	for _, line := range strings.Split(source, "\n") {
-		if at := strings.Index(line, "//"); at >= 0 {
-			line = line[:at]
-		}
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if line == ")" {
-			block = ""
-			continue
-		}
-		if block == "" {
-			keyword, rest, found := strings.Cut(line, " ")
-			if !found {
-				continue
-			}
-			rest = strings.TrimSpace(rest)
-			if rest == "(" {
-				block = keyword
-				continue
-			}
-			module.record(keyword, rest)
-			continue
-		}
-		module.record(block, line)
-	}
-	return module
-}
-
-func (m *moduleFile) record(keyword, rest string) {
-	fields := strings.Fields(rest)
-	switch keyword {
-	case "module":
-		if len(fields) >= 1 {
-			m.path = fields[0]
-		}
-	case "require":
-		if len(fields) >= 2 {
-			m.versions[fields[0]] = fields[1]
-		}
-	case "replace":
-		// `old => new` and `old v1 => new v2` both end with the replacement,
-		// and only a replacement that is a directory is usable here: a module
-		// swapped for another module is still found through the cache.
-		at := -1
-		for i, field := range fields {
-			if field == "=>" {
-				at = i
-			}
-		}
-		if at < 0 || at+1 >= len(fields) || len(fields) == 0 {
-			return
-		}
-		target := fields[at+1]
-		if strings.HasPrefix(target, ".") || strings.HasPrefix(target, "/") || filepath.IsAbs(target) {
-			m.replaced[fields[0]] = target
-		}
-	}
 }
 
 // packageDir maps an import path to the directory that holds it, or reports
@@ -171,13 +100,13 @@ func (p *project) packageDir(importPath string) (string, bool) {
 		return "", false
 	}
 
-	if module.path != "" {
-		if rest, ok := underImportPath(importPath, module.path); ok {
+	if module.Path != "" {
+		if rest, ok := gomod.Under(importPath, module.Path); ok {
 			return existingDir(filepath.Join(p.root, filepath.FromSlash(rest)))
 		}
 	}
-	for prefix, target := range module.replaced {
-		if rest, ok := underImportPath(importPath, prefix); ok {
+	for prefix, target := range module.Replaced {
+		if rest, ok := gomod.Under(importPath, prefix); ok {
 			dir := target
 			if !filepath.IsAbs(dir) {
 				dir = filepath.Join(p.root, filepath.FromSlash(dir))
@@ -189,34 +118,19 @@ func (p *project) packageDir(importPath string) (string, bool) {
 		return dir, true
 	}
 
-	cache := moduleCache()
+	cache := gomod.Cache()
 	if cache == "" {
 		return "", false
 	}
-	for prefix, version := range module.versions {
-		rest, ok := underImportPath(importPath, prefix)
+	for prefix, version := range module.Versions {
+		rest, ok := gomod.Under(importPath, prefix)
 		if !ok {
 			continue
 		}
-		at := filepath.Join(cache, filepath.FromSlash(escapeModulePath(prefix)+"@"+version), filepath.FromSlash(rest))
+		at := filepath.Join(cache, filepath.FromSlash(gomod.EscapePath(prefix)+"@"+version), filepath.FromSlash(rest))
 		if dir, ok := existingDir(at); ok {
 			return dir, true
 		}
-	}
-	return "", false
-}
-
-// underImportPath reports whether the import path is the prefix or lies inside
-// it, and returns what is left over.
-//
-// Comparing on the slash boundary is what keeps `example.com/kyseless` from
-// resolving through a requirement on `example.com/kyse`.
-func underImportPath(importPath, prefix string) (string, bool) {
-	if importPath == prefix {
-		return "", true
-	}
-	if rest, found := strings.CutPrefix(importPath, prefix+"/"); found {
-		return rest, true
 	}
 	return "", false
 }
@@ -227,38 +141,6 @@ func existingDir(path string) (string, bool) {
 		return "", false
 	}
 	return path, true
-}
-
-func moduleCache() string {
-	if cache := os.Getenv("GOMODCACHE"); cache != "" {
-		return cache
-	}
-	if gopath := os.Getenv("GOPATH"); gopath != "" {
-		return filepath.Join(strings.Split(gopath, string(os.PathListSeparator))[0], "pkg", "mod")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, "go", "pkg", "mod")
-}
-
-// escapeModulePath is the module cache's spelling of a path: an upper-case
-// letter becomes an exclamation mark and its lower-case form.
-//
-// The cache has to name modules on a filesystem that does not distinguish case,
-// so `Sirupsen` and `sirupsen` would be one directory without it.
-func escapeModulePath(importPath string) string {
-	var out strings.Builder
-	for _, r := range importPath {
-		if r >= 'A' && r <= 'Z' {
-			out.WriteByte('!')
-			out.WriteRune(r - 'A' + 'a')
-			continue
-		}
-		out.WriteRune(r)
-	}
-	return out.String()
 }
 
 // packageIndex is what one directory of Go declares, as the editor needs it.

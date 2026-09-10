@@ -739,8 +739,8 @@ func TestProjectGraphUsesTheInitializedRootAndReturnsClickableZeroBasedLocations
 	if !found {
 		t.Fatal("arandu/projectGraph did not answer its request")
 	}
-	if graph.SchemaVersion != 1 || len(graph.Groups) != 9 {
-		t.Fatalf("graph schema/groups = %d/%d, want 1/9", graph.SchemaVersion, len(graph.Groups))
+	if graph.SchemaVersion != 1 || len(graph.Groups) != 10 {
+		t.Fatalf("graph schema/groups = %d/%d, want 1/10", graph.SchemaVersion, len(graph.Groups))
 	}
 
 	modelFound := false

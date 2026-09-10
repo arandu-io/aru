@@ -94,6 +94,7 @@ func TestAnalyzePreservesRunFindingsAndBuildsADeterministicV1Graph(t *testing.T)
 		{"views", "Views"},
 		{"async", "Async"},
 		{"console", "Console"},
+		{"native-screens", "Native Screens"},
 		{"native-capabilities", "Native Capabilities"},
 		{"community-modules", "Community Modules"},
 		{"diagnostics", "Diagnostics"},

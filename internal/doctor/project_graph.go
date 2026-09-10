@@ -61,6 +61,7 @@ var graphGroups = []Group{
 	{ID: "views", Label: "Views"},
 	{ID: "async", Label: "Async"},
 	{ID: "console", Label: "Console"},
+	{ID: "native-screens", Label: "Native Screens"},
 	{ID: "native-capabilities", Label: "Native Capabilities"},
 	{ID: "community-modules", Label: "Community Modules"},
 	{ID: "diagnostics", Label: "Diagnostics"},
@@ -174,6 +175,7 @@ func buildProjectGraph(p *project, findings []Finding) ProjectGraph {
 			builder.addEdge(featureID, node.ID)
 		}
 	}
+	addNativeScreens(builder, files)
 	addNativeCapabilities(builder, files)
 	addCommunityModules(builder, p, files)
 	addDiagnosticNodes(builder, findings)
@@ -294,6 +296,11 @@ func graphArtifactForFile(f *file) (graphArtifact, bool) {
 			artifact.group, artifact.node.Kind = "console", "console-route"
 		case strings.HasPrefix(f.rel, "routes/"):
 			artifact.group, artifact.node.Kind = "http", "route"
+		case isNativeTarget(f.rel):
+			// The native target is a command, and listing it beside the
+			// console commands would put five files that draw a window under a
+			// heading about the terminal. It has a group of its own.
+			return graphArtifact{}, false
 		case f.rel == "main.go" || strings.HasPrefix(f.rel, "cmd/"):
 			artifact.group, artifact.node.Kind = "console", "entrypoint"
 		case strings.HasPrefix(f.rel, "bootstrap/"):

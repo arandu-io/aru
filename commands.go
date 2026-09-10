@@ -180,6 +180,18 @@ var commands = []command{
 		run:   build,
 	},
 	{
+		name:  "native:run",
+		usage: "aru native:run [-server addr] [-dark]",
+		desc:  "build the native application and open its window",
+		run:   nativeRun,
+	},
+	{
+		name:  "native:build",
+		usage: "aru native:build [-target os/arch] [-output path] | -list",
+		desc:  "compile the native application for one platform",
+		run:   nativeBuild,
+	},
+	{
 		// route:list, the conventional name, for the same reason as
 		// queue:work above.
 		name:  "route:list",

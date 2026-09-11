@@ -23,8 +23,14 @@ import (
 )
 
 const (
-	minIOSVersion = 10
-	// Some Metal features require tvOS 11
+	// The window backend is written against the scene API, which arrived in
+	// iOS 13. Declaring anything older is a claim the compiler checks: with
+	// warnings promoted to errors, every use of a scene is an error, and the
+	// whole target fails after building the Go half -- which is the slowest
+	// possible way to find out that a number in this file disagrees with the
+	// code it describes.
+	minIOSVersion = 13
+	// Some Metal features require tvOS 11.
 	minTVOSVersion = 11
 	// Metal is available from iOS 8 on devices, yet from version 13 on the
 	// simulator.

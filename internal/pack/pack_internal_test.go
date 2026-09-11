@@ -192,3 +192,51 @@ func macManifest(t *testing.T) string {
 	}
 	return body[start : start+end]
 }
+
+// TestTheDeviceFloorIsTheOneTheBackendNeeds fixes a number that disagreed with
+// the code it described.
+//
+// The window backend is written against the scene API, which arrived in iOS 13.
+// The floor said 10, and with warnings promoted to errors every use of a scene
+// was an error -- so the whole target failed, after building the Go half. It
+// had never produced an artifact.
+//
+// A constant pinned by a test is a weak guard, and it is the strongest one
+// available from here: what requires the version lives in another module. What
+// it buys is that lowering the number fails with the reason written next to it
+// rather than after a full build.
+func TestTheDeviceFloorIsTheOneTheBackendNeeds(t *testing.T) {
+	const scenes = 13
+
+	if minIOSVersion < scenes {
+		t.Errorf("the device floor is %d and the window backend uses an API of %d; the target will not compile", minIOSVersion, scenes)
+	}
+	if minSimulatorVersion < scenes {
+		t.Errorf("the simulator floor is %d and the window backend uses an API of %d", minSimulatorVersion, scenes)
+	}
+}
+
+// TestTheCompilerAndTheManifestAreToldTheSameVersion keeps a binary compiled
+// for one version from declaring another.
+//
+// They are two sites reading the same field, and a drift between them ships an
+// application the system will load on a device whose libraries it was not built
+// against -- which fails at the first call into one of them and nowhere
+// earlier.
+func TestTheCompilerAndTheManifestAreToldTheSameVersion(t *testing.T) {
+	source, err := os.ReadFile("iosbuild.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(source)
+
+	if !strings.Contains(body, `fmt.Sprintf("-miphoneos-version-min=%d.0", bi.minsdk)`) {
+		t.Error("the compiler is no longer handed the build's own minimum")
+	}
+	if !strings.Contains(body, "<string>{{.MinVersion}}.0</string>") {
+		t.Error("the manifest no longer declares the build's own minimum")
+	}
+	if !strings.Contains(body, "MinVersion:      bi.minsdk,") {
+		t.Error("the manifest's minimum no longer comes from the same field the compiler is given")
+	}
+}

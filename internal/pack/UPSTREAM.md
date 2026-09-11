@@ -86,6 +86,24 @@ it had registered.
 application, Launch Services registers it under its own name, and the window
 server answers that the process owns one window of 960 by 752 points.
 
+### 7. An error that disappeared on the way to an incomplete package
+
+**Changed:** the walk that collects an application's jars and permissions
+recursed into each import and dropped whatever that call answered. A jar it
+could not find was therefore silently absent from the APK, which builds,
+installs, and fails on the screen that needed it.
+
+**And nine more errors are named rather than dropped**, all writes into
+in-memory archive writers where the annotation changes nothing but says a
+decision was made.
+
+**Three findings are excluded by path rather than fixed**, in `.golangci.yml`,
+each with its reason written there: a provisioning profile is matched to a
+certificate by the SHA-1 of its DER encoding, which is Apple's format read and
+not written, and the archive being read back is the one this program assembled
+four functions earlier. The rules stay on everywhere else, because they are what
+guards the checksum that verifies every downloaded font and binary.
+
 ## What was left behind
 
 The end-to-end tests, which drive a browser and an emulator through two more

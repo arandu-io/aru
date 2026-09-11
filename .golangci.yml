@@ -120,6 +120,29 @@ linters:
       - linters: [staticcheck]
         text: "^QF1001:"
 
+      # Three findings in the packager, excluded by path rather than globally,
+      # because the rules they name are the two this repository most wants kept
+      # on: G401 and G505 guard the sha256 that verifies every downloaded font
+      # and the Tailwind binary, and switching either for a weak hash compiles,
+      # vets clean and passes every test.
+      #
+      # In internal/pack they are not a choice. A provisioning profile is
+      # matched to a certificate by the SHA-1 of its DER encoding -- that is
+      # Apple's format, read and not written, and computing SHA-256 there
+      # produces a value no profile will ever match. The signature it protects
+      # is the platform's, made with the developer's own key.
+      - linters: [gosec]
+        path: internal/pack/
+        text: "^(G401|G505):"
+
+      # And G110 is the archive this program has just assembled itself, being
+      # read back to copy entries into the next one. A decompression bomb is an
+      # archive from somewhere else; this one was written four functions
+      # earlier, in the same process.
+      - linters: [gosec]
+        path: internal/pack/
+        text: "^G110:"
+
 issues:
   # Report all of it. The defaults stop at 3 repeats of one finding and 50 per
   # linter, which turned 91 findings into 34 the first time this ran. A report

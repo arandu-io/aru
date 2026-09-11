@@ -35,6 +35,17 @@ func buildJS(bi *buildInfo) error {
 		os.Environ(),
 		"GOOS=js",
 		"GOARCH=wasm",
+		// Off, and set rather than inherited. This platform has no cgo, and a
+		// developer whose shell exports it on -- which is an ordinary setting,
+		// and is what this project's own commands use -- got the toolchain
+		// honouring the variable over the platform: the standard library's
+		// user lookup then selected a path with no implementation for this
+		// pair, and the failure named five functions inside the standard
+		// library and nothing of the project's. The command that builds
+		// without packaging already decides this per platform; this is the
+		// same decision, on the path that produces the artifact somebody
+		// ships.
+		"CGO_ENABLED=0",
 	)
 	_, err := runCmd(cmd)
 	if err != nil {

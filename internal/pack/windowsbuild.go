@@ -41,7 +41,7 @@ func buildWindows(tmpDir string, bi *buildInfo) error {
 
 	for _, arch := range bi.archs {
 		builder.Coff = coff.NewRSRC()
-		builder.Coff.Arch(arch)
+		_ = builder.Coff.Arch(arch)
 
 		if err := builder.embedIcon(bi.iconPath); err != nil {
 			return err
@@ -176,7 +176,7 @@ func (b *windowsBuilder) buildResource(buildInfo *buildInfo, name string, arch s
 
 	// See https://github.com/akavel/rsrc/internal/write.go#L13.
 	w := binutil.Writer{W: out}
-	binutil.Walk(b.Coff, func(v reflect.Value, path string) error {
+	_ = binutil.Walk(b.Coff, func(v reflect.Value, path string) error {
 		if binutil.Plain(v.Kind()) {
 			w.WriteLE(v.Interface())
 			return nil

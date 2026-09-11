@@ -137,7 +137,14 @@ func buildAndroid(tmpDir string, bi *buildInfo) error {
 
 		for _, imp := range p.Imports {
 			if !visitedPkgs[imp.ID] {
-				visitPkg(imp)
+				// Propagated rather than dropped. What this walk collects is
+				// the jars and the permissions an import brings with it, so a
+				// failure here is a jar that is missing from the package -- and
+				// dropping it produces an APK that builds, installs, and fails
+				// on the screen that needed it.
+				if err := visitPkg(imp); err != nil {
+					return err
+				}
 				visitedPkgs[imp.ID] = true
 			}
 		}
@@ -293,9 +300,9 @@ func archiveAndroid(tmpDir string, bi *buildInfo, perms []string) (err error) {
 	defer aarw.Close()
 	aarw.Create("R.txt")
 	themesXML := aarw.Create("res/values/themes.xml")
-	themesXML.Write([]byte(themes))
+	_, _ = themesXML.Write([]byte(themes))
 	themesXML21 := aarw.Create("res/values-v21/themes.xml")
-	themesXML21.Write([]byte(themesV21))
+	_, _ = themesXML21.Write([]byte(themesV21))
 	permissions, features := getPermissions(perms)
 	// Disable input emulation on ChromeOS.
 	manifest := aarw.Create("AndroidManifest.xml")
@@ -317,7 +324,7 @@ func archiveAndroid(tmpDir string, bi *buildInfo, perms []string) (err error) {
 	}
 	err = tmpl.Execute(manifest, manifestSrc)
 	proguard := aarw.Create("proguard.txt")
-	proguard.Write([]byte(`-keep class io.arandu.ayra.** { *; }`))
+	_, _ = proguard.Write([]byte(`-keep class io.arandu.ayra.** { *; }`))
 
 	for _, a := range bi.archs {
 		arch := allArchs[a]
@@ -541,8 +548,8 @@ func exeAndroid(tmpDir string, tools *androidTools, bi *buildInfo, extraJars, pe
 	// Copy files from linkAPK to unsignedAPK.
 	for _, f := range linkAPKZip.File {
 		header := zip.FileHeader{
-			Name:   f.FileHeader.Name,
-			Method: f.FileHeader.Method,
+			Name:   f.Name,
+			Method: f.Method,
 		}
 
 		if isBundle {
@@ -822,7 +829,7 @@ func writeJar(jarFile, dir string) (err error) {
 Created-By: 1.0 (Go)
 
 `
-	jarw.Create("META-INF/MANIFEST.MF").Write([]byte(manifestHeader))
+	_, _ = jarw.Create("META-INF/MANIFEST.MF").Write([]byte(manifestHeader))
 	err = filepath.Walk(dir, func(path string, f os.FileInfo, err error) error {
 		if err != nil {
 			return err

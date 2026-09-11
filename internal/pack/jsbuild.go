@@ -146,7 +146,7 @@ func mergeJSFiles(dst string, files ...string) (err error) {
 			return err
 		}
 		_, err = io.Copy(w, r)
-		r.Close()
+		_ = r.Close()
 		if err != nil {
 			return err
 		}

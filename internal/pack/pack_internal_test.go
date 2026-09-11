@@ -240,3 +240,60 @@ func TestTheCompilerAndTheManifestAreToldTheSameVersion(t *testing.T) {
 		t.Error("the manifest's minimum no longer comes from the same field the compiler is given")
 	}
 }
+
+// TestTheBrowserTargetIsBuiltWithoutCgo fixes a platform that failed on an
+// ordinary machine.
+//
+// The browser has no cgo. The environment a build inherits often says otherwise
+// -- it is a common setting, and it is what this project's own commands use --
+// and the toolchain honours the variable over the platform: the standard
+// library's user lookup selects a path with no implementation for this pair,
+// and the failure names five functions inside the standard library and nothing
+// of the project's.
+//
+// The command that builds without packaging already decides this per platform.
+// This is the same decision on the path that produces the artifact somebody
+// ships, and it was missing there.
+func TestTheBrowserTargetIsBuiltWithoutCgo(t *testing.T) {
+	source, err := os.ReadFile("jsbuild.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(source)
+
+	if !strings.Contains(body, `"CGO_ENABLED=0"`) {
+		t.Error("the browser build does not turn cgo off, so it inherits whatever the machine has")
+	}
+
+	// And it is appended after the environment is read, which is what makes it
+	// win: a later entry beats an earlier one, so the same line written first
+	// would be the machine's setting overriding the platform's.
+	environ := strings.Index(body, "os.Environ()")
+	disabled := strings.Index(body, `"CGO_ENABLED=0"`)
+	if environ >= 0 && disabled >= 0 && disabled < environ {
+		t.Error("cgo is turned off before the environment is read, so the environment wins")
+	}
+}
+
+// TestEveryPlatformThatNeedsCgoAsksForIt keeps a platform that draws through C
+// from being built without it.
+//
+// The three that reach a window through a C library say so explicitly. A
+// platform that inherited the answer would build a different program on a
+// machine with the variable off -- one that compiles, links, and has no window
+// backend in it.
+func TestEveryPlatformThatNeedsCgoAsksForIt(t *testing.T) {
+	for name, file := range map[string]string{
+		"macOS":   "macosbuild.go",
+		"Android": "androidbuild.go",
+		"iOS":     "iosbuild.go",
+	} {
+		source, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(source), `"CGO_ENABLED=1"`) {
+			t.Errorf("%s does not ask for cgo, and its window comes from a C library", name)
+		}
+	}
+}

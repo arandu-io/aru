@@ -2,6 +2,7 @@ package pack
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 )
@@ -139,4 +140,55 @@ func TestOutputGoesWhereTheCallerWasGiven(t *testing.T) {
 	if output != &out || errput != &errs {
 		t.Error("the packaging sources still write to the process's own streams")
 	}
+}
+
+// TestAMacBundleDeclaresItselfAnApplication fixes the one key that decides
+// whether macOS treats the artifact as a program or as a folder of files.
+//
+// BNDL is a generic bundle. With it the Finder shows a package, Launch Services
+// does not register the application by name, and nothing about the failure
+// looks like a failure -- the binary inside still runs when it is started
+// directly, which is how it passes every check somebody thinks to make.
+func TestAMacBundleDeclaresItselfAnApplication(t *testing.T) {
+	manifest := macManifest(t)
+
+	if !strings.Contains(manifest, "<string>APPL</string>") {
+		t.Error("the bundle does not declare itself an application")
+	}
+	if strings.Contains(manifest, "<string>BNDL</string>") {
+		t.Error("the bundle declares itself a generic bundle, which macOS does not register as a program")
+	}
+}
+
+// TestAMacBundleCarriesAName keeps the menu bar from showing the name of the
+// executable file.
+func TestAMacBundleCarriesAName(t *testing.T) {
+	manifest := macManifest(t)
+
+	for _, key := range []string{"CFBundleName", "CFBundleShortVersionString", "CFBundleVersion"} {
+		if !strings.Contains(manifest, key) {
+			t.Errorf("the bundle declares no %s", key)
+		}
+	}
+}
+
+// macManifest answers the template a macOS bundle's Info.plist is written from.
+func macManifest(t *testing.T) string {
+	t.Helper()
+
+	source, err := os.ReadFile("macosbuild.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(source)
+
+	start := strings.Index(body, "<?xml version")
+	if start < 0 {
+		t.Fatal("macosbuild.go carries no property list template")
+	}
+	end := strings.Index(body[start:], "</plist>")
+	if end < 0 {
+		t.Fatal("the property list template is never closed")
+	}
+	return body[start : start+end]
 }

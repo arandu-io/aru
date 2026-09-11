@@ -89,29 +89,50 @@ func TestNotBeingInAProjectIsSaidBeforeAnythingAboutPlatforms(t *testing.T) {
 	}
 }
 
-// TestAPlatformThatNeedsAToolchainSaysWhich keeps a build from failing deep in
-// a compiler for a reason that was knowable up front.
+// TestAPlatformThatNeedsAToolchainSaysSoInTheListing keeps somebody from
+// discovering the cost by starting a build.
 //
-// The words are written out here rather than read from the table the message
-// is built from. Comparing the message against its own source passes whatever
+// The build itself is attempted now rather than refused: the packager drives
+// the platform toolchains, and when one is missing its own message names what
+// is missing better than a guess here would. What this fixes is that the price
+// is readable before anybody types the command.
+//
+// The words are written out here rather than read from the table the listing
+// is built from. Comparing a message against its own source passes whatever
 // the table says, including "x" -- which is the shape this test had first, and
 // it survived a mutation that emptied every explanation in the product.
-func TestAPlatformThatNeedsAToolchainSaysWhich(t *testing.T) {
-	nativeProject(t, true)
+func TestAPlatformThatNeedsAToolchainSaysSoInTheListing(t *testing.T) {
+	var out bytes.Buffer
+	if err := listNativeTargets(&out); err != nil {
+		t.Fatal(err)
+	}
+	listing := out.String()
 
 	for platform, expected := range map[string][]string{
 		"android/arm64": {"Android SDK", "NDK", "JDK"},
-		"ios/arm64":     {"Xcode", "signing", "provisioning"},
+		"ios/arm64":     {"Xcode", "provisioning"},
 	} {
-		var out, errs bytes.Buffer
-		err := nativeBuild([]string{"-target", platform}, &out, &errs)
-		if err == nil {
-			t.Fatalf("%s built without the toolchain it needs", platform)
+		target, known := nativeTargets[platform]
+		if !known {
+			t.Fatalf("%s is not a platform", platform)
 		}
 		for _, word := range expected {
-			if !strings.Contains(err.Error(), word) {
-				t.Errorf("%s does not mention %q: %v", platform, word, err)
+			if !strings.Contains(target.needs, word) {
+				t.Errorf("%s does not say it needs %q", platform, word)
 			}
+		}
+		if !strings.Contains(listing, platform) {
+			t.Errorf("%s is not in the listing", platform)
+		}
+	}
+}
+
+// TestThePackagedPlatformsAreTheOnesThatProduceAnArtifact keeps a target from
+// claiming a package it cannot write.
+func TestThePackagedPlatformsAreTheOnesThatProduceAnArtifact(t *testing.T) {
+	for name, target := range nativeTargets {
+		if target.installable && target.packages == "" {
+			t.Errorf("%s has no bare binary anybody can install and names no packager", name)
 		}
 	}
 }

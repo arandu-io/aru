@@ -186,6 +186,20 @@ var commands = []command{
 		run:   nativeRun,
 	},
 	{
+		name:  "native:dev",
+		usage: "aru native:dev [-server addr] [-dark]",
+		desc:  "rebuild the native application and reopen it on every change",
+		help: `Most edits do not go through here. A native application draws for a
+server, so a handler, a value, a validation rule or a policy changes on the
+server side and the next screen the application asks for is already different,
+with nothing rebuilt. This loop is for the screens themselves, under cmd/native.
+
+There is no hot reload, here or anywhere in Go: a running binary does not take
+new code. What this does is make the loop short -- notice, rebuild, replace the
+window.`,
+		run: nativeDev,
+	},
+	{
 		name:  "native:build",
 		usage: "aru native:build [-target os/arch] [-output path] | -list",
 		desc:  "compile the native application for one platform",

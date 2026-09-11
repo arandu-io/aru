@@ -1,6 +1,6 @@
 module github.com/arandu-io/aru
 
-go 1.26
+go 1.26.0
 
 retract v0.37.0 // Does not pin the skeleton and could clone an incompatible moving project baseline.
 
@@ -22,15 +22,30 @@ retract v0.37.0 // Does not pin the skeleton and could clone an incompatible mov
 // esbuild compiles browser assets through its Go API. It is linked only into
 // this CLI, never into an application, and needs no Node runtime or npm.
 //
+// The five that follow arrived together, with the packager: producing an APK,
+// an IPA or a signed executable means resizing icons, running toolchain steps
+// in parallel, reading a package graph, writing a Windows resource section and
+// encoding a manifest. None of them is linked into an application, and none is
+// reachable from a project -- they are this CLI's, on the same terms as
+// esbuild.
+//
 // The core has one direct require, golang.org/x/crypto, plus the x/sys that
 // comes with it. That separation is the whole point of ADR 0006: the CLI can
 // afford a dependency, and every project that imports the framework must not
 // pay for it.
 
 require (
+	github.com/akavel/rsrc v0.10.1
 	github.com/arandu-io/hesape v0.36.0
 	github.com/evanw/esbuild v0.28.2
+	golang.org/x/image v0.43.0
+	golang.org/x/sync v0.23.0
+	golang.org/x/text v0.42.0
+	golang.org/x/tools v0.50.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require golang.org/x/sys v0.47.0 // indirect
+require (
+	golang.org/x/mod v0.41.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+)

@@ -71,6 +71,21 @@ default writes beside the source package it was given, which put a bundle's
 `Contents` directory inside the directory the application's screens are written
 in — where the next build compiled them as Go files.
 
+### 6. A macOS bundle declares itself an application
+
+**Changed:** `CFBundlePackageType` was `BNDL`, a generic bundle, and is `APPL`.
+`CFBundleName` and the two version keys are written as well.
+
+**Why it was worth finding:** with `BNDL`, macOS registers the artifact as a
+package of files rather than a program. The binary inside still runs when it is
+started directly, which is how the fault survives every check somebody thinks
+to make -- it was found by opening the bundle and asking Launch Services what
+it had registered.
+
+**Measured after:** the built bundle is reported by the system as an
+application, Launch Services registers it under its own name, and the window
+server answers that the process owns one window of 960 by 752 points.
+
 ## What was left behind
 
 The end-to-end tests, which drive a browser and an emulator through two more

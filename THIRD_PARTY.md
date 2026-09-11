@@ -55,3 +55,10 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+## The packaging sources under internal/pack
+
+`internal/pack` began as a copy of an existing packaging tool, at the version
+`internal/pack/UPSTREAM.md` records, under Unlicense OR MIT. The licence is
+reproduced beside the sources in `internal/pack/LICENSE`, and every change made
+to them is listed in that same file.

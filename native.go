@@ -74,8 +74,16 @@ func nativeBuild(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("native:build", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	target := flags.String("target", "", "the platform to build for (default: this machine)")
-	output := flags.String("output", "", "where to write the binary (default: bin/native-<target>)")
+	output := flags.String("output", "", "where to write the artifact (default: bin/native-<target>)")
 	list := flags.Bool("list", false, "list the platforms this can build for, and what each needs")
+	pack := flags.Bool("package", false, "write the artifact the platform installs rather than a bare binary")
+	appID := flags.String("appid", "", "the identifier the platform files the application under")
+	appName := flags.String("name", "", "what a person sees under the icon (default: the project directory)")
+	version := flags.String("version", "", "major.minor.patch.code (default: 1.0.0.1)")
+	icon := flags.String("icon", "", "a PNG the packager resizes into every size the platform asks for")
+	signKey := flags.String("signkey", "", "the keystore or provisioning profile to sign with")
+	signPass := flags.String("signpass", "", "the password that decrypts the signing key")
+	verbose := flags.Bool("x", false, "print the commands the packager runs")
 	if err := flags.Parse(args); err != nil {
 		return fmt.Errorf("native:build: %w", err)
 	}
@@ -101,8 +109,26 @@ func nativeBuild(args []string, stdout, stderr io.Writer) error {
 	if !ok {
 		return fmt.Errorf("native:build: %s is not a platform this builds for. `aru native:build -list` says which are", name)
 	}
-	if platform.needs != "" {
-		return fmt.Errorf("native:build: %s needs %s, which this command does not drive. `aru native:build -list` says what each platform needs", name, platform.needs)
+	// Two platforms have no bare binary anybody can install, so asking for one
+	// is asking for a file that cannot be used. Packaging is not a flag there.
+	packaging := *pack || platform.installable
+	if packaging && platform.packages == "" {
+		return fmt.Errorf("native:build: %s has no installable artifact; its binary is what ships", name)
+	}
+
+	if packaging {
+		return packageNative(root, packageOptions{
+			platform: platform.packages,
+			arch:     archOf(name),
+			output:   *output,
+			appID:    *appID,
+			appName:  *appName,
+			version:  *version,
+			icon:     *icon,
+			signKey:  *signKey,
+			signPass: *signPass,
+			verbose:  *verbose,
+		}, stdout, stderr)
 	}
 
 	binary := *output
@@ -184,31 +210,44 @@ func nativeRoot() (string, error) {
 	return root, nil
 }
 
-// nativeTarget is one platform, and what it costs to build for.
+// nativeTarget is one platform, and what building for it produces.
 type nativeTarget struct {
-	// needs is the toolchain a platform requires beyond the Go compiler, and
-	// is empty for the ones this command can drive on its own. A platform is
-	// listed either way: a name that is absent reads as a platform nobody has
-	// thought about, and a name with its price written next to it is a
-	// decision somebody can act on.
+	// needs is the toolchain a platform requires beyond the Go compiler. A
+	// platform is listed either way: a name that is absent reads as a platform
+	// nobody has thought about, and a name with its price written next to it
+	// is a decision somebody can act on.
+	//
+	// It no longer means the platform cannot be built. It means a person has
+	// to have installed something first, and the failure when they have not is
+	// the toolchain's own, which says what is missing better than a guess here
+	// would.
 	needs string
-	// extension is what the artifact is called on that platform.
+	// extension is what a plain binary is called on that platform.
 	extension string
+	// packages is the platform name the packager knows, for the targets where
+	// an installable artifact is a different thing from the binary. Empty means
+	// the binary is the artifact.
+	packages string
+	// installable is true where a plain binary cannot be installed at all, so
+	// packaging is not an option but the only way to produce anything usable.
+	installable bool
 	// note is what a person deciding between platforms needs to know.
 	note string
 }
 
 // nativeTargets is every platform the native target can be built for.
 var nativeTargets = map[string]nativeTarget{
-	"darwin/arm64":  {note: "Apple silicon"},
-	"darwin/amd64":  {note: "Intel Macs"},
-	"windows/amd64": {extension: ".exe", note: "Windows 10 and later"},
-	"windows/arm64": {extension: ".exe", note: "Windows on ARM"},
+	"darwin/arm64":  {packages: "macos", note: "Apple silicon; -package writes an application bundle"},
+	"darwin/amd64":  {packages: "macos", note: "Intel Macs; -package writes an application bundle"},
+	"windows/amd64": {extension: ".exe", packages: "windows", note: "Windows 10 and later; -package embeds the icon and metadata"},
+	"windows/arm64": {extension: ".exe", packages: "windows", note: "Windows on ARM"},
 	"linux/amd64":   {note: "needs the X11, Wayland and Vulkan development packages"},
 	"linux/arm64":   {note: "the same packages, for ARM"},
-	"js/wasm":       {extension: ".wasm", note: "preview in a browser; not a second way to do web"},
-	"android/arm64": {needs: "the Android SDK, the NDK and a JDK", note: "packaging an APK is a separate step"},
-	"ios/arm64":     {needs: "Xcode, a signing identity and a provisioning profile", note: "packaging an IPA is a separate step"},
+	"js/wasm":       {extension: ".wasm", packages: "js", note: "preview in a browser; not a second way to do web"},
+	"android/arm64": {needs: "the Android SDK, the NDK and a JDK", packages: "android", installable: true, note: "writes an APK"},
+	"android/amd64": {needs: "the same, for an emulator", packages: "android", installable: true, note: "writes an APK for an emulator"},
+	"ios/arm64":     {needs: "Xcode and a provisioning profile", packages: "ios", installable: true, note: "writes an IPA"},
+	"ios/amd64":     {needs: "Xcode", packages: "ios", installable: true, note: "writes an app for the simulator"},
 }
 
 // listNativeTargets prints the platforms and what each one costs.
@@ -228,6 +267,6 @@ func listNativeTargets(stdout io.Writer) error {
 		}
 		fmt.Fprintf(stdout, "  %s%-14s %s\n", mark, name, target.note)
 	}
-	fmt.Fprintln(stdout, "\n  ! needs a toolchain this command does not drive")
+	fmt.Fprintln(stdout, "\n  ! needs a toolchain installed first; the tool says which when it is missing")
 	return nil
 }

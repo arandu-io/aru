@@ -76,9 +76,24 @@ jobs:
       # written twice, and two implementations of that answer "was the file I
       # edited overwritten?" differently. It is the component now, and the
       # generator here calls it rather than keeping the second copy.
+      #
+      # The five after it arrived together, with the packager, under ADR 0147.
+      # Producing an APK, an IPA or a signed executable means resizing an icon
+      # to the sizes a platform asks for (x/image), compiling architectures in
+      # parallel (x/sync), reading a package graph to find the backend and its
+      # Java sources (x/tools, which brings x/mod), encoding a Windows resource
+      # manifest (x/text) and writing the resource section of an executable
+      # (rsrc). None is linked into an application and none is reachable from a
+      # project -- they are this CLI's, on esbuild's terms.
+      #
+      # This list went from four to ten in one change, and that is the whole
+      # reason the gate is here: it refused the change until the decision was
+      # written, which is what "each one enters with a decision, not a go get"
+      # means when it is a command rather than a sentence.
       - name: dependency budget
         run: |
           allowed="gopkg.in/yaml.v3 github.com/arandu-io/hesape github.com/evanw/esbuild golang.org/x/sys"
+          allowed="$allowed golang.org/x/image golang.org/x/sync golang.org/x/tools golang.org/x/text golang.org/x/mod github.com/akavel/rsrc"
           extra=""
           # What the binary carries, not what go.sum mentions: `go list -m all`
           # includes the dependency's test dependency, which is never compiled.

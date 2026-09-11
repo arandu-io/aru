@@ -1,6 +1,6 @@
 ---
 name: aru-command
-description: Add, rename or change a command of the aru CLI, its flags, or what `aru help` prints. Use when the request is to "add a command", "add a flag to aru", "make aru do X", "rename this subcommand", "wire up make:something", "why does aru say unknown command", or when a new verb has to find a place in the 39-entry dispatch table. Covers the slice in commands.go and why it is not a map, the one signature every command has, why the positional name is taken before the flags are parsed, when a command runs in this binary and when it forwards to the project's own, the wiring a generator prints rather than performs, and the tests that fail on a command added wrong.
+description: Add, rename or change a command of the aru CLI, its flags, or what `aru help` prints. Use when the request is to "add a command", "add a flag to aru", "make aru do X", "rename this subcommand", "wire up make:something", "why does aru say unknown command", or when a new verb has to find a place in the 60-entry dispatch table. Covers the slice in commands.go and why it is not a map, the one signature every command has, why the positional name is taken before the flags are parsed, when a command runs in this binary and when it forwards to the project's own, the wiring a generator prints rather than performs, and the tests that fail on a command added wrong.
 license: MIT
 ---
 
@@ -11,7 +11,7 @@ command is in its entry: the name a person types, the usage line, the one-line
 description `aru help` prints, and the function that runs it.
 
 ```sh
-grep -c '^\t\tname:' commands.go        # 57
+grep -c '^\t\tname:' commands.go        # 60
 ```
 
 It is a slice and not a map on purpose. The order of `aru help` is part of the
@@ -23,8 +23,9 @@ Ask one question: **does this need to know which modules the project
 registered?**
 
 - **No** — it runs here. `key:generate`, `new`, every `make:*`, `generate`,
-  `schema`, `doctor`, `build`, `view:build`, `trace` and the five `font:*`
-  commands touch files and nothing else.
+  `schema`, `doctor`, `build`, `view:build`, `lsp`, `action:list`, `trace`,
+  the five `font:*` and the three `native:*` commands need nothing the project
+  registered.
 - **Yes** — it forwards. Modules are wired explicitly in `bootstrap/app.go`,
   with no container and no plugin loading, so a separately compiled binary
   cannot know them. `delegate("migrate")` runs `go run . migrate` in the
@@ -46,7 +47,7 @@ one set of pieces in `dev.go` for that reason. `serve` used to forward, and the
 three things it then did not do -- recompile an edited view, recompile an edited
 stylesheet, drop the generated Go of a deleted one -- were silent every time.
 
-Two of the twenty-two forward under a different word than the one typed:
+Two of the twenty-three forward under a different word than the one typed:
 `queue:work` calls `work` and `route:list` calls `routes`. The name a person
 types is the half that needs parity with what they already know; the string
 handed to the project binary is an internal protocol that promises nothing, so
@@ -145,13 +146,13 @@ belongs to the application.
 These already exist; you do not write them for a new command, you make them
 pass.
 
-- **`TestEveryCommandIsImplemented`** (`main_internal_test.go:117`) runs every
+- **`TestEveryCommandIsImplemented`** (`main_internal_test.go:126`) runs every
   entry in the slice with no arguments and fails if the output contains
   `not implemented`. A command that is a stub is caught the moment it is listed.
-- **`TestCommandNamesAreUnique`** (`main_internal_test.go:276`) guards the
+- **`TestCommandNamesAreUnique`** (`main_internal_test.go:471`) guards the
   dispatch table itself: `lookup` returns the first match, so a duplicate name
   silently disables the second.
-- **`TestUsageIsSober`** (`main_internal_test.go:34`) reads `aru help` and fails
+- **`TestUsageIsSober`** (`main_internal_test.go:35`) reads `aru help` and fails
   on `!`, `🚀`, `✨` or `🎉`. The tone rule is checked at the one place users
   read it.
 - **`TestEveryCommandAnswersHelp`** (`flags_internal_test.go`) runs every entry
@@ -175,8 +176,9 @@ choosing one.
 ## Naming
 
 The prefix says the family: `make:` writes one file, `migrate:` moves the
-schema, `font:` manages vendored faces, `schedule:` and `queue:` and `route:`
-and `db:` are the conventional Laravel spellings kept on purpose. A verb with no
+schema, `font:` manages vendored faces, `native:` builds and runs the target a
+module publishes into `cmd/native`, `schedule:` and `queue:` and `route:` and
+`db:` are the conventional Laravel spellings kept on purpose. A verb with no
 family gets no prefix — `new`, `dev`, `build`, `serve`, `doctor`, `trace`,
 `generate`, `schema`.
 

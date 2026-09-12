@@ -251,6 +251,27 @@ func (b *windowsBuilder) buildProgram(buildInfo *buildInfo, name string, arch st
 }
 
 func (b *windowsBuilder) embedManifest(v windowsManifest) error {
+	body, err := windowsManifestXML(v)
+	if err != nil {
+		return err
+	}
+
+	var manifest bufferCoff
+	if _, err := manifest.Write(body); err != nil {
+		return err
+	}
+	b.Coff.AddResource(windowsResourceManifest, 1, &manifest)
+
+	return nil
+}
+
+// windowsManifestXML writes the application manifest Windows reads out of the
+// resource section.
+//
+// A description in and bytes out: what this file says decides which versions of
+// the system will run the program and whether it is told the real size of the
+// screen, and neither answer needs a Windows machine to be checked.
+func windowsManifestXML(v windowsManifest) ([]byte, error) {
 	t, err := template.New("manifest").Parse(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1" xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
     <assemblyIdentity type="win32" name="{{.Name}}" version="{{.Version}}" />
@@ -283,17 +304,14 @@ func (b *windowsBuilder) embedManifest(v windowsManifest) error {
 	</asmv3:application>
 </assembly>`)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	var manifest bufferCoff
+	var manifest bytes.Buffer
 	if err := t.Execute(&manifest, v); err != nil {
-		return err
+		return nil, err
 	}
-
-	b.Coff.AddResource(windowsResourceManifest, 1, &manifest)
-
-	return nil
+	return manifest.Bytes(), nil
 }
 
 func (b *windowsBuilder) embedInfo(v windowsResources) error {

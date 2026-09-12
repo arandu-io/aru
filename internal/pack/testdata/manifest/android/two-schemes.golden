@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+	package="dev.local.probe"
+	android:versionCode="4"
+	android:versionName="1.2.3.4">
+	
+	<uses-sdk android:minSdkVersion="16" android:targetSdkVersion="35" />
+	<application  android:label="Probe">
+		<activity android:name="io.arandu.ayra.AyraActivity"
+			android:label="Probe"
+			android:theme="@style/Theme.AyraApp"
+			android:configChanges="screenSize|screenLayout|smallestScreenSize|orientation|keyboardHidden"
+			android:windowSoftInputMode="adjustResize"
+			android:launchMode="singleInstance"
+			android:exported="true">
+			<intent-filter>
+				<action android:name="android.intent.action.MAIN" />
+				<category android:name="android.intent.category.LAUNCHER" />
+			</intent-filter>
+			
+			<intent-filter>
+				<action android:name="android.intent.action.VIEW"></action>
+				<category android:name="android.intent.category.DEFAULT"></category>
+				<category android:name="android.intent.category.BROWSABLE"></category>
+				<data android:scheme="probe"></data>
+			</intent-filter>
+			
+			<intent-filter>
+				<action android:name="android.intent.action.VIEW"></action>
+				<category android:name="android.intent.category.DEFAULT"></category>
+				<category android:name="android.intent.category.BROWSABLE"></category>
+				<data android:scheme="probe-dev"></data>
+			</intent-filter>
+			
+		</activity>
+	</application>
+</manifest>

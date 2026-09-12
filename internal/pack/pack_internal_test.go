@@ -2,7 +2,7 @@ package pack
 
 import (
 	"bytes"
-	"os"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -160,6 +160,34 @@ func TestAMacBundleDeclaresItselfAnApplication(t *testing.T) {
 	}
 }
 
+// TestTheBundleIsDescribedFromTheBuildAndNotFromDefaults keeps the one step
+// between a build and its bundle honest.
+//
+// Every field of the property list above is checked against what was written
+// into it; the description handed to the writer is not, and a field dropped on
+// the way there produces a valid property list describing somebody else's
+// application.
+func TestTheBundleIsDescribedFromTheBuildAndNotFromDefaults(t *testing.T) {
+	described := macManifestFor(&buildInfo{
+		appID:   "dev.local.probe",
+		version: Semver{Major: 9, Minor: 8, Patch: 7, VersionCode: 6},
+		schemes: []string{"probe"},
+	}, "Probe")
+
+	if described.Name != "Probe" {
+		t.Errorf("the bundle would be named %q", described.Name)
+	}
+	if described.Bundle != "dev.local.probe" {
+		t.Errorf("the bundle would be filed under %q", described.Bundle)
+	}
+	if described.Version.Major != 9 || described.Version.VersionCode != 6 {
+		t.Errorf("the bundle would declare version %s", described.Version)
+	}
+	if len(described.Schemes) != 1 || described.Schemes[0] != "probe" {
+		t.Errorf("the bundle would answer the schemes %v", described.Schemes)
+	}
+}
+
 // TestAMacBundleCarriesAName keeps the menu bar from showing the name of the
 // executable file.
 func TestAMacBundleCarriesAName(t *testing.T) {
@@ -172,25 +200,25 @@ func TestAMacBundleCarriesAName(t *testing.T) {
 	}
 }
 
-// macManifest answers the template a macOS bundle's Info.plist is written from.
+// macManifest answers a macOS bundle's Info.plist, written.
+//
+// It used to answer the template instead, recovered from this directory's own
+// source between "<?xml version" and "</plist>". That reads the shape of the
+// file the checks are about and never the file: a substitution that fails, a
+// field that never reaches the writer, and a writer that stops being called all
+// leave the template exactly where it was.
 func macManifest(t *testing.T) string {
 	t.Helper()
 
-	source, err := os.ReadFile("macosbuild.go")
+	manifest, err := macInfoPlist(macManifestData{
+		Name:    "Probe",
+		Bundle:  "dev.local.probe",
+		Version: Semver{Major: 1, Minor: 2, Patch: 3, VersionCode: 4},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := string(source)
-
-	start := strings.Index(body, "<?xml version")
-	if start < 0 {
-		t.Fatal("macosbuild.go carries no property list template")
-	}
-	end := strings.Index(body[start:], "</plist>")
-	if end < 0 {
-		t.Fatal("the property list template is never closed")
-	}
-	return body[start : start+end]
+	return string(manifest)
 }
 
 // TestTheDeviceFloorIsTheOneTheBackendNeeds fixes a number that disagreed with
@@ -224,20 +252,23 @@ func TestTheDeviceFloorIsTheOneTheBackendNeeds(t *testing.T) {
 // against -- which fails at the first call into one of them and nowhere
 // earlier.
 func TestTheCompilerAndTheManifestAreToldTheSameVersion(t *testing.T) {
-	source, err := os.ReadFile("iosbuild.go")
+	// Not the floor, and not the default of anything: a number this build could
+	// only have got from the field below.
+	const asked = 17
+
+	build := &buildInfo{name: "probe", target: "ios", minsdk: asked}
+
+	compiler := strings.Join(iosDeploymentFlags(build.minsdk), " ")
+	if want := fmt.Sprintf("-miphoneos-version-min=%d.0", asked); !strings.Contains(compiler, want) {
+		t.Errorf("the compiler is told %q, and the build asked for %d", compiler, asked)
+	}
+
+	manifest, err := iosInfoPlist(iosManifestFor(build))
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := string(source)
-
-	if !strings.Contains(body, `fmt.Sprintf("-miphoneos-version-min=%d.0", bi.minsdk)`) {
-		t.Error("the compiler is no longer handed the build's own minimum")
-	}
-	if !strings.Contains(body, "<string>{{.MinVersion}}.0</string>") {
-		t.Error("the manifest no longer declares the build's own minimum")
-	}
-	if !strings.Contains(body, "MinVersion:      bi.minsdk,") {
-		t.Error("the manifest's minimum no longer comes from the same field the compiler is given")
+	if want := fmt.Sprintf("<string>%d.0</string>", asked); !strings.Contains(string(manifest), want) {
+		t.Errorf("the manifest does not declare %d, which is what the compiler was handed", asked)
 	}
 }
 
@@ -255,23 +286,12 @@ func TestTheCompilerAndTheManifestAreToldTheSameVersion(t *testing.T) {
 // This is the same decision on the path that produces the artifact somebody
 // ships, and it was missing there.
 func TestTheBrowserTargetIsBuiltWithoutCgo(t *testing.T) {
-	source, err := os.ReadFile("jsbuild.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(source)
+	// The machine says the opposite, which is the situation this is about: it
+	// is an ordinary setting, and it is what this project's own commands use.
+	t.Setenv("CGO_ENABLED", "1")
 
-	if !strings.Contains(body, `"CGO_ENABLED=0"`) {
-		t.Error("the browser build does not turn cgo off, so it inherits whatever the machine has")
-	}
-
-	// And it is appended after the environment is read, which is what makes it
-	// win: a later entry beats an earlier one, so the same line written first
-	// would be the machine's setting overriding the platform's.
-	environ := strings.Index(body, "os.Environ()")
-	disabled := strings.Index(body, `"CGO_ENABLED=0"`)
-	if environ >= 0 && disabled >= 0 && disabled < environ {
-		t.Error("cgo is turned off before the environment is read, so the environment wins")
+	if got := effective("CGO_ENABLED", jsBuildEnv()); got != "0" {
+		t.Errorf("the browser build is compiled with cgo %q, and this platform has none", got)
 	}
 }
 
@@ -283,17 +303,34 @@ func TestTheBrowserTargetIsBuiltWithoutCgo(t *testing.T) {
 // machine with the variable off -- one that compiles, links, and has no window
 // backend in it.
 func TestEveryPlatformThatNeedsCgoAsksForIt(t *testing.T) {
-	for name, file := range map[string]string{
-		"macOS":   "macosbuild.go",
-		"Android": "androidbuild.go",
-		"iOS":     "iosbuild.go",
+	// And the machine says otherwise, because a platform that inherited the
+	// answer is exactly what this is about.
+	t.Setenv("CGO_ENABLED", "0")
+
+	for name, env := range map[string][]string{
+		"macOS":          macBuildEnv("arm64"),
+		"Android":        androidBuildEnv("arm64", "clang"),
+		"iOS":            iosProgramEnv("arm64", "clang", "-arch arm64"),
+		"an iOS archive": iosFrameworkEnv("arm64", "clang", "-arch arm64"),
 	} {
-		source, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(string(source), `"CGO_ENABLED=1"`) {
-			t.Errorf("%s does not ask for cgo, and its window comes from a C library", name)
+		if got := effective("CGO_ENABLED", env); got != "1" {
+			t.Errorf("%s is compiled with cgo %q, and its window comes from a C library", name, got)
 		}
 	}
+}
+
+// effective answers what a variable is set to in an environment.
+//
+// The last entry wins, which is the whole reason these platforms append to the
+// machine's environment rather than prepending: os/exec keeps the last of a
+// repeated name, so a decision written after what was inherited is a decision,
+// and the same line written before it is a default.
+func effective(name string, env []string) string {
+	value := ""
+	for _, entry := range env {
+		if setting, found := strings.CutPrefix(entry, name+"="); found {
+			value = setting
+		}
+	}
+	return value
 }

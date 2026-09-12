@@ -15,6 +15,50 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+// jsBuildEnv is the environment the browser target is compiled in.
+//
+// cgo is off, and set rather than inherited. This platform has none, and a
+// developer whose shell exports it on -- which is an ordinary setting, and is
+// what this project's own commands use -- got the toolchain honouring the
+// variable over the platform: the standard library's user lookup then selected
+// a path with no implementation for this pair, and the failure named five
+// functions inside the standard library and nothing of the project's. The
+// command that builds without packaging already decides this per platform;
+// this is the same decision, on the path that produces the artifact somebody
+// ships.
+//
+// It is appended after the environment is read, which is what makes it win: a
+// later entry beats an earlier one, so the same line written first would be the
+// machine's setting overriding the platform's.
+func jsBuildEnv() []string {
+	return append(
+		os.Environ(),
+		"GOOS=js",
+		"GOARCH=wasm",
+		"CGO_ENABLED=0",
+	)
+}
+
+// jsIndexData is what the page loading the compiled program says.
+type jsIndexData struct {
+	Name string
+	Icon string
+}
+
+// jsIndexHTML writes the page a browser opens the application through.
+func jsIndexHTML(data jsIndexData) ([]byte, error) {
+	indexTemplate, err := template.New("").Parse(jsIndex)
+	if err != nil {
+		return nil, err
+	}
+
+	var page bytes.Buffer
+	if err := indexTemplate.Execute(&page, data); err != nil {
+		return nil, err
+	}
+	return page.Bytes(), nil
+}
+
 func buildJS(bi *buildInfo) error {
 	out := *destPath
 	if out == "" {
@@ -31,22 +75,7 @@ func buildJS(bi *buildInfo) error {
 		"-o", filepath.Join(out, "main.wasm"),
 		bi.pkgPath,
 	)
-	cmd.Env = append(
-		os.Environ(),
-		"GOOS=js",
-		"GOARCH=wasm",
-		// Off, and set rather than inherited. This platform has no cgo, and a
-		// developer whose shell exports it on -- which is an ordinary setting,
-		// and is what this project's own commands use -- got the toolchain
-		// honouring the variable over the platform: the standard library's
-		// user lookup then selected a path with no implementation for this
-		// pair, and the failure named five functions inside the standard
-		// library and nothing of the project's. The command that builds
-		// without packaging already decides this per platform; this is the
-		// same decision, on the path that produces the artifact somebody
-		// ships.
-		"CGO_ENABLED=0",
-	)
+	cmd.Env = jsBuildEnv()
 	_, err := runCmd(cmd)
 	if err != nil {
 		return err
@@ -65,23 +94,12 @@ func buildJS(bi *buildInfo) error {
 		faviconPath = filepath.Base(bi.iconPath)
 	}
 
-	indexTemplate, err := template.New("").Parse(jsIndex)
+	page, err := jsIndexHTML(jsIndexData{Name: bi.name, Icon: faviconPath})
 	if err != nil {
 		return err
 	}
 
-	var b bytes.Buffer
-	if err := indexTemplate.Execute(&b, struct {
-		Name string
-		Icon string
-	}{
-		Name: bi.name,
-		Icon: faviconPath,
-	}); err != nil {
-		return err
-	}
-
-	if err := os.WriteFile(filepath.Join(out, "index.html"), b.Bytes(), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(out, "index.html"), page, 0o600); err != nil {
 		return err
 	}
 

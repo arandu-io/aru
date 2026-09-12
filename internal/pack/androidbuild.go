@@ -159,6 +159,24 @@ func buildAndroid(tmpDir string, bi *buildInfo) error {
 	}
 }
 
+// androidBuildEnv is the environment one architecture's shared library is
+// compiled in.
+//
+// cgo is asked for rather than inherited: the window is opened through a C
+// library, and a machine with the variable off would build a library that
+// compiles, links, and has no window backend in it.
+func androidBuildEnv(arch, clang string) []string {
+	return append(
+		os.Environ(),
+		"GOOS=android",
+		"GOARCH="+arch,
+		"GOARM=7", // Avoid softfloat.
+		"CGO_ENABLED=1",
+		"CC="+clang,
+		"CXX="+clang+"++",
+	)
+}
+
 func compileAndroid(tmpDir string, tools *androidTools, bi *buildInfo) (err error) {
 	androidHome := os.Getenv("ANDROID_HOME")
 	if androidHome == "" {
@@ -204,15 +222,7 @@ func compileAndroid(tmpDir string, tools *androidTools, bi *buildInfo) (err erro
 			"-o", libFile,
 			bi.pkgPath,
 		)
-		cmd.Env = append(
-			os.Environ(),
-			"GOOS=android",
-			"GOARCH="+a,
-			"GOARM=7", // Avoid softfloat.
-			"CGO_ENABLED=1",
-			"CC="+clang,
-			"CXX="+clang+"++",
-		)
+		cmd.Env = androidBuildEnv(a, clang)
 		builds.Go(func() error {
 			_, err := runCmd(cmd)
 			return err
@@ -248,6 +258,32 @@ func compileAndroid(tmpDir string, tools *androidTools, bi *buildInfo) (err erro
 	return builds.Wait()
 }
 
+// androidArchiveManifest writes the manifest an archive another build embeds
+// carries.
+//
+// Shorter than the one an installable package carries, and deliberately: an
+// archive declares what it needs of whoever embeds it, and everything about
+// launching -- the activity, the theme, the icon, the schemes -- belongs to the
+// application that does.
+func androidArchiveManifest(data manifestData) ([]byte, error) {
+	tmpl, err := template.New("manifest").Parse(
+		`<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="{{.AppID}}">
+        <uses-sdk android:minSdkVersion="{{.MinSDK}}"/>
+{{range .Permissions}}	<uses-permission android:name="{{.}}"/>
+{{end}}{{range .Features}}	<uses-feature android:{{.}} android:required="false"/>
+{{end}}</manifest>
+`)
+	if err != nil {
+		return nil, err
+	}
+
+	var manifest bytes.Buffer
+	if err := tmpl.Execute(&manifest, data); err != nil {
+		return nil, err
+	}
+	return manifest.Bytes(), nil
+}
+
 func archiveAndroid(tmpDir string, bi *buildInfo, perms []string) (err error) {
 	aarFile := *destPath
 	if aarFile == "" {
@@ -274,24 +310,17 @@ func archiveAndroid(tmpDir string, bi *buildInfo, perms []string) (err error) {
 	_, _ = themesXML21.Write([]byte(themesV21))
 	permissions, features := getPermissions(perms)
 	// Disable input emulation on ChromeOS.
-	manifest := aarw.Create("AndroidManifest.xml")
-	manifestSrc := manifestData{
+	manifestBody, err := androidArchiveManifest(manifestData{
 		AppID:       bi.appID,
 		MinSDK:      bi.minsdk,
 		Permissions: permissions,
 		Features:    features,
-	}
-	tmpl, err := template.New("manifest").Parse(
-		`<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="{{.AppID}}">
-        <uses-sdk android:minSdkVersion="{{.MinSDK}}"/>
-{{range .Permissions}}	<uses-permission android:name="{{.}}"/>
-{{end}}{{range .Features}}	<uses-feature android:{{.}} android:required="false"/>
-{{end}}</manifest>
-`)
+	})
 	if err != nil {
-		panic(err)
+		return err
 	}
-	err = tmpl.Execute(manifest, manifestSrc)
+	manifest := aarw.Create("AndroidManifest.xml")
+	_, _ = manifest.Write(manifestBody)
 	proguard := aarw.Create("proguard.txt")
 	_, _ = proguard.Write([]byte(`-keep class io.arandu.ayra.** { *; }`))
 
@@ -424,51 +453,12 @@ func exeAndroid(tmpDir string, tools *androidTools, bi *buildInfo, extraJars, pe
 		Schemes:        bi.schemes,
 		PackageQueries: bi.packageQueries,
 	}
-	tmpl, err := template.New("test").Parse(
-		`<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-	package="{{.AppID}}"
-	android:versionCode="{{.Version.VersionCode}}"
-	android:versionName="{{.Version}}">
-	{{if .PackageQueries}}
- 	<queries>
-	    {{range .PackageQueries}}
-        <package android:name="{{.}}" />
-        {{end}}
-    </queries>
-	{{end}}
-	<uses-sdk android:minSdkVersion="{{.MinSDK}}" android:targetSdkVersion="{{.TargetSDK}}" />
-{{range .Permissions}}	<uses-permission android:name="{{.}}"/>
-{{end}}{{range .Features}}	<uses-feature android:{{.}} android:required="false"/>
-{{end}}	<application {{.IconSnip}} android:label="{{.AppName}}">
-		<activity android:name="io.arandu.ayra.AyraActivity"
-			android:label="{{.AppName}}"
-			android:theme="@style/Theme.AyraApp"
-			android:configChanges="screenSize|screenLayout|smallestScreenSize|orientation|keyboardHidden"
-			android:windowSoftInputMode="adjustResize"
-			android:launchMode="singleInstance"
-			android:exported="true">
-			<intent-filter>
-				<action android:name="android.intent.action.MAIN" />
-				<category android:name="android.intent.category.LAUNCHER" />
-			</intent-filter>
-			{{range .Schemes}}
-			<intent-filter>
-				<action android:name="android.intent.action.VIEW"></action>
-				<category android:name="android.intent.category.DEFAULT"></category>
-				<category android:name="android.intent.category.BROWSABLE"></category>
-				<data android:scheme="{{.}}"></data>
-			</intent-filter>
-			{{end}}
-		</activity>
-	</application>
-</manifest>`)
-	var manifestBuffer bytes.Buffer
-	if err := tmpl.Execute(&manifestBuffer, manifestSrc); err != nil {
+	manifestBody, err := androidManifest(manifestSrc)
+	if err != nil {
 		return err
 	}
 	manifest := filepath.Join(tmpDir, "AndroidManifest.xml")
-	if err := os.WriteFile(manifest, manifestBuffer.Bytes(), 0o660); err != nil {
+	if err := os.WriteFile(manifest, manifestBody, 0o660); err != nil {
 		return err
 	}
 
@@ -1036,4 +1026,60 @@ func (w *errWriter) Write(p []byte) (n int, err error) {
 	n, err = w.w.Write(p)
 	*w.err = err
 	return
+}
+
+// androidManifest writes the manifest an installable package is described by.
+//
+// A description in and bytes out: what this file says is what a store lists,
+// which permissions the system grants, and which links open the application --
+// and none of those answers needs an SDK installed to be read back.
+func androidManifest(data manifestData) ([]byte, error) {
+	tmpl, err := template.New("manifest").Parse(
+		`<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+	package="{{.AppID}}"
+	android:versionCode="{{.Version.VersionCode}}"
+	android:versionName="{{.Version}}">
+	{{if .PackageQueries}}
+ 	<queries>
+	    {{range .PackageQueries}}
+        <package android:name="{{.}}" />
+        {{end}}
+    </queries>
+	{{end}}
+	<uses-sdk android:minSdkVersion="{{.MinSDK}}" android:targetSdkVersion="{{.TargetSDK}}" />
+{{range .Permissions}}	<uses-permission android:name="{{.}}"/>
+{{end}}{{range .Features}}	<uses-feature android:{{.}} android:required="false"/>
+{{end}}	<application {{.IconSnip}} android:label="{{.AppName}}">
+		<activity android:name="io.arandu.ayra.AyraActivity"
+			android:label="{{.AppName}}"
+			android:theme="@style/Theme.AyraApp"
+			android:configChanges="screenSize|screenLayout|smallestScreenSize|orientation|keyboardHidden"
+			android:windowSoftInputMode="adjustResize"
+			android:launchMode="singleInstance"
+			android:exported="true">
+			<intent-filter>
+				<action android:name="android.intent.action.MAIN" />
+				<category android:name="android.intent.category.LAUNCHER" />
+			</intent-filter>
+			{{range .Schemes}}
+			<intent-filter>
+				<action android:name="android.intent.action.VIEW"></action>
+				<category android:name="android.intent.category.DEFAULT"></category>
+				<category android:name="android.intent.category.BROWSABLE"></category>
+				<data android:scheme="{{.}}"></data>
+			</intent-filter>
+			{{end}}
+		</activity>
+	</application>
+</manifest>`)
+	if err != nil {
+		return nil, err
+	}
+
+	var manifest bytes.Buffer
+	if err := tmpl.Execute(&manifest, data); err != nil {
+		return nil, err
+	}
+	return manifest.Bytes(), nil
 }

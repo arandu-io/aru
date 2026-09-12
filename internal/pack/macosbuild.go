@@ -121,36 +121,47 @@ func (b *macBuilder) setIcon(path string) (err error) {
 	return err
 }
 
-func (b *macBuilder) setInfo(buildInfo *buildInfo, name string) {
+// macManifestData is everything a macOS bundle's property list says.
+type macManifestData struct {
+	Name    string
+	Bundle  string
+	Version Semver
+	Schemes []string
+}
 
-	manifestSrc := struct {
-		Name    string
-		Bundle  string
-		Version Semver
-		Schemes []string
-	}{
+// macManifestFor answers what a build says about itself.
+func macManifestFor(buildInfo *buildInfo, name string) macManifestData {
+	return macManifestData{
 		Name:    name,
 		Bundle:  buildInfo.appID,
 		Version: buildInfo.version,
 		Schemes: buildInfo.schemes,
 	}
+}
 
-	t, err := template.New("manifest").Parse(`<?xml version="1.0" encoding="UTF-8"?>
+// macInfoPlist writes the property list macOS reads a bundle through.
+//
+// A description in and bytes out, with nothing of the build around it: this is
+// the file that decides whether the system treats the artifact as a program or
+// as a folder, and a check on it should not need a toolchain, a signing key or
+// a machine running macOS.
+func macInfoPlist(data macManifestData) ([]byte, error) {
+	t, err := template.New("manifest").Funcs(markup).Parse(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 	<key>CFBundleExecutable</key>
-	<string>{{.Name}}</string>
+	<string>{{xml .Name}}</string>
 	<key>CFBundleIconFile</key>
 	<string>icon.icns</string>
 	<key>CFBundleIdentifier</key>
-	<string>{{.Bundle}}</string>
+	<string>{{xml .Bundle}}</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleName</key>
-	<string>{{.Name}}</string>
+	<string>{{xml .Name}}</string>
 	<key>CFBundleShortVersionString</key>
 	<string>{{.Version.Major}}.{{.Version.Minor}}.{{.Version.Patch}}</string>
 	<key>CFBundleVersion</key>
@@ -162,7 +173,7 @@ func (b *macBuilder) setInfo(buildInfo *buildInfo, name string) {
 	  <dict>
 		<key>CFBundleURLSchemes</key>
 		<array>
-		  <string>{{.}}</string>
+		  <string>{{xml .}}</string>
 		</array>
 	  </dict>
 	  {{end}}
@@ -171,14 +182,22 @@ func (b *macBuilder) setInfo(buildInfo *buildInfo, name string) {
 </dict>
 </plist>`)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	var manifest bytes.Buffer
-	if err := t.Execute(&manifest, manifestSrc); err != nil {
+	if err := t.Execute(&manifest, data); err != nil {
+		return nil, err
+	}
+	return manifest.Bytes(), nil
+}
+
+func (b *macBuilder) setInfo(buildInfo *buildInfo, name string) {
+	manifest, err := macInfoPlist(macManifestFor(buildInfo, name))
+	if err != nil {
 		panic(err)
 	}
-	b.Manifest = manifest.Bytes()
+	b.Manifest = manifest
 
 	b.Entitlements = []byte(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -217,14 +236,24 @@ func (b *macBuilder) buildProgram(buildInfo *buildInfo, binDest string, name str
 		"-o", filepath.Join(binDest, "/Contents/MacOS/"+name),
 		buildInfo.pkgPath,
 	)
-	cmd.Env = append(
+	cmd.Env = macBuildEnv(arch)
+	_, err := runCmd(cmd)
+	return err
+}
+
+// macBuildEnv is the environment a macOS binary is compiled in.
+//
+// cgo is asked for rather than inherited, and it is not optional here: the
+// window is opened through a C library, and a machine with the variable off
+// would build a program that compiles, links, and has no window backend in it.
+// It is also what lets one architecture be built from the other.
+func macBuildEnv(arch string) []string {
+	return append(
 		os.Environ(),
 		"GOOS=darwin",
 		"GOARCH="+arch,
-		"CGO_ENABLED=1", // Required to cross-compile between AMD/ARM
+		"CGO_ENABLED=1",
 	)
-	_, err := runCmd(cmd)
-	return err
 }
 
 func (b *macBuilder) signProgram(buildInfo *buildInfo, binDest string, name string, arch string) error {

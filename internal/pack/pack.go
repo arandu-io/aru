@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: Unlicense OR MIT
-
 // Package pack turns a compiled native target into the artifact a platform
 // installs: an APK, an IPA, an application bundle, a signed executable, or the
 // pair of files a browser loads.

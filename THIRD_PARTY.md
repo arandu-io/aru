@@ -59,6 +59,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## The packaging sources under internal/pack
 
 `internal/pack` began as a copy of an existing packaging tool, at the version
-`internal/pack/UPSTREAM.md` records, under Unlicense OR MIT. The licence is
-reproduced beside the sources in `internal/pack/LICENSE`, and every change made
-to them is listed in that same file.
+`internal/pack/UPSTREAM.md` records. The upstream offered two sets of terms and
+lets the recipient pick — the Unlicense, or MIT — and both are reproduced whole
+in `internal/pack/LICENSE`, beside the sources they cover. Passing the offer on
+intact is the honest way to pass it on.
+
+They are not repeated at the top of the source files. Five of those files used
+to carry a one-line tag naming the terms, inherited with the copy, and those are
+gone: a licence is a fact about a body of code and belongs in one place, which
+is what Go itself does and what this project does everywhere else.
+
+Every change made to those sources is listed in `internal/pack/UPSTREAM.md`.

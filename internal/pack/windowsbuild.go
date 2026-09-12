@@ -64,11 +64,7 @@ func buildWindows(tmpDir string, bi *buildInfo) error {
 			return fmt.Errorf("can't create info: %v", err)
 		}
 
-		if err := builder.buildResource(bi, name, arch); err != nil {
-			return fmt.Errorf("can't build the resources: %v", err)
-		}
-
-		if err := builder.buildProgram(bi, name, arch); err != nil {
+		if err := builder.buildArch(bi, name, arch); err != nil {
 			return err
 		}
 	}
@@ -166,8 +162,35 @@ func (b *windowsBuilder) embedIcon(path string) (err error) {
 	return nil
 }
 
-func (b *windowsBuilder) buildResource(buildInfo *buildInfo, name string, arch string) error {
-	out, err := os.Create(filepath.Join(buildInfo.pkgPath, name+"_windows_"+arch+".syso"))
+// buildArch writes the resource section, links the program against it, and
+// takes the resource section back out.
+//
+// The resource file is an input rather than an artifact, and the Go toolchain
+// picks it up by name: go build links every *_windows_*.syso found in the
+// package's own directory, without being told to. One left behind is therefore
+// linked into whatever is built there next -- the following architecture of
+// this same loop, and every ordinary build of that package afterwards, each
+// carrying the icon and version block of a packaging run nobody remembers
+// starting. It goes on the way out, including when the link failed.
+func (b *windowsBuilder) buildArch(buildInfo *buildInfo, name string, arch string) (err error) {
+	// The directory the sources are in, which is not the path they are named
+	// by: a package is given to the go tool as an import path, and writing a
+	// file at one lands wherever the process happens to be standing.
+	syso := filepath.Join(buildInfo.pkgDir, name+"_windows_"+arch+".syso")
+	defer func() {
+		if rerr := os.Remove(syso); rerr != nil && err == nil {
+			err = fmt.Errorf("the resource file %s is still there, and the next build of that package would link it: %v", syso, rerr)
+		}
+	}()
+
+	if err := b.buildResource(syso); err != nil {
+		return fmt.Errorf("can't build the resources: %v", err)
+	}
+	return b.buildProgram(buildInfo, name, arch)
+}
+
+func (b *windowsBuilder) buildResource(dst string) error {
+	out, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
@@ -204,10 +227,10 @@ func (b *windowsBuilder) buildProgram(buildInfo *buildInfo, name string, arch st
 
 	ldflags := buildInfo.ldflags
 	if buildInfo.schemes != nil {
-		ldflags += ` -X "github.com/arandu-io/ayra/engine/app.schemesURI=` + strings.Join(buildInfo.schemes, ",") + `" `
+		ldflags += ` -X "` + buildInfo.runtime.path + `.schemesURI=` + strings.Join(buildInfo.schemes, ",") + `" `
 	}
 	if buildInfo.appID != "" {
-		ldflags += ` -X "github.com/arandu-io/ayra/engine/app.ID=` + buildInfo.appID + `" `
+		ldflags += ` -X "` + buildInfo.runtime.path + `.ID=` + buildInfo.appID + `" `
 	}
 
 	cmd := exec.Command(
@@ -228,10 +251,31 @@ func (b *windowsBuilder) buildProgram(buildInfo *buildInfo, name string, arch st
 }
 
 func (b *windowsBuilder) embedManifest(v windowsManifest) error {
-	t, err := template.New("manifest").Parse(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+	body, err := windowsManifestXML(v)
+	if err != nil {
+		return err
+	}
+
+	var manifest bufferCoff
+	if _, err := manifest.Write(body); err != nil {
+		return err
+	}
+	b.Coff.AddResource(windowsResourceManifest, 1, &manifest)
+
+	return nil
+}
+
+// windowsManifestXML writes the application manifest Windows reads out of the
+// resource section.
+//
+// A description in and bytes out: what this file says decides which versions of
+// the system will run the program and whether it is told the real size of the
+// screen, and neither answer needs a Windows machine to be checked.
+func windowsManifestXML(v windowsManifest) ([]byte, error) {
+	t, err := template.New("manifest").Funcs(markup).Parse(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1" xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
-    <assemblyIdentity type="win32" name="{{.Name}}" version="{{.Version}}" />
-    <description>{{.Name}}</description>
+    <assemblyIdentity type="win32" name="{{xml .Name}}" version="{{xml .Version}}" />
+    <description>{{xml .Name}}</description>
     <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
         <application>
             {{if (le .WindowsVersion 10)}}<supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
@@ -260,17 +304,14 @@ func (b *windowsBuilder) embedManifest(v windowsManifest) error {
 	</asmv3:application>
 </assembly>`)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	var manifest bufferCoff
+	var manifest bytes.Buffer
 	if err := t.Execute(&manifest, v); err != nil {
-		return err
+		return nil, err
 	}
-
-	b.Coff.AddResource(windowsResourceManifest, 1, &manifest)
-
-	return nil
+	return manifest.Bytes(), nil
 }
 
 func (b *windowsBuilder) embedInfo(v windowsResources) error {
@@ -299,7 +340,9 @@ func (b *windowsBuilder) embedInfo(v windowsResources) error {
 				newValue(valueText, "FileVersion", v.VersionHuman),
 				newValue(valueText, "FileDescription", v.Name),
 				newValue(valueText, "ProductName", v.Name),
-				// TODO include more data: gogio must have some way to provide such information (like Company Name, Copyright...)
+				// TODO carry the rest of the block a Windows installer shows:
+				// company name, copyright, and the legal strings beside them.
+				// Nothing here has a way to be told any of them yet.
 			}),
 		}),
 		// https://docs.microsoft.com/pt-br/windows/win32/menurc/varfileinfo

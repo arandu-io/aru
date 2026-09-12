@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: Unlicense OR MIT
-
 package pack
 
 import (
@@ -14,6 +12,50 @@ import (
 
 	"golang.org/x/tools/go/packages"
 )
+
+// jsBuildEnv is the environment the browser target is compiled in.
+//
+// cgo is off, and set rather than inherited. This platform has none, and a
+// developer whose shell exports it on -- which is an ordinary setting, and is
+// what this project's own commands use -- got the toolchain honouring the
+// variable over the platform: the standard library's user lookup then selected
+// a path with no implementation for this pair, and the failure named five
+// functions inside the standard library and nothing of the project's. The
+// command that builds without packaging already decides this per platform;
+// this is the same decision, on the path that produces the artifact somebody
+// ships.
+//
+// It is appended after the environment is read, which is what makes it win: a
+// later entry beats an earlier one, so the same line written first would be the
+// machine's setting overriding the platform's.
+func jsBuildEnv() []string {
+	return append(
+		os.Environ(),
+		"GOOS=js",
+		"GOARCH=wasm",
+		"CGO_ENABLED=0",
+	)
+}
+
+// jsIndexData is what the page loading the compiled program says.
+type jsIndexData struct {
+	Name string
+	Icon string
+}
+
+// jsIndexHTML writes the page a browser opens the application through.
+func jsIndexHTML(data jsIndexData) ([]byte, error) {
+	indexTemplate, err := template.New("").Funcs(markup).Parse(jsIndex)
+	if err != nil {
+		return nil, err
+	}
+
+	var page bytes.Buffer
+	if err := indexTemplate.Execute(&page, data); err != nil {
+		return nil, err
+	}
+	return page.Bytes(), nil
+}
 
 func buildJS(bi *buildInfo) error {
 	out := *destPath
@@ -31,22 +73,7 @@ func buildJS(bi *buildInfo) error {
 		"-o", filepath.Join(out, "main.wasm"),
 		bi.pkgPath,
 	)
-	cmd.Env = append(
-		os.Environ(),
-		"GOOS=js",
-		"GOARCH=wasm",
-		// Off, and set rather than inherited. This platform has no cgo, and a
-		// developer whose shell exports it on -- which is an ordinary setting,
-		// and is what this project's own commands use -- got the toolchain
-		// honouring the variable over the platform: the standard library's
-		// user lookup then selected a path with no implementation for this
-		// pair, and the failure named five functions inside the standard
-		// library and nothing of the project's. The command that builds
-		// without packaging already decides this per platform; this is the
-		// same decision, on the path that produces the artifact somebody
-		// ships.
-		"CGO_ENABLED=0",
-	)
+	cmd.Env = jsBuildEnv()
 	_, err := runCmd(cmd)
 	if err != nil {
 		return err
@@ -65,23 +92,12 @@ func buildJS(bi *buildInfo) error {
 		faviconPath = filepath.Base(bi.iconPath)
 	}
 
-	indexTemplate, err := template.New("").Parse(jsIndex)
+	page, err := jsIndexHTML(jsIndexData{Name: bi.name, Icon: faviconPath})
 	if err != nil {
 		return err
 	}
 
-	var b bytes.Buffer
-	if err := indexTemplate.Execute(&b, struct {
-		Name string
-		Icon string
-	}{
-		Name: bi.name,
-		Icon: faviconPath,
-	}); err != nil {
-		return err
-	}
-
-	if err := os.WriteFile(filepath.Join(out, "index.html"), b.Bytes(), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(out, "index.html"), page, 0o600); err != nil {
 		return err
 	}
 
@@ -98,41 +114,23 @@ func buildJS(bi *buildInfo) error {
 			return fmt.Errorf("failed to find $GOROOT/misc/wasm/wasm_exec.js driver: %v", err)
 		}
 	}
-	pkgs, err := packages.Load(&packages.Config{
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedImports | packages.NeedDeps,
-		Env:  append(os.Environ(), "GOOS=js", "GOARCH=wasm"),
-	}, bi.pkgPath)
-	if err != nil {
-		return err
-	}
-	extraJS, err := findPackagesJS(pkgs[0], make(map[string]bool))
+	var extraJS []string
+	err = walkGraph(bi.graph, func(p *packages.Package) (bool, error) {
+		if len(p.GoFiles) == 0 {
+			return false, nil
+		}
+		js, err := filepath.Glob(filepath.Join(filepath.Dir(p.GoFiles[0]), "*_js.js"))
+		if err != nil {
+			return false, err
+		}
+		extraJS = append(extraJS, js...)
+		return true, nil
+	})
 	if err != nil {
 		return err
 	}
 
 	return mergeJSFiles(filepath.Join(out, "wasm.js"), append([]string{wasmJS}, extraJS...)...)
-}
-
-func findPackagesJS(p *packages.Package, visited map[string]bool) (extraJS []string, err error) {
-	if len(p.GoFiles) == 0 {
-		return nil, nil
-	}
-	js, err := filepath.Glob(filepath.Join(filepath.Dir(p.GoFiles[0]), "*_js.js"))
-	if err != nil {
-		return nil, err
-	}
-	extraJS = append(extraJS, js...)
-	for _, imp := range p.Imports {
-		if !visited[imp.ID] {
-			extra, err := findPackagesJS(imp, visited)
-			if err != nil {
-				return nil, err
-			}
-			extraJS = append(extraJS, extra...)
-			visited[imp.ID] = true
-		}
-	}
-	return extraJS, nil
 }
 
 // mergeJSFiles will merge all files into a single `wasm.js`. It will prepend the jsSetGo
@@ -174,7 +172,7 @@ const (
 		<meta name="viewport" content="width=device-width, user-scalable=no">
 		<meta name="mobile-web-app-capable" content="yes">
 		{{ if .Icon }}<link rel="icon" href="{{.Icon}}" type="image/x-icon" />{{ end }}
-		{{ if .Name }}<title>{{.Name}}</title>{{ end }}
+		{{ if .Name }}<title>{{html .Name}}</title>{{ end }}
 		<script src="wasm.js"></script>
 		<style>
 			body,pre { margin:0;padding:0; }

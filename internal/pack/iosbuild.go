@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: Unlicense OR MIT
-
 package pack
 
 import (
@@ -214,10 +212,7 @@ func exeIOS(tmpDir, target, app string, bi *buildInfo) error {
 		if err != nil {
 			return err
 		}
-		cflags = append(cflags,
-			"-fobjc-arc",
-			fmt.Sprintf("-miphoneos-version-min=%d.0", bi.minsdk),
-		)
+		cflags = append(cflags, iosDeploymentFlags(bi.minsdk)...)
 		cflagsLine := strings.Join(cflags, " ")
 		exeSlice := filepath.Join(tmpDir, "app-"+a)
 		lipo.Args = append(lipo.Args, exeSlice)
@@ -229,17 +224,7 @@ func exeIOS(tmpDir, target, app string, bi *buildInfo) error {
 			"-tags", bi.tags,
 			bi.pkgPath,
 		)
-		compile.Env = append(
-			os.Environ(),
-			"GOOS=ios",
-			"GOARCH="+a,
-			"CGO_ENABLED=1",
-			"CC="+clang,
-			"CXX="+clang+"++",
-			"CGO_CFLAGS="+cflagsLine,
-			"CGO_CXXFLAGS="+cflagsLine,
-			"CGO_LDFLAGS=-lresolv "+cflagsLine,
-		)
+		compile.Env = iosProgramEnv(a, clang, cflagsLine)
 		builds.Go(func() error {
 			_, err := runCmd(compile)
 			return err
@@ -251,9 +236,12 @@ func exeIOS(tmpDir, target, app string, bi *buildInfo) error {
 	if _, err := runCmd(lipo); err != nil {
 		return err
 	}
-	infoPlist := buildInfoPlist(bi)
+	infoPlist, err := iosInfoPlist(iosManifestFor(bi))
+	if err != nil {
+		return err
+	}
 	plistFile := filepath.Join(app, "Info.plist")
-	if err := os.WriteFile(plistFile, []byte(infoPlist), 0o660); err != nil {
+	if err := os.WriteFile(plistFile, infoPlist, 0o660); err != nil {
 		return err
 	}
 	if _, err := os.Stat(bi.iconPath); err == nil {
@@ -360,9 +348,26 @@ func iosIcons(bi *buildInfo, tmpDir, appDir, icon string) (string, error) {
 	return assetPlist, err
 }
 
-func buildInfoPlist(bi *buildInfo) string {
-	appName := UppercaseName(bi.name)
-	platform := iosPlatformFor(bi.target)
+// iosManifestData is everything an iOS application's property list says.
+type iosManifestData struct {
+	AppName         string
+	AppID           string
+	Version         string
+	VersionCode     uint32
+	Platform        string
+	MinVersion      int
+	SupportPlatform string
+	Schemes         []string
+}
+
+// iosManifestFor answers what a build says about itself.
+//
+// MinVersion comes from the same field the compiler is handed, and that is the
+// point of deriving both here: they are two declarations of one number, and a
+// drift between them ships an application the system loads on a device whose
+// libraries it was not built against -- which fails at the first call into one
+// of them and nowhere earlier.
+func iosManifestFor(bi *buildInfo) iosManifestData {
 	var supportPlatform string
 	switch bi.target {
 	case "ios":
@@ -371,40 +376,34 @@ func buildInfoPlist(bi *buildInfo) string {
 		supportPlatform = "AppleTVOS"
 	}
 
-	manifestSrc := struct {
-		AppName         string
-		AppID           string
-		Version         string
-		VersionCode     uint32
-		Platform        string
-		MinVersion      int
-		SupportPlatform string
-		Schemes         []string
-	}{
-		AppName:         appName,
+	return iosManifestData{
+		AppName:         UppercaseName(bi.name),
 		AppID:           bi.appID,
 		Version:         bi.version.StringCompact(),
 		VersionCode:     bi.version.VersionCode,
-		Platform:        platform,
+		Platform:        iosPlatformFor(bi.target),
 		MinVersion:      bi.minsdk,
 		SupportPlatform: supportPlatform,
 		Schemes:         bi.schemes,
 	}
+}
 
-	tmpl, err := template.New("manifest").Parse(`<?xml version="1.0" encoding="UTF-8"?>
+// iosInfoPlist writes the property list an iOS application is described by.
+func iosInfoPlist(data iosManifestData) ([]byte, error) {
+	tmpl, err := template.New("manifest").Funcs(markup).Parse(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleExecutable</key>
-	<string>{{.AppName}}</string>
+	<string>{{xml .AppName}}</string>
 	<key>CFBundleIdentifier</key>
-	<string>{{.AppID}}</string>
+	<string>{{xml .AppID}}</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>{{.AppName}}</string>
+	<string>{{xml .AppName}}</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -460,7 +459,7 @@ func buildInfoPlist(bi *buildInfo) string {
 	  <dict>
 		<key>CFBundleURLSchemes</key>
 		<array>
-		  <string>{{.}}</string>
+		  <string>{{xml .}}</string>
 		</array>
 	  </dict>
 	  {{end}}
@@ -469,15 +468,65 @@ func buildInfoPlist(bi *buildInfo) string {
 </dict>
 </plist>`)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	var manifestBuffer bytes.Buffer
-	if err := tmpl.Execute(&manifestBuffer, manifestSrc); err != nil {
-		panic(err)
+	var manifest bytes.Buffer
+	if err := tmpl.Execute(&manifest, data); err != nil {
+		return nil, err
 	}
+	return manifest.Bytes(), nil
+}
 
-	return manifestBuffer.String()
+// iosDeploymentFlags are the compiler flags that declare the version the code
+// is built against.
+//
+// The number is the build's own, and so is the one the property list declares.
+// Two sites reading one field is what keeps a binary compiled for one version
+// from saying it needs another.
+func iosDeploymentFlags(minsdk int) []string {
+	return []string{
+		"-fobjc-arc",
+		fmt.Sprintf("-miphoneos-version-min=%d.0", minsdk),
+	}
+}
+
+// iosProgramEnv is the environment the executable inside an application bundle
+// is compiled in.
+//
+// cgo is asked for rather than inherited: the window is opened through a C
+// library, and a machine with the variable off would build a program that
+// compiles, links, and has no window backend in it.
+func iosProgramEnv(arch, clang, cflags string) []string {
+	return append(
+		os.Environ(),
+		"GOOS=ios",
+		"GOARCH="+arch,
+		"CGO_ENABLED=1",
+		"CC="+clang,
+		"CXX="+clang+"++",
+		"CGO_CFLAGS="+cflags,
+		"CGO_CXXFLAGS="+cflags,
+		"CGO_LDFLAGS=-lresolv "+cflags,
+	)
+}
+
+// iosFrameworkEnv is the environment an archive another build embeds is
+// compiled in.
+//
+// It is the program's environment without the C++ half and without the
+// resolver library: what is produced here is linked into somebody else's
+// application, which brings its own.
+func iosFrameworkEnv(arch, clang, cflags string) []string {
+	return append(
+		os.Environ(),
+		"GOOS=ios",
+		"GOARCH="+arch,
+		"CGO_ENABLED=1",
+		"CC="+clang,
+		"CGO_CFLAGS="+cflags,
+		"CGO_LDFLAGS="+cflags,
+	)
 }
 
 func iosPlatformFor(target string) string {
@@ -540,15 +589,7 @@ func archiveIOS(tmpDir, target, frameworkRoot string, bi *buildInfo) error {
 		)
 		lipo.Args = append(lipo.Args, lib)
 		cflagsLine := strings.Join(cflags, " ")
-		cmd.Env = append(
-			os.Environ(),
-			"GOOS=ios",
-			"GOARCH="+a,
-			"CGO_ENABLED=1",
-			"CC="+clang,
-			"CGO_CFLAGS="+cflagsLine,
-			"CGO_LDFLAGS="+cflagsLine,
-		)
+		cmd.Env = iosFrameworkEnv(a, clang, cflagsLine)
 		builds.Go(func() error {
 			_, err := runCmd(cmd)
 			return err
@@ -560,12 +601,8 @@ func archiveIOS(tmpDir, target, frameworkRoot string, bi *buildInfo) error {
 	if _, err := runCmd(lipo); err != nil {
 		return err
 	}
-	appDir, err := runCmd(exec.Command("go", "list", "-tags", tags, "-f", "{{.Dir}}", "github.com/arandu-io/ayra/engine/app/"))
-	if err != nil {
-		return err
-	}
 	headerDst := filepath.Join(frameworkDir, "Headers", framework+".h")
-	headerSrc := filepath.Join(appDir, "framework_ios.h")
+	headerSrc := filepath.Join(bi.runtime.dir, "framework_ios.h")
 	if err := copyFile(headerDst, headerSrc); err != nil {
 		return err
 	}

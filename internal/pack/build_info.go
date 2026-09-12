@@ -12,6 +12,14 @@ import (
 	"unicode/utf8"
 )
 
+// signPassEnv is where the signing key's password is read from when it was not
+// passed in.
+//
+// It is named after this project because it is this project's interface: a
+// variable in the environment is read by whoever sets it, and one carrying
+// somebody else's name is one nobody can look up.
+const signPassEnv = "ARANDU_SIGNPASS"
+
 type buildInfo struct {
 	appID          string
 	archs          []string
@@ -57,9 +65,12 @@ func newBuildInfo(pkgPath string) (*buildInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The environment is the other way in for the signing key's password, so a
+	// pipeline can hand it over without writing it into a command line that
+	// every process on the machine can read.
 	sp := *signPass
 	if sp == "" {
-		sp = os.Getenv("GOGIO_SIGNPASS")
+		sp = os.Getenv(signPassEnv)
 	}
 	bi := &buildInfo{
 		appID:          appID,

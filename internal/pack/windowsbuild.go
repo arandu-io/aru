@@ -299,7 +299,9 @@ func (b *windowsBuilder) embedInfo(v windowsResources) error {
 				newValue(valueText, "FileVersion", v.VersionHuman),
 				newValue(valueText, "FileDescription", v.Name),
 				newValue(valueText, "ProductName", v.Name),
-				// TODO include more data: gogio must have some way to provide such information (like Company Name, Copyright...)
+				// TODO carry the rest of the block a Windows installer shows:
+				// company name, copyright, and the legal strings beside them.
+				// Nothing here has a way to be told any of them yet.
 			}),
 		}),
 		// https://docs.microsoft.com/pt-br/windows/win32/menurc/varfileinfo

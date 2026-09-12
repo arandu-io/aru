@@ -86,6 +86,14 @@ func packageVariables(dir string) (map[string]declaration, error) {
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
+		// A view source ends in .go and is not Go: it opens with a build
+		// constraint that keeps the compiler away from a body written in
+		// another syntax. Every reader in this tool leaves them alone, and one
+		// that did not would refuse a package for a file the package does not
+		// contain.
+		if strings.HasSuffix(name, ".kyse.go") {
+			continue
+		}
 		file, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, parser.SkipObjectResolution)
 		if err != nil {
 			return nil, err

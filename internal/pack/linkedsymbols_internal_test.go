@@ -1,6 +1,7 @@
 package pack
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -97,5 +98,27 @@ func TestAConstantIsNotSomethingTheLinkerCanWriteTo(t *testing.T) {
 	}
 	if declared["ID"].constant {
 		t.Error("a variable was read as a constant")
+	}
+}
+
+// TestAViewSourceIsNotReadAsGo keeps a file that ends in .go and is not Go from
+// refusing a package it is not part of.
+//
+// A view opens with a build constraint the compiler honours and continues in a
+// syntax that is not Go. Read here it would fail to parse, and the refusal
+// would name a runtime package that is perfectly correct.
+func TestAViewSourceIsNotReadAsGo(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"app.go":       "package app\n\nvar ID = \"\"\n\nvar extraArgs string\n\nvar schemesURI string\n",
+		"home.kyse.go": "//go:build kyse\n\npackage views\n\n@extends('layouts.app')\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := verifyLinkedSymbols("example.test/engine/app", dir); err != nil {
+		t.Errorf("a view source beside the runtime refused the build: %v", err)
 	}
 }

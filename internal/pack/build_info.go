@@ -92,6 +92,9 @@ func newBuildInfo(pkgPath string) (*buildInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := verifyLinkedSymbols(runtimePkg.path, runtimePkg.dir); err != nil {
+		return nil, err
+	}
 	bi := &buildInfo{
 		appID:          appID,
 		archs:          getArchs(),

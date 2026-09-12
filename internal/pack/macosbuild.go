@@ -146,22 +146,22 @@ func macManifestFor(buildInfo *buildInfo, name string) macManifestData {
 // as a folder, and a check on it should not need a toolchain, a signing key or
 // a machine running macOS.
 func macInfoPlist(data macManifestData) ([]byte, error) {
-	t, err := template.New("manifest").Parse(`<?xml version="1.0" encoding="UTF-8"?>
+	t, err := template.New("manifest").Funcs(markup).Parse(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 	<key>CFBundleExecutable</key>
-	<string>{{.Name}}</string>
+	<string>{{xml .Name}}</string>
 	<key>CFBundleIconFile</key>
 	<string>icon.icns</string>
 	<key>CFBundleIdentifier</key>
-	<string>{{.Bundle}}</string>
+	<string>{{xml .Bundle}}</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleName</key>
-	<string>{{.Name}}</string>
+	<string>{{xml .Name}}</string>
 	<key>CFBundleShortVersionString</key>
 	<string>{{.Version.Major}}.{{.Version.Minor}}.{{.Version.Patch}}</string>
 	<key>CFBundleVersion</key>
@@ -173,7 +173,7 @@ func macInfoPlist(data macManifestData) ([]byte, error) {
 	  <dict>
 		<key>CFBundleURLSchemes</key>
 		<array>
-		  <string>{{.}}</string>
+		  <string>{{xml .}}</string>
 		</array>
 	  </dict>
 	  {{end}}

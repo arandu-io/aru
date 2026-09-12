@@ -5,9 +5,9 @@
 	android:versionName="1.0.0.1">
 	
 	<uses-sdk android:minSdkVersion="16" android:targetSdkVersion="35" />
-	<application  android:label="Faturas & Cobranças">
+	<application  android:label="Faturas &amp; Cobranças">
 		<activity android:name="io.arandu.ayra.AyraActivity"
-			android:label="Faturas & Cobranças"
+			android:label="Faturas &amp; Cobranças"
 			android:theme="@style/Theme.AyraApp"
 			android:configChanges="screenSize|screenLayout|smallestScreenSize|orientation|keyboardHidden"
 			android:windowSoftInputMode="adjustResize"

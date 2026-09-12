@@ -264,10 +264,10 @@ func compileAndroid(tmpDir string, tools *androidTools, bi *buildInfo) (err erro
 // launching -- the activity, the theme, the icon, the schemes -- belongs to the
 // application that does.
 func androidArchiveManifest(data manifestData) ([]byte, error) {
-	tmpl, err := template.New("manifest").Parse(
-		`<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="{{.AppID}}">
+	tmpl, err := template.New("manifest").Funcs(markup).Parse(
+		`<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="{{xml .AppID}}">
         <uses-sdk android:minSdkVersion="{{.MinSDK}}"/>
-{{range .Permissions}}	<uses-permission android:name="{{.}}"/>
+{{range .Permissions}}	<uses-permission android:name="{{xml .}}"/>
 {{end}}{{range .Features}}	<uses-feature android:{{.}} android:required="false"/>
 {{end}}</manifest>
 `)
@@ -1032,25 +1032,25 @@ func (w *errWriter) Write(p []byte) (n int, err error) {
 // which permissions the system grants, and which links open the application --
 // and none of those answers needs an SDK installed to be read back.
 func androidManifest(data manifestData) ([]byte, error) {
-	tmpl, err := template.New("manifest").Parse(
+	tmpl, err := template.New("manifest").Funcs(markup).Parse(
 		`<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-	package="{{.AppID}}"
+	package="{{xml .AppID}}"
 	android:versionCode="{{.Version.VersionCode}}"
 	android:versionName="{{.Version}}">
 	{{if .PackageQueries}}
  	<queries>
 	    {{range .PackageQueries}}
-        <package android:name="{{.}}" />
+        <package android:name="{{xml .}}" />
         {{end}}
     </queries>
 	{{end}}
 	<uses-sdk android:minSdkVersion="{{.MinSDK}}" android:targetSdkVersion="{{.TargetSDK}}" />
-{{range .Permissions}}	<uses-permission android:name="{{.}}"/>
+{{range .Permissions}}	<uses-permission android:name="{{xml .}}"/>
 {{end}}{{range .Features}}	<uses-feature android:{{.}} android:required="false"/>
-{{end}}	<application {{.IconSnip}} android:label="{{.AppName}}">
+{{end}}	<application {{.IconSnip}} android:label="{{xml .AppName}}">
 		<activity android:name="io.arandu.ayra.AyraActivity"
-			android:label="{{.AppName}}"
+			android:label="{{xml .AppName}}"
 			android:theme="@style/Theme.AyraApp"
 			android:configChanges="screenSize|screenLayout|smallestScreenSize|orientation|keyboardHidden"
 			android:windowSoftInputMode="adjustResize"
@@ -1065,7 +1065,7 @@ func androidManifest(data manifestData) ([]byte, error) {
 				<action android:name="android.intent.action.VIEW"></action>
 				<category android:name="android.intent.category.DEFAULT"></category>
 				<category android:name="android.intent.category.BROWSABLE"></category>
-				<data android:scheme="{{.}}"></data>
+				<data android:scheme="{{xml .}}"></data>
 			</intent-filter>
 			{{end}}
 		</activity>

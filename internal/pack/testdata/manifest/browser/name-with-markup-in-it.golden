@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, user-scalable=no">
 		<meta name="mobile-web-app-capable" content="yes">
 		
-		<title>Faturas & Cobranças</title>
+		<title>Faturas &amp; Cobranças</title>
 		<script src="wasm.js"></script>
 		<style>
 			body,pre { margin:0;padding:0; }

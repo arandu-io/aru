@@ -45,7 +45,7 @@ type jsIndexData struct {
 
 // jsIndexHTML writes the page a browser opens the application through.
 func jsIndexHTML(data jsIndexData) ([]byte, error) {
-	indexTemplate, err := template.New("").Parse(jsIndex)
+	indexTemplate, err := template.New("").Funcs(markup).Parse(jsIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +172,7 @@ const (
 		<meta name="viewport" content="width=device-width, user-scalable=no">
 		<meta name="mobile-web-app-capable" content="yes">
 		{{ if .Icon }}<link rel="icon" href="{{.Icon}}" type="image/x-icon" />{{ end }}
-		{{ if .Name }}<title>{{.Name}}</title>{{ end }}
+		{{ if .Name }}<title>{{html .Name}}</title>{{ end }}
 		<script src="wasm.js"></script>
 		<style>
 			body,pre { margin:0;padding:0; }

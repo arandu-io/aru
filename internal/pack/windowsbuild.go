@@ -64,11 +64,7 @@ func buildWindows(tmpDir string, bi *buildInfo) error {
 			return fmt.Errorf("can't create info: %v", err)
 		}
 
-		if err := builder.buildResource(bi, name, arch); err != nil {
-			return fmt.Errorf("can't build the resources: %v", err)
-		}
-
-		if err := builder.buildProgram(bi, name, arch); err != nil {
+		if err := builder.buildArch(bi, name, arch); err != nil {
 			return err
 		}
 	}
@@ -166,8 +162,35 @@ func (b *windowsBuilder) embedIcon(path string) (err error) {
 	return nil
 }
 
-func (b *windowsBuilder) buildResource(buildInfo *buildInfo, name string, arch string) error {
-	out, err := os.Create(filepath.Join(buildInfo.pkgPath, name+"_windows_"+arch+".syso"))
+// buildArch writes the resource section, links the program against it, and
+// takes the resource section back out.
+//
+// The resource file is an input rather than an artifact, and the Go toolchain
+// picks it up by name: go build links every *_windows_*.syso found in the
+// package's own directory, without being told to. One left behind is therefore
+// linked into whatever is built there next -- the following architecture of
+// this same loop, and every ordinary build of that package afterwards, each
+// carrying the icon and version block of a packaging run nobody remembers
+// starting. It goes on the way out, including when the link failed.
+func (b *windowsBuilder) buildArch(buildInfo *buildInfo, name string, arch string) (err error) {
+	// The directory the sources are in, which is not the path they are named
+	// by: a package is given to the go tool as an import path, and writing a
+	// file at one lands wherever the process happens to be standing.
+	syso := filepath.Join(buildInfo.pkgDir, name+"_windows_"+arch+".syso")
+	defer func() {
+		if rerr := os.Remove(syso); rerr != nil && err == nil {
+			err = fmt.Errorf("the resource file %s is still there, and the next build of that package would link it: %v", syso, rerr)
+		}
+	}()
+
+	if err := b.buildResource(syso); err != nil {
+		return fmt.Errorf("can't build the resources: %v", err)
+	}
+	return b.buildProgram(buildInfo, name, arch)
+}
+
+func (b *windowsBuilder) buildResource(dst string) error {
+	out, err := os.Create(dst)
 	if err != nil {
 		return err
 	}

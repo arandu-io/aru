@@ -59,6 +59,16 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## The packaging sources under internal/pack
 
 `internal/pack` began as a copy of an existing packaging tool, at the version
-`internal/pack/UPSTREAM.md` records, under Unlicense OR MIT. The licence is
-reproduced beside the sources in `internal/pack/LICENSE`, and every change made
-to them is listed in that same file.
+`internal/pack/UPSTREAM.md` records. The upstream offered two sets of terms and
+let the recipient pick — the Unlicense, or MIT — and **this repository takes the
+Unlicense**. Its grant carries no condition in its own words: anyone may copy,
+modify, publish, use, compile, sell or distribute the software, in source or
+binary, for any purpose, by any means. So there is no notice to carry, and the
+upstream's licence file was removed rather than reproduced.
+
+The choice binds nobody else: anyone receiving this code may take MIT against
+the original source instead, and this paragraph is what tells them the offer had
+two sides. The origin and the version stay recorded in
+`internal/pack/UPSTREAM.md` — not because the terms taken require it, but
+because a repository that cannot answer where its code came from is one nobody
+can audit. Every change made to those sources is listed in that same file.

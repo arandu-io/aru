@@ -5,8 +5,8 @@ at the version recorded below, and are maintained here from now on.
 
     upstream   gioui.org/cmd
     version    v0.10.0
-    offered    UNLICENSE or MIT, at the recipient's choice
-    taken      UNLICENSE
+    terms      UNLICENSE or MIT, at the recipient's choice, reproduced in
+               LICENSE beside these sources
 
 ## Why this exists here rather than as a tool somebody installs
 

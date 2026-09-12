@@ -60,15 +60,13 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 `internal/pack` began as a copy of an existing packaging tool, at the version
 `internal/pack/UPSTREAM.md` records. The upstream offered two sets of terms and
-let the recipient pick — the Unlicense, or MIT — and **this repository takes the
-Unlicense**. Its grant carries no condition in its own words: anyone may copy,
-modify, publish, use, compile, sell or distribute the software, in source or
-binary, for any purpose, by any means. So there is no notice to carry, and the
-upstream's licence file was removed rather than reproduced.
+lets the recipient pick — the Unlicense, or MIT — and both are reproduced whole
+in `internal/pack/LICENSE`, beside the sources they cover. Passing the offer on
+intact is the honest way to pass it on.
 
-The choice binds nobody else: anyone receiving this code may take MIT against
-the original source instead, and this paragraph is what tells them the offer had
-two sides. The origin and the version stay recorded in
-`internal/pack/UPSTREAM.md` — not because the terms taken require it, but
-because a repository that cannot answer where its code came from is one nobody
-can audit. Every change made to those sources is listed in that same file.
+They are not repeated at the top of the source files. Five of those files used
+to carry a one-line tag naming the terms, inherited with the copy, and those are
+gone: a licence is a fact about a body of code and belongs in one place, which
+is what Go itself does and what this project does everywhere else.
+
+Every change made to those sources is listed in `internal/pack/UPSTREAM.md`.

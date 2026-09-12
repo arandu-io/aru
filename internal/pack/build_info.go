@@ -10,6 +10,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/tools/go/packages"
 )
 
 // signPassEnv is where the signing key's password is read from when it was not
@@ -40,6 +42,16 @@ type buildInfo struct {
 	notaryTeamID   string
 	schemes        []string
 	packageQueries []string
+
+	// runtime is the package the application's window is opened by, found in
+	// the graph below.
+	runtime runtimePackage
+
+	// graph is the application's package graph as this target sees it, read
+	// once. Android reads the jars and permissions out of it, the browser
+	// target the JavaScript beside each package, and both used to ask the go
+	// tool a second time for what is already here.
+	graph *packages.Package
 }
 
 type Semver struct {
@@ -72,10 +84,18 @@ func newBuildInfo(pkgPath string) (*buildInfo, error) {
 	if sp == "" {
 		sp = os.Getenv(signPassEnv)
 	}
+	graph, err := loadPackageGraph(pkgPath)
+	if err != nil {
+		return nil, err
+	}
+	runtimePkg, err := findRuntimePackage(graph)
+	if err != nil {
+		return nil, err
+	}
 	bi := &buildInfo{
 		appID:          appID,
 		archs:          getArchs(),
-		ldflags:        getLdFlags(appID),
+		ldflags:        getLdFlags(appID, runtimePkg.path),
 		minsdk:         *minsdk,
 		targetsdk:      *targetsdk,
 		name:           appName,
@@ -92,6 +112,8 @@ func newBuildInfo(pkgPath string) (*buildInfo, error) {
 		notaryTeamID:   *notaryTeamID,
 		schemes:        getCommaList(*schemes),
 		packageQueries: getCommaList(*pkgQueries),
+		runtime:        runtimePkg,
+		graph:          graph,
 	}
 	return bi, nil
 }
@@ -146,19 +168,19 @@ func getArchs() []string {
 	}
 }
 
-func getLdFlags(appID string) string {
+func getLdFlags(appID, runtimePath string) string {
 	var ldflags []string
 	if extra := *extraLdflags; extra != "" {
 		ldflags = append(ldflags, strings.Split(extra, " ")...)
 	}
 	// Pass appID along, to be used for logging on platforms like Android.
-	ldflags = append(ldflags, fmt.Sprintf("-X github.com/arandu-io/ayra/engine/app.ID=%s", appID))
+	ldflags = append(ldflags, fmt.Sprintf("-X %s.ID=%s", runtimePath, appID))
 	// Pass along all remaining arguments to the app. They came from the command
 	// line when this was a command of its own; as a library they arrive through
 	// Options, and reading the process's arguments here panicked on the empty
 	// slice the moment it was called from anywhere else.
 	if len(appArgs) > 0 {
-		ldflags = append(ldflags, fmt.Sprintf("-X github.com/arandu-io/ayra/engine/app.extraArgs=%s", strings.Join(appArgs, "|")))
+		ldflags = append(ldflags, fmt.Sprintf("-X %s.extraArgs=%s", runtimePath, strings.Join(appArgs, "|")))
 	}
 	if m := *linkMode; m != "" {
 		ldflags = append(ldflags, "-linkmode="+m)

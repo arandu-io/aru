@@ -98,41 +98,23 @@ func buildJS(bi *buildInfo) error {
 			return fmt.Errorf("failed to find $GOROOT/misc/wasm/wasm_exec.js driver: %v", err)
 		}
 	}
-	pkgs, err := packages.Load(&packages.Config{
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedImports | packages.NeedDeps,
-		Env:  append(os.Environ(), "GOOS=js", "GOARCH=wasm"),
-	}, bi.pkgPath)
-	if err != nil {
-		return err
-	}
-	extraJS, err := findPackagesJS(pkgs[0], make(map[string]bool))
+	var extraJS []string
+	err = walkGraph(bi.graph, func(p *packages.Package) (bool, error) {
+		if len(p.GoFiles) == 0 {
+			return false, nil
+		}
+		js, err := filepath.Glob(filepath.Join(filepath.Dir(p.GoFiles[0]), "*_js.js"))
+		if err != nil {
+			return false, err
+		}
+		extraJS = append(extraJS, js...)
+		return true, nil
+	})
 	if err != nil {
 		return err
 	}
 
 	return mergeJSFiles(filepath.Join(out, "wasm.js"), append([]string{wasmJS}, extraJS...)...)
-}
-
-func findPackagesJS(p *packages.Package, visited map[string]bool) (extraJS []string, err error) {
-	if len(p.GoFiles) == 0 {
-		return nil, nil
-	}
-	js, err := filepath.Glob(filepath.Join(filepath.Dir(p.GoFiles[0]), "*_js.js"))
-	if err != nil {
-		return nil, err
-	}
-	extraJS = append(extraJS, js...)
-	for _, imp := range p.Imports {
-		if !visited[imp.ID] {
-			extra, err := findPackagesJS(imp, visited)
-			if err != nil {
-				return nil, err
-			}
-			extraJS = append(extraJS, extra...)
-			visited[imp.ID] = true
-		}
-	}
-	return extraJS, nil
 }
 
 // mergeJSFiles will merge all files into a single `wasm.js`. It will prepend the jsSetGo

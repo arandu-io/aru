@@ -227,10 +227,10 @@ func (b *windowsBuilder) buildProgram(buildInfo *buildInfo, name string, arch st
 
 	ldflags := buildInfo.ldflags
 	if buildInfo.schemes != nil {
-		ldflags += ` -X "github.com/arandu-io/ayra/engine/app.schemesURI=` + strings.Join(buildInfo.schemes, ",") + `" `
+		ldflags += ` -X "` + buildInfo.runtime.path + `.schemesURI=` + strings.Join(buildInfo.schemes, ",") + `" `
 	}
 	if buildInfo.appID != "" {
-		ldflags += ` -X "github.com/arandu-io/ayra/engine/app.ID=` + buildInfo.appID + `" `
+		ldflags += ` -X "` + buildInfo.runtime.path + `.ID=` + buildInfo.appID + `" `
 	}
 
 	cmd := exec.Command(

@@ -560,12 +560,8 @@ func archiveIOS(tmpDir, target, frameworkRoot string, bi *buildInfo) error {
 	if _, err := runCmd(lipo); err != nil {
 		return err
 	}
-	appDir, err := runCmd(exec.Command("go", "list", "-tags", tags, "-f", "{{.Dir}}", "github.com/arandu-io/ayra/engine/app/"))
-	if err != nil {
-		return err
-	}
 	headerDst := filepath.Join(frameworkDir, "Headers", framework+".h")
-	headerSrc := filepath.Join(appDir, "framework_ios.h")
+	headerSrc := filepath.Join(bi.runtime.dir, "framework_ios.h")
 	if err := copyFile(headerDst, headerSrc); err != nil {
 		return err
 	}

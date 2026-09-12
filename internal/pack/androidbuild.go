@@ -99,33 +99,19 @@ func buildAndroid(tmpDir string, bi *buildInfo) error {
 		androidjar: filepath.Join(platform, "android.jar"),
 	}
 	perms := []string{"default"}
-	const permPref = "github.com/arandu-io/ayra/engine/app/permission/"
-	cfg := &packages.Config{
-		Mode: packages.NeedName +
-			packages.NeedFiles +
-			packages.NeedImports +
-			packages.NeedDeps,
-		Env: append(
-			os.Environ(),
-			"GOOS=android",
-			"CGO_ENABLED=1",
-		),
-	}
-	pkgs, err := packages.Load(cfg, bi.pkgPath)
-	if err != nil {
-		return err
-	}
+	// A permission is a package of its own below the runtime's, and its last
+	// element is the permission's name. The prefix is built from where the
+	// runtime was found rather than written out, so the two cannot disagree.
+	permPref := bi.runtime.path + "/permission/"
 	var extraJars []string
-	visitedPkgs := make(map[string]bool)
-	var visitPkg func(*packages.Package) error
-	visitPkg = func(p *packages.Package) error {
+	err = walkGraph(bi.graph, func(p *packages.Package) (bool, error) {
 		if len(p.GoFiles) == 0 {
-			return nil
+			return false, nil
 		}
 		dir := filepath.Dir(p.GoFiles[0])
 		jars, err := filepath.Glob(filepath.Join(dir, "*.jar"))
 		if err != nil {
-			return err
+			return false, err
 		}
 		extraJars = append(extraJars, jars...)
 		switch {
@@ -134,23 +120,9 @@ func buildAndroid(tmpDir string, bi *buildInfo) error {
 		case strings.HasPrefix(p.PkgPath, permPref):
 			perms = append(perms, p.PkgPath[len(permPref):])
 		}
-
-		for _, imp := range p.Imports {
-			if !visitedPkgs[imp.ID] {
-				// Propagated rather than dropped. What this walk collects is
-				// the jars and the permissions an import brings with it, so a
-				// failure here is a jar that is missing from the package -- and
-				// dropping it produces an APK that builds, installs, and fails
-				// on the screen that needed it.
-				if err := visitPkg(imp); err != nil {
-					return err
-				}
-				visitedPkgs[imp.ID] = true
-			}
-		}
-		return nil
-	}
-	if err := visitPkg(pkgs[0]); err != nil {
+		return true, nil
+	})
+	if err != nil {
 		return err
 	}
 
@@ -246,16 +218,13 @@ func compileAndroid(tmpDir string, tools *androidTools, bi *buildInfo) (err erro
 			return err
 		})
 	}
-	appDir, err := runCmd(exec.Command("go", "list", "-tags", bi.tags, "-f", "{{.Dir}}", "github.com/arandu-io/ayra/engine/app/"))
-	if err != nil {
-		return err
-	}
+	appDir := bi.runtime.dir
 	javaFiles, err := filepath.Glob(filepath.Join(appDir, "*.java"))
 	if err != nil {
 		return err
 	}
 	if len(javaFiles) == 0 {
-		return fmt.Errorf("the github.com/arandu-io/ayra/engine/app package carries no .java files, and the Android backend cannot be built without them")
+		return fmt.Errorf("the %s package carries no .java files, and the Android backend cannot be built without them", bi.runtime.path)
 	}
 	if len(javaFiles) > 0 {
 		classes := filepath.Join(tmpDir, "classes")

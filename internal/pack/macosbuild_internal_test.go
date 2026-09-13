@@ -56,7 +56,9 @@ func TestAMacBundleWithoutAKeyIsStillSealed(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := file.WriteString("\n"); err != nil {
-		file.Close()
+		if closeErr := file.Close(); closeErr != nil {
+			t.Fatalf("tampering with Info.plist: %v; closing it: %v", err, closeErr)
+		}
 		t.Fatal(err)
 	}
 	if err := file.Close(); err != nil {

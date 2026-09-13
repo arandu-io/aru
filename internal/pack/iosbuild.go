@@ -4,7 +4,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"crypto/sha1"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -41,7 +43,14 @@ func buildIOS(tmpDir, target string, bi *buildInfo) error {
 	// -miphoneos-version-min=0.0, which it refuses as an invalid version --
 	// after building everything else.
 	if bi.minsdk == 0 {
-		bi.minsdk = minIOSVersion
+		switch {
+		case target == "tvos":
+			bi.minsdk = minTVOSVersion
+		case iosSimulatorBuild(bi.archs):
+			bi.minsdk = minSimulatorVersion
+		default:
+			bi.minsdk = minIOSVersion
+		}
 	}
 
 	appName := bi.name
@@ -65,7 +74,7 @@ func buildIOS(tmpDir, target string, bi *buildInfo) error {
 				if forDevice {
 					continue
 				}
-			case "386", "amd64":
+			case "386", "amd64", "simarm64":
 				if !forDevice {
 					continue
 				}
@@ -102,11 +111,10 @@ func buildIOS(tmpDir, target string, bi *buildInfo) error {
 				return err
 			}
 
-			p, err := filepath.Glob(filepath.Join(home, "Library", "MobileDevice", "Provisioning Profiles", "*.mobileprovision"))
+			provisions, err = iosProvisioningProfiles(home)
 			if err != nil {
 				return err
 			}
-			provisions = p
 		}
 
 		if err := signApple(bi.appID, tmpDir, embedded, appDir, provisions); err != nil {
@@ -122,26 +130,36 @@ func buildIOS(tmpDir, target string, bi *buildInfo) error {
 func signApple(appID, tmpDir, embedded, app string, provisions []string) error {
 	provInfo := filepath.Join(tmpDir, "provision.plist")
 	var avail []string
+	var profileErrors []error
+	identities, err := installedCodeSigningIdentities()
+	if err != nil {
+		return err
+	}
+	matchedBundle := false
 	for _, prov := range provisions {
 		// Decode the provision file to a plist.
-		_, err := runCmd(exec.Command("security", "cms", "-D", "-i", prov, "-o", provInfo))
+		_, err = runCmd(exec.Command("security", "cms", "-D", "-i", prov, "-o", provInfo))
 		if err != nil {
-			return err
+			profileErrors = append(profileErrors, fmt.Errorf("decode %q: %w", prov, err))
+			continue
 		}
 		expUnix, err := runCmd(exec.Command("/usr/libexec/PlistBuddy", "-c", "Print:ExpirationDate", provInfo))
 		if err != nil {
-			return err
+			profileErrors = append(profileErrors, fmt.Errorf("read expiration from %q: %w", prov, err))
+			continue
 		}
 		exp, err := time.Parse(time.UnixDate, expUnix)
 		if err != nil {
-			return fmt.Errorf("sign: failed to parse expiration date from %q: %v", prov, err)
+			profileErrors = append(profileErrors, fmt.Errorf("parse expiration from %q: %w", prov, err))
+			continue
 		}
 		if exp.Before(time.Now()) {
 			continue
 		}
 		appIDPrefix, err := runCmd(exec.Command("/usr/libexec/PlistBuddy", "-c", "Print:ApplicationIdentifierPrefix:0", provInfo))
 		if err != nil {
-			return err
+			profileErrors = append(profileErrors, fmt.Errorf("read application identifier prefix from %q: %w", prov, err))
+			continue
 		}
 
 		// iOS/macOS Catalyst
@@ -152,36 +170,47 @@ func signApple(appID, tmpDir, embedded, app string, provisions []string) error {
 		}
 		provAppID, err := runCmd(exec.Command("/usr/libexec/PlistBuddy", "-c", provAppIDSearchKey, provInfo))
 		if err != nil {
-			return err
+			profileErrors = append(profileErrors, fmt.Errorf("read application identifier from %q: %w", prov, err))
+			continue
 		}
 		expAppID := fmt.Sprintf("%s.%s", appIDPrefix, appID)
 		avail = append(avail, provAppID)
 		if expAppID != provAppID {
 			continue
 		}
+		matchedBundle = true
+
+		profile, err := os.ReadFile(provInfo)
+		if err != nil {
+			profileErrors = append(profileErrors, fmt.Errorf("read decoded profile %q: %w", prov, err))
+			continue
+		}
+		certificateIDs, err := appleProfileCertificateIDs(profile)
+		if err != nil {
+			profileErrors = append(profileErrors, fmt.Errorf("read developer certificates from %q: %w", prov, err))
+			continue
+		}
+		identity, found := matchingAppleIdentity(certificateIDs, identities)
+		if !found {
+			continue
+		}
+
 		// Copy provisioning file.
 		if err := copyFile(embedded, prov); err != nil {
 			return err
 		}
-		certDER, err := runCmdRaw(exec.Command("/usr/libexec/PlistBuddy", "-c", "Print:DeveloperCertificates:0", provInfo))
-		if err != nil {
-			return err
-		}
-		// Omit trailing newline.
-		certDER = certDER[:len(certDER)-1]
 		entitlements, err := runCmd(exec.Command("/usr/libexec/PlistBuddy", "-x", "-c", "Print:Entitlements", provInfo))
 		if err != nil {
-			return err
+			profileErrors = append(profileErrors, fmt.Errorf("read entitlements from %q: %w", prov, err))
+			continue
 		}
 		entFile := filepath.Join(tmpDir, "entitlements.plist")
 		if err := os.WriteFile(entFile, []byte(entitlements), 0o660); err != nil {
 			return err
 		}
-		identity := sha1.Sum(certDER)
-		idHex := hex.EncodeToString(identity[:])
 		_, err = runCmd(exec.Command(
 			"codesign",
-			"--sign", idHex,
+			"--sign", identity,
 			"--deep",
 			"--force",
 			"--options", "runtime",
@@ -190,17 +219,156 @@ func signApple(appID, tmpDir, embedded, app string, provisions []string) error {
 			app))
 		return err
 	}
-	return fmt.Errorf("sign: no valid provisioning profile found for bundle id %q among %v", appID, avail)
+	var result error
+	if matchedBundle {
+		result = fmt.Errorf("sign: no installed code-signing identity matches the provisioning profiles for bundle id %q", appID)
+	} else {
+		result = fmt.Errorf("sign: no valid provisioning profile found for bundle id %q among %v", appID, avail)
+	}
+	if len(profileErrors) > 0 {
+		return errors.Join(result, errors.Join(profileErrors...))
+	}
+	return result
+}
+
+// iosProvisioningProfiles returns profiles from both locations used by Xcode.
+//
+// Older Xcode releases installed profiles under MobileDevice. Current releases
+// manage them under Developer/Xcode/UserData instead, and looking in only the
+// former makes a configured account indistinguishable from no account at all.
+func iosProvisioningProfiles(home string) ([]string, error) {
+	patterns := []string{
+		filepath.Join(home, "Library", "MobileDevice", "Provisioning Profiles", "*.mobileprovision"),
+		filepath.Join(home, "Library", "Developer", "Xcode", "UserData", "Provisioning Profiles", "*.mobileprovision"),
+	}
+
+	var profiles []string
+	for _, pattern := range patterns {
+		found, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, err
+		}
+		profiles = append(profiles, found...)
+	}
+	slices.Sort(profiles)
+	return slices.Compact(profiles), nil
+}
+
+// installedCodeSigningIdentities returns the certificate fingerprints whose
+// private keys are available to codesign.
+func installedCodeSigningIdentities() (map[string]struct{}, error) {
+	listed, err := runCmd(exec.Command("security", "find-identity", "-v", "-p", "codesigning"))
+	if err != nil {
+		return nil, err
+	}
+	return parseCodeSigningIdentities(listed), nil
+}
+
+func parseCodeSigningIdentities(listed string) map[string]struct{} {
+	identities := make(map[string]struct{})
+	for _, line := range strings.Split(listed, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || len(fields[1]) != sha1.Size*2 {
+			continue
+		}
+		if _, err := hex.DecodeString(fields[1]); err != nil {
+			continue
+		}
+		identities[strings.ToLower(fields[1])] = struct{}{}
+	}
+	return identities
+}
+
+// appleProfileCertificateIDs reads every DeveloperCertificates entry rather
+// than assuming the first certificate is the one this machine owns.
+func appleProfileCertificateIDs(profile []byte) ([]string, error) {
+	decoder := xml.NewDecoder(bytes.NewReader(profile))
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return nil, errors.New("DeveloperCertificates is missing")
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		start, ok := token.(xml.StartElement)
+		if !ok || start.Name.Local != "key" {
+			continue
+		}
+		var key string
+		if err := decoder.DecodeElement(&key, &start); err != nil {
+			return nil, err
+		}
+		if key != "DeveloperCertificates" {
+			continue
+		}
+
+		for {
+			token, err = decoder.Token()
+			if err != nil {
+				return nil, err
+			}
+			array, ok := token.(xml.StartElement)
+			if !ok {
+				continue
+			}
+			if array.Name.Local != "array" {
+				return nil, fmt.Errorf("DeveloperCertificates is %s, want array", array.Name.Local)
+			}
+			return appleCertificateArray(decoder, array)
+		}
+	}
+}
+
+func appleCertificateArray(decoder *xml.Decoder, array xml.StartElement) ([]string, error) {
+	var identities []string
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		switch element := token.(type) {
+		case xml.StartElement:
+			if element.Name.Local != "data" {
+				return nil, fmt.Errorf("DeveloperCertificates contains %s, want data", element.Name.Local)
+			}
+			var encoded string
+			if err := decoder.DecodeElement(&encoded, &element); err != nil {
+				return nil, err
+			}
+			certificate, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(encoded), ""))
+			if err != nil {
+				return nil, err
+			}
+			identity := sha1.Sum(certificate)
+			identities = append(identities, hex.EncodeToString(identity[:]))
+		case xml.EndElement:
+			if element.Name == array.Name {
+				if len(identities) == 0 {
+					return nil, errors.New("DeveloperCertificates is empty")
+				}
+				return identities, nil
+			}
+		}
+	}
+}
+
+func matchingAppleIdentity(certificates []string, installed map[string]struct{}) (string, bool) {
+	for _, certificate := range certificates {
+		certificate = strings.ToLower(certificate)
+		if _, found := installed[certificate]; found {
+			return certificate, true
+		}
+	}
+	return "", false
 }
 
 func exeIOS(tmpDir, target, app string, bi *buildInfo) error {
 	if bi.appID == "" {
 		return errors.New("app id is empty; use -appid to set it")
 	}
-	if err := os.RemoveAll(app); err != nil {
-		return err
-	}
-	if err := os.Mkdir(app, 0o755); err != nil {
+	if err := prepareIOSApp(app); err != nil {
 		return err
 	}
 	appName := UppercaseName(bi.name)
@@ -212,7 +380,7 @@ func exeIOS(tmpDir, target, app string, bi *buildInfo) error {
 		if err != nil {
 			return err
 		}
-		cflags = append(cflags, iosDeploymentFlags(bi.minsdk)...)
+		cflags = append(cflags, iosDeploymentFlags(target, a, bi.minsdk)...)
 		cflagsLine := strings.Join(cflags, " ")
 		exeSlice := filepath.Join(tmpDir, "app-"+a)
 		lipo.Args = append(lipo.Args, exeSlice)
@@ -263,6 +431,13 @@ func exeIOS(tmpDir, target, app string, bi *buildInfo) error {
 		return err
 	}
 	return nil
+}
+
+func prepareIOSApp(app string) error {
+	if err := os.RemoveAll(app); err != nil {
+		return err
+	}
+	return os.MkdirAll(app, 0o755)
 }
 
 // iosIcons builds an asset catalog and compile it with the Xcode command actool.
@@ -339,7 +514,7 @@ func iosIcons(bi *buildInfo, tmpDir, appDir, icon string) (string, error) {
 	compile := exec.Command(
 		"actool",
 		"--compile", appDir,
-		"--platform", iosPlatformFor(bi.target),
+		"--platform", iosPlatformForBuild(bi.target, bi.archs),
 		"--minimum-deployment-target", strconv.Itoa(minsdk),
 		"--app-icon", "AppIcon",
 		"--output-partial-info-plist", assetPlist,
@@ -350,14 +525,15 @@ func iosIcons(bi *buildInfo, tmpDir, appDir, icon string) (string, error) {
 
 // iosManifestData is everything an iOS application's property list says.
 type iosManifestData struct {
-	AppName         string
-	AppID           string
-	Version         string
-	VersionCode     uint32
-	Platform        string
-	MinVersion      int
-	SupportPlatform string
-	Schemes         []string
+	AppName              string
+	AppID                string
+	Version              string
+	VersionCode          uint32
+	Platform             string
+	MinVersion           int
+	SupportPlatform      string
+	RequiredCapabilities []string
+	Schemes              []string
 }
 
 // iosManifestFor answers what a build says about itself.
@@ -368,23 +544,32 @@ type iosManifestData struct {
 // libraries it was not built against -- which fails at the first call into one
 // of them and nowhere earlier.
 func iosManifestFor(bi *buildInfo) iosManifestData {
-	var supportPlatform string
+	var platform, supportPlatform string
 	switch bi.target {
 	case "ios":
+		platform = "iphoneos"
 		supportPlatform = "iPhoneOS"
 	case "tvos":
+		platform = "appletvos"
 		supportPlatform = "AppleTVOS"
+	}
+	requiredCapabilities := []string{"arm64"}
+	if iosSimulatorBuild(bi.archs) {
+		platform = strings.TrimSuffix(platform, "os") + "simulator"
+		supportPlatform = strings.TrimSuffix(supportPlatform, "OS") + "Simulator"
+		requiredCapabilities = nil
 	}
 
 	return iosManifestData{
-		AppName:         UppercaseName(bi.name),
-		AppID:           bi.appID,
-		Version:         bi.version.StringCompact(),
-		VersionCode:     bi.version.VersionCode,
-		Platform:        iosPlatformFor(bi.target),
-		MinVersion:      bi.minsdk,
-		SupportPlatform: supportPlatform,
-		Schemes:         bi.schemes,
+		AppName:              UppercaseName(bi.name),
+		AppID:                bi.appID,
+		Version:              bi.version.StringCompact(),
+		VersionCode:          bi.version.VersionCode,
+		Platform:             platform,
+		MinVersion:           bi.minsdk,
+		SupportPlatform:      supportPlatform,
+		RequiredCapabilities: requiredCapabilities,
+		Schemes:              bi.schemes,
 	}
 }
 
@@ -412,12 +597,12 @@ func iosInfoPlist(data iosManifestData) ([]byte, error) {
 	<string>{{.VersionCode}}</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
+{{if .RequiredCapabilities}}
 	<key>UIRequiredDeviceCapabilities</key>
-	<array><string>arm64</string></array>
+	<array>{{range .RequiredCapabilities}}<string>{{xml .}}</string>{{end}}</array>
+{{end}}
 	<key>DTPlatformName</key>
 	<string>{{.Platform}}</string>
-	<key>DTPlatformVersion</key>
-	<string>12.4</string>
 	<key>MinimumOSVersion</key>
 	<string>{{.MinVersion}}.0</string>
 	<key>UIDeviceFamily</key>
@@ -438,18 +623,6 @@ func iosInfoPlist(data iosManifestData) ([]byte, error) {
 	</array>
 	<key>UIRequiresFullScreen</key>
 	<true/>
-	<key>DTCompiler</key>
-	<string>com.apple.compilers.llvm.clang.1_0</string>
-	<key>DTPlatformBuild</key>
-	<string>16G73</string>
-	<key>DTSDKBuild</key>
-	<string>16G73</string>
-	<key>DTSDKName</key>
-	<string>{{.Platform}}12.4</string>
-	<key>DTXcode</key>
-	<string>1030</string>
-	<key>DTXcodeBuild</key>
-	<string>10G8</string>
 	<key>UILaunchScreen</key>
 	<true/>
     {{if .Schemes}}
@@ -484,10 +657,16 @@ func iosInfoPlist(data iosManifestData) ([]byte, error) {
 // The number is the build's own, and so is the one the property list declares.
 // Two sites reading one field is what keeps a binary compiled for one version
 // from saying it needs another.
-func iosDeploymentFlags(minsdk int) []string {
+func iosDeploymentFlags(target, arch string, minsdk int) []string {
+	platform := target
+	if target == "ios" && !iosSimulatorArch(arch) {
+		platform = "iphoneos"
+	} else if iosSimulatorArch(arch) {
+		platform += "-simulator"
+	}
 	return []string{
 		"-fobjc-arc",
-		fmt.Sprintf("-miphoneos-version-min=%d.0", minsdk),
+		fmt.Sprintf("-m%s-version-min=%d.0", platform, minsdk),
 	}
 }
 
@@ -501,7 +680,7 @@ func iosProgramEnv(arch, clang, cflags string) []string {
 	return append(
 		os.Environ(),
 		"GOOS=ios",
-		"GOARCH="+arch,
+		"GOARCH="+iosGoArch(arch),
 		"CGO_ENABLED=1",
 		"CC="+clang,
 		"CXX="+clang+"++",
@@ -521,7 +700,7 @@ func iosFrameworkEnv(arch, clang, cflags string) []string {
 	return append(
 		os.Environ(),
 		"GOOS=ios",
-		"GOARCH="+arch,
+		"GOARCH="+iosGoArch(arch),
 		"CGO_ENABLED=1",
 		"CC="+clang,
 		"CGO_CFLAGS="+cflags,
@@ -538,6 +717,29 @@ func iosPlatformFor(target string) string {
 	default:
 		panic("invalid platform " + target)
 	}
+}
+
+func iosPlatformForBuild(target string, archs []string) string {
+	platform := iosPlatformFor(target)
+	if iosSimulatorBuild(archs) {
+		platform = strings.TrimSuffix(platform, "os") + "simulator"
+	}
+	return platform
+}
+
+func iosSimulatorArch(arch string) bool {
+	return arch == "386" || arch == "amd64" || arch == "simarm64"
+}
+
+func iosSimulatorBuild(archs []string) bool {
+	return len(archs) > 0 && iosSimulatorArch(archs[0])
+}
+
+func iosGoArch(arch string) string {
+	if arch == "simarm64" {
+		return "arm64"
+	}
+	return arch
 }
 
 func archiveIOS(tmpDir, target, frameworkRoot string, bi *buildInfo) error {
@@ -616,50 +818,67 @@ func archiveIOS(tmpDir, target, frameworkRoot string, bi *buildInfo) error {
 }
 
 func iosCompilerFor(target, arch string, minsdk int) (string, []string, error) {
-	var (
-		platformSDK string
-		platformOS  string
-	)
+	config, err := iosCompilerConfiguration(target, arch, minsdk)
+	if err != nil {
+		return "", nil, err
+	}
+	sdkPath, err := runCmd(exec.Command("xcrun", "--sdk", config.platformSDK, "--show-sdk-path"))
+	if err != nil {
+		return "", nil, err
+	}
+	clang, err := runCmd(exec.Command("xcrun", "--sdk", config.platformSDK, "--find", "clang"))
+	if err != nil {
+		return "", nil, err
+	}
+	cflags := []string{
+		"-arch", config.toolchainArch,
+		"-isysroot", sdkPath,
+		"-m" + config.platformOS + "-version-min=" + strconv.Itoa(config.minSDK),
+	}
+	return clang, cflags, nil
+}
+
+type iosCompilerConfig struct {
+	platformSDK   string
+	platformOS    string
+	toolchainArch string
+	minSDK        int
+}
+
+func iosCompilerConfiguration(target, arch string, minsdk int) (iosCompilerConfig, error) {
+	var config iosCompilerConfig
 	switch target {
 	case "ios":
-		platformOS = "ios"
-		platformSDK = "iphone"
+		config.platformOS = "ios"
+		config.platformSDK = "iphone"
 	case "tvos":
-		platformOS = "tvos"
-		platformSDK = "appletv"
+		config.platformOS = "tvos"
+		config.platformSDK = "appletv"
+	default:
+		return iosCompilerConfig{}, fmt.Errorf("unsupported Apple target: %s", target)
 	}
 	switch arch {
 	case "arm", "arm64":
-		platformSDK += "os"
+		config.platformSDK += "os"
+		config.toolchainArch = allArchs[arch].iosArch
 		if minsdk == 0 {
 			minsdk = minIOSVersion
 			if target == "tvos" {
 				minsdk = minTVOSVersion
 			}
 		}
-	case "386", "amd64":
-		platformOS += "-simulator"
-		platformSDK += "simulator"
+	case "386", "amd64", "simarm64":
+		config.platformOS += "-simulator"
+		config.platformSDK += "simulator"
+		config.toolchainArch = allArchs[iosGoArch(arch)].iosArch
 		if minsdk == 0 {
 			minsdk = minSimulatorVersion
 		}
 	default:
-		return "", nil, fmt.Errorf("unsupported -arch: %s", arch)
+		return iosCompilerConfig{}, fmt.Errorf("unsupported -arch: %s", arch)
 	}
-	sdkPath, err := runCmd(exec.Command("xcrun", "--sdk", platformSDK, "--show-sdk-path"))
-	if err != nil {
-		return "", nil, err
-	}
-	clang, err := runCmd(exec.Command("xcrun", "--sdk", platformSDK, "--find", "clang"))
-	if err != nil {
-		return "", nil, err
-	}
-	cflags := []string{
-		"-arch", allArchs[arch].iosArch,
-		"-isysroot", sdkPath,
-		"-m" + platformOS + "-version-min=" + strconv.Itoa(minsdk),
-	}
-	return clang, cflags, nil
+	config.minSDK = minsdk
+	return config, nil
 }
 
 func zipDir(dst, base, dir string) (err error) {

@@ -117,10 +117,29 @@ func nativeBuild(args []string, stdout, stderr io.Writer) error {
 	}
 
 	if packaging {
+		packageArch := archOf(name)
+		if platform.packageArch != "" {
+			packageArch = platform.packageArch
+		}
+
+		packageOutput := *output
+		if platform.packageSuffix != "" {
+			if packageOutput == "" {
+				artifactName := *appName
+				if artifactName == "" {
+					artifactName = filepath.Base(root)
+				}
+				packageOutput = filepath.Join(root, "bin", artifactName+platform.packageSuffix)
+			}
+			if filepath.Ext(packageOutput) != platform.packageSuffix {
+				return fmt.Errorf("native:build: %s writes %s; -output must end in %s", name, platform.packageSuffix, platform.packageSuffix)
+			}
+		}
+
 		return packageNative(root, packageOptions{
 			platform: platform.packages,
-			arch:     archOf(name),
-			output:   *output,
+			arch:     packageArch,
+			output:   packageOutput,
 			appID:    *appID,
 			appName:  *appName,
 			version:  *version,
@@ -228,6 +247,14 @@ type nativeTarget struct {
 	// an installable artifact is a different thing from the binary. Empty means
 	// the binary is the artifact.
 	packages string
+	// packageArch is the architecture name handed to the packager when the
+	// target needs more information than GOARCH carries. Apple silicon uses
+	// arm64 for both devices and simulators, so the simulator has to remain
+	// distinct until the Apple SDK is selected.
+	packageArch string
+	// packageSuffix overrides the packager's platform default. iOS normally
+	// writes an IPA, while a simulator installs an application bundle.
+	packageSuffix string
 	// installable is true where a plain binary cannot be installed at all, so
 	// packaging is not an option but the only way to produce anything usable.
 	installable bool
@@ -248,13 +275,25 @@ var nativeTargets = map[string]nativeTarget{
 	"android/amd64": {needs: "the same, for an emulator", packages: "android", installable: true, note: "writes an APK for an emulator"},
 	"ios/arm64":     {needs: "Xcode and a provisioning profile", packages: "ios", installable: true, note: "writes an IPA"},
 	"ios/amd64":     {needs: "Xcode", packages: "ios", installable: true, note: "writes an app for the simulator"},
+	"iossimulator/arm64": {
+		needs:         "Xcode",
+		packages:      "ios",
+		packageArch:   "simarm64",
+		packageSuffix: ".app",
+		installable:   true,
+		note:          "Apple silicon simulator; writes an app bundle",
+	},
 }
 
 // listNativeTargets prints the platforms and what each one costs.
 func listNativeTargets(stdout io.Writer) error {
 	names := make([]string, 0, len(nativeTargets))
+	width := 0
 	for name := range nativeTargets {
 		names = append(names, name)
+		if len(name) > width {
+			width = len(name)
+		}
 	}
 	sort.Strings(names)
 
@@ -265,7 +304,7 @@ func listNativeTargets(stdout io.Writer) error {
 		if target.needs != "" {
 			mark = "! "
 		}
-		fmt.Fprintf(stdout, "  %s%-14s %s\n", mark, name, target.note)
+		fmt.Fprintf(stdout, "  %s%-*s %s\n", mark, width, name, target.note)
 	}
 	fmt.Fprintln(stdout, "\n  ! needs a toolchain installed first; the tool says which when it is missing")
 	return nil

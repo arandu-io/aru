@@ -178,6 +178,45 @@ func TestEveryPlatformIsListedWithItsPrice(t *testing.T) {
 	}
 }
 
+// TestTheLongestPlatformDoesNotRunIntoItsDescription keeps the target table
+// readable when a newly named platform is longer than the original column.
+func TestTheLongestPlatformDoesNotRunIntoItsDescription(t *testing.T) {
+	var out bytes.Buffer
+	if err := listNativeTargets(&out); err != nil {
+		t.Fatal(err)
+	}
+
+	const line = "iossimulator/arm64 Apple silicon simulator"
+	if !strings.Contains(out.String(), line) {
+		t.Fatalf("the longest platform is not separated from its description:\n%s", out.String())
+	}
+}
+
+// TestAppleSiliconSimulatorIsNotADeviceTarget fixes the ambiguity that appeared
+// when both sides of Apple's boundary started using arm64.
+//
+// GOOS and GOARCH alone no longer say which SDK to use. Reusing ios/arm64 for
+// the simulator signs an IPA for a phone; reusing ios/amd64 produces a binary
+// an Apple silicon simulator cannot run without translation.
+func TestAppleSiliconSimulatorIsNotADeviceTarget(t *testing.T) {
+	simulator, known := nativeTargets["iossimulator/arm64"]
+	if !known {
+		t.Fatal("the Apple silicon simulator has no explicit target")
+	}
+	if simulator.packages != "ios" || simulator.packageArch != "simarm64" {
+		t.Errorf("the simulator reaches the packager as %q/%q", simulator.packages, simulator.packageArch)
+	}
+	if simulator.packageSuffix != ".app" {
+		t.Errorf("the simulator writes %q instead of an app bundle", simulator.packageSuffix)
+	}
+	if !strings.Contains(simulator.note, "simulator") {
+		t.Errorf("the target does not identify itself as a simulator: %q", simulator.note)
+	}
+	if device := nativeTargets["ios/arm64"]; device.packageArch == simulator.packageArch {
+		t.Error("the device and simulator collapse to the same packager architecture")
+	}
+}
+
 // TestTheBrowserIsTheOnlyTargetBuiltWithoutCgo fixes the one thing that decides
 // whether a platform can draw at all.
 //

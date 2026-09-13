@@ -113,13 +113,14 @@ func androidArchiveCorpus() map[string]manifestData {
 // iosCorpus is the property list an iOS application is described by.
 func iosCorpus() map[string]iosManifestData {
 	base := iosManifestData{
-		AppName:         "Probe",
-		AppID:           "dev.local.probe",
-		Version:         "1.2.3",
-		VersionCode:     4,
-		Platform:        "iphoneos",
-		MinVersion:      13,
-		SupportPlatform: "iPhoneOS",
+		AppName:              "Probe",
+		AppID:                "dev.local.probe",
+		Version:              "1.2.3",
+		VersionCode:          4,
+		Platform:             "iphoneos",
+		MinVersion:           13,
+		SupportPlatform:      "iPhoneOS",
+		RequiredCapabilities: []string{"arm64"},
 	}
 
 	twoSchemes := base

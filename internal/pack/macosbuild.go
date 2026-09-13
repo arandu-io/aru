@@ -53,6 +53,8 @@ func buildMac(tmpDir string, bi *buildInfo) error {
 			if err := builder.signProgram(bi, tmpDest, name, arch); err != nil {
 				return err
 			}
+		} else if err := builder.signAdHoc(tmpDest); err != nil {
+			return err
 		}
 
 		if err := dittozip(tmpDest, tmpDest+".zip"); err != nil {
@@ -280,6 +282,27 @@ func (b *macBuilder) signProgram(buildInfo *buildInfo, binDest string, name stri
 		"--options", "runtime",
 		"--entitlements", options,
 		"--sign", buildInfo.key,
+		binDest,
+	)
+	_, err := runCmd(cmd)
+	return err
+}
+
+// signAdHoc seals the bundle macOS verifies when no distribution identity was
+// supplied. The Go linker signs the Mach-O it writes, but that signature does
+// not cover the Info.plist or resources around it; signing the completed bundle
+// is what makes the development artifact internally consistent.
+func (b *macBuilder) signAdHoc(binDest string) error {
+	xattr := exec.Command("xattr", "-rc", binDest)
+	if _, err := runCmd(xattr); err != nil {
+		return err
+	}
+
+	cmd := exec.Command(
+		"codesign",
+		"--deep",
+		"--force",
+		"--sign", "-",
 		binDest,
 	)
 	_, err := runCmd(cmd)

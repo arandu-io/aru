@@ -2,7 +2,9 @@ package pack
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"image/png"
@@ -11,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -20,7 +23,12 @@ import (
 )
 
 func buildWindows(tmpDir string, bi *buildInfo) error {
-	builder := &windowsBuilder{TempDir: tmpDir}
+	signer, err := windowsSignerFor(bi)
+	if err != nil {
+		return err
+	}
+
+	builder := &windowsBuilder{TempDir: tmpDir, Signer: signer}
 	builder.DestDir = *destPath
 	if builder.DestDir == "" {
 		builder.DestDir = bi.pkgPath
@@ -69,7 +77,7 @@ func buildWindows(tmpDir string, bi *buildInfo) error {
 		}
 	}
 
-	return nil
+	return builder.publishPrograms()
 }
 
 type (
@@ -88,8 +96,254 @@ type (
 		TempDir string
 		DestDir string
 		Coff    *coff.Coff
+		Signer  *windowsSigner
+		pending []windowsProgram
+		rename  func(string, string) error
+		remove  func(string) error
+	}
+	windowsProgram struct {
+		staged string
+		final  string
 	}
 )
+
+// windowsSigner is the external Authenticode tool and the PFX it signs with.
+// Windows owns the signature format, and the SDK tool is the authority that
+// both writes and verifies it; accepting a key without that tool would produce
+// the same unsigned executable as no key at all.
+type windowsSigner struct {
+	command           string
+	key               string
+	password          string
+	importCertificate func(key, password string) (windowsCertificate, error)
+}
+
+type windowsCertificate struct {
+	store      string
+	thumbprint string
+	remove     func() error
+}
+
+// windowsSignerFor resolves signing before any output is built. A requested
+// signature that cannot be produced must not leave an unsigned executable at
+// the destination where a pipeline expects the signed one.
+func windowsSignerFor(buildInfo *buildInfo) (*windowsSigner, error) {
+	if buildInfo.key == "" {
+		return nil, nil
+	}
+	if _, err := os.Stat(buildInfo.key); err != nil {
+		return nil, fmt.Errorf("windows signing key %q could not be read: %w", buildInfo.key, err)
+	}
+
+	command, err := exec.LookPath("signtool")
+	if err != nil {
+		return nil, errors.New("windows signing requires signtool from the Windows SDK in PATH")
+	}
+	signer := &windowsSigner{command: command, key: buildInfo.key, password: buildInfo.password}
+	if buildInfo.password != "" {
+		powershell, err := exec.LookPath("powershell")
+		if err != nil {
+			return nil, errors.New("password-protected Windows signing requires PowerShell in PATH")
+		}
+		signer.importCertificate = func(key, password string) (windowsCertificate, error) {
+			return importWindowsCertificate(powershell, key, password)
+		}
+	}
+	return signer, nil
+}
+
+// sign applies and then verifies the Authenticode signature. Verification is
+// part of packaging: a tool returning success without leaving a signature is
+// not a signed artifact.
+func (s *windowsSigner) sign(program string) (err error) {
+	args := []string{"sign", "/fd", "SHA256"}
+	shown := append([]string(nil), args...)
+	if s.password != "" {
+		if s.importCertificate == nil {
+			return errors.New("password-protected Windows signing has no certificate importer")
+		}
+		certificate, importErr := s.importCertificate(s.key, s.password)
+		if importErr != nil {
+			return fmt.Errorf("importing Windows signing certificate: %w", importErr)
+		}
+		defer func() {
+			if removeErr := certificate.remove(); removeErr != nil {
+				err = errors.Join(err, fmt.Errorf("removing temporary Windows certificate store: %w", removeErr))
+			}
+		}()
+		args = append(args, "/s", certificate.store, "/sha1", certificate.thumbprint)
+		shown = append(shown, "/s", certificate.store, "/sha1", certificate.thumbprint)
+	} else {
+		args = append(args, "/f", s.key)
+		shown = append(shown, "/f", s.key)
+	}
+	args = append(args, program)
+	shown = append(shown, program)
+	if err := runWindowsSigningCommand(exec.Command(s.command, args...), shown, s.password); err != nil {
+		return fmt.Errorf("signing Windows executable: %w", err)
+	}
+
+	verify := []string{"verify", "/pa", "/v", program}
+	if err := runWindowsSigningCommand(exec.Command(s.command, verify...), verify); err != nil {
+		return fmt.Errorf("verifying Windows executable signature: %w", err)
+	}
+	return nil
+}
+
+// importWindowsCertificate puts a password-protected PFX in a unique Current
+// User store and returns only its public thumbprint to signtool. Isolation is
+// important here: deriving cleanup from changes to the shared My store could
+// delete an unrelated certificate imported concurrently, or leave behind a
+// private key attached to a certificate that was already there. The password
+// stays in the child environment: process command lines, verbose build output
+// and signtool diagnostics never receive it.
+func importWindowsCertificate(powershell, key, password string) (windowsCertificate, error) {
+	storeBytes := make([]byte, 16)
+	if _, err := rand.Read(storeBytes); err != nil {
+		return windowsCertificate{}, fmt.Errorf("creating a temporary Windows certificate store name: %w", err)
+	}
+	ownerPID := strconv.Itoa(os.Getpid())
+	storePrefix := "Arandu-" + ownerPID + "-" + hex.EncodeToString(storeBytes)
+	const importScript = `$ErrorActionPreference = "Stop"
+$ownerPid = [int]$args[1]
+$storePrefix = $args[2]
+$owner = Get-Process -Id $ownerPid -ErrorAction Stop
+$ownerStart = $owner.StartTime.ToUniversalTime().Ticks
+$storeName = "$storePrefix-$ownerStart"
+$storePath = "Cert:\CurrentUser\$storeName"
+function Remove-AranduStore([string]$name) {
+    $path = "Cert:\CurrentUser\$name"
+    $registry = "HKCU:\Software\Microsoft\SystemCertificates\$name"
+    if (Test-Path -LiteralPath $path) {
+      Get-ChildItem -Path $path | ForEach-Object {
+        if ($_.HasPrivateKey) {
+            Remove-Item -Path $_.PSPath -DeleteKey -Force
+        } else {
+            Remove-Item -Path $_.PSPath -Force
+        }
+      }
+    }
+    if (Test-Path -LiteralPath $registry) {
+        Remove-Item -LiteralPath $registry -Recurse -Force
+    }
+}
+# A hard-killed packager cannot run its Go defer. Stores carry the owning PID
+# and process start time, so PID reuse cannot make an orphan look active.
+Get-ChildItem -Path "Cert:\CurrentUser" | ForEach-Object {
+    $candidate = $_.PSChildName
+    if ($candidate -match "^Arandu-([0-9]+)-[0-9a-f]{32}-([0-9]+)$") {
+        $candidatePid = [int]$Matches[1]
+        $candidateStart = [long]$Matches[2]
+        $candidateOwner = Get-Process -Id $candidatePid -ErrorAction SilentlyContinue
+        if ($null -eq $candidateOwner -or $candidateOwner.StartTime.ToUniversalTime().Ticks -ne $candidateStart) {
+            Remove-AranduStore $candidate
+        }
+    }
+}
+$secret = ConvertTo-SecureString $env:ARANDU_SIGNPASS -AsPlainText -Force
+try {
+    $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+        $storeName,
+        [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+    )
+    $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+    $store.Close()
+    $certificates = @(Import-PfxCertificate -FilePath $args[0] -CertStoreLocation $storePath -Password $secret)
+    $certificate = $certificates | Where-Object HasPrivateKey | Select-Object -First 1
+    if ($null -eq $certificate) { throw "The PFX contains no certificate with a private key." }
+    if ($certificate.Thumbprint -notmatch "^[0-9A-Fa-f]{40}$") { throw "The signing certificate has an invalid thumbprint." }
+    Write-Output $storeName
+    Write-Output $certificate.Thumbprint
+} catch {
+    Remove-AranduStore $storeName
+    throw
+}`
+	command := exec.Command(powershell, "-NoProfile", "-NonInteractive", "-Command", importScript, key, ownerPID, storePrefix)
+	command.Env = append(os.Environ(), "ARANDU_SIGNPASS="+password)
+	result, err := runWindowsSigningCommandOutput(command, []string{"import", key, "into", "temporary", "CurrentUser", "store", storePrefix}, password)
+	if err != nil {
+		return windowsCertificate{}, err
+	}
+	remove := removeWindowsCertificateStore(powershell, storePrefix)
+	fields := strings.Fields(result)
+	if len(fields) != 2 {
+		return windowsCertificate{}, errors.Join(
+			fmt.Errorf("PowerShell returned %d certificate import fields, want store and thumbprint", len(fields)),
+			remove(),
+		)
+	}
+	store := fields[0]
+	start, hasPrefix := strings.CutPrefix(store, storePrefix+"-")
+	if _, parseErr := strconv.ParseInt(start, 10, 64); !hasPrefix || start == "" || parseErr != nil {
+		return windowsCertificate{}, errors.Join(
+			fmt.Errorf("PowerShell returned invalid temporary certificate store %q", store),
+			remove(),
+		)
+	}
+	thumbprint := fields[1]
+	if _, err := hex.DecodeString(thumbprint); err != nil || len(thumbprint) != 40 {
+		return windowsCertificate{}, errors.Join(
+			fmt.Errorf("PowerShell returned invalid certificate thumbprint %q", thumbprint),
+			remove(),
+		)
+	}
+	return windowsCertificate{store: store, thumbprint: strings.ToLower(thumbprint), remove: remove}, nil
+}
+
+func removeWindowsCertificateStore(powershell, storePrefix string) func() error {
+	return func() error {
+		const removeScript = `$ErrorActionPreference = "Stop"
+	$storePrefix = $args[0]
+	Get-ChildItem -Path "Cert:\CurrentUser" | Where-Object {
+	    $_.PSChildName.StartsWith("$storePrefix-")
+	} | ForEach-Object {
+	    $storeName = $_.PSChildName
+	    $storePath = "Cert:\CurrentUser\$storeName"
+	    $registryPath = "HKCU:\Software\Microsoft\SystemCertificates\$storeName"
+	    Get-ChildItem -Path $storePath | ForEach-Object {
+	        if ($_.HasPrivateKey) {
+	            Remove-Item -Path $_.PSPath -DeleteKey -Force
+	        } else {
+	            Remove-Item -Path $_.PSPath -Force
+	        }
+	    }
+	    if (Test-Path -LiteralPath $registryPath) {
+	        Remove-Item -LiteralPath $registryPath -Recurse -Force
+	    }
+	}`
+		command := exec.Command(powershell, "-NoProfile", "-NonInteractive", "-Command", removeScript, storePrefix)
+		return runWindowsSigningCommand(command, []string{"remove", "temporary", "CurrentUser", "certificate", "store", storePrefix})
+	}
+}
+
+// runWindowsSigningCommand keeps a PFX password out of verbose output and
+// errors while preserving every other argument needed to reproduce a failure.
+func runWindowsSigningCommand(cmd *exec.Cmd, shown []string, secrets ...string) error {
+	_, err := runWindowsSigningCommandOutput(cmd, shown, secrets...)
+	return err
+}
+
+func runWindowsSigningCommandOutput(cmd *exec.Cmd, shown []string, secrets ...string) (string, error) {
+	display := strings.Join(append([]string{filepath.Base(cmd.Path)}, shown...), " ")
+	if *printCommands {
+		fmt.Fprintln(output, display)
+	}
+	out, err := cmd.Output()
+	if err == nil {
+		return string(out), nil
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		detail := string(out) + string(exit.Stderr)
+		for _, secret := range secrets {
+			if secret != "" {
+				detail = strings.ReplaceAll(detail, secret, "<redacted>")
+			}
+		}
+		return "", fmt.Errorf("%s failed: %s", display, detail)
+	}
+	return "", fmt.Errorf("%s failed: %w", display, err)
+}
 
 const (
 	// https://docs.microsoft.com/en-us/windows/win32/menurc/resource-types
@@ -224,6 +478,23 @@ func (b *windowsBuilder) buildProgram(buildInfo *buildInfo, name string, arch st
 	if len(buildInfo.archs) > 1 {
 		dest = filepath.Join(filepath.Dir(b.DestDir), name+"_"+arch+".exe")
 	}
+	staged, err := os.CreateTemp(filepath.Dir(dest), "."+filepath.Base(dest)+"-*.tmp")
+	if err != nil {
+		return fmt.Errorf("preparing the Windows executable: %w", err)
+	}
+	stagedPath := staged.Name()
+	if err := staged.Close(); err != nil {
+		return err
+	}
+	if err := os.Remove(stagedPath); err != nil {
+		return err
+	}
+	keep := false
+	defer func() {
+		if !keep {
+			_ = os.Remove(stagedPath)
+		}
+	}()
 
 	ldflags := buildInfo.ldflags
 	if buildInfo.schemes != nil {
@@ -238,7 +509,7 @@ func (b *windowsBuilder) buildProgram(buildInfo *buildInfo, name string, arch st
 		"build",
 		"-ldflags=-H=windowsgui "+ldflags,
 		"-tags="+buildInfo.tags,
-		"-o", dest,
+		"-o", stagedPath,
 		buildInfo.pkgPath,
 	)
 	cmd.Env = append(
@@ -246,8 +517,122 @@ func (b *windowsBuilder) buildProgram(buildInfo *buildInfo, name string, arch st
 		"GOOS=windows",
 		"GOARCH="+arch,
 	)
-	_, err := runCmd(cmd)
-	return err
+	_, err = runCmd(cmd)
+	if err != nil {
+		return err
+	}
+	if b.Signer != nil {
+		if err := b.Signer.sign(stagedPath); err != nil {
+			if removeErr := os.Remove(stagedPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				return fmt.Errorf("%w; removing the unverified Windows executable: %v", err, removeErr)
+			}
+			return err
+		}
+	}
+	b.pending = append(b.pending, windowsProgram{staged: stagedPath, final: dest})
+	keep = true
+	return nil
+}
+
+// publishPrograms moves only completely built and, when requested, verified
+// programs into their public paths. Until this point an interrupted signing
+// run can leave only a hidden temporary file, never an unsigned release
+// artifact with its final name.
+func (b *windowsBuilder) publishPrograms() (err error) {
+	defer func() {
+		for _, program := range b.pending {
+			_ = b.removeFile(program.staged)
+		}
+	}()
+
+	type publication struct {
+		windowsProgram
+		backup    string
+		published bool
+	}
+	publications := make([]publication, len(b.pending))
+	rollback := func() error {
+		var rollbackErrors []error
+		for i := len(publications) - 1; i >= 0; i-- {
+			publication := publications[i]
+			if publication.published {
+				if removeErr := b.removeFile(publication.final); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+					rollbackErrors = append(rollbackErrors, fmt.Errorf("remove incomplete replacement %q: %w", publication.final, removeErr))
+				}
+			}
+			if publication.backup != "" {
+				if renameErr := b.renameFile(publication.backup, publication.final); renameErr != nil {
+					rollbackErrors = append(rollbackErrors, fmt.Errorf("restore previous executable %q: %w", publication.final, renameErr))
+				}
+			}
+		}
+		return errors.Join(rollbackErrors...)
+	}
+	for i, program := range b.pending {
+		publications[i].windowsProgram = program
+		if _, statErr := os.Stat(program.final); errors.Is(statErr, os.ErrNotExist) {
+			continue
+		} else if statErr != nil {
+			return errors.Join(fmt.Errorf("inspecting the previous Windows executable %q: %w", program.final, statErr), rollback())
+		}
+		backup, backupErr := windowsBackupPath(program.final)
+		if backupErr != nil {
+			return errors.Join(backupErr, rollback())
+		}
+		if renameErr := b.renameFile(program.final, backup); renameErr != nil {
+			return errors.Join(fmt.Errorf("preserving the previous Windows executable %q: %w", program.final, renameErr), rollback())
+		}
+		publications[i].backup = backup
+	}
+
+	for i := range publications {
+		publication := &publications[i]
+		if renameErr := b.renameFile(publication.staged, publication.final); renameErr != nil {
+			return errors.Join(
+				fmt.Errorf("publishing the Windows executable %q: %w", publication.final, renameErr),
+				rollback(),
+			)
+		}
+		publication.published = true
+	}
+	for _, publication := range publications {
+		if publication.backup == "" {
+			continue
+		}
+		if removeErr := b.removeFile(publication.backup); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			return fmt.Errorf("removing the previous Windows executable backup %q: %w", publication.backup, removeErr)
+		}
+	}
+	return nil
+}
+
+func (b *windowsBuilder) renameFile(oldPath, newPath string) error {
+	if b.rename != nil {
+		return b.rename(oldPath, newPath)
+	}
+	return os.Rename(oldPath, newPath)
+}
+
+func (b *windowsBuilder) removeFile(path string) error {
+	if b.remove != nil {
+		return b.remove(path)
+	}
+	return os.Remove(path)
+}
+
+func windowsBackupPath(final string) (string, error) {
+	backup, err := os.CreateTemp(filepath.Dir(final), "."+filepath.Base(final)+"-*.previous")
+	if err != nil {
+		return "", fmt.Errorf("reserving a Windows executable backup beside %q: %w", final, err)
+	}
+	path := backup.Name()
+	if err := backup.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Remove(path); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 func (b *windowsBuilder) embedManifest(v windowsManifest) error {

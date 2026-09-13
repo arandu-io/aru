@@ -3,6 +3,8 @@ package pack
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -258,7 +260,7 @@ func TestTheCompilerAndTheManifestAreToldTheSameVersion(t *testing.T) {
 
 	build := &buildInfo{name: "probe", target: "ios", minsdk: asked}
 
-	compiler := strings.Join(iosDeploymentFlags(build.minsdk), " ")
+	compiler := strings.Join(iosDeploymentFlags("ios", "arm64", build.minsdk), " ")
 	if want := fmt.Sprintf("-miphoneos-version-min=%d.0", asked); !strings.Contains(compiler, want) {
 		t.Errorf("the compiler is told %q, and the build asked for %d", compiler, asked)
 	}
@@ -270,6 +272,160 @@ func TestTheCompilerAndTheManifestAreToldTheSameVersion(t *testing.T) {
 	if want := fmt.Sprintf("<string>%d.0</string>", asked); !strings.Contains(string(manifest), want) {
 		t.Errorf("the manifest does not declare %d, which is what the compiler was handed", asked)
 	}
+}
+
+// TestXcodeManagedProvisioningProfilesAreDiscovered fixes the location current
+// Xcode releases use for accounts managed in Settings.
+//
+// Looking only under MobileDevice reports that no profile exists on a machine
+// where Xcode shows one and codesign can use it.
+func TestXcodeManagedProvisioningProfilesAreDiscovered(t *testing.T) {
+	home := t.TempDir()
+	legacy := filepath.Join(home, "Library", "MobileDevice", "Provisioning Profiles", "legacy.mobileprovision")
+	managed := filepath.Join(home, "Library", "Developer", "Xcode", "UserData", "Provisioning Profiles", "managed.mobileprovision")
+	for _, profile := range []string{legacy, managed} {
+		if err := os.MkdirAll(filepath.Dir(profile), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(profile, []byte("profile"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	profiles, err := iosProvisioningProfiles(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{legacy, managed} {
+		if !contains(profiles, want) {
+			t.Errorf("the profiles do not include %s", want)
+		}
+	}
+}
+
+// TestAnyProfileCertificateCanSelectTheSigningIdentity fixes profiles carrying
+// more than one developer certificate.
+//
+// Xcode keeps certificates for every current team member in the profile. The
+// first entry need not belong to this keychain, so index zero is not a signing
+// decision.
+func TestAnyProfileCertificateCanSelectTheSigningIdentity(t *testing.T) {
+	profile := []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>DeveloperCertificates</key>
+<array><data>Zmlyc3Q=</data><data>c2Vjb25k</data></array>
+</dict></plist>`)
+	certificates, err := appleProfileCertificateIDs(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(certificates) != 2 {
+		t.Fatalf("read %d certificates, want 2", len(certificates))
+	}
+
+	listed := fmt.Sprintf("  1) %s \"Somebody Else\"\n  2) %s \"This Machine\"\n     2 valid identities found", certificates[0], certificates[1])
+	installed := parseCodeSigningIdentities(listed)
+	delete(installed, certificates[0])
+
+	identity, found := matchingAppleIdentity(certificates, installed)
+	if !found {
+		t.Fatal("the second certificate was not matched to its installed identity")
+	}
+	if identity != certificates[1] {
+		t.Errorf("selected certificate %q, want the installed second certificate", identity)
+	}
+}
+
+// TestSimulatorMetadataDescribesTheBinary fixes a bundle compiled with the
+// simulator SDK while its property list claimed it was for a device.
+func TestSimulatorMetadataDescribesTheBinary(t *testing.T) {
+	for _, arch := range []string{"amd64", "simarm64"} {
+		t.Run(arch, func(t *testing.T) {
+			build := &buildInfo{
+				name:    "probe",
+				target:  "ios",
+				archs:   []string{arch},
+				minsdk:  minSimulatorVersion,
+				version: Semver{Major: 1, VersionCode: 1},
+			}
+			data := iosManifestFor(build)
+			if data.Platform != "iphonesimulator" || data.SupportPlatform != "iPhoneSimulator" {
+				t.Errorf("the simulator declares %q / %q", data.Platform, data.SupportPlatform)
+			}
+			if len(data.RequiredCapabilities) != 0 {
+				t.Errorf("the simulator requires device capabilities %v", data.RequiredCapabilities)
+			}
+
+			manifest, err := iosInfoPlist(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := string(manifest)
+			for _, want := range []string{"iphonesimulator", "iPhoneSimulator"} {
+				if !strings.Contains(body, want) {
+					t.Errorf("the property list does not contain %q", want)
+				}
+			}
+			if strings.Contains(body, "UIRequiredDeviceCapabilities") {
+				t.Error("the simulator property list requires a device capability")
+			}
+		})
+	}
+}
+
+// TestAppleSiliconUsesTheSimulatorSDKAndGoArm64 fixes the one architecture
+// whose GOARCH cannot identify whether the destination is a phone or simulator.
+func TestAppleSiliconUsesTheSimulatorSDKAndGoArm64(t *testing.T) {
+	config, err := iosCompilerConfiguration("ios", "simarm64", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.platformSDK != "iphonesimulator" || config.platformOS != "ios-simulator" {
+		t.Errorf("the toolchain is %q / %q", config.platformSDK, config.platformOS)
+	}
+	if config.toolchainArch != "arm64" || iosGoArch("simarm64") != "arm64" {
+		t.Errorf("the Apple and Go architectures are %q / %q", config.toolchainArch, iosGoArch("simarm64"))
+	}
+	if config.minSDK != minSimulatorVersion {
+		t.Errorf("the simulator floor is %d", config.minSDK)
+	}
+	flags := strings.Join(iosDeploymentFlags("ios", "simarm64", config.minSDK), " ")
+	if !strings.Contains(flags, "-mios-simulator-version-min=") || strings.Contains(flags, "-miphoneos-version-min=") {
+		t.Errorf("the simulator deployment flags are %q", flags)
+	}
+}
+
+// TestTVOSDeploymentFlagsDoNotMixApplePlatforms keeps a simulator build from
+// receiving an iOS flag after the compiler selected the Apple TV SDK.
+func TestTVOSDeploymentFlagsDoNotMixApplePlatforms(t *testing.T) {
+	flags := strings.Join(iosDeploymentFlags("tvos", "simarm64", minSimulatorVersion), " ")
+	if !strings.Contains(flags, "-mtvos-simulator-version-min=") {
+		t.Errorf("the tvOS simulator deployment flags are %q", flags)
+	}
+	if strings.Contains(flags, "-mios-") || strings.Contains(flags, "-miphoneos-") {
+		t.Errorf("the tvOS compiler was also handed iOS deployment flags: %q", flags)
+	}
+}
+
+// TestTheDefaultIOSOutputCreatesItsParent fixes the first package written to a
+// fresh project's bin directory.
+func TestTheDefaultIOSOutputCreatesItsParent(t *testing.T) {
+	app := filepath.Join(t.TempDir(), "bin", "Probe.app")
+	if err := prepareIOSApp(app); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(app); err != nil || !info.IsDir() {
+		t.Errorf("the application directory was not created: %v", err)
+	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 // TestTheBrowserTargetIsBuiltWithoutCgo fixes a platform that failed on an

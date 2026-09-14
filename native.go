@@ -71,24 +71,12 @@ func nativeRun(args []string, stdout, stderr io.Writer) error {
 
 // nativeBuild compiles the native target for one platform.
 func nativeBuild(args []string, stdout, stderr io.Writer) error {
-	flags := flag.NewFlagSet("native:build", flag.ContinueOnError)
-	flags.SetOutput(stderr)
-	target := flags.String("target", "", "the platform to build for (default: this machine)")
-	output := flags.String("output", "", "where to write the artifact (default: bin/native-<target>)")
-	list := flags.Bool("list", false, "list the platforms this can build for, and what each needs")
-	pack := flags.Bool("package", false, "write the artifact the platform installs rather than a bare binary")
-	appID := flags.String("appid", "", "the identifier the platform files the application under")
-	appName := flags.String("name", "", "what a person sees under the icon (default: the project directory)")
-	version := flags.String("version", "", "major.minor.patch.code (default: 1.0.0.1)")
-	icon := flags.String("icon", "", "a PNG the packager resizes into every size the platform asks for")
-	signKey := flags.String("signkey", "", "the keystore or provisioning profile to sign with")
-	signPass := flags.String("signpass", "", "the password that decrypts the signing key")
-	verbose := flags.Bool("x", false, "print the commands the packager runs")
-	if err := flags.Parse(args); err != nil {
+	options := newNativeBuildOptions(stderr)
+	if err := options.flags.Parse(args); err != nil {
 		return fmt.Errorf("native:build: %w", err)
 	}
 
-	if *list {
+	if *options.list {
 		return listNativeTargets(stdout)
 	}
 
@@ -100,7 +88,7 @@ func nativeBuild(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	name := *target
+	name := *options.target
 	if name == "" {
 		name = runtime.GOOS + "/" + runtime.GOARCH
 	}
@@ -111,7 +99,7 @@ func nativeBuild(args []string, stdout, stderr io.Writer) error {
 	}
 	// Two platforms have no bare binary anybody can install, so asking for one
 	// is asking for a file that cannot be used. Packaging is not a flag there.
-	packaging := *pack || platform.installable
+	packaging := *options.pack || platform.installable
 	if packaging && platform.packages == "" {
 		return fmt.Errorf("native:build: %s has no installable artifact; its binary is what ships", name)
 	}
@@ -122,10 +110,10 @@ func nativeBuild(args []string, stdout, stderr io.Writer) error {
 			packageArch = platform.packageArch
 		}
 
-		packageOutput := *output
+		packageOutput := *options.output
 		if platform.packageSuffix != "" {
 			if packageOutput == "" {
-				artifactName := *appName
+				artifactName := *options.appName
 				if artifactName == "" {
 					artifactName = filepath.Base(root)
 				}
@@ -140,17 +128,17 @@ func nativeBuild(args []string, stdout, stderr io.Writer) error {
 			platform: platform.packages,
 			arch:     packageArch,
 			output:   packageOutput,
-			appID:    *appID,
-			appName:  *appName,
-			version:  *version,
-			icon:     *icon,
-			signKey:  *signKey,
-			signPass: *signPass,
-			verbose:  *verbose,
+			appID:    *options.appID,
+			appName:  *options.appName,
+			version:  *options.version,
+			icon:     *options.icon,
+			signKey:  *options.signKey,
+			signPass: *options.signPass,
+			verbose:  *options.verbose,
 		}, stdout, stderr)
 	}
 
-	binary := *output
+	binary := *options.output
 	if binary == "" {
 		binary = filepath.Join("bin", "native-"+strings.ReplaceAll(name, "/", "-")+platform.extension)
 	}
@@ -174,6 +162,59 @@ func nativeBuild(args []string, stdout, stderr io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "%s  %s  %.1f MB\n%s\n", relative, name, float64(size)/(1<<20), sum)
 	return nil
+}
+
+// nativeBuildOptions is the one definition of the native build interface.
+// The command and its public help both use it, so adding a packaging option
+// cannot leave the option accepted but undiscoverable.
+type nativeBuildOptions struct {
+	flags    *flag.FlagSet
+	target   *string
+	output   *string
+	list     *bool
+	pack     *bool
+	appID    *string
+	appName  *string
+	version  *string
+	icon     *string
+	signKey  *string
+	signPass *string
+	verbose  *bool
+}
+
+func newNativeBuildOptions(output io.Writer) nativeBuildOptions {
+	flags := flag.NewFlagSet("native:build", flag.ContinueOnError)
+	flags.SetOutput(output)
+	return nativeBuildOptions{
+		flags:    flags,
+		target:   flags.String("target", "", "the platform to build for (default: this machine)"),
+		output:   flags.String("output", "", "where to write the artifact (default: bin/native-<target>)"),
+		list:     flags.Bool("list", false, "list the platforms this can build for, and what each needs"),
+		pack:     flags.Bool("package", false, "write the artifact the platform installs rather than a bare binary"),
+		appID:    flags.String("appid", "", "the identifier the platform files the application under"),
+		appName:  flags.String("name", "", "what a person sees under the icon (default: the project directory)"),
+		version:  flags.String("version", "", "major.minor.patch.code (default: 1.0.0.1)"),
+		icon:     flags.String("icon", "", "a PNG the packager resizes into every size the platform asks for"),
+		signKey:  flags.String("signkey", "", "the keystore or provisioning profile to sign with"),
+		signPass: flags.String("signpass", "", "the password that decrypts the signing key"),
+		verbose:  flags.Bool("x", false, "print the commands the packager runs"),
+	}
+}
+
+// init attaches the options to the help answered by the common dispatcher.
+// That dispatcher intentionally answers --help before running a command, so
+// nativeBuild's FlagSet never sees a public help request itself.
+func init() {
+	var help strings.Builder
+	options := newNativeBuildOptions(&help)
+	options.flags.PrintDefaults()
+
+	for i := range commands {
+		if commands[i].name == "native:build" {
+			commands[i].help = "options:\n" + help.String()
+			return
+		}
+	}
 }
 
 // compileNative runs the compiler for one platform.
@@ -274,7 +315,7 @@ var nativeTargets = map[string]nativeTarget{
 	"android/arm64": {needs: "the Android SDK, the NDK and a JDK", packages: "android", installable: true, note: "writes an APK"},
 	"android/amd64": {needs: "the same, for an emulator", packages: "android", installable: true, note: "writes an APK for an emulator"},
 	"ios/arm64":     {needs: "Xcode and a provisioning profile", packages: "ios", installable: true, note: "writes an IPA"},
-	"ios/amd64":     {needs: "Xcode", packages: "ios", installable: true, note: "writes an app for the simulator"},
+	"ios/amd64":     {needs: "Xcode", packages: "ios", packageSuffix: ".app", installable: true, note: "writes an app for the simulator"},
 	"iossimulator/arm64": {
 		needs:         "Xcode",
 		packages:      "ios",

@@ -35,10 +35,10 @@ retract v0.37.0 // Does not pin the skeleton and could clone an incompatible mov
 // pay for it.
 
 require (
-	github.com/akavel/rsrc v0.10.1
+	github.com/akavel/rsrc v0.10.2
 	github.com/arandu-io/hesape v0.41.0
 	github.com/evanw/esbuild v0.28.2
-	golang.org/x/image v0.43.0
+	golang.org/x/image v0.46.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/text v0.42.0
 	golang.org/x/tools v0.50.0

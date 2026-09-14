@@ -217,6 +217,49 @@ func TestAppleSiliconSimulatorIsNotADeviceTarget(t *testing.T) {
 	}
 }
 
+// TestIntelSimulatorWritesAnAppByDefault keeps the destination name from
+// silently selecting device packaging. The iOS packager distinguishes a
+// simulator .app from a device .ipa by the suffix of the requested output.
+func TestIntelSimulatorWritesAnAppByDefault(t *testing.T) {
+	simulator, known := nativeTargets["ios/amd64"]
+	if !known {
+		t.Fatal("the Intel simulator has no target")
+	}
+	if simulator.packageSuffix != ".app" {
+		t.Errorf("the Intel simulator writes %q instead of an app bundle", simulator.packageSuffix)
+	}
+}
+
+// TestNativeBuildHelpNamesEveryAcceptedOption keeps packaging and signing
+// options from existing only in the parser. The common dispatcher answers
+// --help before nativeBuild runs, so this exercises the public path.
+func TestNativeBuildHelpNamesEveryAcceptedOption(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	code, stdout, stderr := exercise(t, "native:build", "--help")
+	if code != 0 {
+		t.Fatalf("aru native:build --help exited %d: %s", code, stderr)
+	}
+
+	for _, name := range []string{
+		"target",
+		"output",
+		"list",
+		"package",
+		"appid",
+		"name",
+		"version",
+		"icon",
+		"signkey",
+		"signpass",
+		"x",
+	} {
+		if !strings.Contains(stdout, "-"+name) {
+			t.Errorf("aru native:build --help does not name -%s: %q", name, stdout)
+		}
+	}
+}
+
 // TestTheBrowserIsTheOnlyTargetBuiltWithoutCgo fixes the one thing that decides
 // whether a platform can draw at all.
 //

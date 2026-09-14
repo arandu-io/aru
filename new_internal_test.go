@@ -70,7 +70,7 @@ func recordGitInvocation(trace string, args []string) {
 	if err := os.MkdirAll(destination, 0o755); err != nil {
 		os.Exit(2)
 	}
-	env := "APP_KEY=\nARANDU_ADMIN_EMAIL=\nARANDU_ADMIN_PASSWORD=\n"
+	env := "APP_KEY=\n"
 	if err := os.WriteFile(filepath.Join(destination, ".env.example"), []byte(env), 0o600); err != nil {
 		os.Exit(2)
 	}

@@ -2,7 +2,12 @@
 
 package purchaseorders
 
-import "github.com/arandu-io/hesape/view"
+import (
+	"fmt"
+
+	"github.com/arandu-io/hesape/view"
+	"github.com/arandu-io/kyse/components"
+)
 
 @go
 // PurchaseOrdersIndexData is what PurchaseOrderController.Index hands this page.
@@ -49,6 +54,52 @@ type PurchaseOrderRow struct {
 	Created string
 }
 
+// PurchaseOrderIndexTable adapts the server page to the native Kyse DataTable.
+// The Service keeps cursor pagination; the component owns only the rows and
+// column presentation of the page it was handed.
+func PurchaseOrderIndexTable(data PurchaseOrdersIndexData) components.DataTableProps {
+	rows := make([]components.TableRow, 0, len(data.PurchaseOrders))
+	for _, purchaseOrder := range data.PurchaseOrders {
+		rows = append(rows, components.TableRow{
+			Key: purchaseOrder.ID,
+			Cells: []components.TableCell{
+				{HTML: components.Link(components.LinkProps{
+					Label: fmt.Sprint(purchaseOrder.Reference),
+					URL: purchaseOrder.URL,
+					Variant: "hover",
+				})},
+				{Text: fmt.Sprint(purchaseOrder.SupplierEmail)},
+				{Text: fmt.Sprint(purchaseOrder.Total)},
+				{Text: fmt.Sprint(purchaseOrder.Approved)},
+				{Text: fmt.Sprint(purchaseOrder.Notes)},
+				{Text: fmt.Sprint(purchaseOrder.DeliveryDate)},
+				{Text: purchaseOrder.Created},
+			},
+		})
+	}
+	return components.DataTableProps{
+		ID: "purchase-orders-index",
+		Label: data.Title,
+		ColumnsLabel: "Columns",
+		Columns: []components.TableColumn{
+			{Label: "Reference", Key: "reference"},
+			{Label: "Supplier email", Key: "supplier_email", Hideable: true},
+			{Label: "Total", Key: "total", Hideable: true},
+			{Label: "Approved", Key: "approved", Hideable: true},
+			{Label: "Notes", Key: "notes", Hideable: true},
+			{Label: "Delivery date", Key: "delivery_date", Hideable: true},
+			{Label: "Created", Key: "created_at", Hideable: true},
+		},
+		Rows: rows,
+		Empty: components.EmptyProps{
+			Title: "No purchase order yet.",
+			Message: "Add the first purchase order to get started.",
+			ActionLabel: "New purchase order",
+			ActionURL: data.NewURL,
+		},
+	}
+}
+
 // arandu:begin custom
 // Anything else these pages need in Go goes here, and survives regeneration.
 // arandu:end custom
@@ -62,44 +113,9 @@ type PurchaseOrderRow struct {
 		<a class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" href="{{ .NewURL }}">New purchase order</a>
 	</div>
 
-	@if(len(d.PurchaseOrders) == 0)
-		<p class="mt-8 text-sm text-slate-500 dark:text-slate-400">
-			No purchase order yet. <a class="underline underline-offset-2" href="{{ .NewURL }}">Add the first one</a>.
-		</p>
-	@endif
-
-	@if(len(d.PurchaseOrders) > 0)
-		<div class="mt-8 overflow-x-auto">
-			<table class="w-full border-collapse text-left text-sm">
-				<thead class="border-b border-slate-200 text-slate-500 dark:border-slate-800 dark:text-slate-400">
-					<tr>
-						<th class="py-2 pr-4 font-medium">Reference</th>
-						<th class="py-2 pr-4 font-medium">Supplier email</th>
-						<th class="py-2 pr-4 font-medium">Total</th>
-						<th class="py-2 pr-4 font-medium">Approved</th>
-						<th class="py-2 pr-4 font-medium">Notes</th>
-						<th class="py-2 pr-4 font-medium">Delivery date</th>
-						<th class="py-2 font-medium">Created</th>
-					</tr>
-				</thead>
-				<tbody>
-					@foreach(.PurchaseOrders as purchaseOrder)
-						<tr class="border-b border-slate-100 dark:border-slate-900">
-							<td class="py-2 pr-4">
-								<a class="font-medium underline underline-offset-2" href="{{ purchaseOrder.URL }}">{{ purchaseOrder.Reference }}</a>
-							</td>
-												<td class="py-2 pr-4">{{ purchaseOrder.SupplierEmail }}</td>
-					<td class="py-2 pr-4">{{ purchaseOrder.Total }}</td>
-					<td class="py-2 pr-4">{{ purchaseOrder.Approved }}</td>
-					<td class="py-2 pr-4">{{ purchaseOrder.Notes }}</td>
-					<td class="py-2 pr-4">{{ purchaseOrder.DeliveryDate }}</td>
-							<td class="py-2 text-slate-500 dark:text-slate-400">{{ purchaseOrder.Created }}</td>
-						</tr>
-					@endforeach
-				</tbody>
-			</table>
-		</div>
-	@endif
+	<div class="mt-8">
+		{!! components.DataTable(PurchaseOrderIndexTable(.)) !!}
+	</div>
 
 	@if(d.NextURL != "")
 		<a class="mt-6 inline-block text-sm underline underline-offset-2" href="{{ .NextURL }}">Next page</a>

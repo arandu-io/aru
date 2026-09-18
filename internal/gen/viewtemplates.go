@@ -39,7 +39,12 @@ const viewIndexTemplate = `//go:build kyse
 
 package <%.ViewsPackage%>
 
-import "github.com/arandu-io/hesape/view"
+import (
+	"fmt"
+
+	"github.com/arandu-io/hesape/view"
+	"github.com/arandu-io/kyse/components"
+)
 
 @go
 // <%.ViewData "index"%> is what <%.Controller%>.Index hands this page.
@@ -76,6 +81,44 @@ type <%.RowStruct%> struct {
 	Created string
 }
 
+// <%.Entity%>IndexTable adapts the server page to the native Kyse DataTable.
+// The Service keeps cursor pagination; the component owns only the rows and
+// column presentation of the page it was handed.
+func <%.Entity%>IndexTable(data <%.ViewData "index"%>) components.DataTableProps {
+	rows := make([]components.TableRow, 0, len(data.<%.Plural%>))
+	for _, <%.Unexported%> := range data.<%.Plural%> {
+		rows = append(rows, components.TableRow{
+			Key: <%.Unexported%>.ID,
+			Cells: []components.TableCell{
+				{HTML: components.Link(components.LinkProps{
+					Label: fmt.Sprint(<%.Unexported%>.<%.FirstField.GoName%>),
+					URL: <%.Unexported%>.URL,
+					Variant: "hover",
+				})},
+<%$row := .Unexported%><%range .RestFields%>				{Text: fmt.Sprint(<%$row%>.<%.GoName%>)},
+<%end%>				{Text: <%.Unexported%>.Created},
+			},
+		})
+	}
+	return components.DataTableProps{
+		ID: "<%.Resource%>-index",
+		Label: data.Title,
+		ColumnsLabel: "Columns",
+		Columns: []components.TableColumn{
+			{Label: "<%.FirstField.Label%>", Key: "<%.FirstField.Column%>"},
+<%range .RestFields%>			{Label: "<%.Label%>", Key: "<%.Column%>", Hideable: true},
+<%end%>			{Label: "Created", Key: "created_at", Hideable: true},
+		},
+		Rows: rows,
+		Empty: components.EmptyProps{
+			Title: "No <%.Human%> yet.",
+			Message: "Add the first <%.Human%> to get started.",
+			ActionLabel: "New <%.Human%>",
+			ActionURL: data.NewURL,
+		},
+	}
+}
+
 // arandu:begin custom
 // Anything else these pages need in Go goes here, and survives regeneration.
 // arandu:end custom
@@ -89,36 +132,9 @@ type <%.RowStruct%> struct {
 		<a class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" href="{{ .NewURL }}">New <%.Human%></a>
 	</div>
 
-	@if(len(d.<%.Plural%>) == 0)
-		<p class="mt-8 text-sm text-slate-500 dark:text-slate-400">
-			No <%.Human%> yet. <a class="underline underline-offset-2" href="{{ .NewURL }}">Add the first one</a>.
-		</p>
-	@endif
-
-	@if(len(d.<%.Plural%>) > 0)
-		<div class="mt-8 overflow-x-auto">
-			<table class="w-full border-collapse text-left text-sm">
-				<thead class="border-b border-slate-200 text-slate-500 dark:border-slate-800 dark:text-slate-400">
-					<tr>
-						<th class="py-2 pr-4 font-medium"><%.FirstField.Label%></th>
-<%range .RestFields%>						<th class="py-2 pr-4 font-medium"><%.Label%></th>
-<%end%>						<th class="py-2 font-medium">Created</th>
-					</tr>
-				</thead>
-				<tbody>
-					@foreach(.<%.Plural%> as <%.Unexported%>)
-						<tr class="border-b border-slate-100 dark:border-slate-900">
-							<td class="py-2 pr-4">
-								<a class="font-medium underline underline-offset-2" href="{{ <%.Unexported%>.URL }}">{{ <%.Unexported%>.<%.FirstField.GoName%> }}</a>
-							</td>
-<%$row := .Unexported%>							<%range .RestFields%>					<td class="py-2 pr-4">{{ <%$row%>.<%.GoName%> }}</td>
-<%end%>							<td class="py-2 text-slate-500 dark:text-slate-400">{{ <%.Unexported%>.Created }}</td>
-						</tr>
-					@endforeach
-				</tbody>
-			</table>
-		</div>
-	@endif
+	<div class="mt-8">
+		{!! components.DataTable(<%.Entity%>IndexTable(.)) !!}
+	</div>
 
 	@if(d.NextURL != "")
 		<a class="mt-6 inline-block text-sm underline underline-offset-2" href="{{ .NextURL }}">Next page</a>

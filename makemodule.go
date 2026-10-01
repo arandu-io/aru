@@ -105,8 +105,8 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 	// Say what happened and what is required next, without congratulating
 	// anyone.
 	//
-	// Four steps, and none of them is optional: the code is written, the wiring
-	// is not. A generator that edited routes/web.go and bootstrap/app.go behind
+	// Three lines, and none of them is optional: the code is written, the
+	// wiring is not. A generator that edited routes/web.go and bootstrap/app.go behind
 	// your back would be a generator you cannot read the output of -- the whole
 	// point of explicit wiring is that the file says what the application is.
 	fmt.Fprint(stdout, wiring(spec, len(written)))
@@ -125,22 +125,24 @@ The policy denies every action. Open what this module needs in
 app/Policies/%s.go, inside the custom block, and nothing else -- that is what
 makes the default safe.
 
-Then, by hand, because the wiring is meant to be readable:
+Then, by hand, because the wiring is meant to be readable -- three lines:
 
-  routes/web.go -- the field, and the routes inside the custom block
+  routes/web.go -- the field in Deps
 
       %s *controllers.%s
 
-      r.Resource(%q, d.%s)
+  routes/web.go -- the routes, in the custom block, behind the sign-in guard:
+  the controller reads who is asking from what the guard puts on the request
 
-  bootstrap/app.go -- the import, which the file does not have yet
-
-      "%s/app/Services"
+      r.Group("", middleware.RequireAuth(d.Sessions)).Resource(%q, d.%s)
 
   bootstrap/app.go -- in the routes.Deps literal
 
-      %s: controllers.New%s(
-          services.New%s(db), sessions, csrf),
+      %s: controllers.New%s(services.New%s(db), sessions, csrf),
+
+They name two packages a file may not import yet:
+"github.com/arandu-io/framework/http/middleware" in routes/web.go, and
+"%s/app/Services" in bootstrap/app.go.
 %s
 The migration is not one of them: %s registers itself in its own init, and
 nothing lists it. What it needs is to be linked -- something has to import
@@ -155,9 +157,8 @@ Then:
 		m.PolicyType(),
 		m.Entity(), m.Controller(),
 		m.Resource(), m.Entity(),
+		m.Entity(), m.Controller(), m.ServiceType(),
 		m.ModulePath,
-		m.Entity(), m.Controller(),
-		m.ServiceType(),
 		tenantClaim(m),
 		m.MigrationType())
 }

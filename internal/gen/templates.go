@@ -750,7 +750,8 @@ what the specification can say goes between the ` + "`" + `// arandu:begin custo
 | ` + "`" + `app/Policies/{{ .Entity }}Policy.go` + "`" + ` | who may do what, and the only thing that issues a Grant |
 | ` + "`" + `app/Services/{{ .Entity }}Service.go` + "`" + ` | the domain and the only consumer of the Model entry point |
 | ` + "`" + `app/Http/Controllers/{{ .Entity }}Controller.go` + "`" + ` | the actions the routes dispatch to |
-| ` + "`" + `app/Http/Requests/{{ .Entity }}Request.go` + "`" + ` | the input contract. Authorization stays in the Policy |
+| ` + "`" + `app/Http/Requests/{{ .Entity }}Request.go` + "`" + ` | the input contract of create and update, with its form tags. Authorization stays in the Policy |
+| ` + "`" + `resources/views` + "`" + `, under the resource | the four screens, which share one row struct |
 | ` + "`" + `tests/Unit/{{ .Entity }}_test.go` + "`" + ` | that reads authorize before the Model is queried |
 
 ## Its fields
@@ -776,7 +777,7 @@ g, err := security.Authorize(ctx, policy, subject, action, models.{{ .Entity }}{
 if err != nil {
     return err
 }
-record, err := models.{{ .Plural }}(db).NewQuery().WhereKey(id).First(ctx, g)
+record, err := models.{{ .Plural }}(db).FindOrFail(ctx, g, id)
 ` + "```" + `
 
 Every Builder terminal takes ` + "`" + `security.Grant` + "`" + `, and nothing outside the security
@@ -784,7 +785,34 @@ package can build one. The Service owns the database handle, authorizes first,
 and then spends that Grant on the Model. A Controller has neither dependency and
 cannot grow a second persistence path.
 
-Reads are not exempt. ` + "`" + `List` + "`" + `, ` + "`" + `First` + "`" + `, a report and an export all require a Grant.
+Reads are not exempt. ` + "`" + `List` + "`" + `, ` + "`" + `FindOrFail` + "`" + `, a report and an export all require a Grant.
+
+## A request, end to end
+
+` + "```" + `go
+var in requests.{{ .Request }}
+if err := ctx.Bind(&in); err != nil {
+    return err
+}
+who, _ := ctx.User()
+created, err := c.svc.Create(ctx.Ctx(), who, in)
+if err != nil {
+    return err
+}
+return ctx.RedirectRoute("{{ .RouteName "show" }}", created.ID)
+` + "```" + `
+
+- **Who is asking** is ` + "`" + `ctx.User()` + "`" + `, which the sign-in guard on the routes puts
+  on the request. There is no session lookup in the controller.
+- **The input** is ` + "`" + `ctx.Bind` + "`" + ` into ` + "`" + `{{ .Request }}` + "`" + `: only the fields with a
+  ` + "`" + `form` + "`" + ` tag are read, trimmed and converted. A new field is one line there,
+  one in the model and one in the service's ` + "`" + `fill` + "`" + `.
+- **An error is returned, never mapped.** The router answers it:
+  ` + "`" + `validation.Errors` + "`" + ` goes back to the form with the messages and what was typed,
+  a missing row is 404, a refusal is 403, and an error with an ` + "`" + `HTTPStatus() int` + "`" + `
+  method is that status.{{ if .UniqueFields }} A duplicate on a unique column is 409, from the
+  service's ` + "`" + `conflict` + "`" + `.{{ end }}
+- **The listing** is the Model's ` + "`" + `SimplePaginate` + "`" + `, newest first.
 
 ## What the policy allows
 

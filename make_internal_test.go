@@ -305,9 +305,10 @@ func TestARequestThatCollidesIsRefusedByTypeAndNotByPath(t *testing.T) {
 
 // TestTheModuleWiringNamesTheImportsItsSnippetNeeds.
 //
-// The snippet the message prints calls the service constructor, and the file it
-// says to paste into does not import that package yet. Pasted as printed, the
-// project must compile on the same Model-first path the generated service uses.
+// The snippets the message prints call the service constructor and the sign-in
+// guard, and the files they go in may not import those packages yet. Pasted as
+// printed, the project must compile on the same Model-first path the generated
+// service uses.
 func TestTheModuleWiringNamesTheImportsItsSnippetNeeds(t *testing.T) {
 	spec := gen.Module{
 		Name:       "invoice",
@@ -320,8 +321,17 @@ func TestTheModuleWiringNamesTheImportsItsSnippetNeeds(t *testing.T) {
 		t.Fatalf("the snippet no longer calls the service constructor:\n%s", message)
 	}
 
-	if want := `"example.test/project/app/Services"`; !strings.Contains(message, want) {
-		t.Errorf("the message does not print the import %s, which its own snippet needs:\n%s", want, message)
+	for _, want := range []string{`"example.test/project/app/Services"`, `"github.com/arandu-io/framework/http/middleware"`} {
+		if !strings.Contains(message, want) {
+			t.Errorf("the message does not print the import %s, which its own snippet needs:\n%s", want, message)
+		}
+	}
+
+	// The controller reads who is asking from the request, and only the guard
+	// puts it there: a route printed without it is a route whose every action
+	// the policy refuses.
+	if !strings.Contains(message, `r.Group("", middleware.RequireAuth(d.Sessions)).Resource("invoices", d.Invoice)`) {
+		t.Errorf("the route is not printed behind the sign-in guard:\n%s", message)
 	}
 	if strings.Contains(message, "/app/Repositories") || strings.Contains(message, "repositories.New") {
 		t.Errorf("the Model-first wiring still introduces a CRUD repository:\n%s", message)

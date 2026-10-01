@@ -65,7 +65,7 @@ all three from one response. Keep that shape when you add a check.
 Every byte the generator emits is pinned.
 
 ```sh
-ls internal/gen/testdata/stubs  | wc -l      # 20  the granular commands
+ls internal/gen/testdata/stubs  | wc -l      # 21  the granular commands
 ls internal/gen/testdata/tenant | wc -l      # 14
 ls internal/gen/testdata/global | wc -l      # 14
 ```
@@ -86,7 +86,7 @@ file to `Generate` means changing that number by hand, which is the review the
 number exists to force.
 
 `TestGoldenStubs` (`tests/Unit/gen/stubs_test.go:31`) does the same for the
-twenty stubs the granular commands emit, and
+twenty-one stubs the granular commands emit, and
 `TestGeneratedCodeIsDeterministic` runs one specification twice and requires
 identical bytes — without it the golden files would be flaky rather than useful.
 
@@ -111,8 +111,8 @@ model; the migration goes through `MigrationSpec` whichever command asked for
 it.
 
 `TestTheGranularCommandsAndMakeModuleAgree` (`stubs_test.go:203`) checks five of
-those pairings — the session helpers, the validation rules, the migration, the
-model and the unit test. If you add a template that both paths can reach, add it
+those pairings — the page helper, the request's fields and rules, the migration,
+the model and the unit test. If you add a template that both paths can reach, add it
 there too.
 
 `GenerateModel` deliberately writes no repository, and there is no
@@ -182,11 +182,16 @@ it is also `internal/doctor/testdata/clean`. Break one and you break the other.
   during a rollout the previous binary does not fill it in.
 - **Validation agrees with the column.** A value that passes validation has to
   fit the column it is written to (`audit_test.go:154`).
-- **The generated `List` still passes the performance profile.** Every `List`
-  carries a keyset cursor written as a subquery over its own table.
-  `TestTheGeneratedRepositoryPassesThePerformanceProfile`
-  (`tests/Unit/doctor/doctor_test.go:1205`) is what stops a doctor rule and a
-  template from drifting apart.
+- **The generated `List` pages through the Model.** It is `Latest()`, a tiebreak
+  on the key and `SimplePaginate`, with no column taken from the request and no
+  SQL written in the service. `TestTheListingPagesThroughTheModel`
+  (`tests/Unit/gen/audit_test.go`) is what stops the hand-rolled keyset from
+  coming back.
+- **A generated controller loads no session and maps no error.** Who is asking
+  is `ctx.User()`, put there by the sign-in guard the printed route sits behind;
+  the input is `ctx.Bind` into the request; an error is returned, and the router
+  answers it with its status. The session store and the CSRF issuer are in the
+  constructor for one thing, the page's token, through the shared `page` helper.
 
 ## The generated module carries its own skill
 

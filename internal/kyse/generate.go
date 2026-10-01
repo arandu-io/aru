@@ -852,6 +852,19 @@ func alreadyImported(written, line string) bool {
 // a controller never hands it data, and it has no layout.
 func (g *generator) isComponent() bool { return strings.HasPrefix(g.name, "components.") }
 
+// renderFuncName is the package-level function this file declares for the view.
+//
+// A page and a layout become an unexported render function the framework is
+// handed; a component becomes the exported function another view calls by name.
+// One accessor for both, because the name is asked for twice -- once to write
+// the declaration, and once to keep a loop binding from taking it away.
+func (g *generator) renderFuncName() string {
+	if g.isComponent() {
+		return componentFuncName(g.name)
+	}
+	return funcName(g.name)
+}
+
 // emitComponent writes the component as an ordinary exported Go function.
 //
 // This is the difference between a component and a page, and it is the whole
@@ -870,19 +883,23 @@ func (g *generator) isComponent() bool { return strings.HasPrefix(g.name, "compo
 // interpolated. The value is safe by construction: every {{ }} inside the
 // component was escaped by this generator on the way in, which is what makes
 // {!! !!} the right form here and a mistake anywhere a person's text is used.
-// renderFuncName is the package-level function this file declares for the view.
 //
-// A page and a layout become an unexported render function the framework is
-// handed; a component becomes the exported function another view calls by name.
-// One accessor for both, because the name is asked for twice -- once to write
-// the declaration, and once to keep a loop binding from taking it away.
-func (g *generator) renderFuncName() string {
-	if g.isComponent() {
-		return componentFuncName(g.name)
-	}
-	return funcName(g.name)
-}
-
+// A component fails closed. Three of the escapes refuse a value at render time
+// -- an address whose scheme a browser acts on, a style value carrying a rule
+// of its own, an attribute name that is not inert -- and the first refusal
+// stops every write after it. What the builder holds at that moment is a
+// prefix of the markup, and a prefix ends wherever the refusal happened: inside
+// an attribute value, with its closing quote never written. Returned, that
+// prefix hands the markup that follows the component -- the page's own, and the
+// values the page interpolates into it -- to an attribute the browser is still
+// reading, where text a visitor wrote becomes attributes of its own. So a
+// component that refused anything returns nothing at all: an empty string
+// closes nothing it did not open, and the page around it goes on parsing as it
+// was written.
+//
+// The signature stays template.HTML rather than growing an error, because a
+// component is called inside {!! !!} in the middle of another view's markup,
+// where there is nowhere for an error to go.
 func (g *generator) emitComponent() {
 	fn := g.renderFuncName()
 
@@ -896,15 +913,16 @@ func (g *generator) emitComponent() {
 		g.emitViewData()
 	}
 
-	// A strings.Builder never fails a write, so the err every node threads
-	// through is dead here -- and dropping the guards would mean a second code
-	// path through the node emitter, which is how the two drift apart.
+	// The markup is built in memory and handed back only once every write in
+	// it succeeded. The err every node threads through is what an escaper's
+	// refusal lands in, so it is the one thing that decides between the markup
+	// and nothing.
 	fmt.Fprintf(&g.out, "\t%s := &%s.Builder{}\n", varWriter, pkgStrings)
 	fmt.Fprintf(&g.out, "\tvar %s error\n", varErr)
 	for _, n := range g.file.Body {
 		g.node(n)
 	}
-	fmt.Fprintf(&g.out, "\t_ = %s\n", varErr)
+	fmt.Fprintf(&g.out, "\tif %s != nil {\n\t\treturn \"\"\n\t}\n", varErr)
 	fmt.Fprintf(&g.out, "\treturn %s.HTML(%s.String())\n", pkgTemplate, varWriter)
 	g.out.WriteString("}\n")
 	g.silenceUnused()

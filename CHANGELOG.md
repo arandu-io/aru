@@ -1,5 +1,15 @@
 # Release Notes
 
+## [v0.57.0](https://github.com/arandu-io/aru/compare/v0.56.2...v0.57.0) - 2026-10-01
+
+## What's Changed
+* build(deps): bump the gomod group across 1 directory with 2 updates by @dependabot[bot] in https://github.com/arandu-io/aru/pull/4
+
+## New Contributors
+* @dependabot[bot] made their first contribution in https://github.com/arandu-io/aru/pull/4
+
+**Full Changelog**: https://github.com/arandu-io/aru/compare/v0.56.2...v0.57.0
+
 ## [v0.56.2](https://github.com/arandu-io/aru/compare/v0.56.1...v0.56.2) - 2026-09-18
 
 **Full Changelog**: https://github.com/arandu-io/aru/compare/v0.56.1...v0.56.2

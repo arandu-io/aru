@@ -6,10 +6,12 @@ import (
 	goparser "go/parser"
 	"go/scanner"
 	"go/token"
+	"html"
 	"path"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Generate turns a parsed view into the Go that renders it.
@@ -634,6 +636,29 @@ func (g *generator) refusable(line int, escaper, expr string) {
 	g.out.WriteString("\t\t}\n\t}\n")
 }
 
+// jsonString writes one interpolation into a string inside a JSON attribute.
+//
+// The value is escaped twice, in the order the browser undoes the two. The
+// inner escape is the JSON one -- a quote, a backslash and every control
+// character as the string syntax spells them, and `<`, `>`, `&`, U+2028 and
+// U+2029 as \u escapes -- and it is TextJS with the quotes it adds taken off
+// again, because here the view already wrote them. The outer escape is the
+// attribute's, so the quotes the attribute is written between still bound it.
+//
+// An escaped quote is the point. Escaped only as an attribute, `x", "role":
+// "admin` comes back out of the HTML parser as the quote it started as, ends
+// the string the view opened, and adds keys of its own to what is sent.
+func (g *generator) jsonString(line int, expr string) {
+	value := g.temp()
+	fmt.Fprintf(&g.out, "\tif %s == nil {\n", varErr)
+	g.at(line)
+	fmt.Fprintf(&g.out, "\t\t%s := %s.TextJS(%s.Text(%s))\n", value, pkgView, pkgView, expr)
+	g.self()
+	fmt.Fprintf(&g.out, "\t\t_, %s = %s.WriteString(%s, %s.TextAttr(%s[1:len(%s)-1]))\n",
+		varErr, pkgIO, varWriter, pkgView, value, value)
+	g.out.WriteString("\t}\n")
+}
+
 // refuse records that an interpolation landed where nothing can be written
 // safely, whatever the value turns out to be.
 //
@@ -1043,6 +1068,22 @@ func (g *generator) echo(n Node) {
 	case posStyle:
 		g.refusable(n.Line, pkgView+".TextCSS", expr)
 
+	case posJSON:
+		// One whole JSON literal: a string comes out quoted with every quote
+		// inside it escaped, so the value is one token wherever it lands
+		// outside a string, and the quotes the attribute is written between are
+		// kept by the escape of the attribute around it.
+		g.write(n.Line, pkgView+".TextAttr("+pkgView+".TextJS(%s))", expr)
+
+	case posJSONString:
+		if g.scan.value.escaped {
+			g.refuse(n.Line, fmt.Sprintf("this value is written right after a backslash inside a JSON string in %q", g.scan.attr),
+				"the backslash escapes the first character of the value, and the escape the value gets then ends the string instead of staying inside it.\n"+
+					"    Write the backslash into the value, or leave a character between the two.")
+			break
+		}
+		g.jsonString(n.Line, expr)
+
 	case posUnquotedValue:
 		g.refuse(n.Line, "this value is written into an attribute value that has no quotes around it",
 			"an unquoted value ends at the first space, and no escape puts a space back inside it -- what follows the space is markup of its own.\n"+
@@ -1075,7 +1116,7 @@ func (g *generator) echo(n Node) {
 	// the front is the only place a scheme can be introduced.
 	switch g.scan.state {
 	case stateAttrValueDouble, stateAttrValueSingle, stateAttrValueUnquoted:
-		g.scan.valueBegun = true
+		g.scan.readData()
 	}
 }
 
@@ -1355,12 +1396,12 @@ func (g *generator) rejoin(opened htmlScanner) {
 // able to end an attribute name, and a space -- which no escape touches --
 // ends one on its own.
 //
-// The set is closed at ten: five positions with an escape of their own, four
-// with none at all, and one that is not a position but the absence of one. An
-// eleventh would mean a sixth escape, and a position answered with the escape
-// of a different one is the hole this exists to remove.
+// The set is closed at twelve: seven positions with an escape of their own,
+// four with none at all, and one that is not a position but the absence of one.
+// A thirteenth would mean an eighth escape, and a position answered with the
+// escape of a different one is the hole this exists to remove.
 //
-// @attributes is not an eleventh, and the difference is worth stating because
+// @attributes is not a thirteenth, and the difference is worth stating because
 // it looks like one. It writes into posAttributeName and is refused anywhere
 // else, so it adds no position. What it adds is a value whose *name* is data,
 // and a name that is data has no position to read -- which is why the check
@@ -1374,12 +1415,16 @@ const (
 	// posAttributeValue is an attribute value between quotes. The quotes bound
 	// the value, so the escape only has to keep it from ending them.
 	//
-	// An attribute whose value is JSON the view wrote by hand is this position
-	// and is not answered by it: the HTML parser decodes the escaped quote back
-	// into a quote before whatever reads the JSON ever sees it. Closing that
-	// one means deciding how a view writes such an attribute, which is a
-	// question about the view rather than about the escape.
+	// An attribute whose value is JSON is not this position, because the HTML
+	// parser decodes the escaped quote back into a quote before the JSON parser
+	// ever sees it. That attribute is posJSON or posJSONString.
 	posAttributeValue
+	// posJSON is an attribute whose value is JSON, outside a string. The value
+	// is written as one whole JSON literal, then escaped for the attribute.
+	posJSON
+	// posJSONString is inside a string of an attribute whose value is JSON.
+	// The value is escaped for the string, then for the attribute.
+	posJSONString
 	// posURL is the front of an attribute a browser resolves as an address.
 	// What decides safety there is the scheme, which is dangerous for what it
 	// means rather than for how it is written, so no escape reaches it.
@@ -1484,15 +1529,46 @@ type htmlScanner struct {
 	// closing records that the tag being read is an end tag, which opens no
 	// element.
 	closing bool
-	// valueBegun records that the attribute value being read already holds a
-	// character. It separates the front of a value from the rest of it, which
-	// is the whole of the difference between a URL whose scheme is still open
-	// and one the view has already settled.
+	// value is what has been read of the attribute value being read.
+	value attrValue
+}
+
+// attrValue is what the scanner knows about the attribute value it is inside.
+//
+// It is reset whenever a value opens or a tag closes, so what one attribute
+// wrote never decides the escape of the next.
+type attrValue struct {
+	// begun records that the value already holds a character. It separates the
+	// front of a value from the rest of it, which is the whole of the
+	// difference between a URL whose scheme is still open and one the view has
+	// already settled.
 	//
 	// Leading space does not begin a value: a browser strips it off an address
 	// before resolving it, so a scheme can still arrive after it.
-	valueBegun bool
+	begun bool
+	// front is the start of the value as the program that reads the attribute
+	// sees it: character references decoded, and every interpolation written as
+	// frontData. It is kept only while what comes next can still change what
+	// the value means; once it cannot, it is cleared and decided is set, which
+	// is also what lets two branches that both decided compare equal whatever
+	// each one wrote.
+	front   string
+	decided bool
+	// script records that the front decided the value is a script: a JSON
+	// attribute that opens with `js:` or `javascript:` is evaluated rather
+	// than parsed.
+	script bool
+	// inString and escaped follow a JSON value: whether the next character
+	// lands inside a string, and whether it lands right after a backslash
+	// there.
+	inString, escaped bool
 }
+
+// frontData stands for an interpolation in attrValue.front. It is a character
+// from the private use area, so markup the view wrote does not spell it by
+// accident, and a view that does spell it is read as having written data there
+// -- which is the cautious reading.
+const frontData = "\ue000"
 
 // settled is the scanner as the next delimiter inside a tag would leave it.
 //
@@ -1533,15 +1609,19 @@ func (s *htmlScanner) position() htmlPosition {
 
 	case stateAttrValueDouble, stateAttrValueSingle:
 		switch {
-		case attributeHoldsCode(s.attr):
+		case attributeHoldsCode(s.attr), attributeHoldsJSON(s.attr) && s.value.script:
 			return posCode
+		case attributeHoldsJSON(s.attr) && s.value.inString:
+			return posJSONString
+		case attributeHoldsJSON(s.attr):
+			return posJSON
 		case s.attr == "style":
 			return posStyle
 		// Only at the front. Once the view has written a character of its own
 		// into the value, the scheme is settled by what the view wrote, and a
 		// colon further along belongs to a path or a query -- where refusing it
 		// would refuse a search for `time: 10am`.
-		case attributeHoldsURL(s.attr) && !s.valueBegun:
+		case attributeHoldsURL(s.attr) && !s.value.begun:
 			return posURL
 		}
 		return posAttributeValue
@@ -1604,6 +1684,25 @@ func attributeHoldsCode(name string) bool {
 	switch name {
 	case "x-data", "x-effect", "x-for", "x-html", "x-if", "x-init",
 		"x-model", "x-modelable", "x-show", "x-text":
+		return true
+	// The HTMX attribute shaped like JSON and evaluated as a script every
+	// time, whatever it opens with.
+	case "hx-vars":
+		return true
+	}
+	return false
+}
+
+// attributeHoldsJSON reports whether this attribute's value is parsed as JSON.
+//
+// The list is closed and exact. Three are HTMX's -- what a request sends, the
+// headers it carries and how it is made -- and one is the client behaviour's
+// own props. The three HTMX ones are evaluated as a script instead when the
+// value opens with `js:` or `javascript:`, which is a question about the value
+// the scanner answers rather than one the name can.
+func attributeHoldsJSON(name string) bool {
+	switch name {
+	case "hx-headers", "hx-request", "hx-vals", "data-kyse-props":
 		return true
 	}
 	return false
@@ -1710,43 +1809,46 @@ func (s *htmlScanner) feed(text string) {
 			case isHTMLSpace(c):
 				// Still before the value.
 			case c == '"':
-				s.state, s.valueBegun = stateAttrValueDouble, false
+				s.state, s.value = stateAttrValueDouble, attrValue{}
 			case c == '\'':
-				s.state, s.valueBegun = stateAttrValueSingle, false
+				s.state, s.value = stateAttrValueSingle, attrValue{}
 			case c == '>':
 				s.closeTag()
 			default:
-				s.state, s.valueBegun = stateAttrValueUnquoted, false
+				s.state, s.value = stateAttrValueUnquoted, attrValue{}
 				i--
 			}
 
-		case stateAttrValueDouble:
-			switch {
-			case c == '"':
-				s.attr, s.valueBegun = "", false
-				s.state = stateBeforeAttrName
-			case !isHTMLSpace(c):
-				s.valueBegun = true
+		case stateAttrValueDouble, stateAttrValueSingle:
+			// A quoted value runs to its own quote and nothing else ends it, so
+			// it is read as one run rather than a byte at a time: the run is
+			// what character references are decoded over.
+			quote := byte('"')
+			if s.state == stateAttrValueSingle {
+				quote = '\''
 			}
-
-		case stateAttrValueSingle:
-			switch {
-			case c == '\'':
-				s.attr, s.valueBegun = "", false
-				s.state = stateBeforeAttrName
-			case !isHTMLSpace(c):
-				s.valueBegun = true
+			run := text[i:]
+			end := strings.IndexByte(run, quote)
+			if end >= 0 {
+				run = run[:end]
 			}
+			s.readValue(run)
+			if end < 0 {
+				return
+			}
+			i += end
+			s.attr, s.value = "", attrValue{}
+			s.state = stateBeforeAttrName
 
 		case stateAttrValueUnquoted:
 			switch {
 			case isHTMLSpace(c):
-				s.attr, s.valueBegun = "", false
+				s.attr, s.value = "", attrValue{}
 				s.state = stateBeforeAttrName
 			case c == '>':
 				s.closeTag()
 			default:
-				s.valueBegun = true
+				s.value.begun = true
 			}
 
 		case stateComment:
@@ -1771,6 +1873,78 @@ func (s *htmlScanner) feed(text string) {
 	}
 }
 
+// readValue reads a run of markup the view wrote inside a quoted attribute
+// value.
+//
+// Character references are decoded first for the attributes whose value a
+// program goes on to read, because that program never sees the reference: the
+// HTML parser undoes it while building the attribute, so `&quot;` in the
+// markup is a quote to the JSON parser behind it. Reading the run undecoded
+// would answer for a value nobody reads.
+func (s *htmlScanner) readValue(run string) {
+	if strings.TrimLeft(run, htmlSpaces) != "" {
+		s.value.begun = true
+	}
+	if !attributeHoldsJSON(s.attr) {
+		return
+	}
+	decoded := html.UnescapeString(run)
+	s.readFront(decoded)
+	for _, r := range decoded {
+		switch {
+		case s.value.escaped:
+			s.value.escaped = false
+		case s.value.inString && r == '\\':
+			s.value.escaped = true
+		case r == '"':
+			s.value.inString = !s.value.inString
+		}
+	}
+}
+
+// readFront adds what was written to the front of the value, and decides what
+// the value is once the front says.
+func (s *htmlScanner) readFront(text string) {
+	if s.value.decided {
+		return
+	}
+	s.value.front += text
+	if !attributeHoldsJSON(s.attr) {
+		return
+	}
+	// The reader trims the value and then looks for one of two prefixes that
+	// turn the rest into a script it evaluates. A front that is still empty,
+	// or still part of one of them, decides nothing yet.
+	lead := strings.TrimLeftFunc(s.value.front, isScriptSpace)
+	switch {
+	case strings.HasPrefix(lead, "js:"), strings.HasPrefix(lead, "javascript:"):
+		s.value.script = true
+	case lead == "", strings.HasPrefix("js:", lead), strings.HasPrefix("javascript:", lead):
+		return
+	}
+	s.value.front, s.value.decided = "", true
+}
+
+// readData records that an interpolation was written into the value.
+//
+// Only its place is known, never its characters, so it is written into the
+// front as frontData -- which is not a prefix of anything the front waits for,
+// and so decides it.
+func (s *htmlScanner) readData() {
+	s.value.begun = true
+	if attributeHoldsJSON(s.attr) {
+		s.readFront(frontData)
+	}
+}
+
+// isScriptSpace reports whether the trim a script engine applies removes this
+// character, which is wider than the five spaces of the HTML syntax: a
+// no-break space and the byte order mark are removed too.
+func isScriptSpace(r rune) bool { return unicode.IsSpace(r) || r == '\ufeff' }
+
+// htmlSpaces are the five characters the HTML syntax separates with.
+const htmlSpaces = " \t\n\r\f"
+
 // closeTag ends the tag being read and says what the text after it is.
 //
 // Everything the tag was carrying is cleared, and that is not tidiness: rejoin
@@ -1784,7 +1958,7 @@ func (s *htmlScanner) closeTag() {
 	if !s.closing && (s.tag == "script" || s.tag == "style") {
 		s.raw, s.state = s.tag, stateRawText
 	}
-	s.closing, s.tag, s.attr, s.valueBegun = false, "", "", false
+	s.closing, s.tag, s.attr, s.value = false, "", "", attrValue{}
 }
 
 func isASCIILetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }

@@ -109,7 +109,7 @@ func GenerateController(s Stub) ([]File, error) {
 		return nil, fmt.Errorf("unknown controller kind %q", s.Kind)
 	}
 
-	content, err := render(s.Type+".go", controllerStubTemplate+controllerSessionTemplate, s)
+	content, err := render(s.Type+".go", controllerStubTemplate+controllerPageTemplate, s)
 	if err != nil {
 		return nil, err
 	}
@@ -149,12 +149,11 @@ func (s Stub) IsInvokable() bool { return s.Kind == KindInvokable }
 const controllerStubTemplate = `package controllers
 
 import (
-	"errors"
 	"net/http"
 
 	fhttp "github.com/arandu-io/framework/http"
-	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/view"
 )
 
 {{if .IsResource -}}
@@ -176,6 +175,11 @@ import (
 // answers the same JsonResource in the token-oriented form, for a payload going
 // to a language model; it is chosen here in the code and never from a request
 // header, and JSON stays the format everything else is written in.
+//
+// Who is asking is ctx.User, put on the request by middleware.RequireAuth on the
+// route. An error an action returns is answered by the router: validation.Errors
+// back to the form, a missing row as 404, a refusal as 403, and an error with an
+// HTTPStatus method as that status.
 type {{.Type}} struct {
 	Controller
 
@@ -190,9 +194,9 @@ type {{.Type}} struct {
 // New{{.Type}} returns the controller. bootstrap/app.go builds it and
 // hands it to the routes.
 //
-// The session store and the CSRF issuer are here because a screen is allowed to
-// know about a token and a cookie. Everything else a page needs arrives through
-// a service.
+// The session store and the CSRF issuer are here for the token every page
+// carries, because a screen is allowed to know about a token and a cookie.
+// Everything else a page needs arrives through a service.
 func New{{.Type}}(sessions *security.SessionStore, csrf *security.CSRF) *{{.Type}} {
 	return &{{.Type}}{sessions: sessions, csrf: csrf}
 }
@@ -271,25 +275,7 @@ func (c *{{.Type}}) Destroy(ctx *fhttp.Context) error {
 func (c *{{.Type}}) Handle(ctx *fhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
-{{end}}{{template "controllerSession" .}}
-// fail turns a domain error into a status, in one place.
-//
-// Note what it does not do: it never writes the authorization error into the
-// response. Why a policy said no is information about the system, and it belongs
-// in the log. Anything unrecognized is returned, and the router turns it into
-// the error page in development and a 500 in production.
-func (c *{{.Type}}) fail(ctx *fhttp.Context, err error) error {
-	switch {
-	case errors.Is(err, security.ErrForbidden):
-		observability.Log(ctx.Ctx()).Warn("authorization denied", "error", err)
-		return ctx.Status(http.StatusForbidden)
-	default:
-		// The errors app/Models declares go here: NotFound is 404, Conflict is
-		// 409, an ordering outside the allowlist is 400.
-		return err
-	}
-}
-
+{{end}}{{template "controllerPage" .}}
 // arandu:begin custom
 // Actions beyond the ones above go here, and survive regeneration. Register
 // them in the custom block of routes/web.go.
@@ -362,9 +348,10 @@ const requestStubTemplate = `package requests
 // {{.Type}} is an input contract: what the request is allowed to carry, and
 // what makes it valid.
 //
-// The fields are explicit. There is no mass assignment and there is no struct
-// tag, so a field the client sends and this struct does not declare goes
-// nowhere -- and a rule nobody wrote is not a rule somebody switched off.
+// The fields are explicit, and ctx.Bind fills each one through its form tag and
+// nothing else. There is no mass assignment, so a field the client sends and
+// this struct does not declare goes nowhere -- and a rule nobody wrote is not a
+// rule somebody switched off.
 //
 // A request object often answers authorize() as well. This one does not, and
 // that is the decision rather than an omission: authorization is the Policy, asked with
@@ -372,13 +359,12 @@ const requestStubTemplate = `package requests
 // second place to forget. See app/Policies.
 type {{.Type}} struct {
 {{- if .Fields}}
-{{- range .Fields}}
-	{{.GoName}} {{.GoType}}
-{{- end}}
+{{- template "requestFields" .}}
 {{- else}}
 	// arandu:begin custom
-	// The fields this request carries, exported and typed as the domain has
-	// them. The controller is what turns the text of a form into these.
+	// The fields this request carries, exported, typed as the domain has them
+	// and tagged with the input's name: Amount int64 ` + "`" + `form:"amount"` + "`" + `.
+	// ctx.Bind converts the text of the form into these.
 	// arandu:end custom
 {{- end}}
 }

@@ -417,25 +417,22 @@ func (s *{{.ServiceType}}) conflict(err error) bool {
 
 const requestTemplate = `package requests
 
-import (
-{{- if .NeedsTimeParse}}
+{{if .NeedsTimeParse}}import (
 	"time"
 
-{{end}}
 	"github.com/arandu-io/framework/validation"
-)
+){{else}}import "github.com/arandu-io/framework/validation"{{end}}
 
-// {{.StoreRequest}} is the input contract of creation. Fields are explicit: there
-// is no mass assignment, so a field the client sends and this struct does not
+// {{.Request}} is the input contract of creation and update, which take the
+// same fields. ctx.Bind fills it through the form tags, and only those: there is
+// no mass assignment, so a key the client sends and this struct does not
 // declare goes nowhere.
-type {{.StoreRequest}} struct {
-{{- range .Fields}}
-	{{.GoName}} {{.GoType}}
-{{- end}}
+type {{.Request}} struct {
+{{- template "requestFields" .}}
 }
 
 // Validate reports the errors per field.
-func (r {{.StoreRequest}}) Validate() validation.Errors {
+func (r {{.Request}}) Validate() validation.Errors {
 	e := validation.Errors{}
 {{- template "storeRules" .}}
 
@@ -446,47 +443,28 @@ func (r {{.StoreRequest}}) Validate() validation.Errors {
 	return e
 }
 
-// {{.UpdateRequest}} carries the id as well, and the same rules.
-type {{.UpdateRequest}} struct {
-	ID string
-{{- range .Fields}}
-	{{.GoName}} {{.GoType}}
-{{- end}}
-}
-
-// Validate reports the errors per field.
-func (r {{.UpdateRequest}}) Validate() validation.Errors {
-	e := {{.StoreRequest}}{
-{{- range .Fields}}
-		{{.GoName}}: r.{{.GoName}},
-{{- end}}
-	}.Validate()
-	validation.Required(e, "id", r.ID)
-	return e
-}
-
-// Compile-time proof that both requests honor the validation contract.
-var (
-	_ validation.Validatable = {{.StoreRequest}}{}
-	_ validation.Validatable = {{.UpdateRequest}}{}
-)
-{{- if .NeedsTimeParse}}
-
-var _ = time.Time{}
-{{- end}}
+// Compile-time proof that the request honors the validation contract.
+var _ validation.Validatable = {{.Request}}{}
 `
 
-// requestRulesTemplate is the per-field validation, whichever command wrote the
-// request.
+// requestRulesTemplate is the request's fields and their validation, whichever
+// command wrote the request.
 //
-// `aru make:module` emits a Store/Update pair and `aru make:request` emits one
-// type, and the rules inside them are the same bytes because it is the same
-// template. Copying it would have been shorter to write and would have diverged
-// on the first correction nobody remembered to make twice.
+// `aru make:module` and `aru make:request` both emit a request, and the fields
+// and the rules inside them are the same bytes because it is the same template.
+// Copying it would have been shorter to write and would have diverged on the
+// first correction nobody remembered to make twice.
+//
+// The form tag on each field is the name the input carries, which is the
+// column: ctx.Bind reads that key and no other into the field.
 //
 // It renders against anything with a Fields slice, which both gen.Module and
 // gen.Stub have.
-const requestRulesTemplate = `{{define "storeRules"}}
+const requestRulesTemplate = `{{define "requestFields"}}
+{{- range .Fields}}
+	{{.GoName}} {{.GoType}} {{.FormTag}}
+{{- end}}
+{{- end}}{{define "storeRules"}}
 {{- range .Fields}}
 {{- if .Required}}
 	{{if .IsString}}validation.Required(e, "{{.Column}}", r.{{.GoName}}){{else}}validation.NotZero(e, "{{.Column}}", r.{{.GoName}}){{end}}
@@ -503,19 +481,13 @@ const requestRulesTemplate = `{{define "storeRules"}}
 const controllerTemplate = `package controllers
 
 import (
-	"errors"
-	"net/http"
-	"net/url"
+{{- if .NeedsStrconv}}
 	"strconv"
-{{- if .NeedsTimeParse}}
-	"time"
-{{- end}}
 
-	"github.com/arandu-io/framework/data"
+{{end}}
 	fhttp "github.com/arandu-io/framework/http"
-	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
-	"github.com/arandu-io/framework/validation"
+	"github.com/arandu-io/hesape/pagination"
 	"github.com/arandu-io/hesape/view"
 
 	requests "{{.RequestsImport}}"
@@ -530,6 +502,12 @@ import (
 // repository here and there cannot be one -- fhttp.Context carries no database
 // handle, so a controller that reached the data layer would be a controller that
 // skipped the service, and therefore skipped the policy.
+//
+// The routes sit behind middleware.RequireAuth, which puts who is asking on the
+// request: ctx.User reads it. Without the guard there is nobody there, and the
+// policy refuses the zero subject. An error an action returns is answered by the
+// router -- validation.Errors back to the form with the messages and what was
+// typed, a missing row as 404, a refusal as 403 -- so no action maps one itself.
 type {{.Controller}} struct {
 	Controller
 
@@ -541,9 +519,9 @@ type {{.Controller}} struct {
 // New{{.Controller}} returns the controller. bootstrap builds it and hands it to
 // the routes.
 //
-// The session store and the CSRF issuer arrive through the constructor rather
-// than through the service: a screen is allowed to know about a token and a
-// cookie, and a service is not allowed to expose its own dependencies.
+// The session store and the CSRF issuer are here for one thing, the token every
+// page carries: a screen is allowed to know about a token and a cookie, and a
+// service is not.
 func New{{.Controller}}(svc *services.{{.ServiceType}}, sessions *security.SessionStore, csrf *security.CSRF) *{{.Controller}} {
 	return &{{.Controller}}{svc: svc, sessions: sessions, csrf: csrf}
 }
@@ -562,91 +540,44 @@ var (
 	_ fhttp.Destroyer = (*{{.Controller}})(nil)
 )
 
-// {{.Unexported}}PerPage is how many records the listing asks for when the request
-// does not say. The service has a bound of its own: this one is about the
-// screen, that one is about the database.
-const {{.Unexported}}PerPage = 25
-
-// Index renders the listing.
+// Index renders the listing, one page at a time.
 func (c *{{.Controller}}) Index(ctx *fhttp.Context) error {
-	actor, err := c.actor(ctx)
+	who, _ := ctx.User()
+	found, err := c.svc.List(ctx.Ctx(), who, pagination.ResolveCurrentPage(ctx.Request.URL, ""))
 	if err != nil {
-		return c.signIn(ctx)
+		return err
 	}
-
-	// The page size is decided here rather than passed through blindly: asking
-	// for a known number is what lets the next cursor be offered only when a
-	// full page came back.
-	limit := {{.Unexported}}PerPage
-	if n, err := strconv.Atoi(ctx.Query("limit")); err == nil && n > 0 {
-		limit = n
-	}
-
-	found, err := c.svc.List(ctx.Ctx(), actor, data.Query{
-		Limit:  limit,
-		Cursor: ctx.Query("cursor"),
-		Sort:   ctx.Query("sort"),
-	})
-	if err != nil {
-		return c.fail(ctx, err)
-	}
-
-	rows := make([]views.{{.RowStruct}}, 0, len(found))
-	for _, {{.Receiver}} := range found {
-		rows = append(rows, c.row(ctx, {{.Receiver}}))
-	}
-
-	// The listing writes nothing, but the layout around it does: the sign-out
-	// form and every hx- request read the token off the page data. A listing
-	// rendered without one answers 200 and then refuses the next write with
-	// 419, which reads like a broken session.
-	token, err := c.token(ctx)
+	page, err := c.page(ctx, "{{.HumansTitle}}")
 	if err != nil {
 		return err
 	}
 
-	// Keyset pagination picks up after the last id of the page. A partial page
-	// is the last page, and offering a link there would be a link to nothing.
-	//
-	// The address is the listing's own, asked for by name and given the cursor
-	// as a query parameter -- the parameter is not part of the route, so it is
-	// appended here rather than passed to URL, and it is escaped because the
-	// cursor is data.
-	next := ""
-	if len(rows) == limit {
-		next = ctx.URL("{{.RouteName "index"}}") + "?cursor=" + url.QueryEscape(rows[len(rows)-1].ID)
+	rows := make([]views.{{.RowStruct}}, 0, found.Count())
+	for _, {{.Receiver}} := range found.Items() {
+		rows = append(rows, c.row(ctx, {{.Receiver}}))
 	}
-
 	return ctx.View("{{.ViewName "index"}}", views.{{.ViewData "index"}}{
-		Page:       view.Page{Title: "{{.HumansTitle}}", Token: token},
+		Page:       page,
 		{{.Plural}}: rows,
 		NewURL:     ctx.URL("{{.RouteName "create"}}"),
-		NextURL:    next,
+		NextURL:    found.SetPath(ctx.URL("{{.RouteName "index"}}")).NextPageURL(),
 	})
 }
 
 // Show renders one record.
 func (c *{{.Controller}}) Show(ctx *fhttp.Context) error {
-	actor, err := c.actor(ctx)
+	who, _ := ctx.User()
+	found, err := c.svc.Get(ctx.Ctx(), who, ctx.Param("id"))
 	if err != nil {
-		return c.signIn(ctx)
+		return err
 	}
-
-	found, err := c.svc.Get(ctx.Ctx(), actor, ctx.Param("id"))
-	if err != nil {
-		return c.fail(ctx, err)
-	}
-
-	// The token is for the delete button, which sends it as a header: an
-	// hx-delete carries no form body, so the hidden field a form uses would
-	// never arrive and the request would be refused with 419.
-	token, err := c.token(ctx)
+	page, err := c.page(ctx, "{{.HumanTitle}}")
 	if err != nil {
 		return err
 	}
 
 	return ctx.View("{{.ViewName "show"}}", views.{{.ViewData "show"}}{
-		Page:     view.Page{Title: "{{.HumanTitle}}", Token: token},
+		Page:      page,
 		{{.Entity}}: c.row(ctx, found),
 		IndexURL:  ctx.URL("{{.RouteName "index"}}"),
 		EditURL:   ctx.URL("{{.RouteName "edit"}}", found.ID),
@@ -654,19 +585,16 @@ func (c *{{.Controller}}) Show(ctx *fhttp.Context) error {
 	})
 }
 
-// Create renders the empty form.
+// Create renders the empty form, or the rejected one: the page carries what
+// was typed and the messages, from the flash the router left.
 func (c *{{.Controller}}) Create(ctx *fhttp.Context) error {
-	if _, err := c.actor(ctx); err != nil {
-		return c.signIn(ctx)
-	}
-	token, err := c.token(ctx)
+	page, err := c.page(ctx, "New {{.Human}}")
 	if err != nil {
 		return err
 	}
 
 	return ctx.View("{{.ViewName "create"}}", views.{{.ViewData "create"}}{
-		Page:     view.Page{Title: "New {{.Human}}", Token: token},
-		Errors:   map[string][]string{},
+		Page:     page,
 		IndexURL: ctx.URL("{{.RouteName "index"}}"),
 		StoreURL: ctx.URL("{{.RouteName "store"}}"),
 	})
@@ -674,47 +602,33 @@ func (c *{{.Controller}}) Create(ctx *fhttp.Context) error {
 
 // Store takes the submitted form.
 func (c *{{.Controller}}) Store(ctx *fhttp.Context) error {
-	actor, err := c.actor(ctx)
-	if err != nil {
-		return c.signIn(ctx)
+	var in requests.{{.Request}}
+	if err := ctx.Bind(&in); err != nil {
+		return err
 	}
-
-	in, form, errs := c.input(ctx)
-	if !c.Validated(errs) {
-		return c.rejectedCreate(ctx, form, errs)
-	}
-
-	created, err := c.svc.Create(ctx.Ctx(), actor, in)
+	who, _ := ctx.User()
+	created, err := c.svc.Create(ctx.Ctx(), who, in)
 	if err != nil {
-		var invalid validation.Errors
-		if errors.As(err, &invalid) {
-			return c.rejectedCreate(ctx, form, invalid)
-		}
-		return c.fail(ctx, err)
+		return err
 	}
 	return ctx.RedirectRoute("{{.RouteName "show"}}", created.ID)
 }
 
-// Edit renders the form filled in.
+// Edit renders the form filled in with the stored record.
 func (c *{{.Controller}}) Edit(ctx *fhttp.Context) error {
-	actor, err := c.actor(ctx)
+	who, _ := ctx.User()
+	found, err := c.svc.Get(ctx.Ctx(), who, ctx.Param("id"))
 	if err != nil {
-		return c.signIn(ctx)
+		return err
 	}
-
-	found, err := c.svc.Get(ctx.Ctx(), actor, ctx.Param("id"))
-	if err != nil {
-		return c.fail(ctx, err)
-	}
-	token, err := c.token(ctx)
+	page, err := c.page(ctx, "Edit {{.Human}}")
 	if err != nil {
 		return err
 	}
 
 	return ctx.View("{{.ViewName "edit"}}", views.{{.ViewData "edit"}}{
-		Page:      view.Page{Title: "Edit {{.Human}}", Token: token},
-		Form:      c.form(found),
-		Errors:    map[string][]string{},
+		Page:      page,
+		Form:      c.row(ctx, found),
 		ShowURL:   ctx.URL("{{.RouteName "show"}}", found.ID),
 		UpdateURL: ctx.URL("{{.RouteName "update"}}", found.ID),
 	})
@@ -722,47 +636,29 @@ func (c *{{.Controller}}) Edit(ctx *fhttp.Context) error {
 
 // Update writes the submitted form onto the stored record.
 func (c *{{.Controller}}) Update(ctx *fhttp.Context) error {
-	actor, err := c.actor(ctx)
-	if err != nil {
-		return c.signIn(ctx)
+	var in requests.{{.Request}}
+	if err := ctx.Bind(&in); err != nil {
+		return err
 	}
-
-	in, form, errs := c.input(ctx)
-	form.ID = ctx.Param("id")
-	if !c.Validated(errs) {
-		return c.rejectedEdit(ctx, form, errs)
-	}
-
-	updated, err := c.svc.Update(ctx.Ctx(), actor, requests.{{.UpdateRequest}}{
-		ID: ctx.Param("id"),
-{{- range .Fields}}
-		{{.GoName}}: in.{{.GoName}},
-{{- end}}
-	})
+	who, _ := ctx.User()
+	updated, err := c.svc.Update(ctx.Ctx(), who, ctx.Param("id"), in)
 	if err != nil {
-		var invalid validation.Errors
-		if errors.As(err, &invalid) {
-			return c.rejectedEdit(ctx, form, invalid)
-		}
-		return c.fail(ctx, err)
+		return err
 	}
 	return ctx.RedirectRoute("{{.RouteName "show"}}", updated.ID)
 }
 
 // Destroy removes the record.
 func (c *{{.Controller}}) Destroy(ctx *fhttp.Context) error {
-	actor, err := c.actor(ctx)
-	if err != nil {
-		return c.signIn(ctx)
-	}
-	if err := c.svc.Delete(ctx.Ctx(), actor, ctx.Param("id")); err != nil {
-		return c.fail(ctx, err)
+	who, _ := ctx.User()
+	if err := c.svc.Delete(ctx.Ctx(), who, ctx.Param("id")); err != nil {
+		return err
 	}
 	return ctx.RedirectRoute("{{.RouteName "index"}}")
 }
-
-{{template "controllerSession" .}}
-// row turns the entity into what the markup renders.
+{{template "controllerPage" .}}
+// row turns the entity into what the markup renders: the text a cell shows and
+// an input of the edit form starts at.
 //
 // Formatting happens here rather than in the view: a view that formats a
 // time.Time would need the time package, and what a date looks like on screen is
@@ -776,194 +672,41 @@ func (c *{{.Controller}}) row(ctx *fhttp.Context, {{.Receiver}} *models.{{.Entit
 		ID:  {{.Receiver}}.ID,
 		URL: ctx.URL("{{.RouteName "show"}}", {{.Receiver}}.ID),
 {{- range .Fields}}
-		{{.GoName}}: {{.Display $.Receiver}},
+		{{.GoName}}: {{.RowValue $.Receiver}},
 {{- end}}
 		Created: {{.Receiver}}.CreatedAt.Format("2006-01-02 15:04"),
 	}
 }
 
-// form fills the edit form from the stored record.
-func (c *{{.Controller}}) form({{.Receiver}} *models.{{.Entity}}) views.{{.FormStruct}} {
-	return views.{{.FormStruct}}{
-		ID: {{.Receiver}}.ID,
-{{- range .Fields}}
-		{{.GoName}}: {{.FormValue $.Receiver}},
-{{- end}}
-	}
-}
-
-// input reads the submitted form.
-//
-// It returns three things: the typed request the service takes, the form as it
-// was typed -- so a rejected submission comes back filled in rather than blank --
-// and the errors parsing itself found. A number that is not a number is rejected
-// here, naming the field, rather than reaching the service as a silent zero.
-func (c *{{.Controller}}) input(ctx *fhttp.Context) (requests.{{.StoreRequest}}, views.{{.FormStruct}}, validation.Errors) {
-	errs := validation.Errors{}
-
-	in := requests.{{.StoreRequest}}{
-{{- range .Fields}}
-		{{.GoName}}: {{.Parse "c"}},
-{{- end}}
-	}
-
-	form := views.{{.FormStruct}}{
-{{- range .Fields}}
-{{- if .IsBool}}
-		{{.GoName}}: ctx.Input("{{.Column}}") != "",
-{{- else}}
-		{{.GoName}}: ctx.Input("{{.Column}}"),
-{{- end}}
-{{- end}}
-	}
-
-	// arandu:begin custom
-	// Anything the form carries that the fields above do not: a value composed
-	// of two inputs, a default that depends on the actor.
-	// arandu:end custom
-
-	return in, form, errs
-}
-
-// rejectedCreate re-renders the creation form with its errors, as the 422
-// fragment HTMX swaps back in.
-func (c *{{.Controller}}) rejectedCreate(ctx *fhttp.Context, form views.{{.FormStruct}}, errs validation.Errors) error {
-	token, err := c.token(ctx)
-	if err != nil {
-		return err
-	}
-	return c.Invalid(ctx, "{{.ViewName "create"}}", views.{{.ViewData "create"}}{
-		Page:     view.Page{Title: "New {{.Human}}", Token: token},
-		Form:     form,
-		Errors:   errs,
-		IndexURL: ctx.URL("{{.RouteName "index"}}"),
-		StoreURL: ctx.URL("{{.RouteName "store"}}"),
-	})
-}
-
-// rejectedEdit re-renders the edit form with its errors.
-func (c *{{.Controller}}) rejectedEdit(ctx *fhttp.Context, form views.{{.FormStruct}}, errs validation.Errors) error {
-	token, err := c.token(ctx)
-	if err != nil {
-		return err
-	}
-	return c.Invalid(ctx, "{{.ViewName "edit"}}", views.{{.ViewData "edit"}}{
-		Page:      view.Page{Title: "Edit {{.Human}}", Token: token},
-		Form:      form,
-		Errors:    errs,
-		ShowURL:   ctx.URL("{{.RouteName "show"}}", form.ID),
-		UpdateURL: ctx.URL("{{.RouteName "update"}}", form.ID),
-	})
-}
-
-// fail turns a domain error into a status, in one place.
-//
-// Note what it does not do: it never writes the authorization error into the
-// response. Why a policy said no is information about the system, and it belongs
-// in the log. Anything unrecognized is returned, and the router turns it into
-// the error page in development and a 500 in production.
-func (c *{{.Controller}}) fail(ctx *fhttp.Context, err error) error {
-	switch {
-	case errors.Is(err, security.ErrForbidden):
-		observability.Log(ctx.Ctx()).Warn("authorization denied", "error", err)
-		return ctx.Status(http.StatusForbidden)
-	case errors.Is(err, models.Err{{.Entity}}NotFound):
-		return ctx.Status(http.StatusNotFound)
-	case errors.Is(err, models.Err{{.Entity}}Conflict):
-		return ctx.Status(http.StatusConflict)
-	case errors.Is(err, models.Err{{.Entity}}Sort):
-		return ctx.Status(http.StatusBadRequest)
-	default:
-		return err
-	}
-}
-{{if .NeedsWholeParse}}
-// whole reads an integer field, and names the field when it is not one.
-func (c *{{.Controller}}) whole(ctx *fhttp.Context, field string, e validation.Errors) int64 {
-	raw := ctx.Input(field)
-	if raw == "" {
-		return 0
-	}
-	n, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil {
-		e.Add(field, "must be a whole number")
-		return 0
-	}
-	return n
-}
-{{end}}{{if .NeedsFractionParse}}
-// fraction reads a decimal field.
-func (c *{{.Controller}}) fraction(ctx *fhttp.Context, field string, e validation.Errors) float64 {
-	raw := ctx.Input(field)
-	if raw == "" {
-		return 0
-	}
-	n, err := strconv.ParseFloat(raw, 64)
-	if err != nil {
-		e.Add(field, "must be a number")
-		return 0
-	}
-	return n
-}
-{{end}}{{if .NeedsTimeParse}}
-// moment reads a date or a timestamp, in the layout the matching HTML input
-// submits.
-func (c *{{.Controller}}) moment(ctx *fhttp.Context, field, layout string, e validation.Errors) time.Time {
-	raw := ctx.Input(field)
-	if raw == "" {
-		return time.Time{}
-	}
-	t, err := time.Parse(layout, raw)
-	if err != nil {
-		e.Add(field, "is not a valid date")
-		return time.Time{}
-	}
-	return t
-}
-{{end}}
 // arandu:begin custom
 // Actions beyond the seven go here, and survive regeneration. Register them in
 // the custom block of routes/web.go.
 // arandu:end custom
 `
 
-// controllerSessionTemplate is the boundary every controller shares, whichever
-// command wrote it.
+// controllerPageTemplate is the page chrome every controller hands its views,
+// whichever command wrote the controller.
 //
-// `aru make:module` and `aru make:controller` both emit these three methods, and
-// they emit the same bytes because it is the same template -- two ways to write
-// one thing is what this generator is not allowed to create inside itself. They
-// are methods rather than package functions, so two controllers in the package
-// do not collide.
+// `aru make:module` and `aru make:controller` both emit it, and they emit the
+// same bytes because it is the same template -- two ways to write one thing is
+// what this generator is not allowed to create inside itself. It is a method
+// rather than a package function, so two controllers in the package do not
+// collide.
 //
 // The data it renders against needs a Controller field or method naming the type,
 // which both gen.Module and gen.Stub have.
-const controllerSessionTemplate = `{{define "controllerSession"}}
-// actor is who is acting, from the session and never from the request body.
-func (c *{{.Controller}}) actor(ctx *fhttp.Context) (security.Subject, error) {
-	return c.sessions.Load(ctx.Ctx(), ctx.Request)
-}
-
-// signIn sends an unauthenticated visitor to the sign-in screen. Under HTMX the
-// redirect becomes HX-Redirect, so the browser navigates instead of nesting the
-// whole page inside a fragment.
+const controllerPageTemplate = `{{define "controllerPage"}}
+// page is the chrome a screen hands the layout: the title, what a rejected
+// attempt left in the flash -- the messages and what was typed -- and the CSRF
+// token for this session.
 //
-// The screen is asked for by name, not by path. Two different things register
-// it -- the framework's auth module and the starter kit -- and only one of them
-// answers in any given project; both name the route auth.login, and neither
-// promises the path stays where it is.
-func (c *{{.Controller}}) signIn(ctx *fhttp.Context) error {
-	return ctx.RedirectRoute("auth.login")
-}
-
-// token issues a CSRF token for the session that is rendering the page.
-//
-// Every page needs it, including the ones that write nothing: the sign-out form
-// and every hx- request read it off the page data. A page rendered without one
-// answers 200 and then refuses the next write with 419, which reads like a
-// broken session rather than a missing field.
-func (c *{{.Controller}}) token(ctx *fhttp.Context) (string, error) {
-	return c.csrf.Issue(c.sessions.IDFromRequest(ctx.Request))
+// Every page needs the token, including the ones that write nothing: the
+// sign-out form and every hx- request read it off the page data. A page
+// rendered without one answers 200 and then refuses the next write with 419,
+// which reads like a broken session rather than a missing field.
+func (c *{{.Controller}}) page(ctx *fhttp.Context, title string) (view.Page, error) {
+	token, err := c.csrf.Issue(c.sessions.IDFromRequest(ctx.Request))
+	return view.New(ctx, title).WithToken(token), err
 }
 {{end}}`
 

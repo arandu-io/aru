@@ -141,12 +141,6 @@ func (f Field) IsTime() bool { return f.Type == TypeDate || f.Type == TypeTimest
 // IsBool reports whether the field is a checkbox in a form.
 func (f Field) IsBool() bool { return f.Type == TypeBool }
 
-// IsWholeNumber reports whether the field is parsed with ParseInt.
-func (f Field) IsWholeNumber() bool { return f.Type == TypeInt || f.Type == TypeMoney }
-
-// IsFraction reports whether the field is parsed with ParseFloat.
-func (f Field) IsFraction() bool { return f.Type == TypeDecimal }
-
 // IsLongText reports whether the field is rendered as a textarea.
 func (f Field) IsLongText() bool { return f.Type == TypeText }
 
@@ -164,11 +158,11 @@ func (f Field) Label() string {
 	return strings.ToUpper(label[:1]) + label[1:]
 }
 
-// TimeLayout is how a date or a timestamp is written in a form field.
+// TimeLayout is how a date or a timestamp is written for the screen.
 //
-// They are the layouts the HTML input types produce: "date" submits
-// 2006-01-02 and "datetime-local" submits 2006-01-02T15:04. Parsing anything
-// else would reject what the browser itself sent.
+// They are the layouts the HTML input types take: "date" holds 2006-01-02 and
+// "datetime-local" holds 2006-01-02T15:04. The same text is what the listing
+// and the record show, so one formatting serves the cell and the input.
 func (f Field) TimeLayout() string {
 	if f.Type == TypeTimestamp {
 		return "2006-01-02T15:04"
@@ -220,21 +214,6 @@ func (f Field) ViewType() string {
 	}
 }
 
-// Display is the expression that turns the entity's field into the row's.
-func (f Field) Display(receiver string) string {
-	if f.IsTime() {
-		return receiver + "." + f.GoName() + `.Format("` + f.displayLayout() + `")`
-	}
-	return receiver + "." + f.GoName()
-}
-
-func (f Field) displayLayout() string {
-	if f.Type == TypeTimestamp {
-		return "2006-01-02 15:04"
-	}
-	return "2006-01-02"
-}
-
 // FormType is how the field is declared in the view's form struct.
 //
 // Everything is text except a boolean, because a form carries text: the value
@@ -248,9 +227,21 @@ func (f Field) FormType() string {
 	return "string"
 }
 
-// FormValue is the expression that fills the form struct from the entity, for
-// the edit screen.
-func (f Field) FormValue(receiver string) string {
+// RowType is how the field is declared in the row struct the screens share.
+//
+// Everything is text except a boolean, because the row is what a cell shows and
+// what an input of the edit form starts at, and both are text: a number or a
+// date is formatted once, by the controller. A checkbox is the exception -- it
+// is checked or it is not.
+func (f Field) RowType() string {
+	if f.IsBool() {
+		return "bool"
+	}
+	return "string"
+}
+
+// RowValue is the expression that fills the row from the entity.
+func (f Field) RowValue(receiver string) string {
 	name := receiver + "." + f.GoName()
 	switch {
 	case f.IsBool():
@@ -266,27 +257,14 @@ func (f Field) FormValue(receiver string) string {
 	}
 }
 
-// Parse is the expression a controller uses to read the field from the request.
-//
-// The helpers it names are methods on the controller rather than package
-// functions: every module generates into the same package now, and two modules
-// declaring parseInt would not compile.
-func (f Field) Parse(receiver string) string {
-	switch {
-	case f.IsBool():
-		// An unchecked box sends nothing at all, which is what makes presence
-		// the whole test.
-		return `ctx.Input("` + f.Column() + `") != ""`
-	case f.IsWholeNumber():
-		return receiver + `.whole(ctx, "` + f.Column() + `", errs)`
-	case f.IsFraction():
-		return receiver + `.fraction(ctx, "` + f.Column() + `", errs)`
-	case f.IsTime():
-		return receiver + `.moment(ctx, "` + f.Column() + `", "` + f.TimeLayout() + `", errs)`
-	default:
-		return `ctx.Input("` + f.Column() + `")`
-	}
+// NeedsStrconv reports whether RowValue formats the field through strconv.
+func (f Field) NeedsStrconv() bool {
+	return f.Type == TypeMoney || f.Type == TypeInt || f.Type == TypeDecimal
 }
+
+// FormTag is the struct tag ctx.Bind reads the field through: the name of the
+// input, which is the column.
+func (f Field) FormTag() string { return "`form:\"" + f.Column() + "\"`" }
 
 // MaxLength is the limit the generated validation enforces.
 //
@@ -446,6 +424,10 @@ func (m Module) StoreRequest() string { return "Store" + m.Entity() }
 // UpdateRequest is the type name of the request that updates.
 func (m Module) UpdateRequest() string { return "Update" + m.Entity() }
 
+// Request is the type name of the request creation and update both take:
+// PurchaseOrderRequest.
+func (m Module) Request() string { return m.Entity() + "Request" }
+
 // RowStruct is the view struct that carries one record to the markup.
 func (m Module) RowStruct() string { return m.Entity() + "Row" }
 
@@ -544,27 +526,7 @@ func (m Module) ViewsPackage() string {
 	return strings.ReplaceAll(m.Resource(), "-", "")
 }
 
-// NeedsWholeParse reports whether the controller parses an integer.
-func (m Module) NeedsWholeParse() bool {
-	for _, f := range m.Fields {
-		if f.IsWholeNumber() {
-			return true
-		}
-	}
-	return false
-}
-
-// NeedsFractionParse reports whether the controller parses a decimal.
-func (m Module) NeedsFractionParse() bool {
-	for _, f := range m.Fields {
-		if f.IsFraction() {
-			return true
-		}
-	}
-	return false
-}
-
-// NeedsTimeParse reports whether the controller parses a date or a timestamp,
+// NeedsTimeParse reports whether the request declares a date or a timestamp,
 // which is the only reason it imports time.
 func (m Module) NeedsTimeParse() bool {
 	for _, f := range m.Fields {
@@ -644,6 +606,16 @@ func (m Module) Sortable() []Field {
 		}
 	}
 	return out
+}
+
+// NeedsStrconv reports whether the controller formats a number for the row.
+func (m Module) NeedsStrconv() bool {
+	for _, f := range m.Fields {
+		if f.NeedsStrconv() {
+			return true
+		}
+	}
+	return false
 }
 
 // UniqueFields returns the fields declared unique.

@@ -242,42 +242,45 @@ func TestTheGranularCommandsAndMakeModuleAgree(t *testing.T) {
 		return ""
 	}
 
-	t.Run("the session helpers", func(t *testing.T) {
+	t.Run("the page helper", func(t *testing.T) {
 		files, err := gen.GenerateController(controllerStub(gen.KindResource))
 		if err != nil {
 			t.Fatalf("GenerateController: %v", err)
 		}
-		// The three methods come from one template, so the only difference
-		// between the two files is the receiver type.
+		// The method comes from one template, so the only difference between
+		// the two files is the receiver type.
 		stub := strings.ReplaceAll(string(files[0].Content), "InvoiceController", "PurchaseOrderController")
-		for _, method := range []string{"actor(ctx *fhttp.Context)", "signIn(ctx *fhttp.Context)", "token(ctx *fhttp.Context)"} {
-			if !strings.Contains(stub, method) || !strings.Contains(find("Controller.go"), method) {
-				t.Errorf("%s is not emitted by both make:controller and make:module", method)
+		module := find("Controller.go")
+		const method = "func (c *PurchaseOrderController) page(ctx *fhttp.Context, title string) (view.Page, error) {"
+		if !strings.Contains(stub, method) || !strings.Contains(module, method) {
+			t.Errorf("%s is not emitted by both make:controller and make:module", method)
+		}
+
+		// What the subject and the error mapping used to be, per controller.
+		// The request carries the subject and the router answers the error, so
+		// neither command writes a helper for either.
+		for _, gone := range []string{"actor(ctx", "signIn(ctx", "fail(ctx", "sessions.Load("} {
+			if strings.Contains(stub, gone) || strings.Contains(module, gone) {
+				t.Errorf("a generated controller still declares %s", gone)
 			}
 		}
 	})
 
 	t.Run("the validation rules", func(t *testing.T) {
 		files, err := gen.GenerateRequest(gen.Stub{
-			Type: "StorePurchaseOrder", ModulePath: "example.test/project", Fields: spec(true).Fields,
+			Type: "PurchaseOrderRequest", ModulePath: "example.test/project", Fields: spec(true).Fields,
 		})
 		if err != nil {
 			t.Fatalf("GenerateRequest: %v", err)
 		}
-		// Every rule make:module writes for the same fields has to appear,
-		// spelled identically, in what make:request writes.
-		//
-		// Only the Store half is compared: make:module also emits an Update
-		// request, which carries the id and its own rule for it, and that is the
-		// pair being a pair rather than a second shape of the rules.
+		// Every field and every rule make:module writes for the same fields has
+		// to appear, spelled identically, in what make:request writes: one
+		// request type, form tags included, whichever command wrote it.
 		granular := string(files[0].Content)
-		store := find("PurchaseOrderRequest.go")
-		if end := strings.Index(store, "type UpdatePurchaseOrder"); end > 0 {
-			store = store[:end]
-		}
-		for _, line := range strings.Split(store, "\n") {
+		module := find("PurchaseOrderRequest.go")
+		for _, line := range strings.Split(module, "\n") {
 			line = strings.TrimSpace(line)
-			if !strings.HasPrefix(line, "validation.") {
+			if !strings.HasPrefix(line, "validation.") && !strings.Contains(line, "`form:") {
 				continue
 			}
 			if !strings.Contains(granular, line) {

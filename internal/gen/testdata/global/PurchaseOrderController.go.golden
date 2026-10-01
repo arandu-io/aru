@@ -1,17 +1,11 @@
 package controllers
 
 import (
-	"errors"
-	"net/http"
-	"net/url"
 	"strconv"
-	"time"
 
-	"github.com/arandu-io/framework/data"
 	fhttp "github.com/arandu-io/framework/http"
-	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
-	"github.com/arandu-io/framework/validation"
+	"github.com/arandu-io/hesape/pagination"
 	"github.com/arandu-io/hesape/view"
 
 	requests "example.test/project/app/Http/Requests"
@@ -26,6 +20,12 @@ import (
 // repository here and there cannot be one -- fhttp.Context carries no database
 // handle, so a controller that reached the data layer would be a controller that
 // skipped the service, and therefore skipped the policy.
+//
+// The routes sit behind middleware.RequireAuth, which puts who is asking on the
+// request: ctx.User reads it. Without the guard there is nobody there, and the
+// policy refuses the zero subject. An error an action returns is answered by the
+// router -- validation.Errors back to the form with the messages and what was
+// typed, a missing row as 404, a refusal as 403 -- so no action maps one itself.
 type PurchaseOrderController struct {
 	Controller
 
@@ -37,9 +37,9 @@ type PurchaseOrderController struct {
 // NewPurchaseOrderController returns the controller. bootstrap builds it and hands it to
 // the routes.
 //
-// The session store and the CSRF issuer arrive through the constructor rather
-// than through the service: a screen is allowed to know about a token and a
-// cookie, and a service is not allowed to expose its own dependencies.
+// The session store and the CSRF issuer are here for one thing, the token every
+// page carries: a screen is allowed to know about a token and a cookie, and a
+// service is not.
 func NewPurchaseOrderController(svc *services.PurchaseOrderService, sessions *security.SessionStore, csrf *security.CSRF) *PurchaseOrderController {
 	return &PurchaseOrderController{svc: svc, sessions: sessions, csrf: csrf}
 }
@@ -58,91 +58,44 @@ var (
 	_ fhttp.Destroyer = (*PurchaseOrderController)(nil)
 )
 
-// purchaseOrderPerPage is how many records the listing asks for when the request
-// does not say. The service has a bound of its own: this one is about the
-// screen, that one is about the database.
-const purchaseOrderPerPage = 25
-
-// Index renders the listing.
+// Index renders the listing, one page at a time.
 func (c *PurchaseOrderController) Index(ctx *fhttp.Context) error {
-	actor, err := c.actor(ctx)
+	who, _ := ctx.User()
+	found, err := c.svc.List(ctx.Ctx(), who, pagination.ResolveCurrentPage(ctx.Request.URL, ""))
 	if err != nil {
-		return c.signIn(ctx)
+		return err
 	}
-
-	// The page size is decided here rather than passed through blindly: asking
-	// for a known number is what lets the next cursor be offered only when a
-	// full page came back.
-	limit := purchaseOrderPerPage
-	if n, err := strconv.Atoi(ctx.Query("limit")); err == nil && n > 0 {
-		limit = n
-	}
-
-	found, err := c.svc.List(ctx.Ctx(), actor, data.Query{
-		Limit:  limit,
-		Cursor: ctx.Query("cursor"),
-		Sort:   ctx.Query("sort"),
-	})
-	if err != nil {
-		return c.fail(ctx, err)
-	}
-
-	rows := make([]views.PurchaseOrderRow, 0, len(found))
-	for _, p := range found {
-		rows = append(rows, c.row(ctx, p))
-	}
-
-	// The listing writes nothing, but the layout around it does: the sign-out
-	// form and every hx- request read the token off the page data. A listing
-	// rendered without one answers 200 and then refuses the next write with
-	// 419, which reads like a broken session.
-	token, err := c.token(ctx)
+	page, err := c.page(ctx, "Purchase orders")
 	if err != nil {
 		return err
 	}
 
-	// Keyset pagination picks up after the last id of the page. A partial page
-	// is the last page, and offering a link there would be a link to nothing.
-	//
-	// The address is the listing's own, asked for by name and given the cursor
-	// as a query parameter -- the parameter is not part of the route, so it is
-	// appended here rather than passed to URL, and it is escaped because the
-	// cursor is data.
-	next := ""
-	if len(rows) == limit {
-		next = ctx.URL("purchase-orders.index") + "?cursor=" + url.QueryEscape(rows[len(rows)-1].ID)
+	rows := make([]views.PurchaseOrderRow, 0, found.Count())
+	for _, p := range found.Items() {
+		rows = append(rows, c.row(ctx, p))
 	}
-
 	return ctx.View("purchase-orders.index", views.PurchaseOrdersIndexData{
-		Page:           view.Page{Title: "Purchase orders", Token: token},
+		Page:           page,
 		PurchaseOrders: rows,
 		NewURL:         ctx.URL("purchase-orders.create"),
-		NextURL:        next,
+		NextURL:        found.SetPath(ctx.URL("purchase-orders.index")).NextPageURL(),
 	})
 }
 
 // Show renders one record.
 func (c *PurchaseOrderController) Show(ctx *fhttp.Context) error {
-	actor, err := c.actor(ctx)
+	who, _ := ctx.User()
+	found, err := c.svc.Get(ctx.Ctx(), who, ctx.Param("id"))
 	if err != nil {
-		return c.signIn(ctx)
+		return err
 	}
-
-	found, err := c.svc.Get(ctx.Ctx(), actor, ctx.Param("id"))
-	if err != nil {
-		return c.fail(ctx, err)
-	}
-
-	// The token is for the delete button, which sends it as a header: an
-	// hx-delete carries no form body, so the hidden field a form uses would
-	// never arrive and the request would be refused with 419.
-	token, err := c.token(ctx)
+	page, err := c.page(ctx, "Purchase order")
 	if err != nil {
 		return err
 	}
 
 	return ctx.View("purchase-orders.show", views.PurchaseOrdersShowData{
-		Page:          view.Page{Title: "Purchase order", Token: token},
+		Page:          page,
 		PurchaseOrder: c.row(ctx, found),
 		IndexURL:      ctx.URL("purchase-orders.index"),
 		EditURL:       ctx.URL("purchase-orders.edit", found.ID),
@@ -150,19 +103,16 @@ func (c *PurchaseOrderController) Show(ctx *fhttp.Context) error {
 	})
 }
 
-// Create renders the empty form.
+// Create renders the empty form, or the rejected one: the page carries what
+// was typed and the messages, from the flash the router left.
 func (c *PurchaseOrderController) Create(ctx *fhttp.Context) error {
-	if _, err := c.actor(ctx); err != nil {
-		return c.signIn(ctx)
-	}
-	token, err := c.token(ctx)
+	page, err := c.page(ctx, "New purchase order")
 	if err != nil {
 		return err
 	}
 
 	return ctx.View("purchase-orders.create", views.PurchaseOrdersCreateData{
-		Page:     view.Page{Title: "New purchase order", Token: token},
-		Errors:   map[string][]string{},
+		Page:     page,
 		IndexURL: ctx.URL("purchase-orders.index"),
 		StoreURL: ctx.URL("purchase-orders.store"),
 	})
@@ -170,47 +120,33 @@ func (c *PurchaseOrderController) Create(ctx *fhttp.Context) error {
 
 // Store takes the submitted form.
 func (c *PurchaseOrderController) Store(ctx *fhttp.Context) error {
-	actor, err := c.actor(ctx)
-	if err != nil {
-		return c.signIn(ctx)
+	var in requests.PurchaseOrderRequest
+	if err := ctx.Bind(&in); err != nil {
+		return err
 	}
-
-	in, form, errs := c.input(ctx)
-	if !c.Validated(errs) {
-		return c.rejectedCreate(ctx, form, errs)
-	}
-
-	created, err := c.svc.Create(ctx.Ctx(), actor, in)
+	who, _ := ctx.User()
+	created, err := c.svc.Create(ctx.Ctx(), who, in)
 	if err != nil {
-		var invalid validation.Errors
-		if errors.As(err, &invalid) {
-			return c.rejectedCreate(ctx, form, invalid)
-		}
-		return c.fail(ctx, err)
+		return err
 	}
 	return ctx.RedirectRoute("purchase-orders.show", created.ID)
 }
 
-// Edit renders the form filled in.
+// Edit renders the form filled in with the stored record.
 func (c *PurchaseOrderController) Edit(ctx *fhttp.Context) error {
-	actor, err := c.actor(ctx)
+	who, _ := ctx.User()
+	found, err := c.svc.Get(ctx.Ctx(), who, ctx.Param("id"))
 	if err != nil {
-		return c.signIn(ctx)
+		return err
 	}
-
-	found, err := c.svc.Get(ctx.Ctx(), actor, ctx.Param("id"))
-	if err != nil {
-		return c.fail(ctx, err)
-	}
-	token, err := c.token(ctx)
+	page, err := c.page(ctx, "Edit purchase order")
 	if err != nil {
 		return err
 	}
 
 	return ctx.View("purchase-orders.edit", views.PurchaseOrdersEditData{
-		Page:      view.Page{Title: "Edit purchase order", Token: token},
-		Form:      c.form(found),
-		Errors:    map[string][]string{},
+		Page:      page,
+		Form:      c.row(ctx, found),
 		ShowURL:   ctx.URL("purchase-orders.show", found.ID),
 		UpdateURL: ctx.URL("purchase-orders.update", found.ID),
 	})
@@ -218,76 +154,42 @@ func (c *PurchaseOrderController) Edit(ctx *fhttp.Context) error {
 
 // Update writes the submitted form onto the stored record.
 func (c *PurchaseOrderController) Update(ctx *fhttp.Context) error {
-	actor, err := c.actor(ctx)
-	if err != nil {
-		return c.signIn(ctx)
+	var in requests.PurchaseOrderRequest
+	if err := ctx.Bind(&in); err != nil {
+		return err
 	}
-
-	in, form, errs := c.input(ctx)
-	form.ID = ctx.Param("id")
-	if !c.Validated(errs) {
-		return c.rejectedEdit(ctx, form, errs)
-	}
-
-	updated, err := c.svc.Update(ctx.Ctx(), actor, requests.UpdatePurchaseOrder{
-		ID:            ctx.Param("id"),
-		Reference:     in.Reference,
-		SupplierEmail: in.SupplierEmail,
-		Total:         in.Total,
-		Approved:      in.Approved,
-		Notes:         in.Notes,
-		DeliveryDate:  in.DeliveryDate,
-	})
+	who, _ := ctx.User()
+	updated, err := c.svc.Update(ctx.Ctx(), who, ctx.Param("id"), in)
 	if err != nil {
-		var invalid validation.Errors
-		if errors.As(err, &invalid) {
-			return c.rejectedEdit(ctx, form, invalid)
-		}
-		return c.fail(ctx, err)
+		return err
 	}
 	return ctx.RedirectRoute("purchase-orders.show", updated.ID)
 }
 
 // Destroy removes the record.
 func (c *PurchaseOrderController) Destroy(ctx *fhttp.Context) error {
-	actor, err := c.actor(ctx)
-	if err != nil {
-		return c.signIn(ctx)
-	}
-	if err := c.svc.Delete(ctx.Ctx(), actor, ctx.Param("id")); err != nil {
-		return c.fail(ctx, err)
+	who, _ := ctx.User()
+	if err := c.svc.Delete(ctx.Ctx(), who, ctx.Param("id")); err != nil {
+		return err
 	}
 	return ctx.RedirectRoute("purchase-orders.index")
 }
 
-// actor is who is acting, from the session and never from the request body.
-func (c *PurchaseOrderController) actor(ctx *fhttp.Context) (security.Subject, error) {
-	return c.sessions.Load(ctx.Ctx(), ctx.Request)
-}
-
-// signIn sends an unauthenticated visitor to the sign-in screen. Under HTMX the
-// redirect becomes HX-Redirect, so the browser navigates instead of nesting the
-// whole page inside a fragment.
+// page is the chrome a screen hands the layout: the title, what a rejected
+// attempt left in the flash -- the messages and what was typed -- and the CSRF
+// token for this session.
 //
-// The screen is asked for by name, not by path. Two different things register
-// it -- the framework's auth module and the starter kit -- and only one of them
-// answers in any given project; both name the route auth.login, and neither
-// promises the path stays where it is.
-func (c *PurchaseOrderController) signIn(ctx *fhttp.Context) error {
-	return ctx.RedirectRoute("auth.login")
+// Every page needs the token, including the ones that write nothing: the
+// sign-out form and every hx- request read it off the page data. A page
+// rendered without one answers 200 and then refuses the next write with 419,
+// which reads like a broken session rather than a missing field.
+func (c *PurchaseOrderController) page(ctx *fhttp.Context, title string) (view.Page, error) {
+	token, err := c.csrf.Issue(c.sessions.IDFromRequest(ctx.Request))
+	return view.New(ctx, title).WithToken(token), err
 }
 
-// token issues a CSRF token for the session that is rendering the page.
-//
-// Every page needs it, including the ones that write nothing: the sign-out form
-// and every hx- request read it off the page data. A page rendered without one
-// answers 200 and then refuses the next write with 419, which reads like a
-// broken session rather than a missing field.
-func (c *PurchaseOrderController) token(ctx *fhttp.Context) (string, error) {
-	return c.csrf.Issue(c.sessions.IDFromRequest(ctx.Request))
-}
-
-// row turns the entity into what the markup renders.
+// row turns the entity into what the markup renders: the text a cell shows and
+// an input of the edit form starts at.
 //
 // Formatting happens here rather than in the view: a view that formats a
 // time.Time would need the time package, and what a date looks like on screen is
@@ -302,142 +204,12 @@ func (c *PurchaseOrderController) row(ctx *fhttp.Context, p *models.PurchaseOrde
 		URL:           ctx.URL("purchase-orders.show", p.ID),
 		Reference:     p.Reference,
 		SupplierEmail: p.SupplierEmail,
-		Total:         p.Total,
+		Total:         strconv.FormatInt(p.Total, 10),
 		Approved:      p.Approved,
 		Notes:         p.Notes,
 		DeliveryDate:  p.DeliveryDate.Format("2006-01-02"),
 		Created:       p.CreatedAt.Format("2006-01-02 15:04"),
 	}
-}
-
-// form fills the edit form from the stored record.
-func (c *PurchaseOrderController) form(p *models.PurchaseOrder) views.PurchaseOrderForm {
-	return views.PurchaseOrderForm{
-		ID:            p.ID,
-		Reference:     p.Reference,
-		SupplierEmail: p.SupplierEmail,
-		Total:         strconv.FormatInt(p.Total, 10),
-		Approved:      p.Approved,
-		Notes:         p.Notes,
-		DeliveryDate:  p.DeliveryDate.Format("2006-01-02"),
-	}
-}
-
-// input reads the submitted form.
-//
-// It returns three things: the typed request the service takes, the form as it
-// was typed -- so a rejected submission comes back filled in rather than blank --
-// and the errors parsing itself found. A number that is not a number is rejected
-// here, naming the field, rather than reaching the service as a silent zero.
-func (c *PurchaseOrderController) input(ctx *fhttp.Context) (requests.StorePurchaseOrder, views.PurchaseOrderForm, validation.Errors) {
-	errs := validation.Errors{}
-
-	in := requests.StorePurchaseOrder{
-		Reference:     ctx.Input("reference"),
-		SupplierEmail: ctx.Input("supplier_email"),
-		Total:         c.whole(ctx, "total", errs),
-		Approved:      ctx.Input("approved") != "",
-		Notes:         ctx.Input("notes"),
-		DeliveryDate:  c.moment(ctx, "delivery_date", "2006-01-02", errs),
-	}
-
-	form := views.PurchaseOrderForm{
-		Reference:     ctx.Input("reference"),
-		SupplierEmail: ctx.Input("supplier_email"),
-		Total:         ctx.Input("total"),
-		Approved:      ctx.Input("approved") != "",
-		Notes:         ctx.Input("notes"),
-		DeliveryDate:  ctx.Input("delivery_date"),
-	}
-
-	// arandu:begin custom
-	// Anything the form carries that the fields above do not: a value composed
-	// of two inputs, a default that depends on the actor.
-	// arandu:end custom
-
-	return in, form, errs
-}
-
-// rejectedCreate re-renders the creation form with its errors, as the 422
-// fragment HTMX swaps back in.
-func (c *PurchaseOrderController) rejectedCreate(ctx *fhttp.Context, form views.PurchaseOrderForm, errs validation.Errors) error {
-	token, err := c.token(ctx)
-	if err != nil {
-		return err
-	}
-	return c.Invalid(ctx, "purchase-orders.create", views.PurchaseOrdersCreateData{
-		Page:     view.Page{Title: "New purchase order", Token: token},
-		Form:     form,
-		Errors:   errs,
-		IndexURL: ctx.URL("purchase-orders.index"),
-		StoreURL: ctx.URL("purchase-orders.store"),
-	})
-}
-
-// rejectedEdit re-renders the edit form with its errors.
-func (c *PurchaseOrderController) rejectedEdit(ctx *fhttp.Context, form views.PurchaseOrderForm, errs validation.Errors) error {
-	token, err := c.token(ctx)
-	if err != nil {
-		return err
-	}
-	return c.Invalid(ctx, "purchase-orders.edit", views.PurchaseOrdersEditData{
-		Page:      view.Page{Title: "Edit purchase order", Token: token},
-		Form:      form,
-		Errors:    errs,
-		ShowURL:   ctx.URL("purchase-orders.show", form.ID),
-		UpdateURL: ctx.URL("purchase-orders.update", form.ID),
-	})
-}
-
-// fail turns a domain error into a status, in one place.
-//
-// Note what it does not do: it never writes the authorization error into the
-// response. Why a policy said no is information about the system, and it belongs
-// in the log. Anything unrecognized is returned, and the router turns it into
-// the error page in development and a 500 in production.
-func (c *PurchaseOrderController) fail(ctx *fhttp.Context, err error) error {
-	switch {
-	case errors.Is(err, security.ErrForbidden):
-		observability.Log(ctx.Ctx()).Warn("authorization denied", "error", err)
-		return ctx.Status(http.StatusForbidden)
-	case errors.Is(err, models.ErrPurchaseOrderNotFound):
-		return ctx.Status(http.StatusNotFound)
-	case errors.Is(err, models.ErrPurchaseOrderConflict):
-		return ctx.Status(http.StatusConflict)
-	case errors.Is(err, models.ErrPurchaseOrderSort):
-		return ctx.Status(http.StatusBadRequest)
-	default:
-		return err
-	}
-}
-
-// whole reads an integer field, and names the field when it is not one.
-func (c *PurchaseOrderController) whole(ctx *fhttp.Context, field string, e validation.Errors) int64 {
-	raw := ctx.Input(field)
-	if raw == "" {
-		return 0
-	}
-	n, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil {
-		e.Add(field, "must be a whole number")
-		return 0
-	}
-	return n
-}
-
-// moment reads a date or a timestamp, in the layout the matching HTML input
-// submits.
-func (c *PurchaseOrderController) moment(ctx *fhttp.Context, field, layout string, e validation.Errors) time.Time {
-	raw := ctx.Input(field)
-	if raw == "" {
-		return time.Time{}
-	}
-	t, err := time.Parse(layout, raw)
-	if err != nil {
-		e.Add(field, "is not a valid date")
-		return time.Time{}
-	}
-	return t
 }
 
 // arandu:begin custom

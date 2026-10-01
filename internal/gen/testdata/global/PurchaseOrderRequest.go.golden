@@ -6,20 +6,21 @@ import (
 	"github.com/arandu-io/framework/validation"
 )
 
-// StorePurchaseOrder is the input contract of creation. Fields are explicit: there
-// is no mass assignment, so a field the client sends and this struct does not
+// PurchaseOrderRequest is the input contract of creation and update, which take the
+// same fields. ctx.Bind fills it through the form tags, and only those: there is
+// no mass assignment, so a key the client sends and this struct does not
 // declare goes nowhere.
-type StorePurchaseOrder struct {
-	Reference     string
-	SupplierEmail string
-	Total         int64
-	Approved      bool
-	Notes         string
-	DeliveryDate  time.Time
+type PurchaseOrderRequest struct {
+	Reference     string    `form:"reference"`
+	SupplierEmail string    `form:"supplier_email"`
+	Total         int64     `form:"total"`
+	Approved      bool      `form:"approved"`
+	Notes         string    `form:"notes"`
+	DeliveryDate  time.Time `form:"delivery_date"`
 }
 
 // Validate reports the errors per field.
-func (r StorePurchaseOrder) Validate() validation.Errors {
+func (r PurchaseOrderRequest) Validate() validation.Errors {
 	e := validation.Errors{}
 	validation.Required(e, "reference", r.Reference)
 	validation.MaxLen(e, "reference", r.Reference, 255)
@@ -36,35 +37,5 @@ func (r StorePurchaseOrder) Validate() validation.Errors {
 	return e
 }
 
-// UpdatePurchaseOrder carries the id as well, and the same rules.
-type UpdatePurchaseOrder struct {
-	ID            string
-	Reference     string
-	SupplierEmail string
-	Total         int64
-	Approved      bool
-	Notes         string
-	DeliveryDate  time.Time
-}
-
-// Validate reports the errors per field.
-func (r UpdatePurchaseOrder) Validate() validation.Errors {
-	e := StorePurchaseOrder{
-		Reference:     r.Reference,
-		SupplierEmail: r.SupplierEmail,
-		Total:         r.Total,
-		Approved:      r.Approved,
-		Notes:         r.Notes,
-		DeliveryDate:  r.DeliveryDate,
-	}.Validate()
-	validation.Required(e, "id", r.ID)
-	return e
-}
-
-// Compile-time proof that both requests honor the validation contract.
-var (
-	_ validation.Validatable = StorePurchaseOrder{}
-	_ validation.Validatable = UpdatePurchaseOrder{}
-)
-
-var _ = time.Time{}
+// Compile-time proof that the request honors the validation contract.
+var _ validation.Validatable = PurchaseOrderRequest{}

@@ -9,19 +9,20 @@ import (
 // StoreInvoice is an input contract: what the request is allowed to carry, and
 // what makes it valid.
 //
-// The fields are explicit. There is no mass assignment and there is no struct
-// tag, so a field the client sends and this struct does not declare goes
-// nowhere -- and a rule nobody wrote is not a rule somebody switched off.
+// The fields are explicit, and ctx.Bind fills each one through its form tag and
+// nothing else. There is no mass assignment, so a field the client sends and
+// this struct does not declare goes nowhere -- and a rule nobody wrote is not a
+// rule somebody switched off.
 //
 // A request object often answers authorize() as well. This one does not, and
 // that is the decision rather than an omission: authorization is the Policy, asked with
 // security.Authorize inside the service, and a second place to say yes is a
 // second place to forget. See app/Policies.
 type StoreInvoice struct {
-	Reference     string
-	SupplierEmail string
-	Total         int64
-	DeliveryDate  time.Time
+	Reference     string    `form:"reference"`
+	SupplierEmail string    `form:"supplier_email"`
+	Total         int64     `form:"total"`
+	DeliveryDate  time.Time `form:"delivery_date"`
 }
 
 // Validate reports the errors per field.

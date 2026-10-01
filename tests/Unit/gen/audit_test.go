@@ -8,11 +8,6 @@ import (
 	"github.com/arandu-io/aru/internal/gen"
 )
 
-// The tests here each lock one defect an audit found in the generated code.
-// They read the generated source rather than run it, because what went wrong
-// was what got written -- and a golden file records the whole output without
-// saying which line is the one that matters.
-
 // TestTheCursorFollowsTheSortColumn: keyset pagination compared created_at
 // while ordering by whatever q.Sort named. Any sort other than the default
 // computed the page boundary on one ordering and returned the rows in another,
@@ -127,8 +122,7 @@ func TestNoGeneratedFileWritesAnAddress(t *testing.T) {
 
 // TestTheGeneratedControllerAsksForEveryAddressByItsRouteName is the other half
 // of the check above: nothing writes a path, and what replaced it is the seven
-// names Resource registers for this module, plus the one the sign-in screen is
-// registered under.
+// names Resource registers for this module.
 //
 // The names are written out rather than derived, because deriving them from the
 // same method the generator uses would make this test agree with the generator
@@ -150,7 +144,6 @@ func TestTheGeneratedControllerAsksForEveryAddressByItsRouteName(t *testing.T) {
 			`ctx.RedirectRoute("purchase-orders.show", created.ID)`,
 			`ctx.RedirectRoute("purchase-orders.show", updated.ID)`,
 			`ctx.RedirectRoute("purchase-orders.index")`,
-			`ctx.RedirectRoute("auth.login")`,
 		} {
 			if !strings.Contains(controller, want) {
 				t.Errorf("tenant=%v: the controller does not ask for %s", tenant, want)

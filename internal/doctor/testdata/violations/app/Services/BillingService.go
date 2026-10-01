@@ -49,3 +49,14 @@ func (s *BillingService) ShowCharge(ctx context.Context, actor security.Subject,
 	charge, err := s.charges.Get(ctx, g, id)
 	return charge, err
 }
+
+// FetchCharge is the same violation spelled through a FindOrFail, which is how
+// a service reads one row by key when a missing row should answer 404.
+func (s *BillingService) FetchCharge(ctx context.Context, actor security.Subject, id string) (*models.Charge, error) {
+	g, err := security.Authorize(ctx, s.policy, actor, "billing.view", models.Charge{})
+	if err != nil {
+		return nil, err
+	}
+
+	return s.charges.FindOrFail(ctx, g, id)
+}

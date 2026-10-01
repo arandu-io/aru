@@ -2778,9 +2778,10 @@ func tenantIsInThePredicate(text string) bool {
 
 // namesOneRow reports whether a read call is pointed at a particular row.
 //
-// Find is by key wherever it is written. The model builder's Find and a
-// repository's Find both take the id as an argument and answer one entity, so
-// the name alone settles it.
+// Find and FindOrFail are by key wherever they are written. The model
+// builder's two and a repository's Find all take the id as an argument and
+// answer one entity, so the name alone settles it -- FindOrFail differs only in
+// answering a missing row with an error rather than with nil.
 //
 // Get is the one that needs telling apart, because two different reads are
 // spelled that way. A model builder's Get is a listing terminal: it takes the
@@ -2800,7 +2801,7 @@ func tenantIsInThePredicate(text string) bool {
 // request -- an id chosen by the caller arrives as ctx.Param, a field or a
 // variable -- and it is the request-supplied id that this rule exists for.
 func namesOneRow(call *ast.CallExpr, name string) bool {
-	if strings.HasSuffix(name, ".Find") {
+	if strings.HasSuffix(name, ".Find") || strings.HasSuffix(name, ".FindOrFail") {
 		return true
 	}
 	if !strings.HasSuffix(name, ".Get") || len(call.Args) <= 2 {

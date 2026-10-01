@@ -288,6 +288,14 @@
     "why": "the first Authorize tells whether the caller may look at all. The second, with the row that was read, is the object-level decision: the caller may read this row, and nobody else's. Skipping it means any user of the same tenant sees the row. Call security.Authorize with the entity after the read."
   },
   {
+    "rule": "resource-not-reauthorized",
+    "severity": "warning",
+    "file": "app/Services/BillingService.go",
+    "line": 55,
+    "message": "FetchCharge reads a row and does not re-authorize it",
+    "why": "the first Authorize tells whether the caller may look at all. The second, with the row that was read, is the object-level decision: the caller may read this row, and nobody else's. Skipping it means any user of the same tenant sees the row. Call security.Authorize with the entity after the read."
+  },
+  {
     "rule": "test-outside-the-tests-tree",
     "severity": "warning",
     "file": "app/Services/BillingService_test.go",

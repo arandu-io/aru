@@ -214,19 +214,6 @@ func (f Field) ViewType() string {
 	}
 }
 
-// FormType is how the field is declared in the view's form struct.
-//
-// Everything is text except a boolean, because a form carries text: the value
-// that comes back after a rejection has to be exactly what the person typed,
-// including the "12,00" that failed to parse. A checkbox is the exception --
-// it is checked or it is not.
-func (f Field) FormType() string {
-	if f.IsBool() {
-		return "bool"
-	}
-	return "string"
-}
-
 // RowType is how the field is declared in the row struct the screens share.
 //
 // Everything is text except a boolean, because the row is what a cell shows and
@@ -425,12 +412,6 @@ func (m Module) Request() string { return m.Entity() + "Request" }
 // RowStruct is the view struct that carries one record to the markup.
 func (m Module) RowStruct() string { return m.Entity() + "Row" }
 
-// FormStruct is the view struct that carries the form fields.
-//
-// It is not called FormType, so that reading a template is unambiguous: a field
-// has a FormType -- string or bool -- and the module has a FormStruct.
-func (m Module) FormStruct() string { return m.Entity() + "Form" }
-
 // Human is the entity as a person writes it in a sentence: "purchase order".
 func (m Module) Human() string { return strings.ReplaceAll(m.Name, "_", " ") }
 
@@ -529,18 +510,6 @@ func (m Module) NeedsTimeParse() bool {
 		}
 	}
 	return false
-}
-
-// BoolFields returns the checkbox fields, which are the ones the form renders
-// with a checked attribute.
-func (m Module) BoolFields() []Field {
-	var out []Field
-	for _, f := range m.Fields {
-		if f.IsBool() {
-			out = append(out, f)
-		}
-	}
-	return out
 }
 
 // FirstField is the column the listing links from. It is the first the

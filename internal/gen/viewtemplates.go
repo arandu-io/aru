@@ -20,8 +20,9 @@ package gen
 //     what makes the struct satisfy the layout's Layout interface. The `var _
 //     Layout` line below each declaration is where a page that stopped fitting
 //     stops the build, naming the page;
-//   - dates and numbers arrive already formatted, as text. A view that formatted
-//     a time.Time would need the time package, and the generated file imports a
+//   - dates and numbers arrive already formatted, as text, in one row struct the
+//     listing, the record and the edit form share. A view that formatted a
+//     time.Time would need the time package, and the generated file imports a
 //     fixed set -- so formatting is the controller's, which is where a decision
 //     about presentation belongs anyway;
 //   - every address is a field on the page data, filled by the controller from
@@ -60,15 +61,16 @@ type <%.ViewData "index"%> struct {
 	// has no route table, so a link written here could only be a literal -- and
 	// a literal keeps rendering after the route moves.
 	NewURL string
-	// NextURL is the following page of the listing, cursor included. It is
-	// empty on the last page, and the link is not rendered then.
+	// NextURL is the following page of the listing. It is empty on the last
+	// page, and the link is not rendered then.
 	NextURL string
 }
 
 // Compile-time proof that this page fits the layout it extends.
 var _ view.Layout = <%.ViewData "index"%>{}
 
-// <%.RowStruct%> is one record, formatted for display by the controller.
+// <%.RowStruct%> is one record, formatted by the controller: what the listing
+// and the record show, and what the edit form starts at.
 type <%.RowStruct%> struct {
 	// ID is what the row is addressed by.
 	ID string
@@ -76,14 +78,14 @@ type <%.RowStruct%> struct {
 	// controller.
 	URL string
 <%range .Fields%>	// <%.GoName%> is the <%.Label%> column.
-	<%.GoName%> <%.ViewType%>
+	<%.GoName%> <%.RowType%>
 <%end%>	// Created is the creation timestamp, already formatted.
 	Created string
 }
 
 // <%.Entity%>IndexTable adapts the server page to the native Kyse DataTable.
-// The Service keeps cursor pagination; the component owns only the rows and
-// column presentation of the page it was handed.
+// The Service pages the listing; the component owns only the rows and column
+// presentation of the page it was handed.
 func <%.Entity%>IndexTable(data <%.ViewData "index"%>) components.DataTableProps {
 	rows := make([]components.TableRow, 0, len(data.<%.Plural%>))
 	for _, <%.Unexported%> := range data.<%.Plural%> {
@@ -214,20 +216,19 @@ import (
 )
 
 @go
-// <%.ViewData "create"%> is what <%.Controller%>.Create hands this page, and what
-// Store hands it back when the submission was rejected: same view, same data,
-// with the messages filled in.
+// <%.ViewData "create"%> is what <%.Controller%>.Create hands this page. A
+// rejected submission comes back to it too, and the page carries the messages
+// and what was typed from the flash: the controller passes nothing for that.
 type <%.ViewData "create"%> struct {
-	// Page is the state the layout draws. Its Token is what @csrf writes into
-	// the hidden field, through Page.CSRFToken -- it comes from the page data
-	// rather than from a global, because a template that reaches for request
-	// state outside the data it was given is how a form ends up carrying
-	// another session's token under load.
+	// Page is the state the layout draws, and what every input asks for its
+	// message and for what was typed. Its Token is what @csrf writes into the
+	// hidden field -- it comes from the page data rather than from a global,
+	// because a template that reaches for request state outside the data it was
+	// given is how a form ends up carrying another session's token under load.
 	view.Page
-	// Form is what was typed, so a rejected submission comes back filled in.
-	Form <%.FormStruct%>
-	// Errors is the message per field, as validation produced it.
-	Errors map[string][]string
+	// Form is what the inputs start at: empty here, and the stored record on the
+	// edit screen, which shares these inputs.
+	Form <%.RowStruct%>
 	// IndexURL is the listing this screen came from, and StoreURL is where the
 	// form submits. Both are built from the route names by the controller: a
 	// view has no route table, so a path written here could only be a literal --
@@ -236,43 +237,15 @@ type <%.ViewData "create"%> struct {
 	StoreURL string
 }
 
-// FieldError is the first message for a field, or empty.
-//
-// A method rather than a lookup in the markup: a view that indexes a map has to
-// check the length first, and d.Errors["title"][0] without that check panics
-// on the happy path -- which is the request where nothing was wrong.
-func (d <%.ViewData "create"%>) FieldError(field string) string {
-	if msgs := d.Errors[field]; len(msgs) > 0 {
-		return msgs[0]
-	}
-	return ""
-}
+// FieldError is the first message for a field, or empty: what an input asks
+// the page about itself.
+func (d <%.ViewData "create"%>) FieldError(field string) string { return d.First(field) }
 
 // Compile-time proof that this page fits the layout it extends.
 var _ view.Layout = <%.ViewData "create"%>{}
 
-// <%.FormStruct%> is the form as text, which is what a form carries.
-//
-// The value that comes back after a rejection is exactly what was typed,
-// including the number that failed to parse -- retyping a whole form because one
-// field was wrong is how a screen becomes unpleasant.
-type <%.FormStruct%> struct {
-	// ID is empty on creation and set on edit, where it addresses the record.
-	ID string
-<%range .Fields%>	// <%.GoName%> is the <%.Label%> input.
-	<%.GoName%> <%.FormType%>
-<%end%>}
-<%range .BoolFields%>
-// <%.GoName%>Attr renders the checked attribute of the <%.Label%> checkbox.
-func (f <%$.FormStruct%>) <%.GoName%>Attr() string {
-	if f.<%.GoName%> {
-		return "checked"
-	}
-	return ""
-}
-<%end%>
 // arandu:begin custom
-// Anything else these forms need in Go goes here, and survives regeneration.
+// Anything else this page needs in Go goes here, and survives regeneration.
 // arandu:end custom
 @endgo
 
@@ -285,7 +258,7 @@ func (f <%$.FormStruct%>) <%.GoName%>Attr() string {
 
 	<h1 class="mt-2 text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
 
-	<form class="mt-8 space-y-6" method="post" action="{{ .StoreURL }}" hx-post="{{ .StoreURL }}" hx-target="this" hx-swap="outerHTML">
+	<form class="mt-8 space-y-6" method="post" action="{{ .StoreURL }}" hx-post="{{ .StoreURL }}">
 		@csrf
 		<%template "fields" .%>
 		<div class="flex items-center gap-3">
@@ -308,15 +281,15 @@ import (
 
 @go
 // <%.ViewData "edit"%> is what <%.Controller%>.Edit hands this page: the form
-// filled in with a stored record, or with what was typed when Update rejected it.
+// filled in with a stored record. A rejected update comes back with what was
+// typed in place of the stored values, from the flash on the page.
 type <%.ViewData "edit"%> struct {
-	// Page is the state the layout draws. Its Token is what @csrf writes into
-	// the hidden field.
+	// Page is the state the layout draws, and what every input asks for its
+	// message and for what was typed. Its Token is what @csrf writes into the
+	// hidden field.
 	view.Page
-	// Form is the record as text.
-	Form <%.FormStruct%>
-	// Errors is the message per field, as validation produced it.
-	Errors map[string][]string
+	// Form is the stored record, which is what the inputs start at.
+	Form <%.RowStruct%>
 	// ShowURL is the record this form edits, and UpdateURL is where it submits.
 	// Both are built from the route names by the controller: a view has no route
 	// table, so a path written here could only be a literal -- and a literal
@@ -325,17 +298,9 @@ type <%.ViewData "edit"%> struct {
 	UpdateURL string
 }
 
-// FieldError is the first message for a field, or empty.
-//
-// A method rather than a lookup in the markup: a view that indexes a map has to
-// check the length first, and d.Errors["title"][0] without that check panics
-// on the happy path -- which is the request where nothing was wrong.
-func (d <%.ViewData "edit"%>) FieldError(field string) string {
-	if msgs := d.Errors[field]; len(msgs) > 0 {
-		return msgs[0]
-	}
-	return ""
-}
+// FieldError is the first message for a field, or empty: what an input asks
+// the page about itself.
+func (d <%.ViewData "edit"%>) FieldError(field string) string { return d.First(field) }
 
 // Compile-time proof that this page fits the layout it extends.
 var _ view.Layout = <%.ViewData "edit"%>{}
@@ -357,7 +322,7 @@ var _ view.Layout = <%.ViewData "edit"%>{}
 	<!-- hx-put, and no action: a browser form can only send GET and POST, and
 	the update route is PUT. HTMX sends the real method, which is why this
 	stack does not need a hidden _method field. -->
-	<form class="mt-8 space-y-6" hx-put="{{ .UpdateURL }}" hx-target="this" hx-swap="outerHTML">
+	<form class="mt-8 space-y-6" hx-put="{{ .UpdateURL }}">
 		@csrf
 		<%template "fields" .%>
 		<div class="flex items-center gap-3">
@@ -374,6 +339,10 @@ var _ view.Layout = <%.ViewData "edit"%>{}
 // create screen and the edit screen take different data and @include hands the
 // partial the page's data unchanged -- so a single partial would assert one type
 // and fail on the other.
+//
+// Each input is handed the page and its starting value, and asks the page for
+// the rest: a rejected attempt's message and what was typed come from the flash
+// through view.Page, so neither screen carries a form model of its own.
 const viewFieldsTemplate = `<%define "fields"%><%range .Fields%>
 		<%if .IsLongText%>{!! components.Textarea(components.TextareaProps{
 			Name:  "<%.Column%>",
@@ -382,10 +351,12 @@ const viewFieldsTemplate = `<%define "fields"%><%range .Fields%>
 			Page: .,
 			Rows:  6,<%if .Required%>
 			Required: true,<%end%>
-		}) !!}<%else if .IsBool%><label class="flex items-center gap-2 text-sm">
-			<input class="input" id="<%.Column%>" name="<%.Column%>" type="checkbox" value="1" {{ .Form.<%.GoName%>Attr() }}>
-			<%.Label%>
-		</label><%else%>{!! components.Field(components.FieldProps{
+		}) !!}<%else if .IsBool%>{!! components.Checkbox(components.CheckboxProps{
+			Name:    "<%.Column%>",
+			Label:   "<%.Label%>",
+			Checked: .Form.<%.GoName%>,
+			Page: .,
+		}) !!}<%else%>{!! components.Field(components.FieldProps{
 			Name:  "<%.Column%>",
 			Label: "<%.Label%>",
 			Type:  "<%.InputType%>",

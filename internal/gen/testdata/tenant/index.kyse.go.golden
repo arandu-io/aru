@@ -23,15 +23,16 @@ type PurchaseOrdersIndexData struct {
 	// has no route table, so a link written here could only be a literal -- and
 	// a literal keeps rendering after the route moves.
 	NewURL string
-	// NextURL is the following page of the listing, cursor included. It is
-	// empty on the last page, and the link is not rendered then.
+	// NextURL is the following page of the listing. It is empty on the last
+	// page, and the link is not rendered then.
 	NextURL string
 }
 
 // Compile-time proof that this page fits the layout it extends.
 var _ view.Layout = PurchaseOrdersIndexData{}
 
-// PurchaseOrderRow is one record, formatted for display by the controller.
+// PurchaseOrderRow is one record, formatted by the controller: what the listing
+// and the record show, and what the edit form starts at.
 type PurchaseOrderRow struct {
 	// ID is what the row is addressed by.
 	ID string
@@ -43,7 +44,7 @@ type PurchaseOrderRow struct {
 	// SupplierEmail is the Supplier email column.
 	SupplierEmail string
 	// Total is the Total column.
-	Total int64
+	Total string
 	// Approved is the Approved column.
 	Approved bool
 	// Notes is the Notes column.
@@ -55,8 +56,8 @@ type PurchaseOrderRow struct {
 }
 
 // PurchaseOrderIndexTable adapts the server page to the native Kyse DataTable.
-// The Service keeps cursor pagination; the component owns only the rows and
-// column presentation of the page it was handed.
+// The Service pages the listing; the component owns only the rows and column
+// presentation of the page it was handed.
 func PurchaseOrderIndexTable(data PurchaseOrdersIndexData) components.DataTableProps {
 	rows := make([]components.TableRow, 0, len(data.PurchaseOrders))
 	for _, purchaseOrder := range data.PurchaseOrders {

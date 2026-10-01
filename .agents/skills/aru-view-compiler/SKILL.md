@@ -126,10 +126,10 @@ at all. Every other name is free — a single letter, a common word, whichever i
 is. That freedom is the product of the prefix, and it is what a change here must
 not spend.
 
-## The escape is chosen by position, and five positions refuse
+## The escape is chosen by position, and the rest refuse
 
-A view writes `{{ }}` and says nothing about escaping. `echo`
-(`generate.go:1004`) reads the position out of the markup around it:
+A view writes `{{ }}` and says nothing about escaping. `echo` (in
+`generate.go`) reads the position out of the markup around it:
 
 | position | what is emitted |
 | --- | --- |
@@ -138,16 +138,52 @@ A view writes `{{ }}` and says nothing about escaping. `echo`
 | the front of a URL attribute | `view.TextURL(...)`, refusable at render time |
 | inside a `script` element | `view.TextJS(...)` |
 | a `style` attribute or a `style` element | `view.TextCSS(...)`, refusable at render time |
+| a JSON attribute, outside a string | `view.TextAttr(view.TextJS(...))` — one whole JSON literal, then the attribute escape |
+| a JSON attribute, inside a string | escaped for the JSON string, then for the attribute |
+| `hx-trigger` | `view.TextAttr(...)`, refused at render time when the value holds a `[` |
 
-And five positions produce no escape at all, so the value is refused instead —
-four at build time and one at render time:
+**The JSON attributes** are `hx-vals`, `hx-headers`, `hx-request` and
+`data-kyse-props`, an exact list (`attributeHoldsJSON`). The HTML parser decodes
+`&#34;` back into a quote before the JSON parser reads the value, so the
+attribute escape alone let `x", "role": "admin` close the string and add keys.
+The scanner follows the JSON inside the value, with character references
+decoded, and picks the escape by where the interpolation lands. A value right
+after a backslash inside a JSON string is refused at build time. When the
+attribute's value opens with `js:` or `javascript:`, HTMX evaluates it, and the
+interpolation is refused as a script position.
+
+**`hx-trigger`** is escaped as an attribute and checked at render time: a `[`
+opens the filter HTMX evaluates, so a value holding one is refused, and a value
+written inside a filter the view itself opened is refused at build time.
+Components write their events here, which is why every value is not refused.
+
+**`data-hx-*` is classified exactly like `hx-*`.** HTMX reads every attribute
+through its `data-` alias as well, so the prefix is taken off an HTMX name
+before it is classified — `data-hx-post` is an address, `data-hx-on:click` is a
+script, `data-hx-vals` is JSON.
+
+**An address is read as the browser reads it.** The front of a URL attribute is
+read with character references decoded and tabs and newlines removed, and a
+value takes the URL check while the front is still empty. `hx-push-url` and
+`hx-replace-url` are addresses too.
+
+And these positions produce no escape at all, so the value is refused instead —
+all at build time except the attribute name:
 
 - **an unquoted attribute value** — it ends at the first space, and no escape
   puts a space back inside it;
 - **an attribute whose value is code** — `on*`, `hx-on*`, `x-on:`, `@`,
-  `x-bind:`, `:`, and the ten closed `x-` directives. A character reference in
-  an attribute is decoded before the script is read, so an escaped quote arrives
-  as the quote it started as;
+  `x-bind:`, `:`, the ten closed `x-` directives, and `hx-vars`, which HTMX
+  always evaluates. A character reference in an attribute is decoded before the
+  script is read, so an escaped quote arrives as the quote it started as;
+- **an attribute the browser acts on rather than displays** — `srcdoc`, the
+  `content` of a `meta http-equiv` (whichever order the two attributes are
+  written in), and the values of an SVG `animate` or `set`. No escape keeps a
+  value text there;
+- **an address whose scheme and host are not fixed yet** — a value written after
+  the front began: `{{ .U }}{{ .V }}`, `j{{ .V }}`, `/{{ .V }}`. The URL check
+  reads one value whole, never two together; a value after a static
+  `javascript:` or `vbscript:` scheme is refused as a script;
 - **where an element name goes** — an element name carries no character
   references;
 - **a position the markup left unknown** — a tag opened in one branch and closed
@@ -163,6 +199,28 @@ for every event name — and writes out the closed `x-` family.
 
 If a change adds a position, it adds a case to `echo` and either an escape or a
 refusal. There is no default that "probably escapes enough".
+
+## A refusal at render time fails closed
+
+`view.TextURL`, `view.TextCSS`, the attribute-name check and the trigger check
+return an error, and the first error stops every write after it: the generated
+render function returns it, wrapped with the view's file and line. A generated
+**component** returns its markup only when every write succeeded, and the empty
+`template.HTML` otherwise. Returning the prefix it had built would leave an
+attribute value open with its closing quote never written, and the page markup
+after it — values a visitor controls among it — would be read by the browser as
+attributes of that element. Nothing that consumes a refusal may write the
+partial output.
+
+## `{!! !!}` accepts only `template.HTML`
+
+`raw` (in `generate.go`) assigns the value to a `template.HTML` before it is
+written, on a line of its own under the view's `//line` directive. The Go
+compiler then decides what may be written raw: a component, an icon, a field
+whose type says it is markup, and a constant the view spelled out. A `string`
+that arrived as data does not convert implicitly, so `{!! .Bio !!}` stops the
+build with the type error at the line of the `.kyse.go`. Do not loosen this to
+`any` or to a conversion in the generated code: the type is the rule.
 
 ## The directive set is closed
 

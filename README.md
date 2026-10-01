@@ -39,9 +39,21 @@ compiled against is still the one it is running.
 | migrations | `migrate` `migrate:rollback` `migrate:status` `migrate:fresh` |
 | queues | `queue:work` `queue:listen` `queue:restart` `queue:pause` `queue:resume` `queue:clear` `queue:monitor` `queue:failed` `queue:retry` `queue:forget` `queue:flush` `queue:prune-failed` `queue:retry-batch` `queue:prune-batches` |
 | fonts | `font:add` `font:search` `font:info` `font:list` `font:remove` |
+| native application | `native:run` `native:dev` `native:build` |
+| modules, editor and inspection | `vendor:publish` `lsp` `action:list` `about` |
 | everything else | `key:generate` `schedule:list` `schedule:run` `route:list` `db:seed` `view:build` |
 
-plus `help` and `version`.
+plus `help` and `version`. The native and inspection commands, in the words of `aru help`:
+
+| command | what it does |
+|---|---|
+| `native:run` | build the native application and open its window |
+| `native:dev` | rebuild the native application and reopen it on every change |
+| `native:build` | compile the native application for one platform |
+| `vendor:publish` | show what the registered modules would publish into the project, and write it |
+| `lsp` | serve Kyse diagnostics and completion to an editor |
+| `action:list` | list the actions the source declares, with the constant and the line of each |
+| `about` | report what the application has wired: drivers, modules and version |
 
 - **`aru make:module`** — a Model-backed entity with its policy, service,
   request, controller, migration and four screens, compiling and tested from
@@ -95,10 +107,9 @@ The CLI documents itself. `aru help` lists every command, and each one explains
 what it writes and what to do with it. `aru doctor` explains what it found and
 what breaks, not which rule was violated.
 
-A guide and a website do not exist yet, and that is a decision rather than a
-gap: a guide written against an API that still moves is work done twice, and the
-second time is worse — there is wrong documentation published. The site is the
-next phase, and it will be an Arandu application.
+The guide is published at [arandu.io/docs](https://arandu.io/docs), and the
+site is itself an Arandu application. Where the guide and a doc comment
+disagree, the doc comment sits next to the code and is the one to trust.
 
 ## Contributing
 

@@ -119,7 +119,7 @@ there too.
 `--repository` flag: a repository pulls a policy with it, `aru doctor` reports
 `repository-without-policy` as an error, and the generated policy denies
 everything, which pulls a service to issue the Grant. The mandatory path —
-validate, Authorize, Grant, Repository — is indivisible by construction, so a
+validate, Authorize, Grant, Model — is indivisible by construction, so a
 flag offering a subset of it would offer a broken project.
 
 ## The custom block
@@ -150,8 +150,12 @@ the custom block.
 The generated tree is the answer to "what does correct code look like here", and
 it is also `internal/doctor/testdata/clean`. Break one and you break the other.
 
-- **Every repository method takes `security.Grant` before the id**, and starts
-  with `if err := g.Check(Action…); err != nil { return err }`.
+- **Every service method asks the policy, and every Model read and write takes
+  the Grant it issued.** The generator emits no repository: the service takes
+  the acting `security.Subject`, calls `security.Authorize` before it touches a
+  row, and passes the resulting `security.Grant` to every Model terminal —
+  `First`, `Get`, `Value`, `Save`, `Delete`. A loaded row is authorized again
+  before it is returned or changed.
 - **The tenant comes from `data.Tenant(g)`** — never from a path segment, a
   body, a query or a header.
 - **The generated policy denies every action**, with no allow-everything branch

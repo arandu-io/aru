@@ -334,17 +334,22 @@ const explicitlyImportedNativeView = `//go:build kyse
 
 package views
 
-import "github.com/arandu-io/hesape/view"
+import (
+	"html/template"
+
+	"github.com/arandu-io/hesape/view"
+)
 
 @go
 type HomeData struct {
 	view.Page
 	Name string
+	Note template.HTML
 }
 @endgo
 
 <h1>{{ .Name }}</h1>
-<p>{!! .Name !!}</p>
+<p>{!! .Note !!}</p>
 `
 
 // TestGeneratedViewsImportNativeViewDirectly is the import golden for both
@@ -375,8 +380,8 @@ func TestGeneratedViewsImportNativeViewDirectly(t *testing.T) {
 	if strings.Contains(generated, "kyse__view.UnsafeText") {
 		t.Fatalf("the generated Go still calls a symbol owned only by the Framework bridge:\n%s", generated)
 	}
-	if !strings.Contains(generated, "kyse__io.WriteString(kyse__w, kyse__view.Text(kyse__d.Name))") {
-		t.Fatalf("raw interpolation does not use the native Text conversion:\n%s", generated)
+	if !strings.Contains(generated, "kyse__template.HTML = kyse__d.Note\n") {
+		t.Fatalf("raw interpolation does not require the markup type:\n%s", generated)
 	}
 }
 

@@ -602,9 +602,9 @@ func TestTheCompilerIsToldWhichLineOfTheViewEachExpressionCameFrom(t *testing.T)
 		{"the struct the @go block declares", "type D struct", 7},
 		{"the escaped interpolation", "kyse__template.HTMLEscapeString", 13},
 		{"the condition of @if", "if kyse__d.Name !=", 14},
-		// Matched without the escape around it: the escaped form on line 13
-		// ends in `kyse__view.Text(…)))` and would be found first.
-		{"the raw interpolation", "kyse__io.WriteString(kyse__w, kyse__view.Text(", 15},
+		// The declaration that gives the raw value its type, which is the line a
+		// string written raw is reported against.
+		{"the raw interpolation", "kyse__template.HTML = kyse__d.Name", 15},
 		{"the subject of @foreach", "range kyse__d.Items", 17},
 	} {
 		file, line, ok := mappedLine(generated, want.mark)

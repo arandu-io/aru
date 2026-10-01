@@ -645,6 +645,29 @@ func (g *generator) refusable(line int, escaper, expr string) {
 	g.out.WriteString("\t\t}\n\t}\n")
 }
 
+// raw writes the value of a {!! !!} unescaped, and accepts only a value that
+// already says it is markup.
+//
+// The value is assigned to a template.HTML before it is written, so the Go
+// compiler decides what may be written raw: a component, an icon, a slot -- a
+// function or a field whose type says its author built the markup -- and a
+// string the view spelled out itself as a constant. A string that arrived as
+// data does not convert implicitly, so `{!! .Bio !!}` stops the build at the
+// line of the view rather than writing what a visitor typed into the page as
+// markup.
+//
+// The assignment is a declaration on a line of its own, so a type error is
+// reported at the line the //line directive above it names.
+func (g *generator) raw(line int, expr string) {
+	value := g.temp()
+	fmt.Fprintf(&g.out, "\tif %s == nil {\n", varErr)
+	g.at(line)
+	fmt.Fprintf(&g.out, "\t\tvar %s %s.HTML = %s\n", value, pkgTemplate, expr)
+	g.self()
+	fmt.Fprintf(&g.out, "\t\t_, %s = %s.WriteString(%s, string(%s))\n", varErr, pkgIO, varWriter, value)
+	g.out.WriteString("\t}\n")
+}
+
 // jsonString writes one interpolation into a string inside a JSON attribute.
 //
 // The value is escaped twice, in the order the browser undoes the two. The
@@ -1038,11 +1061,7 @@ func (g *generator) node(n Node) {
 		// opens. Anywhere else the position of everything after it would be a
 		// guess, so there is none.
 		g.opaque()
-		// Text only converts the value to characters. Escaped interpolation is
-		// the separate path that wraps Text in the position-specific escape, so
-		// using Text here preserves the raw form without relying on the legacy
-		// Framework bridge's UnsafeText alias.
-		g.write(n.Line, pkgView+".Text(%s)", g.expr(n.Body))
+		g.raw(n.Line, g.expr(n.Body))
 
 	case Directive:
 		g.directive(n)

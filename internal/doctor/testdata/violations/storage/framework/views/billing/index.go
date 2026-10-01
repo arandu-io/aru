@@ -69,8 +69,9 @@ func renderInternalDoctorTestdataViolationsResourcesViewsBillingIndex(kyse__w ky
 	}
 	if kyse__err == nil {
 //line internal/doctor/testdata/violations/resources/views/billing/index.kyse.go:19
-		_, kyse__err = kyse__io.WriteString(kyse__w, kyse__view.Text(kyse__d.Note))
+		var kyse__v1 kyse__template.HTML = kyse__d.Note
 //line internal/doctor/testdata/violations/storage/framework/views/billing/index.go:74
+		_, kyse__err = kyse__io.WriteString(kyse__w, string(kyse__v1))
 	}
 	if kyse__err == nil {
 		_, kyse__err = kyse__io.WriteString(kyse__w, "</div>\n")

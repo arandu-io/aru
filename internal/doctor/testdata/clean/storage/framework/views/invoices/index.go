@@ -116,8 +116,9 @@ func renderInternalDoctorTestdataCleanResourcesViewsInvoicesIndex(kyse__w kyse__
 				}
 				if kyse__err == nil {
 //line internal/doctor/testdata/clean/resources/views/invoices/index.kyse.go:35
-					_, kyse__err = kyse__io.WriteString(kyse__w, kyse__view.Text(components.Badge(components.BadgeProps{Label: invoice.State})))
+					var kyse__v1 kyse__template.HTML = components.Badge(components.BadgeProps{Label: invoice.State})
 //line internal/doctor/testdata/clean/storage/framework/views/invoices/index.go:121
+					_, kyse__err = kyse__io.WriteString(kyse__w, string(kyse__v1))
 				}
 				if kyse__err == nil {
 					_, kyse__err = kyse__io.WriteString(kyse__w, "</li>\n")

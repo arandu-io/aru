@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -51,6 +52,10 @@ func makeFactory(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("make:factory: %w", err)
 	}
+	source, err := os.ReadFile(model)
+	if err != nil {
+		return fmt.Errorf("make:factory: %w", err)
+	}
 
 	spec := gen.FactorySpec{
 		Entity:       entity,
@@ -79,5 +84,12 @@ markers is preserved.
 Make builds rows and stores nothing; Create stores them and takes a Grant, like
 every other write -- a factory is no way around the policy that guards the table.
 `, entity)
+	if !bytes.Contains(source, []byte(".UseUniqueIDs()")) {
+		fmt.Fprintf(stdout, `
+The factory leaves the key empty, and app/Models/%s.go does not call
+UseUniqueIDs, so nothing fills it on insert. Chain .UseUniqueIDs() onto the
+model.NewModel call there, in place of the KeyType and Incrementing lines.
+`, entity)
+	}
 	return nil
 }

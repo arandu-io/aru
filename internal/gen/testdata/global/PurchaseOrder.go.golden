@@ -29,12 +29,10 @@ type PurchaseOrder struct {
 
 // PurchaseOrders returns the configured model for purchase_orders.
 //
-// The primary key is application-generated text, so it does not increment.
+// UseUniqueIDs makes the primary key text the model fills on insert.
 // The tenant scope is disabled explicitly because this table is global.
 func PurchaseOrders(db *data.DB) *model.Model[PurchaseOrder] {
-	m := model.NewModel[PurchaseOrder]("purchase_orders", db, db.GetQueryGrammar(), db.GetPostProcessor())
-	m.KeyType = "string"
-	m.Incrementing = false
+	m := model.NewModel[PurchaseOrder]("purchase_orders", db, db.GetQueryGrammar(), db.GetPostProcessor()).UseUniqueIDs()
 	m.TenantColumn = ""
 	return m
 }

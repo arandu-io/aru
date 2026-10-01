@@ -26,7 +26,7 @@ func TestTheListingPagesThroughTheModel(t *testing.T) {
 		files := byName(t, spec(tenant))
 		service := files["PurchaseOrderService.go"]
 
-		if !strings.Contains(service, `NewQuery().Latest().OrderBy("id").`) ||
+		if !strings.Contains(service, `models.PurchaseOrders(s.db).Latest().OrderBy("id").`) ||
 			!strings.Contains(service, "SimplePaginate(ctx, g, purchaseOrderPerPage, page, pagination.Options{})") {
 			t.Errorf("tenant=%v: the listing does not page through the Model's paginator in a fixed order", tenant)
 		}

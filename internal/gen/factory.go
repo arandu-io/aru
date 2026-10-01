@@ -128,7 +128,7 @@ func RenderFactory(s FactorySpec) (File, error) {
 // asking for it a second time.
 //
 // ID, TenantID, CreatedAt and UpdatedAt are skipped: the first is drawn by the
-// factory itself, the second comes from the Grant, and the last two from the
+// model on insert, the second comes from the Grant, and the last two from the
 // clock.
 func FieldsFromModel(path, entity string) (fields []FactoryField, tenant bool, err error) {
 	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
@@ -212,15 +212,12 @@ import (
 // policy that guards the table.
 //
 // The values come from a seeded faker -- the same rows on every run, so a
-// failure reproduces -- and Seed asks for others. The key is drawn fresh for
-// every row, the way the service draws it, so two batches never share one.
+// failure reproduces -- and Seed asks for others. The key is left empty: the
+// model draws a fresh one for every row it stores, so two batches never share
+// one, and Make builds rows that have none yet.
 func {{.Type}}(db *data.DB) *factory.Factory[models.{{.Entity}}] {
 	return factory.For(models.{{.Plural}}(db), func(f faker.Faker) models.{{.Entity}} {
-		// crypto/rand does not fail on a supported platform, which is the only
-		// error data.NewID has.
-		id, _ := data.NewID()
 		return models.{{.Entity}}{
-			ID: id,
 {{- range .Fields}}
 {{- if .Fake}}
 			{{.GoName}}: {{.Fake}},

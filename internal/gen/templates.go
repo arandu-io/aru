@@ -11,8 +11,7 @@ package gen
 //
 // One consequence of the flat tree runs through all of them: a package holds
 // every module's files, so no unexported package-level name can be generic. What
-// would otherwise be `sortable` is `invoiceSortable` -- or, where the framework
-// already has it, `data.NewID`.
+// would otherwise be `perPage` is `invoicePerPage`.
 
 const modelTemplate = `package models
 
@@ -45,16 +44,16 @@ type {{.Entity}} struct {
 
 // {{.Plural}} returns the configured model for {{.Table}}.
 //
-// The primary key is application-generated text, so it does not increment.
+// UseUniqueIDs makes the primary key text the model fills on insert.
 // The tenant scope is {{if .Tenant}}left at its tenant_id default{{else}}disabled explicitly because this table is global{{end}}.
 func {{.Plural}}(db *data.DB) *model.Model[{{.Entity}}] {
-	m := model.NewModel[{{.Entity}}]({{quote .Table}}, db, db.GetQueryGrammar(), db.GetPostProcessor())
-	m.KeyType = "string"
-	m.Incrementing = false
-{{- if not .Tenant}}
+{{- if .Tenant}}
+	return model.NewModel[{{.Entity}}]({{quote .Table}}, db, db.GetQueryGrammar(), db.GetPostProcessor()).UseUniqueIDs()
+{{- else}}
+	m := model.NewModel[{{.Entity}}]({{quote .Table}}, db, db.GetQueryGrammar(), db.GetPostProcessor()).UseUniqueIDs()
 	m.TenantColumn = ""
-{{- end}}
 	return m
+{{- end}}
 }
 
 // LogValue implements slog.LogValuer, so passing the whole entity to a log call
@@ -159,10 +158,6 @@ const serviceTemplate = `package services
 
 import (
 	"context"
-{{- if .UniqueFields}}
-	"errors"
-	"net/http"
-{{- end}}
 {{- if .HasEmail}}
 	"strings"
 {{- end}}
@@ -170,10 +165,6 @@ import (
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
-{{- if .UniqueFields}}
-	"github.com/arandu-io/hesape/database"
-	"github.com/arandu-io/hesape/exception"
-{{- end}}
 	"github.com/arandu-io/hesape/pagination"
 
 	models "{{.ModelsImport}}"
@@ -191,7 +182,7 @@ const {{.Unexported}}PerPage = 25
 //
 // Every method authorizes before it reaches the Model, and the errors it returns
 // are the ones the router answers: validation.Errors back to the form, a missing
-// row as 404 and a refusal as 403.
+// row as 404, a refusal as 403{{if .UniqueFields}} and a duplicate on a unique column as 409{{end}}.
 type {{.ServiceType}} struct {
 	db     *data.DB
 	policy policies.{{.PolicyType}}
@@ -222,16 +213,13 @@ func (s *{{.ServiceType}}) Create(ctx context.Context, actor security.Subject, i
 	}
 	record := instance.Entity
 	s.fill(record, in)
-	if record.ID, err = data.NewID(); err != nil {
-		return nil, err
-	}
 {{- if .Tenant}}
 	// The tenant comes from the Grant, never from the request or the subject
 	// directly. The model writes the same value over the insert attributes.
 	record.TenantID = data.Tenant(g)
 {{- end}}
 	if _, err := record.Save(ctx, g); err != nil {
-		return nil, {{if .UniqueFields}}s.conflict(err){{else}}err{{end}}
+		return nil, err
 	}
 	// Guarded: the entity is a struct value, and boxing it into ` + "`" + `any` + "`" + ` allocates
 	// at the call site even though RecordEvent is a no-op on a nil Collector.
@@ -266,7 +254,7 @@ func (s *{{.ServiceType}}) List(ctx context.Context, actor security.Subject, pag
 	if err != nil {
 		return nil, err
 	}
-	return models.{{.Plural}}(s.db).NewQuery().Latest().OrderBy("id").
+	return models.{{.Plural}}(s.db).Latest().OrderBy("id").
 		SimplePaginate(ctx, g, {{.Unexported}}PerPage, page, pagination.Options{})
 }
 
@@ -291,7 +279,7 @@ func (s *{{.ServiceType}}) Update(ctx context.Context, actor security.Subject, i
 	}
 	s.fill(stored, in)
 	if _, err := stored.Save(ctx, g); err != nil {
-		return nil, {{if .UniqueFields}}s.conflict(err){{else}}err{{end}}
+		return nil, err
 	}
 	return stored, nil
 }
@@ -327,18 +315,6 @@ func (s *{{.ServiceType}}) fill({{.Receiver}} *models.{{.Entity}}, in requests.{
 {{- end}}
 {{- end}}
 }
-{{- if .UniqueFields}}
-
-// conflict answers a duplicate on a unique column with 409 rather than 500, and
-// passes every other error through. The driver's code says it was a duplicate;
-// the message is never read.
-func (s *{{.ServiceType}}) conflict(err error) error {
-	if errors.Is(err, database.ErrUniqueViolation) {
-		return &exception.HTTPError{Status: http.StatusConflict, Message: "a {{.Human}} with these values already exists", Err: err}
-	}
-	return err
-}
-{{- end}}
 
 // arandu:begin custom
 // Business rules beyond CRUD go here, and survive regeneration.

@@ -20,15 +20,12 @@ import (
 // policy that guards the table.
 //
 // The values come from a seeded faker -- the same rows on every run, so a
-// failure reproduces -- and Seed asks for others. The key is drawn fresh for
-// every row, the way the service draws it, so two batches never share one.
+// failure reproduces -- and Seed asks for others. The key is left empty: the
+// model draws a fresh one for every row it stores, so two batches never share
+// one, and Make builds rows that have none yet.
 func InvoiceFactory(db *data.DB) *factory.Factory[models.Invoice] {
 	return factory.For(models.Invoices(db), func(f faker.Faker) models.Invoice {
-		// crypto/rand does not fail on a supported platform, which is the only
-		// error data.NewID has.
-		id, _ := data.NewID()
 		return models.Invoice{
-			ID:            id,
 			Reference:     f.UserName(),
 			SupplierEmail: f.Email(),
 			Total:         int64(f.Int(1, 1000)),

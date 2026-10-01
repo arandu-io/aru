@@ -1,6 +1,14 @@
 package seeders
 
-import "context"
+import (
+	"context"
+
+	"github.com/arandu-io/framework/security"
+
+	models "example.test/project/app/Models"
+	policies "example.test/project/app/Policies"
+	factories "example.test/project/database/factories"
+)
 
 // InvoiceSeeder seeds the invoice rows this application needs to exist.
 //
@@ -18,16 +26,22 @@ type InvoiceSeeder struct{}
 // Name is how the seeder is addressed on the command line.
 func (InvoiceSeeder) Name() string { return "InvoiceSeeder" }
 
-// Run performs the seeding.
+// Run creates the rows through the factory, in d.Tenant -- never a tenant this
+// file picked: a seeder that chooses its own seeds rows nobody can reach. A
+// table that already has rows is left as it is, which is what makes a second
+// run safe.
 func (InvoiceSeeder) Run(ctx context.Context, d Deps) error {
+	seeded, err := models.Invoices(d.DB).NewQuery().Exists(ctx, security.SystemGrant(policies.InvoiceList, d.Tenant))
+	if err != nil || seeded {
+		return err
+	}
+	if _, err := factories.InvoiceFactory(d.DB).Count(10).Create(ctx, security.SystemGrant(policies.InvoiceCreate, d.Tenant)); err != nil {
+		return err
+	}
+
 	// arandu:begin custom
-	// Once the entity has its factory -- `aru make:factory Invoice` -- this is
-	// two calls, in d.Tenant and never a tenant this file picked:
-	//
-	//	g := security.SystemGrant(policies.InvoiceCreate, d.Tenant)
-	//	_, err := factories.InvoiceFactory(d.DB).Count(10).Create(ctx, g)
-	//
-	// Twice safely: ask whether the table already has rows before writing.
+	// Rows the factory's defaults do not describe go here: a fixed record, a
+	// state applied to some of them.
 	// arandu:end custom
 	return nil
 }

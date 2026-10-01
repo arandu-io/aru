@@ -72,6 +72,9 @@ func TestGoldenStubs(t *testing.T) {
 		{"InvoiceSeeder.go", func() (gen.File, error) {
 			return gen.RenderSeeder(gen.SeederSpec{Entity: "Invoice"})
 		}},
+		{"InvoiceSeeder.factory.go", func() (gen.File, error) {
+			return gen.RenderSeeder(gen.SeederSpec{Entity: "Invoice", ModulePath: "example.test/project", Factory: true})
+		}},
 		{"SendInvoice.go", func() (gen.File, error) {
 			return gen.RenderJob(gen.JobSpec{
 				Type: "SendInvoice", EventName: "invoice.send", ModulePath: "example.test/project",

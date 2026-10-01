@@ -8,13 +8,31 @@ import (
 
 // SeederSpec is one seeder.
 //
-// It carries the entity and nothing else: a seeder has no columns, and what it
-// needs to know -- which repository to call -- is a wiring decision that the
-// command prints rather than a flag it takes.
+// It carries the entity, and whether the entity's factory is there to seed
+// through: a seeder has no columns of its own, and a factory is what knows how
+// to make a row.
 type SeederSpec struct {
 	// Entity is the exported entity name, with no Seeder suffix: "Invoice".
 	Entity string
+	// ModulePath is the project's module path, for the imports a seeder that
+	// goes through the factory names.
+	ModulePath string
+	// Factory says the entity has a model, a policy and a factory, so the
+	// seeder creates its rows through the factory. Without them it is the
+	// empty seeder, which compiles in any project and seeds nothing until it
+	// is written.
+	Factory bool
 }
+
+// ModelsImport, PoliciesImport and FactoriesImport are the project packages a
+// seeder that goes through the factory imports.
+func (s SeederSpec) ModelsImport() string { return s.ModulePath + "/app/Models" }
+
+// PoliciesImport is the package the action constant comes from.
+func (s SeederSpec) PoliciesImport() string { return s.ModulePath + "/app/Policies" }
+
+// FactoriesImport is the package the factory is declared in.
+func (s SeederSpec) FactoriesImport() string { return s.ModulePath + "/database/factories" }
 
 // Type is the generated type name: "InvoiceSeeder".
 func (s SeederSpec) Type() string { return s.Entity + "Seeder" }
@@ -27,11 +45,8 @@ func (s SeederSpec) Humans() string {
 	return strings.ReplaceAll(Module{Name: Normalize(s.Entity)}.Table(), "_", " ")
 }
 
-// Plural is the exported plural, which is what the field in Deps is called.
+// Plural is the model's entry point: Invoices.
 func (s SeederSpec) Plural() string { return Module{Name: Normalize(s.Entity)}.Plural() }
-
-// Receiver is the short local name the commented example uses.
-func (s SeederSpec) Receiver() string { return Module{Name: Normalize(s.Entity)}.Receiver() }
 
 // Path is where the file goes.
 func (s SeederSpec) Path() string {
@@ -43,15 +58,18 @@ func (s SeederSpec) Validate() error {
 	if !IsExportedIdentifier(s.Entity) {
 		return fmt.Errorf("%q is not a Go type name: it has to start with a capital letter and hold only letters, digits and underscore", s.Entity)
 	}
+	if s.Factory && s.ModulePath == "" {
+		return errModulePath
+	}
 	return nil
 }
 
 // RenderSeeder produces database/seeders/<Entity>Seeder.go.
 //
-// It depends on no import from the project, and that is what keeps it compiling
-// before the wiring exists: a seeder generated with the repository call already
-// written would not build until the developer had edited seeders.Deps and
-// main.go, and what comes out of the generator has to compile.
+// With a factory to go through, the seeder creates its rows with it, and reads
+// the database through Deps.DB -- the one line of wiring it needs. Without one
+// it depends on no import from the project, and compiles before anything else
+// of the entity exists.
 func RenderSeeder(s SeederSpec) (File, error) {
 	if err := s.Validate(); err != nil {
 		return File{}, err
@@ -65,7 +83,15 @@ func RenderSeeder(s SeederSpec) (File, error) {
 
 const seederTemplate = `package seeders
 
-import "context"
+{{if .Factory}}import (
+	"context"
+
+	"github.com/arandu-io/framework/security"
+
+	models "{{.ModelsImport}}"
+	policies "{{.PoliciesImport}}"
+	factories "{{.FactoriesImport}}"
+){{else}}import "context"{{end}}
 
 // {{.Type}} seeds the {{.Human}} rows this application needs to exist.
 //
@@ -82,27 +108,41 @@ type {{.Type}} struct{}
 
 // Name is how the seeder is addressed on the command line.
 func ({{.Type}}) Name() string { return "{{.Type}}" }
-
-// Run performs the seeding.
+{{if .Factory}}
+// Run creates the rows through the factory, in d.Tenant -- never a tenant this
+// file picked: a seeder that chooses its own seeds rows nobody can reach. A
+// table that already has rows is left as it is, which is what makes a second
+// run safe.
 func ({{.Type}}) Run(ctx context.Context, d Deps) error {
+	seeded, err := models.{{.Plural}}(d.DB).NewQuery().Exists(ctx, security.SystemGrant(policies.{{.Entity}}List, d.Tenant))
+	if err != nil || seeded {
+		return err
+	}
+	if _, err := factories.{{.Entity}}Factory(d.DB).Count(10).Create(ctx, security.SystemGrant(policies.{{.Entity}}Create, d.Tenant)); err != nil {
+		return err
+	}
+
 	// arandu:begin custom
-	// What this looks like once it is wired -- the four lines, in order:
-	//
-	//	g := security.SystemGrant(policies.{{.Entity}}Create, d.Tenant)
-	//	{{.Receiver}} := factories.New{{.Entity}}Factory(d.Tenant).Make(1)
-	//	if _, err := d.{{.Plural}}.Create(ctx, g, {{.Receiver}}); err != nil {
-	//		return err
-	//	}
-	//
-	// d.Tenant, never a tenant this file picked: a seeder that chooses its own
-	// seeds rows nobody can reach.
-	//
-	// Twice safely: read before writing, or let the UNIQUE refuse the duplicate
-	// and treat models.Err{{.Entity}}Conflict as success.
+	// Rows the factory's defaults do not describe go here: a fixed record, a
+	// state applied to some of them.
 	// arandu:end custom
 	return nil
 }
-
+{{else}}
+// Run performs the seeding.
+func ({{.Type}}) Run(ctx context.Context, d Deps) error {
+	// arandu:begin custom
+	// Once the entity has its factory -- ` + "`" + `aru make:factory {{.Entity}}` + "`" + ` -- this is
+	// two calls, in d.Tenant and never a tenant this file picked:
+	//
+	//	g := security.SystemGrant(policies.{{.Entity}}Create, d.Tenant)
+	//	_, err := factories.{{.Entity}}Factory(d.DB).Count(10).Create(ctx, g)
+	//
+	// Twice safely: ask whether the table already has rows before writing.
+	// arandu:end custom
+	return nil
+}
+{{end}}
 // compile-time proof that the seeder honors the contract. A seeder that drifts
 // from the interface fails the build rather than failing when someone runs it.
 var _ Seeder = {{.Type}}{}

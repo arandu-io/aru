@@ -198,7 +198,10 @@ func GenerateModel(m Module, parts ModelParts) ([]File, error) {
 		out = append(out, f)
 	}
 	if parts.Seeder {
-		f, err := RenderSeeder(SeederSpec{Entity: m.Entity()})
+		// The seeder goes through the factory when this call also writes the
+		// factory and the policy whose action it names; otherwise it is the
+		// empty seeder, which compiles without either.
+		f, err := RenderSeeder(SeederSpec{Entity: m.Entity(), ModulePath: m.ModulePath, Factory: parts.Factory && parts.Policy})
 		if err != nil {
 			return nil, err
 		}

@@ -142,7 +142,7 @@ func TestTheSeederWiringNamesTheDeclaredType(t *testing.T) {
 		t.Error("the generated seeder does not declare the type the message registers")
 	}
 	message := wiringSeeder(spec)
-	for _, want := range []string{"InvoiceSeeder{},", "Invoices *repositories.InvoiceRepository", "aru db:seed InvoiceSeeder"} {
+	for _, want := range []string{"InvoiceSeeder{},", "DB *data.DB", "aru db:seed InvoiceSeeder"} {
 		if !strings.Contains(message, want) {
 			t.Errorf("the message does not say %q:\n%s", want, message)
 		}

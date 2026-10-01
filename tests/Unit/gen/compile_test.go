@@ -382,13 +382,20 @@ func (Controller) Validated(errs validation.Errors) bool { return len(errs) == 0
 `))
 
 	// The contract a generated seeder is written against: the interface it
-	// proves it satisfies, and the dependencies its signature takes.
+	// proves it satisfies, and the dependencies its signature takes -- the
+	// connection among them, which a seeder that goes through the factory
+	// reads.
 	writeInto(t, filepath.Join(root, "database", "seeders", "seeders.go"), []byte(`package seeders
 
-import "context"
+import (
+	"context"
+
+	"github.com/arandu-io/framework/data"
+)
 
 type Deps struct {
 	Tenant string
+	DB     *data.DB
 }
 
 type Seeder interface {

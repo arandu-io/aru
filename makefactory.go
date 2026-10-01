@@ -76,8 +76,8 @@ factory is read off it rather than declared a second time. Regenerate it with
 --force after changing the entity; whatever sits between the arandu:begin custom
 markers is preserved.
 
-A factory builds a value and stops there. Storing it is a repository call, and a
-repository call takes a Grant -- there is no ->create() to reach for.
+Make builds rows and stores nothing; Create stores them and takes a Grant, like
+every other write -- a factory is no way around the policy that guards the table.
 `, entity)
 	return nil
 }

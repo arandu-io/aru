@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/arandu-io/aru/internal/gen"
 )
@@ -36,7 +38,13 @@ func makeSeeder(args []string, stdout, stderr io.Writer) error {
 
 	// `aru make:seeder InvoiceSeeder` is what people type, and the suffix is not
 	// duplicated.
-	spec := gen.SeederSpec{Entity: unsuffixed(name, "Seeder")}
+	entity := unsuffixed(name, "Seeder")
+	spec := gen.SeederSpec{Entity: entity, Factory: seedsThroughFactory(root, entity)}
+	if spec.Factory {
+		if spec.ModulePath, err = readModulePath(root); err != nil {
+			return err
+		}
+	}
 
 	file, err := gen.RenderSeeder(spec)
 	if err != nil {
@@ -51,6 +59,23 @@ func makeSeeder(args []string, stdout, stderr io.Writer) error {
 
 	fmt.Fprint(stdout, wiringSeeder(spec))
 	return nil
+}
+
+// seedsThroughFactory reports whether the entity has what a seeder needs to
+// create rows through its factory: the model, the policy whose action it names,
+// and the factory. Missing any of them, the seeder is the empty one, because a
+// file naming a package member that is not there does not compile.
+func seedsThroughFactory(root, entity string) bool {
+	for _, path := range []string{
+		filepath.Join(root, "app", "Models", entity+".go"),
+		filepath.Join(root, "app", "Policies", entity+"Policy.go"),
+		filepath.Join(root, "database", "factories", entity+"Factory.go"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // wiringSeeder prints the registration, and does not perform it: seeders.go has
@@ -74,20 +99,21 @@ answers "unknown seeder" until it is listed. Two lines, by hand:
 
       %s{},
 
-A seeder writes, so it needs a repository and a Grant. The repository arrives
-through Deps, which is explicit for the same reason the rest of the wiring is:
+A seeder writes through the factory, and the factory through the database. The
+connection arrives through Deps, which is explicit for the same reason the rest
+of the wiring is -- once, for every seeder, and not again:
 
   database/seeders/seeders.go -- the field
 
-      %s *repositories.%sRepository
+      DB *data.DB
 
-  main.go -- where seeders.Run is called
+  bootstrap/migrate.go -- where seeders.Run is called, with the connection
+  bootstrap/app.go opened, returned on App as DB
 
-      seeders.Run(ctx, seeders.Deps{Auth: app.Auth, Tenant: cfg.Auth.Tenant,
-          %s: repositories.New%sRepository(db)}, args)
+      seeders.Deps{Users: app.Users, Tenant: cfg.Auth.Tenant, DB: app.DB}
 
 Then:
 
     aru db:seed %s
-`, s.Type(), s.Type(), s.Type(), s.Plural(), s.Entity, s.Plural(), s.Entity, s.Type())
+`, s.Type(), s.Type(), s.Type(), s.Type())
 }

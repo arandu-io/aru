@@ -1,97 +1,43 @@
 package factories
 
 import (
-	"fmt"
 	"time"
+
+	"github.com/arandu-io/framework/data"
+	factory "github.com/arandu-io/hesape/database/model/factories"
+	"github.com/arandu-io/hesape/faker"
 
 	models "example.test/project/app/Models"
 )
 
-// InvoiceFactory builds invoices.
+// InvoiceFactory returns the factory of invoices over db.
 //
-// Nothing here touches the database. A factory returns a value; storing it is a
-// repository call, and a repository call needs a security.Grant -- so a factory
-// cannot become a back door around the policy that guards the table. There is no
-// ->create() on this type for the same reason there is none on the model.
+//	rows, err := factories.InvoiceFactory(db).Count(10).Create(ctx, g)
+//	one, err := factories.InvoiceFactory(db).State(func(i *models.Invoice) { ... }).MakeOne()
 //
-// The zero value is usable: every field has a default and a With method that
-// replaces it.
-type InvoiceFactory struct {
-	reference     string
-	supplierEmail string
-	total         int64
-	deliveryDate  time.Time
-}
-
-// NewInvoiceFactory returns a factory.
-func NewInvoiceFactory() InvoiceFactory {
-	return InvoiceFactory{}
-}
-
-// WithReference sets the reference instead of generating one.
-func (f InvoiceFactory) WithReference(reference string) InvoiceFactory {
-	f.reference = reference
-	return f
-}
-
-// WithSupplierEmail sets the supplier_email instead of generating one.
-func (f InvoiceFactory) WithSupplierEmail(supplierEmail string) InvoiceFactory {
-	f.supplierEmail = supplierEmail
-	return f
-}
-
-// WithTotal sets the total instead of generating one.
-func (f InvoiceFactory) WithTotal(total int64) InvoiceFactory {
-	f.total = total
-	return f
-}
-
-// WithDeliveryDate sets the delivery_date instead of generating one.
-func (f InvoiceFactory) WithDeliveryDate(deliveryDate time.Time) InvoiceFactory {
-	f.deliveryDate = deliveryDate
-	return f
-}
-
-// Make returns one invoice, numbered so a batch has distinct values.
+// Make builds rows and stores nothing. Create stores them, and takes the Grant
+// every write takes: a factory is no way around the
+// policy that guards the table.
 //
-// The ID is left empty on purpose: the repository generates it with data.NewID,
-// and a factory that invented one would produce rows whose id did not come from
-// the one place ids come from.
-func (f InvoiceFactory) Make(n int) models.Invoice {
-	reference := f.reference
-	if reference == "" {
-		reference = fmt.Sprintf("reference-%d", n)
-	}
-	supplierEmail := f.supplierEmail
-	if supplierEmail == "" {
-		supplierEmail = fmt.Sprintf("user%d@example.test", n)
-	}
-	total := f.total
-	if total == 0 {
-		total = int64(n)
-	}
-	deliveryDate := f.deliveryDate
-	if deliveryDate.IsZero() {
-		deliveryDate = time.Now().UTC()
-	}
-	return models.Invoice{
-		Reference:     reference,
-		SupplierEmail: supplierEmail,
-		Total:         total,
-		DeliveryDate:  deliveryDate,
-	}
-}
-
-// MakeMany returns n invoices.
-func (f InvoiceFactory) MakeMany(n int) []models.Invoice {
-	out := make([]models.Invoice, 0, n)
-	for i := 1; i <= n; i++ {
-		out = append(out, f.Make(i))
-	}
-	return out
+// The values come from a seeded faker -- the same rows on every run, so a
+// failure reproduces -- and Seed asks for others. The key is drawn fresh for
+// every row, the way the service draws it, so two batches never share one.
+func InvoiceFactory(db *data.DB) *factory.Factory[models.Invoice] {
+	return factory.For(models.Invoices(db), func(f faker.Faker) models.Invoice {
+		// crypto/rand does not fail on a supported platform, which is the only
+		// error data.NewID has.
+		id, _ := data.NewID()
+		return models.Invoice{
+			ID:            id,
+			Reference:     f.UserName(),
+			SupplierEmail: f.Email(),
+			Total:         int64(f.Int(1, 1000)),
+			DeliveryDate:  f.Time(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)),
+		}
+	})
 }
 
 // arandu:begin custom
-// States beyond the defaults go here, and survive regeneration: an overdue
-// invoice, a cancelled one -- a named state, as a method.
+// Named states go here, and survive regeneration: a factory with one thing
+// said about it, built on the one above.
 // arandu:end custom

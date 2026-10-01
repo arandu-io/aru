@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/hesape/database/model"
 
@@ -38,7 +37,7 @@ func TestEveryPurchaseOrderReadRequiresAuthorization(t *testing.T) {
 			return err
 		},
 		"List": func() error {
-			_, err := svc.List(ctx, anonymous, data.Query{})
+			_, err := svc.List(ctx, anonymous, 1)
 			return err
 		},
 		"Delete": func() error {

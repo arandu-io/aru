@@ -17,7 +17,6 @@ package gen
 const modelTemplate = `package models
 
 import (
-	"errors"
 	"log/slog"
 	"time"
 
@@ -57,20 +56,6 @@ func {{.Plural}}(db *data.DB) *model.Model[{{.Entity}}] {
 {{- end}}
 	return m
 }
-
-// What can go wrong with a {{.Name}}, declared beside the entity.
-//
-// The controller maps them to a status code and the service returns them, so
-// both need to name them without giving the controller a door to the data layer.
-var (
-	// Err{{.Entity}}NotFound is returned when no row matches{{if .Tenant}}, including when the row
-	// exists in another tenant -- the two are deliberately indistinguishable{{end}}.
-	Err{{.Entity}}NotFound = errors.New("{{.Name}}: not found")
-	// Err{{.Entity}}Conflict is a unique constraint refusing a duplicate.
-	Err{{.Entity}}Conflict = errors.New("{{.Name}}: already exists")
-	// Err{{.Entity}}Sort is an ordering the allowlist does not contain.
-	Err{{.Entity}}Sort = errors.New("{{.Name}}: sort field not allowed")
-)
 
 // LogValue implements slog.LogValuer, so passing the whole entity to a log call
 // records the identifiers and nothing else. Add any sensitive field to the
@@ -174,40 +159,39 @@ const serviceTemplate = `package services
 
 import (
 	"context"
-	"fmt"
+{{- if .UniqueFields}}
+	"errors"
+	"net/http"
+{{- end}}
+{{- if .HasEmail}}
 	"strings"
+{{- end}}
 
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
-	"github.com/arandu-io/hesape/database/model"
+{{- if .UniqueFields}}
+	"github.com/arandu-io/hesape/database"
+	"github.com/arandu-io/hesape/exception"
+{{- end}}
+	"github.com/arandu-io/hesape/pagination"
 
 	models "{{.ModelsImport}}"
 	policies "{{.PoliciesImport}}"
 	requests "{{.RequestsImport}}"
 )
 
-// Pagination bounds for {{.Table}}. A request that asks for everything gets the
-// maximum, never everything: an unbounded query is how one page load takes a
-// database down.
-const (
-	{{.Unexported}}DefaultLimit = 50
-	{{.Unexported}}MaxLimit     = 200
-)
-
-// {{.Unexported}}Sortable is the ordering allowlist. A sort field is a column
-// name, and a column name taken from the request is injection through a door
-// nobody watches.
-var {{.Unexported}}Sortable = map[string]string{
-	"":           "created_at",
-	"created_at": "created_at",
-{{- range .Sortable}}
-	"{{.Column}}": "{{.Column}}",
-{{- end}}
-}
+// {{.Unexported}}PerPage is how many {{.Table}} one page of the listing holds. A
+// listing is always a page, never everything: an unbounded query is how one
+// page load takes a database down.
+const {{.Unexported}}PerPage = 25
 
 // {{.ServiceType}} holds the business rules. It receives its dependencies through
 // the constructor -- explicit wiring, no container.
+//
+// Every method authorizes before it reaches the Model, and the errors it returns
+// are the ones the router answers: validation.Errors back to the form, a missing
+// row as 404 and a refusal as 403.
 type {{.ServiceType}} struct {
 	db     *data.DB
 	policy policies.{{.PolicyType}}
@@ -220,71 +204,55 @@ func New{{.ServiceType}}(db *data.DB) *{{.ServiceType}} {
 
 // Create walks the mandatory path: validate, Authorize, Grant, Model.
 // There is no other order that compiles.
-func (s *{{.ServiceType}}) Create(ctx context.Context, actor security.Subject, in requests.{{.StoreRequest}}) (*models.{{.Entity}}, error) {
+func (s *{{.ServiceType}}) Create(ctx context.Context, actor security.Subject, in requests.{{.Request}}) (*models.{{.Entity}}, error) {
 	if errs := in.Validate(); errs.Any() {
 		return nil, errs
 	}
 
-	proposed := models.{{.Entity}}{}
-{{- range .Fields}}
-{{- if .IsEmail}}
-	proposed.{{.GoName}} = s.normalize(in.{{.GoName}})
-{{- else}}
-	proposed.{{.GoName}} = {{.Bind "in"}}
-{{- end}}
-{{- end}}
-
+	var proposed models.{{.Entity}}
+	s.fill(&proposed, in)
 	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}Create, proposed)
 	if err != nil {
 		return nil, err
 	}
-	if proposed.ID, err = data.NewID(); err != nil {
-		return nil, err
-	}
-{{- if .Tenant}}
-	// The tenant comes from the Grant, never from the request or the subject
-	// directly. The model writes the same value over the insert attributes.
-	proposed.TenantID = data.Tenant(g)
-{{- end}}
 
 	instance, err := models.{{.Plural}}(s.db).NewInstance(nil, false)
 	if err != nil {
 		return nil, err
 	}
-	candidate := instance.Entity
-	candidate.ID = proposed.ID
-{{- if .Tenant}}
-	candidate.TenantID = proposed.TenantID
-{{- end}}
-{{- range .Fields}}
-	candidate.{{.GoName}} = proposed.{{.GoName}}
-{{- end}}
-	if _, err := candidate.Save(ctx, g); err != nil {
-		if s.conflict(err) {
-			return nil, models.Err{{.Entity}}Conflict
-		}
+	record := instance.Entity
+	s.fill(record, in)
+	if record.ID, err = data.NewID(); err != nil {
 		return nil, err
+	}
+{{- if .Tenant}}
+	// The tenant comes from the Grant, never from the request or the subject
+	// directly. The model writes the same value over the insert attributes.
+	record.TenantID = data.Tenant(g)
+{{- end}}
+	if _, err := record.Save(ctx, g); err != nil {
+		return nil, {{if .UniqueFields}}s.conflict(err){{else}}err{{end}}
 	}
 	// Guarded: the entity is a struct value, and boxing it into ` + "`" + `any` + "`" + ` allocates
 	// at the call site even though RecordEvent is a no-op on a nil Collector.
 	if col := observability.FromContext(ctx); col != nil {
-		col.RecordEvent("{{.Name}}.created", candidate)
+		col.RecordEvent("{{.Name}}.created", record)
 	}
-	return candidate, nil
+	return record, nil
 }
 
 // Get returns one {{.Name}}.
+//
+// It authorizes twice: once to look at all, and once with the row that was
+// read, which is the decision about this row rather than about the action.
 func (s *{{.ServiceType}}) Get(ctx context.Context, actor security.Subject, id string) (*models.{{.Entity}}, error) {
 	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}View, models.{{.Entity}}{})
 	if err != nil {
 		return nil, err
 	}
-	found, err := models.{{.Plural}}(s.db).NewQuery().WhereKey(id).First(ctx, g)
+	found, err := models.{{.Plural}}(s.db).FindOrFail(ctx, g, id)
 	if err != nil {
 		return nil, err
-	}
-	if found == nil {
-		return nil, models.Err{{.Entity}}NotFound
 	}
 	if _, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}View, *found); err != nil {
 		return nil, err
@@ -292,45 +260,14 @@ func (s *{{.ServiceType}}) Get(ctx context.Context, actor security.Subject, id s
 	return found, nil
 }
 
-// List returns a page of {{.Table}}.
-func (s *{{.ServiceType}}) List(ctx context.Context, actor security.Subject, q data.Query) ([]*models.{{.Entity}}, error) {
+// List returns one page of {{.Table}}, newest first.
+func (s *{{.ServiceType}}) List(ctx context.Context, actor security.Subject, page int) (*pagination.Paginator[*models.{{.Entity}}], error) {
 	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}List, models.{{.Entity}}{})
 	if err != nil {
 		return nil, err
 	}
-
-	column, ok := {{.Unexported}}Sortable[q.Sort]
-	if !ok {
-		return nil, fmt.Errorf("%w: %q", models.Err{{.Entity}}Sort, q.Sort)
-	}
-
-	limit := q.Limit
-	switch {
-	case limit <= 0:
-		limit = {{.Unexported}}DefaultLimit
-	case limit > {{.Unexported}}MaxLimit:
-		limit = {{.Unexported}}MaxLimit
-	}
-
-	rows := models.{{.Plural}}(s.db)
-	page := rows.NewQuery()
-	if q.Cursor != "" {
-		anchor, err := rows.NewQuery().WhereKey(q.Cursor).Value(ctx, g, column)
-		if err != nil {
-			return nil, err
-		}
-		if anchor == nil {
-			return nil, nil
-		}
-		page = page.Where(func(after *model.Builder[models.{{.Entity}}]) {
-			after.Where(column, ">", anchor).
-				OrWhere(func(equal *model.Builder[models.{{.Entity}}]) {
-					equal.Where(column, "=", anchor).Where("id", ">", q.Cursor)
-				})
-		})
-	}
-
-	return page.OrderBy(column).OrderBy("id").Limit(limit).Get(ctx, g)
+	return models.{{.Plural}}(s.db).NewQuery().Latest().OrderBy("id").
+		SimplePaginate(ctx, g, {{.Unexported}}PerPage, page, pagination.Options{})
 }
 
 // Update changes the mutable fields.
@@ -338,12 +275,12 @@ func (s *{{.ServiceType}}) List(ctx context.Context, actor security.Subject, q d
 // It reads before writing, so the policy decides against the stored row rather
 // than against what the client claims the row is. Skipping this is how a check
 // passes on attacker-supplied data.
-func (s *{{.ServiceType}}) Update(ctx context.Context, actor security.Subject, in requests.{{.UpdateRequest}}) (*models.{{.Entity}}, error) {
+func (s *{{.ServiceType}}) Update(ctx context.Context, actor security.Subject, id string, in requests.{{.Request}}) (*models.{{.Entity}}, error) {
 	if errs := in.Validate(); errs.Any() {
 		return nil, errs
 	}
 
-	stored, err := s.Get(ctx, actor, in.ID)
+	stored, err := s.Get(ctx, actor, id)
 	if err != nil {
 		return nil, err
 	}
@@ -352,19 +289,9 @@ func (s *{{.ServiceType}}) Update(ctx context.Context, actor security.Subject, i
 	if err != nil {
 		return nil, err
 	}
-
-{{- range .Fields}}
-{{- if .IsEmail}}
-	stored.{{.GoName}} = s.normalize(in.{{.GoName}})
-{{- else}}
-	stored.{{.GoName}} = {{.Bind "in"}}
-{{- end}}
-{{- end}}
+	s.fill(stored, in)
 	if _, err := stored.Save(ctx, g); err != nil {
-		if s.conflict(err) {
-			return nil, models.Err{{.Entity}}Conflict
-		}
-		return nil, err
+		return nil, {{if .UniqueFields}}s.conflict(err){{else}}err{{end}}
 	}
 	return stored, nil
 }
@@ -380,12 +307,8 @@ func (s *{{.ServiceType}}) Delete(ctx context.Context, actor security.Subject, i
 	if err != nil {
 		return err
 	}
-	deleted, err := stored.Delete(ctx, g)
-	if err != nil {
+	if _, err := stored.Delete(ctx, g); err != nil {
 		return err
-	}
-	if !deleted {
-		return models.Err{{.Entity}}NotFound
 	}
 	if col := observability.FromContext(ctx); col != nil {
 		col.RecordEvent("{{.Name}}.deleted", stored)
@@ -393,22 +316,29 @@ func (s *{{.ServiceType}}) Delete(ctx context.Context, actor security.Subject, i
 	return nil
 }
 
-// normalize lowercases and trims text whose uniqueness is case-insensitive.
-func (s *{{.ServiceType}}) normalize(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
+// fill writes the request onto the record. It is the one place a field of the
+// form becomes a column, for Create and Update alike.
+func (s *{{.ServiceType}}) fill({{.Receiver}} *models.{{.Entity}}, in requests.{{.Request}}) {
+{{- range .Fields}}
+{{- if .IsEmail}}
+	{{$.Receiver}}.{{.GoName}} = strings.ToLower(in.{{.GoName}})
+{{- else}}
+	{{$.Receiver}}.{{.GoName}} = {{.Bind "in"}}
+{{- end}}
+{{- end}}
 }
+{{- if .UniqueFields}}
 
-// conflict recognizes a duplicate key across engines by message, which is the
-// price of keeping database drivers outside the service.
-func (s *{{.ServiceType}}) conflict(err error) bool {
-	if err == nil {
-		return false
+// conflict answers a duplicate on a unique column with 409 rather than 500, and
+// passes every other error through. The driver's code says it was a duplicate;
+// the message is never read.
+func (s *{{.ServiceType}}) conflict(err error) error {
+	if errors.Is(err, database.ErrUniqueViolation) {
+		return &exception.HTTPError{Status: http.StatusConflict, Message: "a {{.Human}} with these values already exists", Err: err}
 	}
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "unique constraint") ||
-		strings.Contains(message, "duplicate key") ||
-		strings.Contains(message, "duplicate entry")
+	return err
 }
+{{- end}}
 
 // arandu:begin custom
 // Business rules beyond CRUD go here, and survive regeneration.
@@ -717,7 +647,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/hesape/database/model"
 
@@ -750,7 +679,7 @@ func TestEvery{{.Entity}}ReadRequiresAuthorization(t *testing.T) {
 			return err
 		},
 		"List": func() error {
-			_, err := svc.List(ctx, anonymous, data.Query{})
+			_, err := svc.List(ctx, anonymous, 1)
 			return err
 		},
 		"Delete": func() error {

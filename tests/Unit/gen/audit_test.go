@@ -8,26 +8,37 @@ import (
 	"github.com/arandu-io/aru/internal/gen"
 )
 
-// TestTheCursorFollowsTheSortColumn: keyset pagination compared created_at
-// while ordering by whatever q.Sort named. Any sort other than the default
-// computed the page boundary on one ordering and returned the rows in another,
-// so pages skipped rows and repeated rows, silently and with no error.
-func TestTheCursorFollowsTheSortColumn(t *testing.T) {
-	for _, tenant := range []bool{true, false} {
-		service := byName(t, spec(tenant))["PurchaseOrderService.go"]
+// The tests here each lock one defect an audit found in the generated code.
+// They read the generated source rather than run it, because what went wrong
+// was what got written -- and a golden file records the whole output without
+// saying which line is the one that matters.
 
-		if strings.Contains(service, "SELECT created_at FROM") {
-			t.Errorf("tenant=%v: the cursor still reads created_at instead of the sorted column", tenant)
+// TestTheListingPagesThroughTheModel: the listing used to page by hand -- a
+// keyset predicate, a sort allowlist and a limit clamp, thirty lines per module
+// -- and it once compared created_at while ordering by whatever q.Sort named, so
+// pages skipped rows and repeated rows, silently and with no error.
+//
+// The page is the Model's now: an order the code fixes, a tiebreak on the key so
+// two rows created in the same instant keep their place, and the paginator the
+// Builder already has. Nothing from the request names a column.
+func TestTheListingPagesThroughTheModel(t *testing.T) {
+	for _, tenant := range []bool{true, false} {
+		files := byName(t, spec(tenant))
+		service := files["PurchaseOrderService.go"]
+
+		if !strings.Contains(service, `NewQuery().Latest().OrderBy("id").`) ||
+			!strings.Contains(service, "SimplePaginate(ctx, g, purchaseOrderPerPage, page, pagination.Options{})") {
+			t.Errorf("tenant=%v: the listing does not page through the Model's paginator in a fixed order", tenant)
 		}
-		if !strings.Contains(service, `after.Where(column, ">", anchor)`) ||
-			!strings.Contains(service, `equal.Where(column, "=", anchor)`) {
-			t.Errorf("tenant=%v: the cursor predicate does not name the sorted column", tenant)
+		for _, handRolled := range []string{"q.Sort", "q.Cursor", "Sortable", "after.Where("} {
+			if strings.Contains(service, handRolled) {
+				t.Errorf("tenant=%v: the service still pages by hand: %s", tenant, handRolled)
+			}
 		}
-		// The ordering and the predicate have to be the same column, so both
-		// sides of the comparison come from the allowlist and neither from the
-		// request.
-		if !strings.Contains(service, `page.OrderBy(column).OrderBy("id")`) {
-			t.Errorf("tenant=%v: the ORDER BY no longer uses the allowlisted column", tenant)
+
+		controller := files["PurchaseOrderController.go"]
+		if strings.Contains(controller, `ctx.Query("sort")`) || strings.Contains(controller, `ctx.Query("limit")`) {
+			t.Errorf("tenant=%v: the controller hands a request value to the listing's order or size", tenant)
 		}
 	}
 }

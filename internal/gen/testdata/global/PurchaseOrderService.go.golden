@@ -2,41 +2,33 @@ package services
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"net/http"
 	"strings"
 
 	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/framework/observability"
 	"github.com/arandu-io/framework/security"
-	"github.com/arandu-io/hesape/database/model"
+	"github.com/arandu-io/hesape/database"
+	"github.com/arandu-io/hesape/exception"
+	"github.com/arandu-io/hesape/pagination"
 
 	requests "example.test/project/app/Http/Requests"
 	models "example.test/project/app/Models"
 	policies "example.test/project/app/Policies"
 )
 
-// Pagination bounds for purchase_orders. A request that asks for everything gets the
-// maximum, never everything: an unbounded query is how one page load takes a
-// database down.
-const (
-	purchaseOrderDefaultLimit = 50
-	purchaseOrderMaxLimit     = 200
-)
-
-// purchaseOrderSortable is the ordering allowlist. A sort field is a column
-// name, and a column name taken from the request is injection through a door
-// nobody watches.
-var purchaseOrderSortable = map[string]string{
-	"":               "created_at",
-	"created_at":     "created_at",
-	"reference":      "reference",
-	"supplier_email": "supplier_email",
-	"notes":          "notes",
-	"delivery_date":  "delivery_date",
-}
+// purchaseOrderPerPage is how many purchase_orders one page of the listing holds. A
+// listing is always a page, never everything: an unbounded query is how one
+// page load takes a database down.
+const purchaseOrderPerPage = 25
 
 // PurchaseOrderService holds the business rules. It receives its dependencies through
 // the constructor -- explicit wiring, no container.
+//
+// Every method authorizes before it reaches the Model, and the errors it returns
+// are the ones the router answers: validation.Errors back to the form, a missing
+// row as 404 and a refusal as 403.
 type PurchaseOrderService struct {
 	db     *data.DB
 	policy policies.PurchaseOrderPolicy
@@ -49,24 +41,15 @@ func NewPurchaseOrderService(db *data.DB) *PurchaseOrderService {
 
 // Create walks the mandatory path: validate, Authorize, Grant, Model.
 // There is no other order that compiles.
-func (s *PurchaseOrderService) Create(ctx context.Context, actor security.Subject, in requests.StorePurchaseOrder) (*models.PurchaseOrder, error) {
+func (s *PurchaseOrderService) Create(ctx context.Context, actor security.Subject, in requests.PurchaseOrderRequest) (*models.PurchaseOrder, error) {
 	if errs := in.Validate(); errs.Any() {
 		return nil, errs
 	}
 
-	proposed := models.PurchaseOrder{}
-	proposed.Reference = in.Reference
-	proposed.SupplierEmail = s.normalize(in.SupplierEmail)
-	proposed.Total = in.Total
-	proposed.Approved = in.Approved
-	proposed.Notes = in.Notes
-	proposed.DeliveryDate = data.Day(in.DeliveryDate)
-
+	var proposed models.PurchaseOrder
+	s.fill(&proposed, in)
 	g, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderCreate, proposed)
 	if err != nil {
-		return nil, err
-	}
-	if proposed.ID, err = data.NewID(); err != nil {
 		return nil, err
 	}
 
@@ -74,40 +57,34 @@ func (s *PurchaseOrderService) Create(ctx context.Context, actor security.Subjec
 	if err != nil {
 		return nil, err
 	}
-	candidate := instance.Entity
-	candidate.ID = proposed.ID
-	candidate.Reference = proposed.Reference
-	candidate.SupplierEmail = proposed.SupplierEmail
-	candidate.Total = proposed.Total
-	candidate.Approved = proposed.Approved
-	candidate.Notes = proposed.Notes
-	candidate.DeliveryDate = proposed.DeliveryDate
-	if _, err := candidate.Save(ctx, g); err != nil {
-		if s.conflict(err) {
-			return nil, models.ErrPurchaseOrderConflict
-		}
+	record := instance.Entity
+	s.fill(record, in)
+	if record.ID, err = data.NewID(); err != nil {
 		return nil, err
+	}
+	if _, err := record.Save(ctx, g); err != nil {
+		return nil, s.conflict(err)
 	}
 	// Guarded: the entity is a struct value, and boxing it into `any` allocates
 	// at the call site even though RecordEvent is a no-op on a nil Collector.
 	if col := observability.FromContext(ctx); col != nil {
-		col.RecordEvent("purchase_order.created", candidate)
+		col.RecordEvent("purchase_order.created", record)
 	}
-	return candidate, nil
+	return record, nil
 }
 
 // Get returns one purchase_order.
+//
+// It authorizes twice: once to look at all, and once with the row that was
+// read, which is the decision about this row rather than about the action.
 func (s *PurchaseOrderService) Get(ctx context.Context, actor security.Subject, id string) (*models.PurchaseOrder, error) {
 	g, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderView, models.PurchaseOrder{})
 	if err != nil {
 		return nil, err
 	}
-	found, err := models.PurchaseOrders(s.db).NewQuery().WhereKey(id).First(ctx, g)
+	found, err := models.PurchaseOrders(s.db).FindOrFail(ctx, g, id)
 	if err != nil {
 		return nil, err
-	}
-	if found == nil {
-		return nil, models.ErrPurchaseOrderNotFound
 	}
 	if _, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderView, *found); err != nil {
 		return nil, err
@@ -115,45 +92,14 @@ func (s *PurchaseOrderService) Get(ctx context.Context, actor security.Subject, 
 	return found, nil
 }
 
-// List returns a page of purchase_orders.
-func (s *PurchaseOrderService) List(ctx context.Context, actor security.Subject, q data.Query) ([]*models.PurchaseOrder, error) {
+// List returns one page of purchase_orders, newest first.
+func (s *PurchaseOrderService) List(ctx context.Context, actor security.Subject, page int) (*pagination.Paginator[*models.PurchaseOrder], error) {
 	g, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderList, models.PurchaseOrder{})
 	if err != nil {
 		return nil, err
 	}
-
-	column, ok := purchaseOrderSortable[q.Sort]
-	if !ok {
-		return nil, fmt.Errorf("%w: %q", models.ErrPurchaseOrderSort, q.Sort)
-	}
-
-	limit := q.Limit
-	switch {
-	case limit <= 0:
-		limit = purchaseOrderDefaultLimit
-	case limit > purchaseOrderMaxLimit:
-		limit = purchaseOrderMaxLimit
-	}
-
-	rows := models.PurchaseOrders(s.db)
-	page := rows.NewQuery()
-	if q.Cursor != "" {
-		anchor, err := rows.NewQuery().WhereKey(q.Cursor).Value(ctx, g, column)
-		if err != nil {
-			return nil, err
-		}
-		if anchor == nil {
-			return nil, nil
-		}
-		page = page.Where(func(after *model.Builder[models.PurchaseOrder]) {
-			after.Where(column, ">", anchor).
-				OrWhere(func(equal *model.Builder[models.PurchaseOrder]) {
-					equal.Where(column, "=", anchor).Where("id", ">", q.Cursor)
-				})
-		})
-	}
-
-	return page.OrderBy(column).OrderBy("id").Limit(limit).Get(ctx, g)
+	return models.PurchaseOrders(s.db).NewQuery().Latest().OrderBy("id").
+		SimplePaginate(ctx, g, purchaseOrderPerPage, page, pagination.Options{})
 }
 
 // Update changes the mutable fields.
@@ -161,12 +107,12 @@ func (s *PurchaseOrderService) List(ctx context.Context, actor security.Subject,
 // It reads before writing, so the policy decides against the stored row rather
 // than against what the client claims the row is. Skipping this is how a check
 // passes on attacker-supplied data.
-func (s *PurchaseOrderService) Update(ctx context.Context, actor security.Subject, in requests.UpdatePurchaseOrder) (*models.PurchaseOrder, error) {
+func (s *PurchaseOrderService) Update(ctx context.Context, actor security.Subject, id string, in requests.PurchaseOrderRequest) (*models.PurchaseOrder, error) {
 	if errs := in.Validate(); errs.Any() {
 		return nil, errs
 	}
 
-	stored, err := s.Get(ctx, actor, in.ID)
+	stored, err := s.Get(ctx, actor, id)
 	if err != nil {
 		return nil, err
 	}
@@ -175,17 +121,9 @@ func (s *PurchaseOrderService) Update(ctx context.Context, actor security.Subjec
 	if err != nil {
 		return nil, err
 	}
-	stored.Reference = in.Reference
-	stored.SupplierEmail = s.normalize(in.SupplierEmail)
-	stored.Total = in.Total
-	stored.Approved = in.Approved
-	stored.Notes = in.Notes
-	stored.DeliveryDate = data.Day(in.DeliveryDate)
+	s.fill(stored, in)
 	if _, err := stored.Save(ctx, g); err != nil {
-		if s.conflict(err) {
-			return nil, models.ErrPurchaseOrderConflict
-		}
-		return nil, err
+		return nil, s.conflict(err)
 	}
 	return stored, nil
 }
@@ -201,12 +139,8 @@ func (s *PurchaseOrderService) Delete(ctx context.Context, actor security.Subjec
 	if err != nil {
 		return err
 	}
-	deleted, err := stored.Delete(ctx, g)
-	if err != nil {
+	if _, err := stored.Delete(ctx, g); err != nil {
 		return err
-	}
-	if !deleted {
-		return models.ErrPurchaseOrderNotFound
 	}
 	if col := observability.FromContext(ctx); col != nil {
 		col.RecordEvent("purchase_order.deleted", stored)
@@ -214,21 +148,25 @@ func (s *PurchaseOrderService) Delete(ctx context.Context, actor security.Subjec
 	return nil
 }
 
-// normalize lowercases and trims text whose uniqueness is case-insensitive.
-func (s *PurchaseOrderService) normalize(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
+// fill writes the request onto the record. It is the one place a field of the
+// form becomes a column, for Create and Update alike.
+func (s *PurchaseOrderService) fill(p *models.PurchaseOrder, in requests.PurchaseOrderRequest) {
+	p.Reference = in.Reference
+	p.SupplierEmail = strings.ToLower(in.SupplierEmail)
+	p.Total = in.Total
+	p.Approved = in.Approved
+	p.Notes = in.Notes
+	p.DeliveryDate = data.Day(in.DeliveryDate)
 }
 
-// conflict recognizes a duplicate key across engines by message, which is the
-// price of keeping database drivers outside the service.
-func (s *PurchaseOrderService) conflict(err error) bool {
-	if err == nil {
-		return false
+// conflict answers a duplicate on a unique column with 409 rather than 500, and
+// passes every other error through. The driver's code says it was a duplicate;
+// the message is never read.
+func (s *PurchaseOrderService) conflict(err error) error {
+	if errors.Is(err, database.ErrUniqueViolation) {
+		return &exception.HTTPError{Status: http.StatusConflict, Message: "a purchase order with these values already exists", Err: err}
 	}
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "unique constraint") ||
-		strings.Contains(message, "duplicate key") ||
-		strings.Contains(message, "duplicate entry")
+	return err
 }
 
 // arandu:begin custom

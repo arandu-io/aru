@@ -66,7 +66,7 @@ func TestTheMigrationCreatesUpdatedAt(t *testing.T) {
 func TestTheModelSavesOnBothWritePaths(t *testing.T) {
 	service := rendered(t, "app/Services/PurchaseOrderService.go")
 
-	if !strings.Contains(service, "candidate.Save(ctx, g)") {
+	if !strings.Contains(service, "record.Save(ctx, g)") {
 		t.Errorf("Create does not save through the timestamp-aware Model:\n%s", service)
 	}
 	if !strings.Contains(service, "stored.Save(ctx, g)") {

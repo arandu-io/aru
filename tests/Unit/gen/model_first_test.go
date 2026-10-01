@@ -52,9 +52,10 @@ func TestGeneratedModulesUseTheModelFirstPath(t *testing.T) {
 	controller := byPath["app/Http/Controllers/PurchaseOrderController.go"]
 	for _, want := range []string{
 		"row(ctx *fhttp.Context, p *models.PurchaseOrder)",
+		"fill(p *models.PurchaseOrder, in requests.PurchaseOrderRequest)",
 	} {
-		if !strings.Contains(controller, want) {
-			t.Errorf("the controller does not retain the Model-backed entity pointer in %q:\n%s", want, controller)
+		if !strings.Contains(controller+service, want) {
+			t.Errorf("the controller and the service do not retain the Model-backed entity pointer in %q", want)
 		}
 	}
 }

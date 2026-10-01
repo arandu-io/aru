@@ -1,7 +1,6 @@
 package models
 
 import (
-	"errors"
 	"log/slog"
 	"time"
 
@@ -39,19 +38,6 @@ func PurchaseOrders(db *data.DB) *model.Model[PurchaseOrder] {
 	m.TenantColumn = ""
 	return m
 }
-
-// What can go wrong with a purchase_order, declared beside the entity.
-//
-// The controller maps them to a status code and the service returns them, so
-// both need to name them without giving the controller a door to the data layer.
-var (
-	// ErrPurchaseOrderNotFound is returned when no row matches.
-	ErrPurchaseOrderNotFound = errors.New("purchase_order: not found")
-	// ErrPurchaseOrderConflict is a unique constraint refusing a duplicate.
-	ErrPurchaseOrderConflict = errors.New("purchase_order: already exists")
-	// ErrPurchaseOrderSort is an ordering the allowlist does not contain.
-	ErrPurchaseOrderSort = errors.New("purchase_order: sort field not allowed")
-)
 
 // LogValue implements slog.LogValuer, so passing the whole entity to a log call
 // records the identifiers and nothing else. Add any sensitive field to the

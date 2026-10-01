@@ -418,12 +418,6 @@ func (m Module) RepositoryType() string { return m.Entity() + "Repository" }
 // ServiceType is the type name of the service.
 func (m Module) ServiceType() string { return m.Entity() + "Service" }
 
-// StoreRequest is the type name of the request that creates: StorePurchaseOrder.
-func (m Module) StoreRequest() string { return "Store" + m.Entity() }
-
-// UpdateRequest is the type name of the request that updates.
-func (m Module) UpdateRequest() string { return "Update" + m.Entity() }
-
 // Request is the type name of the request creation and update both take:
 // PurchaseOrderRequest.
 func (m Module) Request() string { return m.Entity() + "Request" }
@@ -595,23 +589,20 @@ func taken(name string) bool {
 	return false
 }
 
-// Sortable returns the fields that may be used for ordering. Only text and
-// timestamps: a sort field is a column name, and the allowlist is what keeps a
-// column name from the request out of the SQL.
-func (m Module) Sortable() []Field {
-	var out []Field
-	for _, f := range m.Fields {
-		if f.IsString() || f.Type == TypeDate || f.Type == TypeTimestamp {
-			out = append(out, f)
-		}
-	}
-	return out
-}
-
 // NeedsStrconv reports whether the controller formats a number for the row.
 func (m Module) NeedsStrconv() bool {
 	for _, f := range m.Fields {
 		if f.NeedsStrconv() {
+			return true
+		}
+	}
+	return false
+}
+
+// HasEmail reports whether a field is an email, which the service lowercases.
+func (m Module) HasEmail() bool {
+	for _, f := range m.Fields {
+		if f.IsEmail() {
 			return true
 		}
 	}

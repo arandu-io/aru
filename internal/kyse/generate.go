@@ -575,10 +575,12 @@ func (g *generator) write(line int, format string, args ...any) {
 // the page, and refuses it when the position will not hold it.
 //
 // The build knows the position and never the value, so this is the half that
-// has to happen at render time. It is where an attribute name goes, and it is
-// the one position with no escape whose values a page still writes: what goes
-// there today is a name a helper returns, so refusing every value would refuse
-// the pages that work. Refusing the value rather than repairing it is the
+// has to happen at render time. It is where an attribute name goes, the one
+// position with no escape whose values a page still writes: what goes there
+// today is a name a helper returns, so refusing every value would refuse the
+// pages that work. And it is an HTMX trigger, where a component writes the
+// events it listens for and only a square bracket turns the value into a
+// script. Refusing the value rather than repairing it is the
 // choice everywhere else too -- rewriting would change what the page says
 // without saying so.
 //
@@ -592,7 +594,10 @@ func (g *generator) write(line int, format string, args ...any) {
 // directive above it names, and gofmt breaks a function literal whose body grows
 // past a size of its own -- which put the expression two lines below its
 // directive and reported every type error inside it against the wrong line.
-func (g *generator) checked(line int, expr, denied, reason string) {
+//
+// escape is the escape the value takes when it passes, or empty where the
+// position has none.
+func (g *generator) checked(line int, expr, denied, reason, escape string) {
 	g.checks = true
 	value := g.temp()
 	fmt.Fprintf(&g.out, "\tif %s == nil {\n", varErr)
@@ -603,7 +608,11 @@ func (g *generator) checked(line int, expr, denied, reason string) {
 	fmt.Fprintf(&g.out, "\t\t\t%s = %s.New(%s)\n", varErr, pkgErrors,
 		strconv.Quote(fmt.Sprintf("%s:%d: %s", g.file.Path, line, reason)))
 	g.out.WriteString("\t\t} else {\n")
-	fmt.Fprintf(&g.out, "\t\t\t_, %s = %s.WriteString(%s, %s)\n", varErr, pkgIO, varWriter, value)
+	written := value
+	if escape != "" {
+		written = escape + "(" + value + ")"
+	}
+	fmt.Fprintf(&g.out, "\t\t\t_, %s = %s.WriteString(%s, %s)\n", varErr, pkgIO, varWriter, written)
 	g.out.WriteString("\t\t}\n\t}\n")
 }
 
@@ -1012,6 +1021,12 @@ func (g *generator) node(n Node) {
 		// The markup this node writes is what moves the position of the next
 		// one, so the scanner reads exactly what the page gets.
 		g.scan.feed(n.Body)
+		if g.scan.lateEquiv {
+			g.scan.lateEquiv = false
+			g.refuse(n.Line, "http-equiv is written after a value interpolated into the content of the same meta element",
+				"with http-equiv the content is a directive such as a redirect, and the value in it was escaped as text before anything said so.\n"+
+					"    Write http-equiv first, and keep values out of the content of a meta http-equiv.")
+		}
 
 	case Echo:
 		g.echo(n)
@@ -1044,9 +1059,9 @@ func (g *generator) node(n Node) {
 // Which one a value needs is read off the markup around it, which is why a view
 // writes {{ }} and says nothing about escaping.
 //
-// Five of the cases refuse rather than escape. Three are positions with no
-// escape at all, and a fourth is not a position but the absence of one; all
-// four are refused here, because no value would be safe in them. The fifth --
+// Seven of the cases refuse rather than escape. Five are positions with no
+// escape at all, and a sixth is not a position but the absence of one; all six
+// are refused here, because no value would be safe in them. The seventh --
 // where the name of an attribute goes -- is refused at render time instead,
 // because a page writes a name there today and only the value decides.
 func (g *generator) echo(n Node) {
@@ -1054,7 +1069,10 @@ func (g *generator) echo(n Node) {
 
 	switch g.scan.position() {
 	case posAttributeName:
-		g.checked(n.Line, expr, deniedInAttributeName, reasonAttributeName)
+		g.checked(n.Line, expr, deniedInAttributeName, reasonAttributeName, "")
+
+	case posTrigger:
+		g.checked(n.Line, expr, deniedInTrigger, reasonTrigger, pkgView+".TextAttr")
 
 	case posAttributeValue:
 		g.write(n.Line, pkgView+".TextAttr(%s)", expr)
@@ -1094,6 +1112,16 @@ func (g *generator) echo(n Node) {
 			"a character reference in an attribute is decoded before the script is read, so an escaped quote arrives as the quote it started as and closes the string it was meant to sit in.\n"+
 				"    Write the value into an ordinary attribute and have the script read it from there.")
 
+	case posActive:
+		g.refuse(n.Line, fmt.Sprintf("this value is written into %q, which the browser acts on rather than displays", g.scan.attr),
+			"srcdoc is a document of its own, the content of a meta http-equiv is a directive such as a redirect, and an SVG animation writes its values into another attribute -- an address among them. No escape keeps a value text in any of them.\n"+
+				"    Choose between fixed values with @if, or write the value into an ordinary attribute.")
+
+	case posAddressOpen:
+		g.refuse(n.Line, fmt.Sprintf("this value is written into %q before the scheme and the host of the address are fixed", g.scan.attr),
+			"the text in front of it does not settle where the address goes, so the value could finish it -- `j` before `avascript:alert(1)`, `/` before `/evil.example` -- and the check an address gets reads one value whole, never the two together.\n"+
+				"    Interpolate the whole address once, or write the address up to the first segment of its path before the value.")
+
 	case posElementName:
 		g.refuse(n.Line, "this value is written where the name of an element goes",
 			"an element name carries no character references, so a character that ends the name cannot be written as anything else.\n"+
@@ -1112,10 +1140,11 @@ func (g *generator) echo(n Node) {
 	}
 
 	// Inside an attribute value the value written here is part of it from now
-	// on, so a second interpolation beside it is no longer at the front -- and
-	// the front is the only place a scheme can be introduced.
+	// on. Its characters are not known, only its place, and the place is what
+	// decides the escape of the next one: a second interpolation behind it in
+	// an address is behind text no check has read.
 	switch g.scan.state {
-	case stateAttrValueDouble, stateAttrValueSingle, stateAttrValueUnquoted:
+	case stateAttrValueDouble, stateAttrValueSingle:
 		g.scan.readData()
 	}
 }
@@ -1396,12 +1425,12 @@ func (g *generator) rejoin(opened htmlScanner) {
 // able to end an attribute name, and a space -- which no escape touches --
 // ends one on its own.
 //
-// The set is closed at twelve: seven positions with an escape of their own,
-// four with none at all, and one that is not a position but the absence of one.
-// A thirteenth would mean an eighth escape, and a position answered with the
+// The set is closed at fifteen: eight positions with an escape of their own,
+// six with none at all, and one that is not a position but the absence of one.
+// A sixteenth would mean a ninth escape, and a position answered with the
 // escape of a different one is the hole this exists to remove.
 //
-// @attributes is not a thirteenth, and the difference is worth stating because
+// @attributes is not a sixteenth, and the difference is worth stating because
 // it looks like one. It writes into posAttributeName and is refused anywhere
 // else, so it adds no position. What it adds is a value whose *name* is data,
 // and a name that is data has no position to read -- which is why the check
@@ -1445,6 +1474,19 @@ const (
 	// HTML parser decodes a character reference there before the script engine
 	// reads it, so escaping hands the character back.
 	posCode
+	// posActive is an attribute the browser acts on rather than displays, in a
+	// way no escape answers: a document in srcdoc, the directive in the content
+	// of a meta http-equiv, the value an SVG animation writes into another
+	// attribute.
+	posActive
+	// posTrigger is an HTMX trigger outside a filter. Its value is escaped as
+	// an attribute and refused at render time when it would open or close a
+	// filter, the part of a trigger HTMX evaluates.
+	posTrigger
+	// posAddressOpen is an address whose scheme or host is still open behind
+	// text the view wrote, so the value would finish one that no check reads
+	// whole.
+	posAddressOpen
 	// posElementName is where the name of an element goes, which carries no
 	// character references either.
 	posElementName
@@ -1476,11 +1518,15 @@ var (
 	// An attribute name ends at whitespace, at `/`, at `>` and at `=`, and the
 	// syntax forbids a quote, `<` and a backtick inside one.
 	deniedInAttributeName = controlCharacters + " \"'/<=>`"
+	// A trigger evaluates what it holds between square brackets as a script, so
+	// a value may not open or close one.
+	deniedInTrigger = "[]"
 )
 
 // The reasons a refusal gives, which are what somebody reads when a page stops.
 const (
 	reasonAttributeName = "the value interpolated where an attribute name goes holds a character that would end the name and begin markup of its own, and an attribute name carries no entities, so there is no escape that would keep it one name"
+	reasonTrigger       = "the value interpolated into an HTMX trigger holds a square bracket, and HTMX evaluates what a trigger holds between square brackets as a script"
 )
 
 // scanState is the state of the HTML tokenizer, cut to what deciding a position
@@ -1531,6 +1577,14 @@ type htmlScanner struct {
 	closing bool
 	// value is what has been read of the attribute value being read.
 	value attrValue
+	// equiv records that the meta tag being read carries http-equiv, which
+	// turns its content into a directive to the browser.
+	equiv bool
+	// contentData records that a value was interpolated into the content of
+	// the meta tag being read, and lateEquiv that an http-equiv arrived after
+	// it -- which the generator refuses, since that value was escaped as text
+	// before anything said it was a directive.
+	contentData, lateEquiv bool
 }
 
 // attrValue is what the scanner knows about the attribute value it is inside.
@@ -1538,14 +1592,6 @@ type htmlScanner struct {
 // It is reset whenever a value opens or a tag closes, so what one attribute
 // wrote never decides the escape of the next.
 type attrValue struct {
-	// begun records that the value already holds a character. It separates the
-	// front of a value from the rest of it, which is the whole of the
-	// difference between a URL whose scheme is still open and one the view has
-	// already settled.
-	//
-	// Leading space does not begin a value: a browser strips it off an address
-	// before resolving it, so a scheme can still arrive after it.
-	begun bool
 	// front is the start of the value as the program that reads the attribute
 	// sees it: character references decoded, and every interpolation written as
 	// frontData. It is kept only while what comes next can still change what
@@ -1556,12 +1602,16 @@ type attrValue struct {
 	decided bool
 	// script records that the front decided the value is a script: a JSON
 	// attribute that opens with `js:` or `javascript:` is evaluated rather
-	// than parsed.
+	// than parsed, and an address the view opened with a scheme that runs
+	// script is a script.
 	script bool
 	// inString and escaped follow a JSON value: whether the next character
 	// lands inside a string, and whether it lands right after a backslash
 	// there.
 	inString, escaped bool
+	// filter records that an HTMX trigger has a square bracket open, inside
+	// which what it holds is a script.
+	filter bool
 }
 
 // frontData stands for an interpolation in attrValue.front. It is a character
@@ -1590,6 +1640,22 @@ func (s htmlScanner) settled() htmlScanner {
 	return s
 }
 
+// reads is the name of the attribute being read, as the program that reads it
+// looks it up.
+//
+// HTMX resolves every one of its attributes through a data- alias as well, so
+// `data-hx-post` is fetched exactly as `hx-post` is and `data-hx-on:click` runs
+// exactly as `hx-on:click` does. Classifying the name as written would put
+// every one of them six characters from the escape it needs. The alias is
+// HTMX's alone, which is why only that prefix is taken off: `data-src` is an
+// ordinary attribute to the browser, whatever a script may later do with it.
+func (s *htmlScanner) reads() string {
+	if strings.HasPrefix(s.attr, "data-hx-") {
+		return strings.TrimPrefix(s.attr, "data-")
+	}
+	return s.attr
+}
+
 // position answers where an interpolation written now would land.
 func (s *htmlScanner) position() htmlPosition {
 	switch s.state {
@@ -1608,21 +1674,33 @@ func (s *htmlScanner) position() htmlPosition {
 		return posUnquotedValue
 
 	case stateAttrValueDouble, stateAttrValueSingle:
+		name := s.reads()
 		switch {
-		case attributeHoldsCode(s.attr), attributeHoldsJSON(s.attr) && s.value.script:
+		case attributeHoldsCode(name), s.value.script, name == "hx-trigger" && s.value.filter:
 			return posCode
-		case attributeHoldsJSON(s.attr) && s.value.inString:
+		case name == "hx-trigger":
+			return posTrigger
+		case attributeActs(s.tag, name, s.equiv):
+			return posActive
+		case attributeHoldsJSON(name) && s.value.inString:
 			return posJSONString
-		case attributeHoldsJSON(s.attr):
+		case attributeHoldsJSON(name):
 			return posJSON
-		case s.attr == "style":
+		case name == "style":
 			return posStyle
-		// Only at the front. Once the view has written a character of its own
-		// into the value, the scheme is settled by what the view wrote, and a
-		// colon further along belongs to a path or a query -- where refusing it
-		// would refuse a search for `time: 10am`.
-		case attributeHoldsURL(s.attr) && !s.value.begun:
+		case attributeHoldsURL(name) && s.value.decided:
+			return posAttributeValue
+		// Only at the front, and the front is what the browser resolves after
+		// it strips the spaces and control characters around an address. Once
+		// the view has written enough of its own to fix the scheme and the
+		// host, a colon further along belongs to a path or a query -- where
+		// refusing it would refuse a search for `time: 10am`.
+		case attributeHoldsURL(name) && strings.TrimLeftFunc(s.value.front, isAddressSpace) == "":
 			return posURL
+		// Anything between those two is an address whose scheme or host the
+		// value would still decide, behind text that was never checked.
+		case attributeHoldsURL(name):
+			return posAddressOpen
 		}
 		return posAttributeValue
 
@@ -1654,6 +1732,10 @@ func attributeHoldsURL(name string) bool {
 	// chosen by the runtime alone: to the HTML parser these are attributes like
 	// any other, and only the compiler knows the value is fetched.
 	case "hx-delete", "hx-get", "hx-patch", "hx-post", "hx-put":
+		return true
+	// The two that write an address into the history, where it is the
+	// address the back button and a reload go to.
+	case "hx-push-url", "hx-replace-url":
 		return true
 	}
 	return false
@@ -1776,12 +1858,16 @@ func (s *htmlScanner) feed(text string) {
 		case stateAttrName:
 			switch {
 			case isHTMLSpace(c):
+				s.readName()
 				s.state = stateAfterAttrName
 			case c == '=':
+				s.readName()
 				s.state = stateBeforeAttrValue
 			case c == '>':
+				s.readName()
 				s.closeTag()
 			case c == '/':
+				s.readName()
 				s.state = stateBeforeAttrName
 			default:
 				s.attr += string(lowerASCII(c))
@@ -1847,8 +1933,6 @@ func (s *htmlScanner) feed(text string) {
 				s.state = stateBeforeAttrName
 			case c == '>':
 				s.closeTag()
-			default:
-				s.value.begun = true
 			}
 
 		case stateComment:
@@ -1879,62 +1963,197 @@ func (s *htmlScanner) feed(text string) {
 // Character references are decoded first for the attributes whose value a
 // program goes on to read, because that program never sees the reference: the
 // HTML parser undoes it while building the attribute, so `&quot;` in the
-// markup is a quote to the JSON parser behind it. Reading the run undecoded
-// would answer for a value nobody reads.
+// markup is a quote to the JSON parser behind it, and `&#32;` in front of an
+// address is a space the browser strips before it reads the scheme. Reading
+// the run undecoded would answer for a value nobody reads.
 func (s *htmlScanner) readValue(run string) {
-	if strings.TrimLeft(run, htmlSpaces) != "" {
-		s.value.begun = true
-	}
-	if !attributeHoldsJSON(s.attr) {
-		return
-	}
-	decoded := html.UnescapeString(run)
-	s.readFront(decoded)
-	for _, r := range decoded {
-		switch {
-		case s.value.escaped:
-			s.value.escaped = false
-		case s.value.inString && r == '\\':
-			s.value.escaped = true
-		case r == '"':
-			s.value.inString = !s.value.inString
+	name := s.reads()
+	switch {
+	case attributeHoldsURL(name):
+		// A browser removes every tab and newline from an address before it
+		// resolves it, wherever they are, so they are not there to the reader.
+		s.readFront(strings.NewReplacer("\t", "", "\n", "", "\r", "").Replace(html.UnescapeString(run)))
+
+	case name == "hx-trigger":
+		for _, r := range html.UnescapeString(run) {
+			switch r {
+			case '[':
+				s.value.filter = true
+			case ']':
+				s.value.filter = false
+			}
+		}
+
+	case attributeHoldsJSON(name):
+		decoded := html.UnescapeString(run)
+		s.readFront(decoded)
+		for _, r := range decoded {
+			switch {
+			case s.value.escaped:
+				s.value.escaped = false
+			case s.value.inString && r == '\\':
+				s.value.escaped = true
+			case r == '"':
+				s.value.inString = !s.value.inString
+			}
 		}
 	}
 }
 
 // readFront adds what was written to the front of the value, and decides what
 // the value is once the front says.
+//
+// Only an address and a JSON value have a front that decides anything. Every
+// other attribute keeps none, so two branches that write different text into
+// one still compare equal.
 func (s *htmlScanner) readFront(text string) {
-	if s.value.decided {
+	name := s.reads()
+	if s.value.decided || !attributeHoldsURL(name) && !attributeHoldsJSON(name) {
 		return
 	}
 	s.value.front += text
-	if !attributeHoldsJSON(s.attr) {
-		return
-	}
-	// The reader trims the value and then looks for one of two prefixes that
-	// turn the rest into a script it evaluates. A front that is still empty,
-	// or still part of one of them, decides nothing yet.
-	lead := strings.TrimLeftFunc(s.value.front, isScriptSpace)
+
+	var decided bool
 	switch {
-	case strings.HasPrefix(lead, "js:"), strings.HasPrefix(lead, "javascript:"):
-		s.value.script = true
-	case lead == "", strings.HasPrefix("js:", lead), strings.HasPrefix("javascript:", lead):
-		return
+	case attributeHoldsURL(name):
+		decided, s.value.script = addressDecided(s.value.front)
+
+	case attributeHoldsJSON(name):
+		// The reader trims the value and then looks for one of two prefixes
+		// that turn the rest into a script it evaluates. A front that is still
+		// empty, or still part of one of them, decides nothing yet.
+		lead := strings.TrimLeftFunc(s.value.front, isScriptSpace)
+		switch {
+		case strings.HasPrefix(lead, "js:"), strings.HasPrefix(lead, "javascript:"):
+			s.value.script, decided = true, true
+		case lead == "", strings.HasPrefix("js:", lead), strings.HasPrefix("javascript:", lead):
+		default:
+			decided = true
+		}
 	}
-	s.value.front, s.value.decided = "", true
+	if decided {
+		s.value.front, s.value.decided = "", true
+	}
+}
+
+// addressDecided reports whether the front of an address already fixes its
+// scheme and its host, so that nothing written after it can change either --
+// and whether the scheme it fixed is one that runs script.
+//
+// The front is what the view wrote in front of the next interpolation, with
+// every interpolation before it standing as frontData. Three shapes fix it:
+//
+//   - text of the view's own that reaches a `?` or a `#`, or a `/` after the
+//     first segment of a path -- what follows is a query, a fragment or the
+//     rest of a path;
+//   - text of the view's own that reaches a `:` first -- the view wrote the
+//     scheme;
+//   - an interpolation at the very front, which the URL escape checked whole,
+//     followed by text that reaches a `?`, a `#`, or a `/` after a segment.
+//
+// What does not fix it is everything a value could still finish: `j` before
+// a value that supplies `avascript:alert(1)`, a lone `/` before one that
+// supplies `/evil.example`, and text after a checked value that reaches a `:`
+// -- `{{ .A }}:{{ .B }}` is a scheme two values write together, and each one
+// alone passes the check.
+func addressDecided(front string) (decided, script bool) {
+	t := strings.TrimLeftFunc(front, isAddressSpace)
+	if t == "" {
+		return false, false
+	}
+
+	if rest, checked := strings.CutPrefix(t, frontData); checked {
+		segment := false
+		for _, r := range rest {
+			switch {
+			case r == '?', r == '#':
+				return true, false
+			case r == ':', string(r) == frontData:
+				return false, false
+			case r == '/', r == '\\':
+				if segment {
+					return true, false
+				}
+			default:
+				segment = true
+			}
+		}
+		return false, false
+	}
+
+	for i, r := range t {
+		switch {
+		case r == '?', r == '#':
+			return true, false
+		case r == ':':
+			scheme := strings.ToLower(t[:i])
+			return true, scheme == "javascript" || scheme == "vbscript"
+		case r == '/', r == '\\':
+			if i > 0 {
+				return true, false
+			}
+			// A path from the root is fixed once its next character is the
+			// view's: another slash names the host, anything else names a
+			// segment. A value there could supply the second slash itself.
+			next := t[1:]
+			return next != "" && !strings.HasPrefix(next, frontData), false
+		case string(r) == frontData:
+			return false, false
+		}
+	}
+	return false, false
 }
 
 // readData records that an interpolation was written into the value.
 //
 // Only its place is known, never its characters, so it is written into the
-// front as frontData -- which is not a prefix of anything the front waits for,
-// and so decides it.
+// front as frontData.
 func (s *htmlScanner) readData() {
-	s.value.begun = true
-	if attributeHoldsJSON(s.attr) {
-		s.readFront(frontData)
+	s.readFront(frontData)
+	if s.tag == "meta" && s.attr == "content" {
+		s.contentData = true
 	}
+}
+
+// readName records the name of an attribute once the scanner has read all of
+// it.
+//
+// It is here for one attribute: http-equiv makes a meta element's content a
+// directive to the browser -- a redirect, a policy -- and it may be written
+// after the content it changes.
+func (s *htmlScanner) readName() {
+	if s.tag != "meta" || s.attr != "http-equiv" {
+		return
+	}
+	s.equiv = true
+	if s.contentData {
+		s.lateEquiv = true
+	}
+}
+
+// attributeActs reports whether the browser acts on this attribute's value
+// rather than displaying it, in a way no escape answers.
+//
+// srcdoc is a document of its own: the parser undoes character references
+// before it parses what is inside, so escaping the value hands the markup back.
+// The content of a meta element that carries http-equiv is a directive, and
+// `0;url=` in it is a redirect. An SVG animation writes its values into
+// another attribute of the element it animates -- `attributeName="href"` with
+// a `to` makes an address of whatever the `to` says, past every check an
+// address gets.
+func attributeActs(tag, name string, equiv bool) bool {
+	switch {
+	case name == "srcdoc":
+		return true
+	case tag == "meta" && name == "content" && equiv:
+		return true
+	case tag == "animate" || tag == "set":
+		switch name {
+		case "attributename", "by", "from", "to", "values":
+			return true
+		}
+	}
+	return false
 }
 
 // isScriptSpace reports whether the trim a script engine applies removes this
@@ -1942,8 +2161,10 @@ func (s *htmlScanner) readData() {
 // no-break space and the byte order mark are removed too.
 func isScriptSpace(r rune) bool { return unicode.IsSpace(r) || r == '\ufeff' }
 
-// htmlSpaces are the five characters the HTML syntax separates with.
-const htmlSpaces = " \t\n\r\f"
+// isAddressSpace reports whether a browser strips this character off the
+// front of an address before it resolves it: a space, or any control
+// character below it.
+func isAddressSpace(r rune) bool { return r <= ' ' }
 
 // closeTag ends the tag being read and says what the text after it is.
 //
@@ -1959,6 +2180,7 @@ func (s *htmlScanner) closeTag() {
 		s.raw, s.state = s.tag, stateRawText
 	}
 	s.closing, s.tag, s.attr, s.value = false, "", "", attrValue{}
+	s.equiv, s.contentData = false, false
 }
 
 func isASCIILetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }

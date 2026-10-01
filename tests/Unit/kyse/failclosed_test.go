@@ -117,7 +117,7 @@ func TextJS(v any) string {
 			b.WriteString("\\\"")
 		case '\n':
 			b.WriteString("\\n")
-		case '<', '>', '&', ' ', ' ':
+		case '<', '>', '&', '\u2028', '\u2029':
 			fmt.Fprintf(&b, "\\u%04x", r)
 		default:
 			if r < 0x20 || r == 0x7f {

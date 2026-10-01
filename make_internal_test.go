@@ -42,10 +42,10 @@ func TestTheControllerWiringNamesWhatTheFileDeclares(t *testing.T) {
 			}
 			// The constructor the message tells you to call has to exist, with
 			// the arguments the message passes it.
-			if !strings.Contains(source, "func NewInvoiceController(sessions *security.SessionStore, csrf *security.CSRF)") {
+			if !strings.Contains(source, "func NewInvoiceController() *InvoiceController") {
 				t.Error("the generated controller has no constructor of the shape the message calls")
 			}
-			if !strings.Contains(message, "Invoice: controllers.NewInvoiceController(sessions, csrf),") {
+			if !strings.Contains(message, "Invoice: controllers.NewInvoiceController(),") {
 				t.Errorf("the printed bootstrap line does not call the generated constructor:\n%s", message)
 			}
 			if c.kind == gen.KindInvokable && !strings.Contains(source, "func (c *InvoiceController) Handle(") {
@@ -319,6 +319,11 @@ func TestTheModuleWiringNamesTheImportsItsSnippetNeeds(t *testing.T) {
 
 	if !strings.Contains(message, "services.New") {
 		t.Fatalf("the snippet no longer calls the service constructor:\n%s", message)
+	}
+	// The page carries the token the CSRF middleware issued, so the controller
+	// takes the service and nothing else.
+	if !strings.Contains(message, "Invoice: controllers.NewInvoiceController(services.NewInvoiceService(db)),") {
+		t.Errorf("the printed constructor does not take the service alone:\n%s", message)
 	}
 
 	for _, want := range []string{`"example.test/project/app/Services"`, `"github.com/arandu-io/framework/http/middleware"`} {

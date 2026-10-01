@@ -30,10 +30,6 @@ type PurchaseOrdersCreateData struct {
 	StoreURL string
 }
 
-// FieldError is the first message for a field, or empty: what an input asks
-// the page about itself.
-func (d PurchaseOrdersCreateData) FieldError(field string) string { return d.First(field) }
-
 // Compile-time proof that this page fits the layout it extends.
 var _ view.Layout = PurchaseOrdersCreateData{}
 

@@ -138,7 +138,7 @@ Then, by hand, because the wiring is meant to be readable -- three lines:
 
   bootstrap/app.go -- in the routes.Deps literal
 
-      %s: controllers.New%s(services.New%s(db), sessions, csrf),
+      %s: controllers.New%s(services.New%s(db)),
 
 They name two packages a file may not import yet:
 "github.com/arandu-io/framework/http/middleware" in routes/web.go, and

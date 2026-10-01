@@ -1,13 +1,5 @@
 package controllers
 
-import (
-	"net/http"
-
-	fhttp "github.com/arandu-io/framework/http"
-	"github.com/arandu-io/framework/security"
-	"github.com/arandu-io/hesape/view"
-)
-
 // InvoiceController answers the invoices routes. It has none yet: write them in
 // the custom block at the end, and register each one in routes/web.go.
 //
@@ -23,41 +15,25 @@ import (
 // header, and JSON stays the format everything else is written in.
 //
 // Who is asking is ctx.User, put on the request by middleware.RequireAuth on the
-// route. An error an action returns is answered by the router: validation.Errors
-// back to the form, a missing row as 404, a refusal as 403, and an error with an
-// HTTPStatus method as that status.
+// route, and view.New(ctx, title) is a screen's page, with the CSRF token the
+// protecting middleware issued. An error an action returns is answered by the
+// router: validation.Errors back to the form, a missing row as 404, a refusal as
+// 403, a duplicate on a unique column as 409, and an error with an HTTPStatus
+// method as that status.
 type InvoiceController struct {
 	Controller
 
 	// The collaborators arrive through the constructor, never from a container
 	// and never from a package-level variable: a controller that builds its own
 	// dependencies is a controller no test can pin. Declare the service this
-	// controller calls as a field here, and pass it in bootstrap/app.go.
-	sessions *security.SessionStore
-	csrf     *security.CSRF
+	// controller calls as a field here, take it as a parameter below, and pass
+	// it in bootstrap/app.go.
 }
 
 // NewInvoiceController returns the controller. bootstrap/app.go builds it and
 // hands it to the routes.
-//
-// The session store and the CSRF issuer are here for the token every page
-// carries, because a screen is allowed to know about a token and a cookie.
-// Everything else a page needs arrives through a service.
-func NewInvoiceController(sessions *security.SessionStore, csrf *security.CSRF) *InvoiceController {
-	return &InvoiceController{sessions: sessions, csrf: csrf}
-}
-
-// page is the chrome a screen hands the layout: the title, what a rejected
-// attempt left in the flash -- the messages and what was typed -- and the CSRF
-// token for this session.
-//
-// Every page needs the token, including the ones that write nothing: the
-// sign-out form and every hx- request read it off the page data. A page
-// rendered without one answers 200 and then refuses the next write with 419,
-// which reads like a broken session rather than a missing field.
-func (c *InvoiceController) page(ctx *fhttp.Context, title string) (view.Page, error) {
-	token, err := c.csrf.Issue(c.sessions.IDFromRequest(ctx.Request))
-	return view.New(ctx, title).WithToken(token), err
+func NewInvoiceController() *InvoiceController {
+	return &InvoiceController{}
 }
 
 // arandu:begin custom

@@ -245,24 +245,21 @@ func TestTheGranularCommandsAndMakeModuleAgree(t *testing.T) {
 		return ""
 	}
 
-	t.Run("the page helper", func(t *testing.T) {
+	t.Run("the page", func(t *testing.T) {
 		files, err := gen.GenerateController(controllerStub(gen.KindResource))
 		if err != nil {
 			t.Fatalf("GenerateController: %v", err)
 		}
-		// The method comes from one template, so the only difference between
-		// the two files is the receiver type.
-		stub := strings.ReplaceAll(string(files[0].Content), "InvoiceController", "PurchaseOrderController")
+		stub := string(files[0].Content)
 		module := find("Controller.go")
-		const method = "func (c *PurchaseOrderController) page(ctx *fhttp.Context, title string) (view.Page, error) {"
-		if !strings.Contains(stub, method) || !strings.Contains(module, method) {
-			t.Errorf("%s is not emitted by both make:controller and make:module", method)
+		if !strings.Contains(module, `view.New(ctx, "Edit purchase order")`) {
+			t.Error("make:module does not build the page with view.New")
 		}
 
-		// What the subject and the error mapping used to be, per controller.
-		// The request carries the subject and the router answers the error, so
-		// neither command writes a helper for either.
-		for _, gone := range []string{"actor(ctx", "signIn(ctx", "fail(ctx", "sessions.Load("} {
+		// What the subject, the error mapping and the page token used to be, per
+		// controller. The request carries the subject and the token, and the
+		// router answers the error, so neither command writes a helper for any.
+		for _, gone := range []string{"actor(ctx", "signIn(ctx", "fail(ctx", "sessions.Load(", ") page(ctx", "csrf.Issue(", "WithToken(", "*security.SessionStore", "*security.CSRF"} {
 			if strings.Contains(stub, gone) || strings.Contains(module, gone) {
 				t.Errorf("a generated controller still declares %s", gone)
 			}

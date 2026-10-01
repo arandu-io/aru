@@ -4,7 +4,6 @@ import (
 	"strconv"
 
 	fhttp "github.com/arandu-io/framework/http"
-	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/hesape/pagination"
 	"github.com/arandu-io/hesape/view"
 
@@ -26,22 +25,20 @@ import (
 // policy refuses the zero subject. An error an action returns is answered by the
 // router -- validation.Errors back to the form with the messages and what was
 // typed, a missing row as 404, a refusal as 403 -- so no action maps one itself.
+//
+// view.New is the whole of a page's chrome: the title, what a rejected attempt
+// left in the flash, and the CSRF token the protecting middleware issued for this
+// request. No action issues a token, so the service is all this needs.
 type PurchaseOrderController struct {
 	Controller
 
-	svc      *services.PurchaseOrderService
-	sessions *security.SessionStore
-	csrf     *security.CSRF
+	svc *services.PurchaseOrderService
 }
 
 // NewPurchaseOrderController returns the controller. bootstrap builds it and hands it to
 // the routes.
-//
-// The session store and the CSRF issuer are here for one thing, the token every
-// page carries: a screen is allowed to know about a token and a cookie, and a
-// service is not.
-func NewPurchaseOrderController(svc *services.PurchaseOrderService, sessions *security.SessionStore, csrf *security.CSRF) *PurchaseOrderController {
-	return &PurchaseOrderController{svc: svc, sessions: sessions, csrf: csrf}
+func NewPurchaseOrderController(svc *services.PurchaseOrderService) *PurchaseOrderController {
+	return &PurchaseOrderController{svc: svc}
 }
 
 // Compile-time proof of the seven actions fhttp.Router.Resource looks for. It
@@ -65,17 +62,13 @@ func (c *PurchaseOrderController) Index(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
-	page, err := c.page(ctx, "Purchase orders")
-	if err != nil {
-		return err
-	}
 
 	rows := make([]views.PurchaseOrderRow, 0, found.Count())
 	for _, p := range found.Items() {
 		rows = append(rows, c.row(ctx, p))
 	}
 	return ctx.View("purchase-orders.index", views.PurchaseOrdersIndexData{
-		Page:           page,
+		Page:           view.New(ctx, "Purchase orders"),
 		PurchaseOrders: rows,
 		NewURL:         ctx.URL("purchase-orders.create"),
 		NextURL:        found.SetPath(ctx.URL("purchase-orders.index")).NextPageURL(),
@@ -89,13 +82,9 @@ func (c *PurchaseOrderController) Show(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
-	page, err := c.page(ctx, "Purchase order")
-	if err != nil {
-		return err
-	}
 
 	return ctx.View("purchase-orders.show", views.PurchaseOrdersShowData{
-		Page:          page,
+		Page:          view.New(ctx, "Purchase order"),
 		PurchaseOrder: c.row(ctx, found),
 		IndexURL:      ctx.URL("purchase-orders.index"),
 		EditURL:       ctx.URL("purchase-orders.edit", found.ID),
@@ -106,13 +95,8 @@ func (c *PurchaseOrderController) Show(ctx *fhttp.Context) error {
 // Create renders the empty form, or the rejected one: the page carries what
 // was typed and the messages, from the flash the router left.
 func (c *PurchaseOrderController) Create(ctx *fhttp.Context) error {
-	page, err := c.page(ctx, "New purchase order")
-	if err != nil {
-		return err
-	}
-
 	return ctx.View("purchase-orders.create", views.PurchaseOrdersCreateData{
-		Page:     page,
+		Page:     view.New(ctx, "New purchase order"),
 		IndexURL: ctx.URL("purchase-orders.index"),
 		StoreURL: ctx.URL("purchase-orders.store"),
 	})
@@ -139,13 +123,9 @@ func (c *PurchaseOrderController) Edit(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
-	page, err := c.page(ctx, "Edit purchase order")
-	if err != nil {
-		return err
-	}
 
 	return ctx.View("purchase-orders.edit", views.PurchaseOrdersEditData{
-		Page:      page,
+		Page:      view.New(ctx, "Edit purchase order"),
 		Form:      c.row(ctx, found),
 		ShowURL:   ctx.URL("purchase-orders.show", found.ID),
 		UpdateURL: ctx.URL("purchase-orders.update", found.ID),
@@ -173,19 +153,6 @@ func (c *PurchaseOrderController) Destroy(ctx *fhttp.Context) error {
 		return err
 	}
 	return ctx.RedirectRoute("purchase-orders.index")
-}
-
-// page is the chrome a screen hands the layout: the title, what a rejected
-// attempt left in the flash -- the messages and what was typed -- and the CSRF
-// token for this session.
-//
-// Every page needs the token, including the ones that write nothing: the
-// sign-out form and every hx- request read it off the page data. A page
-// rendered without one answers 200 and then refuses the next write with 419,
-// which reads like a broken session rather than a missing field.
-func (c *PurchaseOrderController) page(ctx *fhttp.Context, title string) (view.Page, error) {
-	token, err := c.csrf.Issue(c.sessions.IDFromRequest(ctx.Request))
-	return view.New(ctx, title).WithToken(token), err
 }
 
 // row turns the entity into what the markup renders: the text a cell shows and

@@ -392,7 +392,6 @@ import (
 
 {{end}}
 	fhttp "github.com/arandu-io/framework/http"
-	"github.com/arandu-io/framework/security"
 	"github.com/arandu-io/hesape/pagination"
 	"github.com/arandu-io/hesape/view"
 
@@ -414,22 +413,20 @@ import (
 // policy refuses the zero subject. An error an action returns is answered by the
 // router -- validation.Errors back to the form with the messages and what was
 // typed, a missing row as 404, a refusal as 403 -- so no action maps one itself.
+//
+// view.New is the whole of a page's chrome: the title, what a rejected attempt
+// left in the flash, and the CSRF token the protecting middleware issued for this
+// request. No action issues a token, so the service is all this needs.
 type {{.Controller}} struct {
 	Controller
 
-	svc      *services.{{.ServiceType}}
-	sessions *security.SessionStore
-	csrf     *security.CSRF
+	svc *services.{{.ServiceType}}
 }
 
 // New{{.Controller}} returns the controller. bootstrap builds it and hands it to
 // the routes.
-//
-// The session store and the CSRF issuer are here for one thing, the token every
-// page carries: a screen is allowed to know about a token and a cookie, and a
-// service is not.
-func New{{.Controller}}(svc *services.{{.ServiceType}}, sessions *security.SessionStore, csrf *security.CSRF) *{{.Controller}} {
-	return &{{.Controller}}{svc: svc, sessions: sessions, csrf: csrf}
+func New{{.Controller}}(svc *services.{{.ServiceType}}) *{{.Controller}} {
+	return &{{.Controller}}{svc: svc}
 }
 
 // Compile-time proof of the seven actions fhttp.Router.Resource looks for. It
@@ -453,17 +450,13 @@ func (c *{{.Controller}}) Index(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
-	page, err := c.page(ctx, "{{.HumansTitle}}")
-	if err != nil {
-		return err
-	}
 
 	rows := make([]views.{{.RowStruct}}, 0, found.Count())
 	for _, {{.Receiver}} := range found.Items() {
 		rows = append(rows, c.row(ctx, {{.Receiver}}))
 	}
 	return ctx.View("{{.ViewName "index"}}", views.{{.ViewData "index"}}{
-		Page:       page,
+		Page: view.New(ctx, "{{.HumansTitle}}"),
 		{{.Plural}}: rows,
 		NewURL:     ctx.URL("{{.RouteName "create"}}"),
 		NextURL:    found.SetPath(ctx.URL("{{.RouteName "index"}}")).NextPageURL(),
@@ -477,13 +470,9 @@ func (c *{{.Controller}}) Show(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
-	page, err := c.page(ctx, "{{.HumanTitle}}")
-	if err != nil {
-		return err
-	}
 
 	return ctx.View("{{.ViewName "show"}}", views.{{.ViewData "show"}}{
-		Page:      page,
+		Page: view.New(ctx, "{{.HumanTitle}}"),
 		{{.Entity}}: c.row(ctx, found),
 		IndexURL:  ctx.URL("{{.RouteName "index"}}"),
 		EditURL:   ctx.URL("{{.RouteName "edit"}}", found.ID),
@@ -494,13 +483,8 @@ func (c *{{.Controller}}) Show(ctx *fhttp.Context) error {
 // Create renders the empty form, or the rejected one: the page carries what
 // was typed and the messages, from the flash the router left.
 func (c *{{.Controller}}) Create(ctx *fhttp.Context) error {
-	page, err := c.page(ctx, "New {{.Human}}")
-	if err != nil {
-		return err
-	}
-
 	return ctx.View("{{.ViewName "create"}}", views.{{.ViewData "create"}}{
-		Page:     page,
+		Page: view.New(ctx, "New {{.Human}}"),
 		IndexURL: ctx.URL("{{.RouteName "index"}}"),
 		StoreURL: ctx.URL("{{.RouteName "store"}}"),
 	})
@@ -527,13 +511,9 @@ func (c *{{.Controller}}) Edit(ctx *fhttp.Context) error {
 	if err != nil {
 		return err
 	}
-	page, err := c.page(ctx, "Edit {{.Human}}")
-	if err != nil {
-		return err
-	}
 
 	return ctx.View("{{.ViewName "edit"}}", views.{{.ViewData "edit"}}{
-		Page:      page,
+		Page: view.New(ctx, "Edit {{.Human}}"),
 		Form:      c.row(ctx, found),
 		ShowURL:   ctx.URL("{{.RouteName "show"}}", found.ID),
 		UpdateURL: ctx.URL("{{.RouteName "update"}}", found.ID),
@@ -562,7 +542,7 @@ func (c *{{.Controller}}) Destroy(ctx *fhttp.Context) error {
 	}
 	return ctx.RedirectRoute("{{.RouteName "index"}}")
 }
-{{template "controllerPage" .}}
+
 // row turns the entity into what the markup renders: the text a cell shows and
 // an input of the edit form starts at.
 //
@@ -589,32 +569,6 @@ func (c *{{.Controller}}) row(ctx *fhttp.Context, {{.Receiver}} *models.{{.Entit
 // the custom block of routes/web.go.
 // arandu:end custom
 `
-
-// controllerPageTemplate is the page chrome every controller hands its views,
-// whichever command wrote the controller.
-//
-// `aru make:module` and `aru make:controller` both emit it, and they emit the
-// same bytes because it is the same template -- two ways to write one thing is
-// what this generator is not allowed to create inside itself. It is a method
-// rather than a package function, so two controllers in the package do not
-// collide.
-//
-// The data it renders against needs a Controller field or method naming the type,
-// which both gen.Module and gen.Stub have.
-const controllerPageTemplate = `{{define "controllerPage"}}
-// page is the chrome a screen hands the layout: the title, what a rejected
-// attempt left in the flash -- the messages and what was typed -- and the CSRF
-// token for this session.
-//
-// Every page needs the token, including the ones that write nothing: the
-// sign-out form and every hx- request read it off the page data. A page
-// rendered without one answers 200 and then refuses the next write with 419,
-// which reads like a broken session rather than a missing field.
-func (c *{{.Controller}}) page(ctx *fhttp.Context, title string) (view.Page, error) {
-	token, err := c.csrf.Issue(c.sessions.IDFromRequest(ctx.Request))
-	return view.New(ctx, title).WithToken(token), err
-}
-{{end}}`
 
 const testTemplate = `package unit_test
 

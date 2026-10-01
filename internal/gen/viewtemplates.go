@@ -153,10 +153,10 @@ import "github.com/arandu-io/hesape/view"
 @go
 // <%.ViewData "show"%> is what <%.Controller%>.Show hands this page.
 type <%.ViewData "show"%> struct {
-	// Page is the state the layout draws. Its Token is also what the delete
-	// button sends as a header: an hx-delete carries no form body, so the
-	// hidden field a form uses would never arrive and the request would be
-	// refused with 419.
+	// Page is the state the layout draws, the CSRF token included. The delete
+	// button sends no token of its own: an hx-delete carries no form body, so
+	// the header is what reaches the server, and the hx-headers the layout puts
+	// on <body> is inherited by every htmx request on the page.
 	view.Page
 	// <%.Entity%> is the record.
 	<%.Entity%> <%.RowStruct%>
@@ -188,7 +188,7 @@ var _ view.Layout = <%.ViewData "show"%>{}
 		<h1 class="text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
 		<div class="flex items-center gap-3">
 			<a class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" href="{{ .EditURL }}">Edit</a>
-			<button class="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950" type="button" hx-delete="{{ .DeleteURL }}" hx-headers='{"X-CSRF-Token": "{{ .Token }}"}' hx-confirm="Delete this <%.Human%>?">Delete</button>
+			<button class="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950" type="button" hx-delete="{{ .DeleteURL }}" hx-confirm="Delete this <%.Human%>?">Delete</button>
 		</div>
 	</div>
 
@@ -236,10 +236,6 @@ type <%.ViewData "create"%> struct {
 	IndexURL string
 	StoreURL string
 }
-
-// FieldError is the first message for a field, or empty: what an input asks
-// the page about itself.
-func (d <%.ViewData "create"%>) FieldError(field string) string { return d.First(field) }
 
 // Compile-time proof that this page fits the layout it extends.
 var _ view.Layout = <%.ViewData "create"%>{}
@@ -297,10 +293,6 @@ type <%.ViewData "edit"%> struct {
 	ShowURL   string
 	UpdateURL string
 }
-
-// FieldError is the first message for a field, or empty: what an input asks
-// the page about itself.
-func (d <%.ViewData "edit"%>) FieldError(field string) string { return d.First(field) }
 
 // Compile-time proof that this page fits the layout it extends.
 var _ view.Layout = <%.ViewData "edit"%>{}

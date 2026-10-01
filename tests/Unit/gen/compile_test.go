@@ -128,6 +128,25 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 		return gen.GenerateModel(model, gen.Everything())
 	})
 
+	// make:controller, in its three shapes. A controller stub declares no
+	// entity, so each one gets a name of its own; what is proved is that every
+	// shape imports what it uses and nothing else.
+	for _, c := range []struct {
+		name string
+		kind gen.Kind
+	}{
+		{"ReportController", gen.KindPlain},
+		{"InvoiceController", gen.KindResource},
+		{"ExportController", gen.KindInvokable},
+	} {
+		emit("aru make:controller "+c.name+" --"+string(c.kind), func() ([]gen.File, error) {
+			return gen.GenerateController(gen.Stub{
+				Type: c.name, ModulePath: generatedModulePath,
+				Resource: "reports", Entity: strings.TrimSuffix(c.name, "Controller"), Kind: c.kind,
+			})
+		})
+	}
+
 	// The two shapes `aru make:migration` renders. There is no third: an empty
 	// migration is refused rather than written, because an Up that applies
 	// nothing is still recorded as applied and the id is immutable, so it would

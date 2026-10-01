@@ -114,7 +114,7 @@ is meant to be readable:
 
   bootstrap/app.go -- in the routes.Deps literal
 
-      %s: controllers.New%s(sessions, csrf),
+      %s: controllers.New%s(),
 %s
 There is no view yet. `+"`aru make:module`"+` writes the four screens because it knows
 the fields; this command does not, so ctx.View comes with the screen you write.

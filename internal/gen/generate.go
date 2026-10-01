@@ -40,7 +40,7 @@ func Generate(m Module) ([]File, error) {
 		path string
 		tmpl string
 	}{
-		{filepath.Join("app", "Http", "Controllers", m.Entity()+"Controller.go"), controllerTemplate + controllerPageTemplate},
+		{filepath.Join("app", "Http", "Controllers", m.Entity()+"Controller.go"), controllerTemplate},
 		{filepath.Join("app", "Models", m.Entity()+".go"), modelTemplate},
 		{filepath.Join("app", "Policies", m.Entity()+"Policy.go"), policyTemplate},
 		{filepath.Join("app", "Services", m.Entity()+"Service.go"), serviceTemplate},

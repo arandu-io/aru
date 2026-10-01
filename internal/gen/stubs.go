@@ -109,7 +109,7 @@ func GenerateController(s Stub) ([]File, error) {
 		return nil, fmt.Errorf("unknown controller kind %q", s.Kind)
 	}
 
-	content, err := render(s.Type+".go", controllerStubTemplate+controllerPageTemplate, s)
+	content, err := render(s.Type+".go", controllerStubTemplate, s)
 	if err != nil {
 		return nil, err
 	}
@@ -148,14 +148,13 @@ func (s Stub) IsInvokable() bool { return s.Kind == KindInvokable }
 
 const controllerStubTemplate = `package controllers
 
-import (
+{{if or .IsResource .IsInvokable}}import (
 	"net/http"
 
 	fhttp "github.com/arandu-io/framework/http"
-	"github.com/arandu-io/framework/security"
-	"github.com/arandu-io/hesape/view"
 )
 
+{{end -}}
 {{if .IsResource -}}
 // {{.Type}} answers the {{.Resource}} routes.
 {{- else if .IsInvokable -}}
@@ -177,28 +176,25 @@ import (
 // header, and JSON stays the format everything else is written in.
 //
 // Who is asking is ctx.User, put on the request by middleware.RequireAuth on the
-// route. An error an action returns is answered by the router: validation.Errors
-// back to the form, a missing row as 404, a refusal as 403, and an error with an
-// HTTPStatus method as that status.
+// route, and view.New(ctx, title) is a screen's page, with the CSRF token the
+// protecting middleware issued. An error an action returns is answered by the
+// router: validation.Errors back to the form, a missing row as 404, a refusal as
+// 403, a duplicate on a unique column as 409, and an error with an HTTPStatus
+// method as that status.
 type {{.Type}} struct {
 	Controller
 
 	// The collaborators arrive through the constructor, never from a container
 	// and never from a package-level variable: a controller that builds its own
 	// dependencies is a controller no test can pin. Declare the service this
-	// controller calls as a field here, and pass it in bootstrap/app.go.
-	sessions *security.SessionStore
-	csrf     *security.CSRF
+	// controller calls as a field here, take it as a parameter below, and pass
+	// it in bootstrap/app.go.
 }
 
 // New{{.Type}} returns the controller. bootstrap/app.go builds it and
 // hands it to the routes.
-//
-// The session store and the CSRF issuer are here for the token every page
-// carries, because a screen is allowed to know about a token and a cookie.
-// Everything else a page needs arrives through a service.
-func New{{.Type}}(sessions *security.SessionStore, csrf *security.CSRF) *{{.Type}} {
-	return &{{.Type}}{sessions: sessions, csrf: csrf}
+func New{{.Type}}() *{{.Type}} {
+	return &{{.Type}}{}
 }
 {{if .IsResource}}
 // Compile-time proof of the seven actions fhttp.Router.Resource looks for. It
@@ -275,7 +271,7 @@ func (c *{{.Type}}) Destroy(ctx *fhttp.Context) error {
 func (c *{{.Type}}) Handle(ctx *fhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
-{{end}}{{template "controllerPage" .}}
+{{end}}
 // arandu:begin custom
 // Actions beyond the ones above go here, and survive regeneration. Register
 // them in the custom block of routes/web.go.

@@ -740,9 +740,13 @@ return ctx.RedirectRoute("{{ .RouteName "show" }}", created.ID)
 - **An error is returned, never mapped.** The router answers it:
   ` + "`" + `validation.Errors` + "`" + ` goes back to the form with the messages and what was typed,
   a missing row is 404, a refusal is 403, and an error with an ` + "`" + `HTTPStatus() int` + "`" + `
-  method is that status.{{ if .UniqueFields }} A duplicate on a unique column is 409, from the
-  service's ` + "`" + `conflict` + "`" + `.{{ end }}
-- **The listing** is the Model's ` + "`" + `SimplePaginate` + "`" + `, newest first.
+  method is that status.{{ if .UniqueFields }} A duplicate on a unique column is 409, and
+  nothing in the module maps it.{{ end }}
+- **A screen's page** is ` + "`" + `view.New(ctx, title)` + "`" + `: the title, what a rejected form
+  left in the flash, and the CSRF token the middleware issued. The controller
+  takes the service and nothing else.
+- **The listing** is the Model's ` + "`" + `SimplePaginate` + "`" + `, newest first, and the key
+  is one the Model generates on insert.
 
 ## What the policy allows
 

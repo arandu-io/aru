@@ -66,8 +66,8 @@ Every byte the generator emits is pinned.
 
 ```sh
 ls internal/gen/testdata/stubs  | wc -l      # 21  the granular commands
-ls internal/gen/testdata/tenant | wc -l      # 14
-ls internal/gen/testdata/global | wc -l      # 14
+ls internal/gen/testdata/tenant | wc -l      # 12
+ls internal/gen/testdata/global | wc -l      # 12
 ```
 
 `TestGolden` (`tests/Unit/gen/golden_test.go:55`) renders one fixed
@@ -75,8 +75,8 @@ specification twice — tenant-scoped and global — and compares against those
 directories. It checks the **count** before the contents:
 
 ```go
-if len(files) != 13 {
-	t.Fatalf("generated %d files, want 13", len(files))
+if len(files) != 12 {
+	t.Fatalf("generated %d files, want 12", len(files))
 }
 ```
 
@@ -110,10 +110,11 @@ copies that happen to match. `GenerateModel` and `Generate` write the same
 model; the migration goes through `MigrationSpec` whichever command asked for
 it.
 
-`TestTheGranularCommandsAndMakeModuleAgree` (`stubs_test.go:203`) checks five of
-those pairings — the page helper, the request's fields and rules, the migration,
-the model and the unit test. If you add a template that both paths can reach, add it
-there too.
+`TestTheGranularCommandsAndMakeModuleAgree` (`stubs_test.go:232`) checks five of
+those pairings — the page (`view.New`, and no helper, session or CSRF issuer in
+either controller), the request's fields and rules, the migration, the model
+and the unit test. If you add a template that both paths can reach, add it there
+too.
 
 `GenerateModel` deliberately writes no repository, and there is no
 `--repository` flag: a repository pulls a policy with it, `aru doctor` reports
@@ -125,13 +126,14 @@ flag offering a subset of it would offer a broken project.
 ## The custom block
 
 ```go
-var customBlock = regexp.MustCompile(`(?s)// arandu:begin custom\n(.*?)// arandu:end custom`)
+content = publish.Merge(f.Path, existing, f.Content)
 ```
 
-`internal/gen/generate.go:236`. `Merge` carries the existing file's blocks into
-the newly generated one **by position**, which is the honest limitation:
-reordering the generated file would shuffle them. That is why the marker appears
-once per file, at the end, where a new block is appended rather than inserted.
+`internal/gen/generate.go:337`, in `Write`. `publish.Merge` carries the existing
+file's blocks into the newly generated one **by position**, which is the honest
+limitation: reordering the generated file would shuffle them. That is why the
+marker appears once per file, at the end, where a new block is appended rather
+than inserted.
 
 Without it the generator is a one-time tool, because nobody regenerates a file
 that eats their work. Two things follow for any template you touch:
@@ -161,11 +163,11 @@ it is also `internal/doctor/testdata/clean`. Break one and you break the other.
 - **The generated policy denies every action**, with no allow-everything branch
   to delete later.
 - **The generated request has no `Authorize`.**
-  `TestTheGeneratedRequestHasNoAuthorize` (`stubs_test.go:307`) is the thesis of
+  `TestTheGeneratedRequestHasNoAuthorize` (`stubs_test.go:399`) is the thesis of
   the product in one assertion: there is one path to a yes, and a form request is
   not on it.
 - **A generated action answers 501, never 200.**
-  `TestTheGeneratedActionsDoNotAnswerSuccess` (`stubs_test.go:289`) — an empty
+  `TestTheGeneratedActionsDoNotAnswerSuccess` (`stubs_test.go:331`) — an empty
   action that answered 200 would look like it worked in the browser, in the logs
   and on every dashboard, which is the failure nobody debugs.
 - **The generated test file is `<Entity>_test.go`, not `<Entity>Test.go`**, in
@@ -176,31 +178,42 @@ it is also `internal/doctor/testdata/clean`. Break one and you break the other.
   the generator fighting the guard it ships. `gen.RenderTest` is the one place
   that file is rendered, for `aru make:module` and `aru make:test` alike.
 - **Nothing keyed is declared `TEXT`.**
-  `TestNothingKeyedIsDeclaredTEXT` (`tests/Unit/gen/audit_test.go:120`) exists
+  `TestNothingKeyedIsDeclaredTEXT` (`tests/Unit/gen/audit_test.go:191`) exists
   because every test once ran against SQLite, which accepts `id TEXT PRIMARY
   KEY`; MySQL refuses it, so the first statement of the first migration failed
   in every project and nothing noticed.
 - **An altering migration adds nothing `NOT NULL`.**
-  `TestAnAlteringMigrationAddsNothingNotNull` (`stubs_test.go:325`) — a `NOT
+  `TestAnAlteringMigrationAddsNothingNotNull` (`stubs_test.go:417`) — a `NOT
   NULL` column added to a table with rows fails on every row already there, and
   during a rollout the previous binary does not fill it in.
 - **Validation agrees with the column.** A value that passes validation has to
-  fit the column it is written to (`audit_test.go:154`).
-- **The generated `List` pages through the Model.** It is `Latest()`, a tiebreak
-  on the key and `SimplePaginate`, with no column taken from the request and no
-  SQL written in the service. `TestTheListingPagesThroughTheModel`
-  (`tests/Unit/gen/audit_test.go`) is what stops the hand-rolled keyset from
-  coming back.
-- **A generated controller loads no session and maps no error.** Who is asking
-  is `ctx.User()`, put there by the sign-in guard the printed route sits behind;
-  the input is `ctx.Bind` into the request; an error is returned, and the router
-  answers it with its status. The session store and the CSRF issuer are in the
-  constructor for one thing, the page's token, through the shared `page` helper.
+  fit the column it is written to (`audit_test.go:219`).
+- **The generated `List` pages through the Model.** It is the model's
+  `Latest()`, a tiebreak on the key and `SimplePaginate`, with no column taken
+  from the request and no SQL written in the service.
+  `TestTheListingPagesThroughTheModel` (`tests/Unit/gen/audit_test.go`) is what
+  stops the hand-rolled keyset from coming back.
+- **A generated controller loads no session, issues no token and maps no
+  error.** Who is asking is `ctx.User()`, put there by the sign-in guard the
+  printed route sits behind; the input is `ctx.Bind` into the request; the page
+  is `view.New(ctx, title)`, which carries the CSRF token the middleware issued;
+  an error is returned, and the router answers it with its status — a duplicate
+  on a unique column as 409, so the service has no conflict helper. The
+  constructor takes the service and nothing else, and the printed wiring calls
+  it that way.
+- **The key is the Model's.** The entry point chains `UseUniqueIDs()`, which
+  fills an empty key on insert, so neither the service nor the factory writes
+  an id, and no model sets `KeyType` or `Incrementing` by hand. `aru
+  make:factory` says so when it reads a model that does not chain it.
+- **A form input asks the page for its message.** `view.Page` has `FieldError`,
+  so no page data declares one, and the show screen's delete button sends no
+  `hx-headers`: the layout's `<body>` already sends the token on every htmx
+  request.
 
 ## The generated module carries its own skill
 
 `Generate` writes `.agents/skills/<resource>/SKILL.md`
-(`internal/gen/generate.go:72`), rendered from the same specification as the Go.
+(`internal/gen/generate.go:60`), rendered from the same specification as the Go.
 A description of a module written by hand stops being true at the next field;
 this one cannot, because regenerating the module regenerates it.
 

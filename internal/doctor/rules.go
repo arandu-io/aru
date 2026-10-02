@@ -263,8 +263,30 @@ func databaseCall(name string) bool {
 }
 
 // reachesTheDatabase reports whether the body of a method touches the handle.
+//
+// A Query with no argument is left out, because the name alone cannot tell the
+// two apart and the argument count can: url.URL.Query() takes none and every
+// service that builds an address calls it, while a handle's Query always takes
+// the statement. The one database Query that takes nothing is a prepared
+// statement's, and the Prepare that made it is a call this rule already sees.
 func reachesTheDatabase(fn *ast.FuncDecl) bool {
-	return funcBodyContains(fn, databaseCall)
+	if fn.Body == nil {
+		return false
+	}
+	found := false
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return !found
+		}
+		name := callName(call)
+		if databaseCall(name) && !(strings.HasSuffix(name, ".Query") && len(call.Args) == 0) {
+			found = true
+			return false
+		}
+		return !found
+	})
+	return found
 }
 
 // grantChecks counts the calls to Check in a body, and how many of them have

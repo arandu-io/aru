@@ -144,6 +144,14 @@ func fontAdd(args []string, stdout, stderr io.Writer) error {
 		}
 	}
 
+	// Read before anything is written, because the names the other role's files
+	// already have decide what this role's files may be called.
+	all, err := readInstalled(root)
+	if err != nil {
+		return err
+	}
+	faces := uniqueFaceFiles(got.Faces, filesOfOtherRoles(all, fonts.Role(role)))
+
 	// Written before anything is recorded, so a failure halfway leaves files
 	// that the next run overwrites rather than a manifest naming files that are
 	// not there.
@@ -153,7 +161,7 @@ func fontAdd(args []string, stdout, stderr io.Writer) error {
 
 	total := 0
 	var notes []string
-	for _, face := range got.Faces {
+	for _, face := range faces {
 		path := filepath.Join(root, fontDir, face.File)
 		if err := os.WriteFile(path, face.Body, 0o644); err != nil {
 			return fmt.Errorf("writing %s: %w", path, err)
@@ -184,10 +192,6 @@ func fontAdd(args []string, stdout, stderr io.Writer) error {
 		FileList: notes,
 	}
 
-	all, err := readInstalled(root)
-	if err != nil {
-		return err
-	}
 	all[fonts.Role(role)] = installed
 
 	if err := writeFontFiles(root, all); err != nil {
@@ -210,6 +214,70 @@ func fontAdd(args []string, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "\nUse it: font-family: var(--font-%s) -- or the Tailwind utility for that token.\n", fontToken(role))
 	fmt.Fprintln(stdout, "Then: aru view:build")
 	return nil
+}
+
+// uniqueFaceFiles gives every face a file name no other face uses.
+//
+// The name is derived from the family, the weight and the subset, and two
+// different faces can share all three: a display cut and a text cut of one
+// typeface vendored at the same weight, or a static family fetched at a list of
+// weights, which answers one face per weight under one subset. Written under
+// one name, the second face overwrites the first, the first face's URL carries
+// a hash the bytes on disk no longer have -- served uncached on every page
+// view -- and the name is registered twice, which panics at init.
+//
+// taken are the names the other role already uses. This role's own earlier
+// names are not in it, because they are being replaced: adding the same file
+// again keeps the name it had.
+//
+// A face that collides is renamed with its own content hash before the
+// extension, so the name is the same every time the same bytes are added. A
+// face that repeats an earlier one of the same request byte for byte -- the
+// catalogue answering one variable file for two weights -- is dropped: it is
+// one file, and a second copy would be the same bytes twice in the binary.
+func uniqueFaceFiles(faces []fonts.Face, taken map[string]bool) []fonts.Face {
+	used := map[string]bool{}
+	for name := range taken {
+		used[name] = true
+	}
+	seen := map[string]bool{}
+	out := make([]fonts.Face, 0, len(faces))
+	for _, face := range faces {
+		// A repeat is the name the face arrived with, its range and its bytes,
+		// so it is found whatever the first copy had to be renamed to.
+		key := face.File + "|" + face.UnicodeRange + "|" + fonts.AssetHash(face.Body)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		if used[face.File] {
+			ext := filepath.Ext(face.File)
+			stem := strings.TrimSuffix(face.File, ext) + "-" + fonts.AssetHash(face.Body)
+			name := stem + ext
+			for n := 2; used[name]; n++ {
+				name = fmt.Sprintf("%s-%d%s", stem, n, ext)
+			}
+			face.File = name
+		}
+		used[face.File] = true
+		out = append(out, face)
+	}
+	return out
+}
+
+// filesOfOtherRoles is every file name the roles other than this one list.
+func filesOfOtherRoles(all map[fonts.Role]fonts.Installed, role fonts.Role) map[string]bool {
+	out := map[string]bool{}
+	for other, in := range all {
+		if other == role {
+			continue
+		}
+		for _, note := range in.FileList {
+			file, _, _ := strings.Cut(note, "|")
+			out[file] = true
+		}
+	}
+	return out
 }
 
 func fontList(_ []string, stdout, _ io.Writer) error {
@@ -264,8 +332,14 @@ func fontRemove(args []string, stdout, _ io.Writer) error {
 		return fmt.Errorf("no %s font is vendored", args[0])
 	}
 
+	// A manifest written before every face had a name of its own can list one
+	// file under both roles, and the other role still draws it.
+	shared := filesOfOtherRoles(all, fonts.Role(args[0]))
 	for _, note := range in.FileList {
 		file, _, _ := strings.Cut(note, "|")
+		if shared[file] {
+			continue
+		}
 		path := filepath.Join(root, fontDir, file)
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return err
@@ -340,9 +414,17 @@ import (
 
 `)
 	var inits []string
+	// One registration per name: the view layer panics on a second, and a
+	// manifest written before every face had a name of its own can list one
+	// file under both roles.
+	registered := map[string]bool{}
 	for _, in := range list {
 		for i, note := range in.FileList {
 			file, _, _ := strings.Cut(note, "|")
+			if registered[file] {
+				continue
+			}
+			registered[file] = true
 			name := fmt.Sprintf("%s%d", in.Role, i)
 			fmt.Fprintf(&b, "//go:embed fonts/%s\nvar %s []byte\n\n", file, name)
 			inits = append(inits, fmt.Sprintf("\tfonts.Register(%q, %s)", file, name))

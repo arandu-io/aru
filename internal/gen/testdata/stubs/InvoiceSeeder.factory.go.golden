@@ -31,11 +31,11 @@ func (InvoiceSeeder) Name() string { return "InvoiceSeeder" }
 // table that already has rows is left as it is, which is what makes a second
 // run safe.
 func (InvoiceSeeder) Run(ctx context.Context, d Deps) error {
-	seeded, err := models.Invoices(d.DB).NewQuery().Exists(ctx, security.SystemGrant(policies.InvoiceList, d.Tenant))
+	seeded, err := models.Invoices(d.DB).Exists(ctx, security.SystemGrant(policies.InvoiceList, d.Tenant))
 	if err != nil || seeded {
 		return err
 	}
-	if _, err := factories.InvoiceFactory(d.DB).Count(10).Create(ctx, security.SystemGrant(policies.InvoiceCreate, d.Tenant)); err != nil {
+	if _, err := factories.Invoices(d.DB).Count(10).Create(ctx, security.SystemGrant(policies.InvoiceCreate, d.Tenant)); err != nil {
 		return err
 	}
 

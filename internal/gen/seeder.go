@@ -45,8 +45,8 @@ func (s SeederSpec) Humans() string {
 	return strings.ReplaceAll(Module{Name: Normalize(s.Entity)}.Table(), "_", " ")
 }
 
-// Plural is the model's entry point: Invoices.
-func (s SeederSpec) Plural() string { return Module{Name: Normalize(s.Entity)}.Plural() }
+// Constructor is where the query and the factory of the entity start: Invoices.
+func (s SeederSpec) Constructor() string { return Constructor(s.Entity) }
 
 // Path is where the file goes.
 func (s SeederSpec) Path() string {
@@ -114,11 +114,11 @@ func ({{.Type}}) Name() string { return "{{.Type}}" }
 // table that already has rows is left as it is, which is what makes a second
 // run safe.
 func ({{.Type}}) Run(ctx context.Context, d Deps) error {
-	seeded, err := models.{{.Plural}}(d.DB).NewQuery().Exists(ctx, security.SystemGrant(policies.{{.Entity}}List, d.Tenant))
+	seeded, err := models.{{.Constructor}}(d.DB).Exists(ctx, security.SystemGrant(policies.{{.Entity}}List, d.Tenant))
 	if err != nil || seeded {
 		return err
 	}
-	if _, err := factories.{{.Entity}}Factory(d.DB).Count(10).Create(ctx, security.SystemGrant(policies.{{.Entity}}Create, d.Tenant)); err != nil {
+	if _, err := factories.{{.Constructor}}(d.DB).Count(10).Create(ctx, security.SystemGrant(policies.{{.Entity}}Create, d.Tenant)); err != nil {
 		return err
 	}
 
@@ -136,7 +136,7 @@ func ({{.Type}}) Run(ctx context.Context, d Deps) error {
 	// two calls, in d.Tenant and never a tenant this file picked:
 	//
 	//	g := security.SystemGrant(policies.{{.Entity}}Create, d.Tenant)
-	//	_, err := factories.{{.Entity}}Factory(d.DB).Count(10).Create(ctx, g)
+	//	_, err := factories.{{.Constructor}}(d.DB).Count(10).Create(ctx, g)
 	//
 	// Twice safely: ask whether the table already has rows before writing.
 	// arandu:end custom

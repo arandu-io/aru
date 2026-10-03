@@ -14,14 +14,18 @@ import (
 )
 
 // purchaseOrderPersistent is the Model-first persistence boundary this module
-// depends on. The proof below fails at compile time if the generated entity
-// stops embedding the Hesape model or if CRUD grows a second persistence path.
+// depends on. The proofs below fail at compile time if the entity stops
+// embedding the Hesape model -- nothing else satisfies model.Entity -- or if its
+// generated query can be run without a Grant.
 type purchaseOrderPersistent interface {
+	model.Entity
 	Save(context.Context, security.Grant) (bool, error)
-	NewQuery() *model.Builder[models.PurchaseOrder]
 }
 
-var _ purchaseOrderPersistent = (*models.PurchaseOrder)(nil)
+var (
+	_ purchaseOrderPersistent                                                                                           = (*models.PurchaseOrder)(nil)
+	_ func(*models.PurchaseOrderQuery, context.Context, security.Grant, ...any) (models.PurchaseOrderCollection, error) = (*models.PurchaseOrderQuery).Get
+)
 
 // TestEveryPurchaseOrderReadRequiresAuthorization needs no database: the service
 // authorizes each read before it asks the Model for a query. A nil handle turns
@@ -37,7 +41,7 @@ func TestEveryPurchaseOrderReadRequiresAuthorization(t *testing.T) {
 			return err
 		},
 		"List": func() error {
-			_, err := svc.List(ctx, anonymous, 1)
+			_, _, err := svc.List(ctx, anonymous, 1)
 			return err
 		},
 		"Delete": func() error {

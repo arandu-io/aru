@@ -67,8 +67,13 @@ type FactorySpec struct {
 	ModelsImport string
 }
 
-// Plural is the model's entry point the factory builds through: Invoices.
-func (s FactorySpec) Plural() string { return Module{Name: Normalize(s.Entity)}.Plural() }
+// Constructor is the function the factory is reached by, in database/factories,
+// and the query it builds through, in app/Models: Invoices.
+func (s FactorySpec) Constructor() string { return Constructor(s.Entity) }
+
+// Header is the first line of the file, which is also how model:build tells a
+// factory it rendered from one somebody wrote: it re-renders only the first kind.
+func (s FactorySpec) Header() string { return FactoryHeaderPrefix + s.Entity + FactoryHeaderSuffix }
 
 // Receiver is the short name the example state in the doc comment uses.
 func (s FactorySpec) Receiver() string { return Module{Name: Normalize(s.Entity)}.Receiver() }
@@ -127,9 +132,9 @@ func RenderFactory(s FactorySpec) (File, error) {
 // is the same reason make:policy reads the tenant off the repository instead of
 // asking for it a second time.
 //
-// ID, TenantID, CreatedAt and UpdatedAt are skipped: the first is drawn by the
-// model on insert, the second comes from the Grant, and the last two from the
-// clock.
+// ID, TenantID, CreatedAt, UpdatedAt and DeletedAt are skipped: the first is
+// drawn by the model on insert, the second comes from the Grant, and the rest
+// from the clock. The embedded model.Model has no name, so it is never a field.
 func FieldsFromModel(path, entity string) (fields []FactoryField, tenant bool, err error) {
 	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
 	if err != nil {
@@ -155,7 +160,7 @@ func FieldsFromModel(path, entity string) (fields []FactoryField, tenant bool, e
 		goType := typeExpr(f.Type)
 		for _, name := range f.Names {
 			switch name.Name {
-			case "ID", "CreatedAt", "UpdatedAt":
+			case "ID", "CreatedAt", "UpdatedAt", "DeletedAt":
 				continue
 			case "TenantID":
 				tenant = true
@@ -188,47 +193,148 @@ func typeExpr(e ast.Expr) string {
 	}
 }
 
-const factoryTemplate = `package factories
+// FactoryHeaderPrefix and FactoryHeaderSuffix frame the first line of a factory
+// file, around the entity: "// Rendered by aru model:build for models.Invoice.".
+//
+// It is not the standard generated-code marker, because the file has a part
+// that is somebody's: the custom block holds the default state and the named
+// states, and an editor that refused to edit the file would refuse that too.
+const (
+	FactoryHeaderPrefix = "// Rendered by aru model:build for models."
+	FactoryHeaderSuffix = ". Everything outside the custom block is rewritten on the next build."
+)
+
+// FactoryEntity reports whether content is a factory model:build rendered, and
+// for which entity.
+func FactoryEntity(content []byte) (string, bool) {
+	line, _, _ := strings.Cut(string(content), "\n")
+	rest, found := strings.CutPrefix(line, FactoryHeaderPrefix)
+	if !found {
+		return "", false
+	}
+	entity, found := strings.CutSuffix(rest, FactoryHeaderSuffix)
+	return entity, found && IsExportedIdentifier(entity)
+}
+
+// factoryTemplate is the typed factory of one entity over the core factory.
+//
+// Everything above the custom block is a forward that converts at the boundary,
+// and is rewritten on every build. The default state is the one thing a person
+// writes, so it is the first thing in the custom block: rendered once from the
+// fields, and after that it is theirs.
+const factoryTemplate = `{{.Header}}
+
+package factories
 
 import (
+	"context"
 {{- if .NeedsTime}}
 	"time"
+{{- end}}
 
-{{end}}
-	"github.com/arandu-io/framework/data"
+	"github.com/arandu-io/hesape/auth"
+	"github.com/arandu-io/hesape/database/model"
 	factory "github.com/arandu-io/hesape/database/model/factories"
 	"github.com/arandu-io/hesape/faker"
 
 	models "{{.ModelsImport}}"
 )
 
-// {{.Type}} returns the factory of {{.Humans}} over db.
-//
-//	rows, err := factories.{{.Type}}(db).Count(10).Create(ctx, g)
-//	one, err := factories.{{.Type}}(db).State(func({{.Receiver}} *models.{{.Entity}}) { ... }).MakeOne()
+// {{.Type}} builds rows of {{.Humans}}, for tests and for seeding.
 //
 // Make builds rows and stores nothing. Create stores them, and takes the Grant
 // every write takes: {{if .Tenant}}the tenant comes off it, and {{end}}a factory is no way around the
 // policy that guards the table.
 //
+// Every method returns a new factory, so a factory kept in a variable is never
+// changed by a caller that adds a state to it.
+type {{.Type}} struct{ f *factory.Factory }
+
+// {{.Constructor}} returns the factory of {{.Humans}} over db, with define{{.Entity}} as
+// its default state.
+//
+//	rows, err := factories.{{.Constructor}}(db).Count(10).Create(ctx, g)
+//	one, err := factories.{{.Constructor}}(db).State(func({{.Receiver}} *models.{{.Entity}}) { ... }).MakeOne()
+//
 // The values come from a seeded faker -- the same rows on every run, so a
 // failure reproduces -- and Seed asks for others. The key is left empty: the
 // model draws a fresh one for every row it stores, so two batches never share
 // one, and Make builds rows that have none yet.
-func {{.Type}}(db *data.DB) *factory.Factory[models.{{.Entity}}] {
-	return factory.For(models.{{.Plural}}(db), func(f faker.Faker) models.{{.Entity}} {
-		return models.{{.Entity}}{
-{{- range .Fields}}
-{{- if .Fake}}
-			{{.GoName}}: {{.Fake}},
-{{- end}}
-{{- end}}
-		}
-	})
+func {{.Constructor}}(db model.DB) *{{.Type}} {
+	return &{{.Type}}{f: factory.New(models.{{.Constructor}}(db).Base(), func(f faker.Faker, row model.Entity) {
+		*row.(*models.{{.Entity}}) = define{{.Entity}}(f)
+	})}
+}
+
+// Count returns a factory that makes n rows.
+func (x *{{.Type}}) Count(n int) *{{.Type}} { return &{{.Type}}{f: x.f.Count(n)} }
+
+// Seed returns a factory whose values start from seed.
+func (x *{{.Type}}) Seed(seed int64) *{{.Type}} { return &{{.Type}}{f: x.f.Seed(seed)} }
+
+// State returns a factory that applies fn to every row after the default state.
+func (x *{{.Type}}) State(fn func(*models.{{.Entity}})) *{{.Type}} {
+	return &{{.Type}}{f: x.f.State(func(row model.Entity) { fn(row.(*models.{{.Entity}})) })}
+}
+
+// Sequence returns a factory that cycles through states, one per row.
+func (x *{{.Type}}) Sequence(states ...func(*models.{{.Entity}})) *{{.Type}} {
+	adapted := make([]func(model.Entity), len(states))
+	for i, state := range states {
+		adapted[i] = func(row model.Entity) { state(row.(*models.{{.Entity}})) }
+	}
+	return &{{.Type}}{f: x.f.Sequence(adapted...)}
+}
+
+// AfterMaking returns a factory that runs fn on each row once it is built.
+func (x *{{.Type}}) AfterMaking(fn func(*models.{{.Entity}})) *{{.Type}} {
+	return &{{.Type}}{f: x.f.AfterMaking(func(row model.Entity) { fn(row.(*models.{{.Entity}})) })}
+}
+
+// AfterCreating returns a factory that runs fn on each row once it is stored.
+func (x *{{.Type}}) AfterCreating(fn func(context.Context, auth.Grant, *models.{{.Entity}}) error) *{{.Type}} {
+	return &{{.Type}}{f: x.f.AfterCreating(func(ctx context.Context, g auth.Grant, row model.Entity) error {
+		return fn(ctx, g, row.(*models.{{.Entity}}))
+	})}
+}
+
+// Make returns the rows without storing any of them.
+func (x *{{.Type}}) Make() (models.{{.Entity}}Collection, error) {
+	rows, err := x.f.Make()
+	return models.{{.Entity}}CollectionOf(rows), err
+}
+
+// MakeOne returns one row without storing it, whatever Count says.
+func (x *{{.Type}}) MakeOne() (*models.{{.Entity}}, error) {
+	e, err := x.f.MakeOne()
+	row, _ := e.(*models.{{.Entity}})
+	return row, err
+}
+
+// Create stores the rows and returns them.
+func (x *{{.Type}}) Create(ctx context.Context, g auth.Grant) (models.{{.Entity}}Collection, error) {
+	rows, err := x.f.Create(ctx, g)
+	return models.{{.Entity}}CollectionOf(rows), err
+}
+
+// CreateOne stores one row and returns it, whatever Count says.
+func (x *{{.Type}}) CreateOne(ctx context.Context, g auth.Grant) (*models.{{.Entity}}, error) {
+	e, err := x.f.CreateOne(ctx, g)
+	row, _ := e.(*models.{{.Entity}})
+	return row, err
 }
 
 // arandu:begin custom
-// Named states go here, and survive regeneration: a factory with one thing
-// said about it, built on the one above.
+// define{{.Entity}} is the default state: every row the factory makes starts here,
+// and a State changes the part a test cares about. Named states go here too.
+func define{{.Entity}}(f faker.Faker) models.{{.Entity}} {
+	return models.{{.Entity}}{
+{{- range .Fields}}
+{{- if .Fake}}
+		{{.GoName}}: {{.Fake}},
+{{- end}}
+{{- end}}
+	}
+}
 // arandu:end custom
 `

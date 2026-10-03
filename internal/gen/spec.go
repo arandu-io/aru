@@ -341,9 +341,17 @@ func (m Module) Entity() string { return exported(m.Name) }
 
 // Table is the table name, pluralized the simple way. English pluralization has
 // hundreds of exceptions; this handles the common ones and gets out of the way.
+//
+// A noun with no plural -- media, data, news -- is its own plural, judged by
+// the last word: social_media is a table of social_media. Adding an s to one
+// gives a name nobody would write by hand, and the table, the route and the
+// view directory would all carry it.
 func (m Module) Table() string {
 	n := strings.ReplaceAll(m.Name, "-", "_")
+	last := n[strings.LastIndexByte(n, '_')+1:]
 	switch {
+	case uncountable[last]:
+		return n
 	case strings.HasSuffix(n, "s"), strings.HasSuffix(n, "x"), strings.HasSuffix(n, "ch"), strings.HasSuffix(n, "sh"):
 		return n + "es"
 	case strings.HasSuffix(n, "y") && len(n) > 1 && !isVowel(n[len(n)-2]):
@@ -379,9 +387,43 @@ func (m Module) RouteName(action string) string { return m.Resource() + "." + ac
 // purchase-orders.index.
 func (m Module) Resource() string { return strings.ReplaceAll(m.Table(), "_", "-") }
 
+// uncountable are the nouns Table leaves as they are. The list is short on
+// purpose: a word belongs here when its plural is the word itself in the
+// sentence a developer writes, and a wrong entry renames somebody's table.
+var uncountable = map[string]bool{
+	"data": true, "equipment": true, "feedback": true, "information": true,
+	"media": true, "metadata": true, "news": true, "series": true,
+	"software": true, "species": true, "staff": true,
+}
+
 // Plural is the exported plural of the entity: "PurchaseOrders". It names the
 // view data types, which are per page and per module.
 func (m Module) Plural() string { return exported(m.Table()) }
+
+// Constructor is the function a query on the entity starts from, in app/Models,
+// and the factory of the entity in database/factories: PurchaseOrders.
+//
+// It is the plural, unless the plural is the entity itself -- Media -- where a
+// function and the type would share one name in one package, which Go refuses.
+// Then it is the entity followed by Records, MediaRecords: a rule rather than a
+// choice, so the name is the same whichever command writes it and whichever
+// reads it back.
+func (m Module) Constructor() string { return Constructor(m.Entity()) }
+
+// Constructor is Module.Constructor for an entity known by its Go type name, as
+// `aru model:build` knows it after reading the struct.
+func Constructor(entity string) string {
+	plural := Module{Name: Normalize(entity)}.Plural()
+	if plural == entity {
+		return entity + "Records"
+	}
+	return plural
+}
+
+// TableVar is the package-level variable holding the entity's model.Table:
+// purchaseOrderTable. It is unexported, so nothing outside app/Models reaches
+// the table except through the generated query.
+func (m Module) TableVar() string { return m.Unexported() + "Table" }
 
 // Unexported is the entity with a lowercase initial: "purchaseOrder".
 //

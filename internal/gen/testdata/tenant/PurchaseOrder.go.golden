@@ -4,17 +4,19 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/hesape/database/model"
 )
 
 // PurchaseOrder is one row of purchase_orders.
 //
 // It embeds the model, so a row returned by a query carries the connection and
-// can be saved again. Build new rows through PurchaseOrders: a struct literal has
-// no connection and its write methods return model.ErrUnwired.
+// can be saved again. Build a new row with PurchaseOrders(db).New(): a struct
+// literal has no connection and its write methods return model.ErrUnwired.
+//
+// PurchaseOrders, PurchaseOrderQuery and PurchaseOrderCollection
+// are generated beside this file, in PurchaseOrderQuery.go, by aru model:build.
 type PurchaseOrder struct {
-	model.Model[PurchaseOrder]
+	model.Model
 
 	ID            string    `db:"id"`
 	TenantID      string    `db:"tenant_id"`
@@ -28,13 +30,18 @@ type PurchaseOrder struct {
 	UpdatedAt     time.Time `db:"updated_at"`
 }
 
-// PurchaseOrders returns the configured model for purchase_orders.
+// purchaseOrderTable is the table PurchaseOrder is a row of.
 //
-// UseUniqueIDs makes the primary key text the model fills on insert.
+// UniqueIDs makes the primary key text the model fills on insert.
 // The tenant scope is left at its tenant_id default.
-func PurchaseOrders(db *data.DB) *model.Model[PurchaseOrder] {
-	return model.NewModel[PurchaseOrder]("purchase_orders", db, db.GetQueryGrammar(), db.GetPostProcessor()).UseUniqueIDs()
-}
+var purchaseOrderTable = model.NewTable(model.TableSpec{
+	Name:      "purchase_orders",
+	New:       func() model.Entity { return new(PurchaseOrder) },
+	UniqueIDs: true,
+	// arandu:begin custom
+	// Hidden, PerPage, Scopes, Events and the rest of model.TableSpec go here.
+	// arandu:end custom
+})
 
 // LogValue implements slog.LogValuer, so passing the whole entity to a log call
 // records the identifiers and nothing else. Add any sensitive field to the
@@ -47,5 +54,7 @@ func (p PurchaseOrder) LogValue() slog.Value {
 }
 
 // arandu:begin custom
-// MarshalJSON, computed fields and anything else about this entity go here.
+// Local scopes are methods on *PurchaseOrderQuery, relations are registered
+// on purchaseOrderTable in an init function, and MarshalJSON, computed fields
+// and anything else about this entity go here too.
 // arandu:end custom

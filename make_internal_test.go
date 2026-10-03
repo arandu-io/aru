@@ -522,7 +522,8 @@ func TestMakeTestWritesTheTestMakeModuleWrites(t *testing.T) {
 		"func TestEveryPurchaseOrderReadRequiresAuthorization(t *testing.T)",
 		"security.ErrForbidden",
 		"services.NewPurchaseOrderService(nil)",
-		"model.Builder[models.PurchaseOrder]",
+		"model.Entity",
+		"(*models.PurchaseOrderQuery).Get",
 		"func TestThePurchaseOrderPolicyDeniesWhatItDoesNotKnow(t *testing.T)",
 	} {
 		if !strings.Contains(string(body), want) {
@@ -633,7 +634,7 @@ func TestMakeTestRefusesATestThatWouldNotCompile(t *testing.T) {
 // stat cannot catch.
 //
 // A plain model written before the Model-first path is a file that is there but
-// does not embed model.Model[Entity], which the emitted interface proof needs.
+// declares no table whose rows are the entity, which the emitted proof needs.
 // The check reads the file rather than only finding it, so the answer is the
 // missing boundary rather than a compiler error two commands later.
 func TestMakeTestRefusesAnEntityThatDoesNotDeclareWhatTheTestNames(t *testing.T) {
@@ -645,9 +646,9 @@ func TestMakeTestRefusesAnEntityThatDoesNotDeclareWhatTheTestNames(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	stripped := strings.ReplaceAll(string(body), "model.Model[PurchaseOrder]", "legacyModel")
+	stripped := strings.ReplaceAll(string(body), "return new(PurchaseOrder)", "return legacyModel()")
 	if stripped == string(body) {
-		t.Fatal("the generated model no longer embeds model.Model[PurchaseOrder], so this test measures nothing")
+		t.Fatal("the generated model no longer allocates its rows with new(PurchaseOrder), so this test measures nothing")
 	}
 	if err := os.WriteFile(model, []byte(stripped), 0o644); err != nil {
 		t.Fatal(err)
@@ -657,7 +658,7 @@ func TestMakeTestRefusesAnEntityThatDoesNotDeclareWhatTheTestNames(t *testing.T)
 	if code == 0 {
 		t.Fatal("make:test wrote a test naming a symbol the model does not declare")
 	}
-	if !strings.Contains(stderr, "model.Model[PurchaseOrder]") {
+	if !strings.Contains(stderr, "return new(PurchaseOrder)") {
 		t.Errorf("the refusal does not name the missing Model boundary: %q", stderr)
 	}
 }

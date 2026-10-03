@@ -32,6 +32,7 @@ func TestEverythingWritesTheDataSideAndNothingElse(t *testing.T) {
 	want := []string{
 		"app/Http/Requests/InvoiceRequest.go",
 		"app/Models/Invoice.go",
+		"app/Models/InvoiceQuery.go",
 		"app/Policies/InvoicePolicy.go",
 		"database/factories/InvoiceFactory.go",
 		"database/migrations/2026_08_07_000001_create_invoices_table.go",
@@ -52,7 +53,9 @@ func TestEverythingWritesTheDataSideAndNothingElse(t *testing.T) {
 }
 
 // TestEachPartIsOneFile: a part asked for on its own writes its file and no
-// other, so --all is the parts and not a path of its own.
+// other, so --all is the parts and not a path of its own. The model is two
+// files whatever was asked for -- the entity and the query model:build writes
+// beside it -- so the part is the third.
 func TestEachPartIsOneFile(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -70,10 +73,10 @@ func TestEachPartIsOneFile(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GenerateModel: %v", err)
 			}
-			if len(files) != 2 {
-				t.Fatalf("--%s wrote %d files, want the model and one part", c.name, len(files))
+			if len(files) != 3 {
+				t.Fatalf("--%s wrote %d files, want the model, its query and one part", c.name, len(files))
 			}
-			if got := filepath.ToSlash(files[1].Path); got != c.want {
+			if got := filepath.ToSlash(files[2].Path); got != c.want {
 				t.Errorf("--%s wrote %s, want %s", c.name, got, c.want)
 			}
 		})

@@ -97,7 +97,7 @@ func subjectOfTheTest(root string, m gen.Module) error {
 	for _, want := range []struct{ path, declares, fix string }{
 		{
 			filepath.Join("app", "Models", m.Entity()+".go"),
-			"model.Model[" + m.Entity() + "]",
+			"return new(" + m.Entity() + ")",
 			fmt.Sprintf("Write the entity with `aru make:model %s --fields \"name:string!\"`", m.Entity()),
 		},
 		{

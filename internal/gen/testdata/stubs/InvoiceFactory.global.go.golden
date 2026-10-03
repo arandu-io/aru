@@ -1,40 +1,113 @@
+// Rendered by aru model:build for models.Invoice. Everything outside the custom block is rewritten on the next build.
+
 package factories
 
 import (
+	"context"
 	"time"
 
-	"github.com/arandu-io/framework/data"
+	"github.com/arandu-io/hesape/auth"
+	"github.com/arandu-io/hesape/database/model"
 	factory "github.com/arandu-io/hesape/database/model/factories"
 	"github.com/arandu-io/hesape/faker"
 
 	models "example.test/project/app/Models"
 )
 
-// InvoiceFactory returns the factory of invoices over db.
-//
-//	rows, err := factories.InvoiceFactory(db).Count(10).Create(ctx, g)
-//	one, err := factories.InvoiceFactory(db).State(func(i *models.Invoice) { ... }).MakeOne()
+// InvoiceFactory builds rows of invoices, for tests and for seeding.
 //
 // Make builds rows and stores nothing. Create stores them, and takes the Grant
 // every write takes: a factory is no way around the
 // policy that guards the table.
 //
+// Every method returns a new factory, so a factory kept in a variable is never
+// changed by a caller that adds a state to it.
+type InvoiceFactory struct{ f *factory.Factory }
+
+// Invoices returns the factory of invoices over db, with defineInvoice as
+// its default state.
+//
+//	rows, err := factories.Invoices(db).Count(10).Create(ctx, g)
+//	one, err := factories.Invoices(db).State(func(i *models.Invoice) { ... }).MakeOne()
+//
 // The values come from a seeded faker -- the same rows on every run, so a
 // failure reproduces -- and Seed asks for others. The key is left empty: the
 // model draws a fresh one for every row it stores, so two batches never share
 // one, and Make builds rows that have none yet.
-func InvoiceFactory(db *data.DB) *factory.Factory[models.Invoice] {
-	return factory.For(models.Invoices(db), func(f faker.Faker) models.Invoice {
-		return models.Invoice{
-			Reference:     f.UserName(),
-			SupplierEmail: f.Email(),
-			Total:         int64(f.Int(1, 1000)),
-			DeliveryDate:  f.Time(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)),
-		}
-	})
+func Invoices(db model.DB) *InvoiceFactory {
+	return &InvoiceFactory{f: factory.New(models.Invoices(db).Base(), func(f faker.Faker, row model.Entity) {
+		*row.(*models.Invoice) = defineInvoice(f)
+	})}
+}
+
+// Count returns a factory that makes n rows.
+func (x *InvoiceFactory) Count(n int) *InvoiceFactory { return &InvoiceFactory{f: x.f.Count(n)} }
+
+// Seed returns a factory whose values start from seed.
+func (x *InvoiceFactory) Seed(seed int64) *InvoiceFactory { return &InvoiceFactory{f: x.f.Seed(seed)} }
+
+// State returns a factory that applies fn to every row after the default state.
+func (x *InvoiceFactory) State(fn func(*models.Invoice)) *InvoiceFactory {
+	return &InvoiceFactory{f: x.f.State(func(row model.Entity) { fn(row.(*models.Invoice)) })}
+}
+
+// Sequence returns a factory that cycles through states, one per row.
+func (x *InvoiceFactory) Sequence(states ...func(*models.Invoice)) *InvoiceFactory {
+	adapted := make([]func(model.Entity), len(states))
+	for i, state := range states {
+		adapted[i] = func(row model.Entity) { state(row.(*models.Invoice)) }
+	}
+	return &InvoiceFactory{f: x.f.Sequence(adapted...)}
+}
+
+// AfterMaking returns a factory that runs fn on each row once it is built.
+func (x *InvoiceFactory) AfterMaking(fn func(*models.Invoice)) *InvoiceFactory {
+	return &InvoiceFactory{f: x.f.AfterMaking(func(row model.Entity) { fn(row.(*models.Invoice)) })}
+}
+
+// AfterCreating returns a factory that runs fn on each row once it is stored.
+func (x *InvoiceFactory) AfterCreating(fn func(context.Context, auth.Grant, *models.Invoice) error) *InvoiceFactory {
+	return &InvoiceFactory{f: x.f.AfterCreating(func(ctx context.Context, g auth.Grant, row model.Entity) error {
+		return fn(ctx, g, row.(*models.Invoice))
+	})}
+}
+
+// Make returns the rows without storing any of them.
+func (x *InvoiceFactory) Make() (models.InvoiceCollection, error) {
+	rows, err := x.f.Make()
+	return models.InvoiceCollectionOf(rows), err
+}
+
+// MakeOne returns one row without storing it, whatever Count says.
+func (x *InvoiceFactory) MakeOne() (*models.Invoice, error) {
+	e, err := x.f.MakeOne()
+	row, _ := e.(*models.Invoice)
+	return row, err
+}
+
+// Create stores the rows and returns them.
+func (x *InvoiceFactory) Create(ctx context.Context, g auth.Grant) (models.InvoiceCollection, error) {
+	rows, err := x.f.Create(ctx, g)
+	return models.InvoiceCollectionOf(rows), err
+}
+
+// CreateOne stores one row and returns it, whatever Count says.
+func (x *InvoiceFactory) CreateOne(ctx context.Context, g auth.Grant) (*models.Invoice, error) {
+	e, err := x.f.CreateOne(ctx, g)
+	row, _ := e.(*models.Invoice)
+	return row, err
 }
 
 // arandu:begin custom
-// Named states go here, and survive regeneration: a factory with one thing
-// said about it, built on the one above.
+// defineInvoice is the default state: every row the factory makes starts here,
+// and a State changes the part a test cares about. Named states go here too.
+func defineInvoice(f faker.Faker) models.Invoice {
+	return models.Invoice{
+		Reference:     f.UserName(),
+		SupplierEmail: f.Email(),
+		Total:         int64(f.Int(1, 1000)),
+		DeliveryDate:  f.Time(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)),
+	}
+}
+
 // arandu:end custom

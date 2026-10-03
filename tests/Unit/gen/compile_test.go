@@ -18,8 +18,9 @@ import (
 // published is what the generated code is compiled against: the tags a project
 // created today resolves to, and nothing else.
 //
-// They are written down here rather than discovered, and there is deliberately
-// no replace directive anywhere below. A replace would point the build at the
+// They are written down here rather than discovered, and the only replace
+// directive below is hesapeReplace's, which is empty unless aru itself is built
+// against a hesape working tree. Any other replace would point the build at the
 // working tree beside this one, and then a green run would say the generator
 // agrees with code nobody can `go get` -- which is the opposite of what this
 // file exists to prove. What is being checked is that the emitted source
@@ -110,6 +111,16 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 	globalModule := compiled("stock_item", false)
 	emit("aru make:module purchase_order --tenant", func() ([]gen.File, error) { return gen.Generate(tenantModule) })
 	emit("aru make:module stock_item", func() ([]gen.File, error) { return gen.Generate(globalModule) })
+
+	// A noun whose plural is itself. The constructor cannot be the plural --
+	// a function and the type would share one name in one package -- so it is
+	// MediaRecords, and the service, the factory and the seeder have to agree.
+	mediaModule := compiled("media", true)
+	emit("aru make:module media --tenant", func() ([]gen.File, error) { return gen.Generate(mediaModule) })
+	emit("aru make:model media --factory --seed --policy", func() ([]gen.File, error) {
+		files, err := gen.GenerateModel(mediaModule, gen.ModelParts{Factory: true, Seeder: true, Policy: true})
+		return files, err
+	})
 
 	// make:test, over both modules. It writes the file make:module already
 	// wrote, so what reaches the compiler is one file and what is proved is two
@@ -377,7 +388,7 @@ go 1.26
 require (
 `+strings.Join(modules, "\n")+`
 )
-`))
+`+hesapeReplace(t)))
 
 	// The base type every generated controller embeds. It answers a failed
 	// validation and reports whether one passed, which is what the generated
@@ -422,6 +433,57 @@ type Seeder interface {
 	Run(ctx context.Context, d Deps) error
 }
 `))
+}
+
+// hesapeReplace points the generated project at the hesape this test binary was
+// built against, when that is a directory rather than a published tag.
+//
+// The query and factory files the generator writes are written for the model
+// layer of the hesape aru itself compiles with -- it is the version make:model
+// refuses to write below -- so that is the one they have to compile against.
+// Built from aru's go.mod alone, that is a tag already in `published` and the
+// answer is empty: no replace, and the published library is what is proved.
+// Built in a workspace that holds a hesape working tree, the generator is being
+// changed together with that tree, and proving it against the last tag would
+// prove it against code the change does not target.
+func hesapeReplace(t *testing.T) string {
+	t.Helper()
+	dir := resolvedHesapeDir(t)
+	if dir == "" {
+		return ""
+	}
+	return "\nreplace github.com/arandu-io/hesape => " + dir + "\n"
+}
+
+// resolvedHesapeDir answers the directory hesape resolves to for this module
+// when it is a working tree -- a workspace member or a directory replace -- and
+// empty when it is a published version from the module cache.
+func resolvedHesapeDir(t *testing.T) string {
+	t.Helper()
+	tool := goTool(t)
+	cmd := exec.Command(tool, "list", "-m", "-json", "github.com/arandu-io/hesape")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go list -m github.com/arandu-io/hesape: %v", err)
+	}
+	var resolved struct {
+		Version string
+		Dir     string
+		Replace *struct {
+			Version string
+			Dir     string
+		}
+	}
+	if err := json.Unmarshal(out, &resolved); err != nil {
+		t.Fatalf("decode go list output: %v\n%s", err, out)
+	}
+	switch {
+	case resolved.Replace != nil && resolved.Replace.Version == "":
+		return resolved.Replace.Dir
+	case resolved.Replace == nil && resolved.Version == "":
+		return resolved.Dir
+	}
+	return ""
 }
 
 // ensureModules fetches what the generated imports name, before the build that

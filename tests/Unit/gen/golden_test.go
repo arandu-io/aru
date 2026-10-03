@@ -70,8 +70,8 @@ func TestGolden(t *testing.T) {
 			// the test rather than quietly rewriting the corpus. Adding one to
 			// the generator means changing this number by hand, which is the
 			// review the number exists to force.
-			if len(files) != 12 {
-				t.Fatalf("generated %d files, want 12", len(files))
+			if len(files) != 13 {
+				t.Fatalf("generated %d files, want 13", len(files))
 			}
 
 			// The generated files name the golden files, so what this loop can
@@ -236,18 +236,19 @@ func TestTheGeneratedPolicyDeniesByDefault(t *testing.T) {
 	t.Fatal("no policy was generated")
 }
 
-// TestTenantScopesEveryQuery: a tenant Model retains Hesape's tenant_id default,
-// while a global Model must opt out explicitly. Every Builder terminal then
-// applies that configuration from the Grant.
+// TestTenantScopesEveryQuery: a tenant table keeps Hesape's tenant_id default,
+// while a global table must opt out explicitly, with Global -- the one field of
+// model.TableSpec that drops the filter. Every terminal then applies that
+// configuration from the Grant.
 func TestTenantScopesEveryQuery(t *testing.T) {
 	tenant := byName(t, spec(true))["PurchaseOrder.go"]
-	if strings.Contains(tenant, `m.TenantColumn = ""`) {
-		t.Error("the tenant Model disables its mandatory tenant scope")
+	if strings.Contains(tenant, "Global:") || strings.Contains(tenant, "TenantColumn") {
+		t.Error("the tenant table disables or renames its mandatory tenant scope")
 	}
 
 	global := byName(t, spec(false))["PurchaseOrder.go"]
-	if !strings.Contains(global, `m.TenantColumn = ""`) {
-		t.Error("the global Model does not opt out of the tenant scope explicitly")
+	if !strings.Contains(global, "Global:    true,") {
+		t.Error("the global table does not opt out of the tenant scope explicitly")
 	}
 }
 

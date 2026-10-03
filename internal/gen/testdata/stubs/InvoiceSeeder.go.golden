@@ -25,7 +25,7 @@ func (InvoiceSeeder) Run(ctx context.Context, d Deps) error {
 	// two calls, in d.Tenant and never a tenant this file picked:
 	//
 	//	g := security.SystemGrant(policies.InvoiceCreate, d.Tenant)
-	//	_, err := factories.InvoiceFactory(d.DB).Count(10).Create(ctx, g)
+	//	_, err := factories.Invoices(d.DB).Count(10).Create(ctx, g)
 	//
 	// Twice safely: ask whether the table already has rows before writing.
 	// arandu:end custom

@@ -49,11 +49,10 @@ func (s *PurchaseOrderService) Create(ctx context.Context, actor security.Subjec
 		return nil, err
 	}
 
-	instance, err := models.PurchaseOrders(s.db).NewInstance(nil, false)
+	record, err := models.PurchaseOrders(s.db).New()
 	if err != nil {
 		return nil, err
 	}
-	record := instance.Entity
 	s.fill(record, in)
 	if _, err := record.Save(ctx, g); err != nil {
 		return nil, err
@@ -85,11 +84,12 @@ func (s *PurchaseOrderService) Get(ctx context.Context, actor security.Subject, 
 	return found, nil
 }
 
-// List returns one page of purchase_orders, newest first.
-func (s *PurchaseOrderService) List(ctx context.Context, actor security.Subject, page int) (*pagination.Paginator[*models.PurchaseOrder], error) {
+// List returns one page of purchase_orders, newest first, and where the
+// previous and the next page are.
+func (s *PurchaseOrderService) List(ctx context.Context, actor security.Subject, page int) (models.PurchaseOrderCollection, *pagination.Page, error) {
 	g, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderList, models.PurchaseOrder{})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	return models.PurchaseOrders(s.db).Latest().OrderBy("id").
 		SimplePaginate(ctx, g, purchaseOrderPerPage, page, pagination.Options{})

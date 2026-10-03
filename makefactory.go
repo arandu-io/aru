@@ -1,15 +1,19 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/arandu-io/aru/internal/gen"
 )
+
+// uniqueIDs matches the field of a model.TableSpec that makes the model fill
+// the key on insert.
+var uniqueIDs = regexp.MustCompile(`\bUniqueIDs:\s*true\b`)
 
 // makeFactory writes the factory of an entity that already exists.
 //
@@ -76,19 +80,20 @@ func makeFactory(args []string, stdout, stderr io.Writer) error {
 	}
 
 	fmt.Fprintf(stdout, `
-The fields came from app/Models/%s.go: the model is the schema here, so the
-factory is read off it rather than declared a second time. Regenerate it with
---force after changing the entity; whatever sits between the arandu:begin custom
-markers is preserved.
+The default state came from the fields of app/Models/%s.go: the model is the
+schema here, so the factory is read off it rather than declared a second time.
+It sits in the custom block, and from now on it is yours. aru model:build
+rewrites everything outside that block on every build, so the typed methods
+follow the entity without anybody running this again.
 
 Make builds rows and stores nothing; Create stores them and takes a Grant, like
 every other write -- a factory is no way around the policy that guards the table.
 `, entity)
-	if !bytes.Contains(source, []byte(".UseUniqueIDs()")) {
+	if !uniqueIDs.Match(source) {
 		fmt.Fprintf(stdout, `
-The factory leaves the key empty, and app/Models/%s.go does not call
-UseUniqueIDs, so nothing fills it on insert. Chain .UseUniqueIDs() onto the
-model.NewModel call there, in place of the KeyType and Incrementing lines.
+The factory leaves the key empty, and the table in app/Models/%s.go does not
+set UniqueIDs, so nothing fills it on insert. Set UniqueIDs: true in its
+model.TableSpec, in place of ManualKey and KeyType.
 `, entity)
 	}
 	return nil

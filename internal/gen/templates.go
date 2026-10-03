@@ -19,17 +19,19 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/arandu-io/framework/data"
 	"github.com/arandu-io/hesape/database/model"
 )
 
 // {{.Entity}} is one row of {{.Table}}.
 //
 // It embeds the model, so a row returned by a query carries the connection and
-// can be saved again. Build new rows through {{.Plural}}: a struct literal has
-// no connection and its write methods return model.ErrUnwired.
+// can be saved again. Build a new row with {{.Constructor}}(db).New(): a struct
+// literal has no connection and its write methods return model.ErrUnwired.
+//
+// {{.Constructor}}, {{.Entity}}Query and {{.Entity}}Collection
+// are generated beside this file, in {{.Entity}}Query.go, by aru model:build.
 type {{.Entity}} struct {
-	model.Model[{{.Entity}}]
+	model.Model
 
 	ID        string    ` + "`" + `db:"id"` + "`" + `
 {{- if .Tenant}}
@@ -42,19 +44,26 @@ type {{.Entity}} struct {
 	UpdatedAt time.Time ` + "`" + `db:"updated_at"` + "`" + `
 }
 
-// {{.Plural}} returns the configured model for {{.Table}}.
+// {{.TableVar}} is the table {{.Entity}} is a row of.
 //
-// UseUniqueIDs makes the primary key text the model fills on insert.
-// The tenant scope is {{if .Tenant}}left at its tenant_id default{{else}}disabled explicitly because this table is global{{end}}.
-func {{.Plural}}(db *data.DB) *model.Model[{{.Entity}}] {
+// UniqueIDs makes the primary key text the model fills on insert.
 {{- if .Tenant}}
-	return model.NewModel[{{.Entity}}]({{quote .Table}}, db, db.GetQueryGrammar(), db.GetPostProcessor()).UseUniqueIDs()
+// The tenant scope is left at its tenant_id default.
 {{- else}}
-	m := model.NewModel[{{.Entity}}]({{quote .Table}}, db, db.GetQueryGrammar(), db.GetPostProcessor()).UseUniqueIDs()
-	m.TenantColumn = ""
-	return m
+// Global says the table is shared by every tenant: the tenant scope is off, on
+// purpose and where a reviewer sees it.
 {{- end}}
-}
+var {{.TableVar}} = model.NewTable(model.TableSpec{
+	Name:      {{quote .Table}},
+	New:       func() model.Entity { return new({{.Entity}}) },
+	UniqueIDs: true,
+{{- if not .Tenant}}
+	Global:    true,
+{{- end}}
+	// arandu:begin custom
+	// Hidden, PerPage, Scopes, Events and the rest of model.TableSpec go here.
+	// arandu:end custom
+})
 
 // LogValue implements slog.LogValuer, so passing the whole entity to a log call
 // records the identifiers and nothing else. Add any sensitive field to the
@@ -69,7 +78,9 @@ func ({{.Receiver}} {{.Entity}}) LogValue() slog.Value {
 }
 
 // arandu:begin custom
-// MarshalJSON, computed fields and anything else about this entity go here.
+// Local scopes are methods on *{{.Entity}}Query, relations are registered
+// on {{.TableVar}} in an init function, and MarshalJSON, computed fields
+// and anything else about this entity go here too.
 // arandu:end custom
 `
 
@@ -207,11 +218,10 @@ func (s *{{.ServiceType}}) Create(ctx context.Context, actor security.Subject, i
 		return nil, err
 	}
 
-	instance, err := models.{{.Plural}}(s.db).NewInstance(nil, false)
+	record, err := models.{{.Constructor}}(s.db).New()
 	if err != nil {
 		return nil, err
 	}
-	record := instance.Entity
 	s.fill(record, in)
 {{- if .Tenant}}
 	// The tenant comes from the Grant, never from the request or the subject
@@ -238,7 +248,7 @@ func (s *{{.ServiceType}}) Get(ctx context.Context, actor security.Subject, id s
 	if err != nil {
 		return nil, err
 	}
-	found, err := models.{{.Plural}}(s.db).FindOrFail(ctx, g, id)
+	found, err := models.{{.Constructor}}(s.db).FindOrFail(ctx, g, id)
 	if err != nil {
 		return nil, err
 	}
@@ -248,13 +258,14 @@ func (s *{{.ServiceType}}) Get(ctx context.Context, actor security.Subject, id s
 	return found, nil
 }
 
-// List returns one page of {{.Table}}, newest first.
-func (s *{{.ServiceType}}) List(ctx context.Context, actor security.Subject, page int) (*pagination.Paginator[*models.{{.Entity}}], error) {
+// List returns one page of {{.Table}}, newest first, and where the
+// previous and the next page are.
+func (s *{{.ServiceType}}) List(ctx context.Context, actor security.Subject, page int) (models.{{.Entity}}Collection, *pagination.Page, error) {
 	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}List, models.{{.Entity}}{})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return models.{{.Plural}}(s.db).Latest().OrderBy("id").
+	return models.{{.Constructor}}(s.db).Latest().OrderBy("id").
 		SimplePaginate(ctx, g, {{.Unexported}}PerPage, page, pagination.Options{})
 }
 
@@ -446,20 +457,20 @@ var (
 // Index renders the listing, one page at a time.
 func (c *{{.Controller}}) Index(ctx *fhttp.Context) error {
 	who, _ := ctx.User()
-	found, err := c.svc.List(ctx.Ctx(), who, pagination.ResolveCurrentPage(ctx.Request.URL, ""))
+	found, page, err := c.svc.List(ctx.Ctx(), who, pagination.ResolveCurrentPage(ctx.Request.URL, ""))
 	if err != nil {
 		return err
 	}
 
-	rows := make([]views.{{.RowStruct}}, 0, found.Count())
-	for _, {{.Receiver}} := range found.Items() {
+	rows := make([]views.{{.RowStruct}}, 0, len(found))
+	for _, {{.Receiver}} := range found {
 		rows = append(rows, c.row(ctx, {{.Receiver}}))
 	}
 	return ctx.View("{{.ViewName "index"}}", views.{{.ViewData "index"}}{
 		Page: view.New(ctx, "{{.HumansTitle}}"),
 		{{.Plural}}: rows,
 		NewURL:     ctx.URL("{{.RouteName "create"}}"),
-		NextURL:    found.SetPath(ctx.URL("{{.RouteName "index"}}")).NextPageURL(),
+		NextURL:    page.SetPath(ctx.URL("{{.RouteName "index"}}")).NextPageURL(),
 	})
 }
 
@@ -586,14 +597,18 @@ import (
 )
 
 // {{.Unexported}}Persistent is the Model-first persistence boundary this module
-// depends on. The proof below fails at compile time if the generated entity
-// stops embedding the Hesape model or if CRUD grows a second persistence path.
+// depends on. The proofs below fail at compile time if the entity stops
+// embedding the Hesape model -- nothing else satisfies model.Entity -- or if its
+// generated query can be run without a Grant.
 type {{.Unexported}}Persistent interface {
+	model.Entity
 	Save(context.Context, security.Grant) (bool, error)
-	NewQuery() *model.Builder[models.{{.Entity}}]
 }
 
-var _ {{.Unexported}}Persistent = (*models.{{.Entity}})(nil)
+var (
+	_ {{.Unexported}}Persistent = (*models.{{.Entity}})(nil)
+	_ func(*models.{{.Entity}}Query, context.Context, security.Grant, ...any) (models.{{.Entity}}Collection, error) = (*models.{{.Entity}}Query).Get
+)
 
 // TestEvery{{.Entity}}ReadRequiresAuthorization needs no database: the service
 // authorizes each read before it asks the Model for a query. A nil handle turns
@@ -609,7 +624,7 @@ func TestEvery{{.Entity}}ReadRequiresAuthorization(t *testing.T) {
 			return err
 		},
 		"List": func() error {
-			_, err := svc.List(ctx, anonymous, 1)
+			_, _, err := svc.List(ctx, anonymous, 1)
 			return err
 		},
 		"Delete": func() error {
@@ -676,7 +691,8 @@ what the specification can say goes between the ` + "`" + `// arandu:begin custo
 
 | file | what it holds |
 | --- | --- |
-| ` + "`" + `app/Models/{{ .Entity }}.go` + "`" + ` | the entity and its Hesape Model entry point |
+| ` + "`" + `app/Models/{{ .Entity }}.go` + "`" + ` | the entity and its table, with custom blocks for settings and local scopes |
+| ` + "`" + `app/Models/{{ .Entity }}Query.go` + "`" + ` | ` + "`" + `{{ .Constructor }}` + "`" + `, the typed query and the collection, written by ` + "`" + `aru model:build` + "`" + ` and never by hand |
 | ` + "`" + `app/Policies/{{ .Entity }}Policy.go` + "`" + ` | who may do what, and the only thing that issues a Grant |
 | ` + "`" + `app/Services/{{ .Entity }}Service.go` + "`" + ` | the domain and the only consumer of the Model entry point |
 | ` + "`" + `app/Http/Controllers/{{ .Entity }}Controller.go` + "`" + ` | the actions the routes dispatch to |
@@ -707,11 +723,11 @@ g, err := security.Authorize(ctx, policy, subject, action, models.{{ .Entity }}{
 if err != nil {
     return err
 }
-record, err := models.{{ .Plural }}(db).FindOrFail(ctx, g, id)
+record, err := models.{{ .Constructor }}(db).FindOrFail(ctx, g, id)
 ` + "```" + `
 
-Every Builder terminal takes ` + "`" + `security.Grant` + "`" + `, and nothing outside the security
-package can build one. The Service owns the database handle, authorizes first,
+Every terminal of ` + "`" + `{{ .Entity }}Query` + "`" + ` takes ` + "`" + `security.Grant` + "`" + `, and nothing outside the
+security package can build one. The Service owns the database handle, authorizes first,
 and then spends that Grant on the Model. A Controller has neither dependency and
 cannot grow a second persistence path.
 

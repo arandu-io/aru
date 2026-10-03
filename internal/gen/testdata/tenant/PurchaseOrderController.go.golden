@@ -58,20 +58,20 @@ var (
 // Index renders the listing, one page at a time.
 func (c *PurchaseOrderController) Index(ctx *fhttp.Context) error {
 	who, _ := ctx.User()
-	found, err := c.svc.List(ctx.Ctx(), who, pagination.ResolveCurrentPage(ctx.Request.URL, ""))
+	found, page, err := c.svc.List(ctx.Ctx(), who, pagination.ResolveCurrentPage(ctx.Request.URL, ""))
 	if err != nil {
 		return err
 	}
 
-	rows := make([]views.PurchaseOrderRow, 0, found.Count())
-	for _, p := range found.Items() {
+	rows := make([]views.PurchaseOrderRow, 0, len(found))
+	for _, p := range found {
 		rows = append(rows, c.row(ctx, p))
 	}
 	return ctx.View("purchase-orders.index", views.PurchaseOrdersIndexData{
 		Page:           view.New(ctx, "Purchase orders"),
 		PurchaseOrders: rows,
 		NewURL:         ctx.URL("purchase-orders.create"),
-		NextURL:        found.SetPath(ctx.URL("purchase-orders.index")).NextPageURL(),
+		NextURL:        page.SetPath(ctx.URL("purchase-orders.index")).NextPageURL(),
 	})
 }
 

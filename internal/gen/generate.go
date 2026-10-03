@@ -11,8 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
-
-	"github.com/arandu-io/hesape/publish"
 )
 
 // File is one generated file.
@@ -65,6 +63,15 @@ func Generate(m Module) ([]File, error) {
 		}
 		out = append(out, File{Path: t.path, Content: content})
 	}
+
+	// The query file beside the entity is what `aru model:build` writes, from
+	// the same renderer, so a module is complete -- and compiles -- before the
+	// first build runs.
+	query, err := renderModelQuery(m)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, query)
 
 	// The migration goes through MigrationSpec, which is also what
 	// `aru make:migration` and `aru make:model --migration` render: one shape of
@@ -173,6 +180,11 @@ func GenerateModel(m Module, parts ModelParts) ([]File, error) {
 		return nil, err
 	}
 	out := []File{{Path: filepath.Join("app", "Models", m.Entity()+".go"), Content: content}}
+	query, err := renderModelQuery(m)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, query)
 
 	if parts.Migration {
 		f, err := RenderMigration(m.MigrationSpec())
@@ -230,6 +242,16 @@ func GenerateModel(m Module, parts ModelParts) ([]File, error) {
 		out = append(out, File{Path: t.path, Content: content})
 	}
 	return out, nil
+}
+
+// renderModelQuery is the module's app/Models/<Entity>Query.go.
+func renderModelQuery(m Module) (File, error) {
+	spec := m.QuerySpec()
+	content, err := RenderQuery(spec)
+	if err != nil {
+		return File{}, err
+	}
+	return File{Path: filepath.Join("app", "Models", spec.Path()), Content: content}, nil
 }
 
 // errModulePath is returned when the project module path is missing, which is
@@ -334,7 +356,7 @@ func Write(root string, files []File, force bool) (written, skipped []string, er
 			// is written in the syntax of the file: a view carries its custom
 			// block in view comments, and a Go comment in one would be printed
 			// to the reader of the page.
-			content = publish.Merge(f.Path, existing, f.Content)
+			content = Merge(f.Path, existing, f.Content)
 		}
 		if err := os.WriteFile(path, content, 0o644); err != nil {
 			return written, skipped, err

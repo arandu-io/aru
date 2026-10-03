@@ -116,6 +116,11 @@ func upgradeFixture(t *testing.T, name string, entities ...string) string {
 	if code := run([]string{"./..."}, &stdout, &stderr); code != 0 {
 		t.Fatalf("model-upgrade exited %d:\n%s%s", code, stdout.String(), stderr.String())
 	}
+	// The closing instruction names the release this module is built against,
+	// not the oldest one with the model core.
+	if want := "go get github.com/arandu-io/hesape@" + gen.HesapeRelease + "\n"; !strings.Contains(stdout.String(), want) {
+		t.Errorf("the closing instruction does not say %q:\n%s", want, stdout.String())
+	}
 
 	for _, entity := range entities {
 		query := filepath.Join(root, "app", "Models", entity+"Query.go")

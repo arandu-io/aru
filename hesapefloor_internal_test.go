@@ -12,8 +12,8 @@ import (
 // TestAProjectPinnedBelowTheModelCoreIsRefused: the entity make:model and
 // make:module write embeds the non-generic model.Model, so a project on an
 // earlier hesape would receive files that do not compile. The refusal names the
-// pin, the release that has the core and the two commands that move the
-// project, and writes nothing.
+// pin, the oldest release that has the core, and the two commands that move the
+// project to the release this module is built against, and writes nothing.
 func TestAProjectPinnedBelowTheModelCoreIsRefused(t *testing.T) {
 	for _, command := range [][]string{
 		{"make:model", "Invoice", "--fields", "reference:string"},
@@ -34,7 +34,7 @@ func TestAProjectPinnedBelowTheModelCoreIsRefused(t *testing.T) {
 				"pins github.com/arandu-io/hesape v0.46.0",
 				"needs " + gen.ModelCoreRelease + " or later",
 				"go run github.com/arandu-io/aru/cmd/model-upgrade@latest ./...",
-				"go get github.com/arandu-io/hesape@" + gen.ModelCoreRelease,
+				"go get github.com/arandu-io/hesape@" + gen.HesapeRelease,
 			} {
 				if !strings.Contains(stderr, want) {
 					t.Errorf("the refusal does not say %q:\n%s", want, stderr)

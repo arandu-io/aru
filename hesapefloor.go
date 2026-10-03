@@ -14,7 +14,8 @@ import (
 const hesapeModule = "github.com/arandu-io/hesape"
 
 // requireModelCore refuses a project whose go.mod pins hesape below the release
-// the generated entity needs, gen.ModelCoreRelease, and says how to move it.
+// the generated entity needs, gen.ModelCoreRelease, and says how to move it: to
+// gen.HesapeRelease, the release the generated code is compiled against.
 //
 // A project that does not require hesape at all, or replaces it with a
 // directory, is not refused: the first resolves whatever `go mod tidy` picks,
@@ -37,7 +38,7 @@ Move the project first. The upgrade tool rewrites the generic models and the cod
 and names the file and line of anything it cannot rewrite; then take the release that has the core:
 
     go run github.com/arandu-io/aru/cmd/model-upgrade@%[5]s ./...
-    go get %[2]s@%[4]s`, command, hesapeModule, pinned, gen.ModelCoreRelease, upgradeToolVersion())
+    go get %[2]s@%[6]s`, command, hesapeModule, pinned, gen.ModelCoreRelease, upgradeToolVersion(), gen.HesapeRelease)
 }
 
 // upgradeToolVersion is the version of the upgrade tool to name: the one this

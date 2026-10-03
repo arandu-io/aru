@@ -125,11 +125,11 @@ the rows and the page, and code that leaned on the generic types:
 
     go get %s@%s
     go build ./... && go vet ./...
-`, hesapeModule, gen.ModelCoreRelease)
+`, hesapeModule, gen.HesapeRelease)
 	return 0
 }
 
-// hesapeModule is what the closing instruction names, at gen.ModelCoreRelease.
+// hesapeModule is what the closing instruction names, at gen.HesapeRelease.
 const hesapeModule = "github.com/arandu-io/hesape"
 
 // moduleRoot walks up from dir to the nearest go.mod.

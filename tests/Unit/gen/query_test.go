@@ -6,10 +6,14 @@ import (
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/arandu-io/aru/internal/gen"
+	"github.com/arandu-io/aru/internal/gomod"
+	"github.com/arandu-io/aru/tests"
 )
 
 // TestTheGeneratedQuerySurfaceIsPinned counts what the query file declares, by
@@ -237,4 +241,27 @@ func handsBackRows(fn *ast.FuncDecl) bool {
 		}
 	}
 	return false
+}
+
+// TestTheHesapeReleaseIsTheOneThisModuleRequires: the release the printed
+// instructions tell a project to take is the one go.mod pins, so the generated
+// code a project receives is the code this module compiled and tested. A
+// constant that stayed behind would send every project that follows it to an
+// older release than the one checked here, and nothing else would notice.
+func TestTheHesapeReleaseIsTheOneThisModuleRequires(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join(tests.Root(t), "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinned, ok := gomod.Parse(string(body)).Pinned("github.com/arandu-io/hesape")
+	if !ok {
+		t.Fatal("go.mod does not require github.com/arandu-io/hesape")
+	}
+	if gen.HesapeRelease != pinned {
+		t.Errorf("gen.HesapeRelease is %s and go.mod requires %s: move the constant with the require", gen.HesapeRelease, pinned)
+	}
+	if gomod.Less(gen.HesapeRelease, gen.ModelCoreRelease) {
+		t.Errorf("gen.HesapeRelease %s is below gen.ModelCoreRelease %s, the oldest release the generated code compiles with",
+			gen.HesapeRelease, gen.ModelCoreRelease)
+	}
 }

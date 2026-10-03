@@ -60,6 +60,34 @@ func TestNewClonesThePublishedSkeletonRelease(t *testing.T) {
 	}
 }
 
+// TestNewSaysWhatPostgresTakes pins the three lines the closing message gives
+// for moving a project to Postgres.
+//
+// It promised one line in .env and nothing else, and that stops being true the
+// moment the skeleton links only SQLite: DATABASE_URL alone then stops the boot
+// with an error naming the two lines the message left out. Each line is matched
+// whole, because a module path off by one element is a `go get` that fails and
+// an import that does not resolve.
+func TestNewSaysWhatPostgresTakes(t *testing.T) {
+	got := createdMessage("my-app", "example.test/my-app")
+
+	for _, line := range []string{
+		"\n    go get github.com/arandu-io/hesape/database/connectors/pgx\n",
+		"\n    _ \"github.com/arandu-io/hesape/database/connectors/pgx\"\n",
+		"bootstrap/app.go",
+		"\n    DATABASE_URL=postgres://user:password@127.0.0.1:5432/dbname\n",
+		"\n    cd my-app\n",
+		"module example.test/my-app.",
+	} {
+		if !strings.Contains(got, line) {
+			t.Errorf("the closing message does not say %q:\n%s", strings.TrimSpace(line), got)
+		}
+	}
+	if strings.Contains(got, "nothing else") {
+		t.Errorf("the closing message still promises Postgres takes one line:\n%s", got)
+	}
+}
+
 func recordGitInvocation(trace string, args []string) {
 	if err := os.WriteFile(trace, []byte(strings.Join(args, "\x00")), 0o600); err != nil {
 		os.Exit(2)

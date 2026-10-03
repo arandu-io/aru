@@ -100,19 +100,28 @@ func newProject(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintf(stderr, "\nThe project was created, but its views were not compiled: %v\nRun `aru view:build` inside %s before building.\n", err, name)
 	}
 
-	// The variable is DATABASE_URL, and it is spelled out rather than named,
-	// because the shape is the part nobody guesses.
-	//
-	// It used to say DB_CONNECTION. That is one of the variables that carried
-	// the connection in parts, and those are refused at boot rather than
-	// ignored -- so the last line of `aru new` told the reader to set the one
-	// value that stops the application from starting, and the refusal they got
-	// named the variable this command had just recommended.
-	//
-	// "And nothing else" is the whole claim, and it holds: the skeleton
-	// registers the Postgres and SQLite connectors alike, so the engine changes
-	// without a line of Go.
-	fmt.Fprintf(stdout, `
+	fmt.Fprint(stdout, createdMessage(name, path))
+	return nil
+}
+
+// createdMessage is what `aru new` prints last: how to run the project, and
+// what moving it to Postgres takes.
+//
+// The variable is DATABASE_URL, and it is spelled out rather than named,
+// because the shape is the part nobody guesses. It used to say DB_CONNECTION.
+// That is one of the variables that carried the connection in parts, and those
+// are refused at boot rather than ignored -- so the last line of `aru new` told
+// the reader to set the one value that stops the application from starting.
+//
+// The move is three lines and not one, because the skeleton links only the
+// SQLite connector. An engine reaches the binary by importing its connector, so
+// pointing DATABASE_URL at Postgres in a project that links none stops the
+// boot. The message used to promise "one line in .env and nothing else", which
+// held only while the skeleton linked every connector it might be asked for.
+// The first two lines are the ones the refusal prints, word for word, so
+// whoever skips them here reads them again there.
+func createdMessage(name, modulePath string) string {
+	return fmt.Sprintf(`
 %s created, module %s.
 
     cd %s
@@ -121,11 +130,18 @@ func newProject(args []string, stdout, stderr io.Writer) error {
     aru serve
 
 It runs on SQLite, in a file under database/. Nothing to install. Moving to
-Postgres is one line in .env and nothing else:
+Postgres links its connector into the binary:
+
+    go get github.com/arandu-io/hesape/database/connectors/pgx
+
+blank-imports it in bootstrap/app.go, next to the SQLite one:
+
+    _ "github.com/arandu-io/hesape/database/connectors/pgx"
+
+and points DATABASE_URL at the server, in .env:
 
     DATABASE_URL=postgres://user:password@127.0.0.1:5432/dbname
-`, name, path, name)
-	return nil
+`, name, modulePath, name)
 }
 
 // rewriteModulePath replaces the skeleton's module path with the project's, in

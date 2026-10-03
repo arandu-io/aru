@@ -757,6 +757,9 @@ allow-everything branch to delete later. Open it one action at a time, and
 {{ end }}
 ## Before calling a change finished
 
+While iterating, run ` + "`" + `go test ./...` + "`" + `. The ` + "`" + `-race` + "`" + ` run below is the closing gate,
+run once: the race detector compiles every package a second time.
+
 ` + "```" + `sh
 export GOWORK=off
 aru view:build && go build ./... && go vet ./... && go test -race ./... && aru doctor

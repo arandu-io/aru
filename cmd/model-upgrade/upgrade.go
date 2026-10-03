@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/arandu-io/aru/internal/gen"
 )
 
 // The import paths whose generic surface the tool rewrites.
@@ -260,7 +262,7 @@ func (f *source) importsByName() map[string]string {
 }
 
 // bound is the name an import binds: its alias, the package clause of a
-// package of this module, or the last element of the path.
+// package of this module, or the name the path binds by convention.
 func (f *source) bound(imp *ast.ImportSpec, path string) string {
 	if imp.Name != nil {
 		return imp.Name.Name
@@ -268,7 +270,7 @@ func (f *source) bound(imp *ast.ImportSpec, path string) string {
 	if name, ok := f.names[path]; ok {
 		return name
 	}
-	return path[strings.LastIndexByte(path, '/')+1:]
+	return gen.AssumedImportName(path)
 }
 
 // problemAt records a problem at a line of f's current text, reported at the

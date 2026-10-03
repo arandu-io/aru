@@ -128,7 +128,7 @@ func importName(imp *ast.ImportSpec) (name string, explicit, certain bool) {
 		return imp.Name.Name, true, true
 	}
 	p, _ := strconv.Unquote(imp.Path.Value)
-	base := path.Base(p)
+	base := AssumedImportName(p)
 	for i, r := range base {
 		lower := r >= 'a' && r <= 'z'
 		digit := i > 0 && r >= '0' && r <= '9'
@@ -137,4 +137,34 @@ func importName(imp *ast.ImportSpec) (name string, explicit, certain bool) {
 		}
 	}
 	return base, false, true
+}
+
+// AssumedImportName is the package name an unnamed import of p binds by
+// convention: the last element of the path, except that a major-version suffix
+// ("v2", "v3", ...) names the version and not the package, so
+// "math/rand/v2" binds rand and "github.com/acme/lib/v3" binds lib. Whether
+// the result is a name the import can be trusted to bind is for the caller to
+// judge.
+func AssumedImportName(p string) string {
+	base := path.Base(p)
+	if isMajorVersion(base) {
+		if dir := path.Dir(p); dir != "." && dir != "/" {
+			return path.Base(dir)
+		}
+	}
+	return base
+}
+
+// isMajorVersion reports whether elem is a module major-version suffix: v
+// followed by digits, from v2 up.
+func isMajorVersion(elem string) bool {
+	if len(elem) < 2 || elem[0] != 'v' {
+		return false
+	}
+	for _, r := range elem[1:] {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return elem != "v0" && elem != "v1"
 }

@@ -41,7 +41,7 @@ compiled against is still the one it is running.
 | fonts | `font:add` `font:search` `font:info` `font:list` `font:remove` |
 | native application | `native:run` `native:dev` `native:build` |
 | modules, editor and inspection | `vendor:publish` `lsp` `action:list` `about` |
-| everything else | `key:generate` `schedule:list` `schedule:run` `route:list` `db:seed` `view:build` |
+| everything else | `key:generate` `schedule:list` `schedule:run` `route:list` `db:seed` `model:build` `view:build` |
 
 plus `help` and `version`. The native and inspection commands, in the words of `aru help`:
 
@@ -60,7 +60,7 @@ plus `help` and `version`. The native and inspection commands, in the words of `
   the moment it lands.
 - **`aru generate`** — the same output, from a written specification: the
   model writes the spec, never the Go.
-- **`aru doctor`** — 40 named rules read the AST of a project, without
+- **`aru doctor`** — 42 named rules read the AST of a project, without
   running it, and fail CI on the first error. Among them:
   `repository-without-policy`, `grant-not-checked`, `sql-without-tenant-scope`,
   `tenant-from-request`, `tenant-from-header`, `sql-built-by-concatenation`,

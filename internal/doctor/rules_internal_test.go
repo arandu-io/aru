@@ -766,3 +766,41 @@ func TestEverySessionCallTheRuleAcceptsExists(t *testing.T) {
 		}
 	}
 }
+
+// TestLooksLikeAStatementTellsAQueryFromASentence pins both halves of the
+// format-string test sql-built-with-sprintf runs.
+//
+// The statements have to keep reading as SQL in every shape a value can be
+// pasted into -- each of these is injection when built with fmt.Sprintf. The
+// sentences say the same keywords where prose puts them, and each was read as
+// SQL while the test was whether the keyword appeared at all.
+func TestLooksLikeAStatementTellsAQueryFromASentence(t *testing.T) {
+	for _, c := range []struct {
+		text string
+		sql  bool
+	}{
+		{"SELECT id FROM charges WHERE name = '%s'", true},
+		{"select id, total from invoices where reference like '%%%s%%'", true},
+		{"SELECT %s FROM %s", true},
+		{"SELECT id\nFROM invoices", true},
+		{"INSERT INTO invoices (id, total) VALUES ('%s', %d)", true},
+		{"UPDATE invoices SET total = %d WHERE id = ?", true},
+		{"update %s set status = 'paid'", true},
+		{"DELETE FROM sessions WHERE token = '%s'", true},
+		{" WHERE %s = ?", true},
+		{" AND archived = 0 WHERE reference LIKE '%s'", true},
+		{"WHERE id IN (%s)", true},
+		{"WHERE deleted_at IS NULL AND id = %d", true},
+
+		{"report %s is in a state where it cannot be read: %s", false},
+		{"cannot update report %s: it was moved from %s", false},
+		{"could not delete report %s from the archive where it was kept", false},
+		{"reading %s from disk", false},
+		{"%s was selected from %d candidates", false},
+		{"update the settings of %s", false},
+	} {
+		if got := looksLikeAStatement(c.text); got != c.sql {
+			t.Errorf("looksLikeAStatement(%q) = %v, want %v", c.text, got, c.sql)
+		}
+	}
+}

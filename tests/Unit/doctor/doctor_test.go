@@ -1112,6 +1112,22 @@ func TestTheGeneratorsOwnConcatenationIsQuiet(t *testing.T) {
 	}
 }
 
+// TestAnErrorMessageThatSaysWhereIsNotSQL: sql-built-with-sprintf asked whether
+// " WHERE ", " FROM " or "UPDATE " appeared anywhere in a format string, so an
+// English refusal -- "report %s is in a state where it cannot be read" -- was
+// reported as injection. The fixture holds four such sentences, and none of
+// them reaches a database.
+//
+// The other half is TestPlantedViolationsAreCaught: the statement with
+// '%s' pasted into its WHERE has to keep firing.
+func TestAnErrorMessageThatSaysWhereIsNotSQL(t *testing.T) {
+	for _, f := range gaps(t) {
+		if f.Rule == "sql-built-with-sprintf" && strings.Contains(f.File, "ReportErrors.go") {
+			t.Errorf("a sentence was reported as SQL at %s:%d -- %s", f.File, f.Line, f.Message)
+		}
+	}
+}
+
 // TestAModuleWhoseWritesNeedAnotherModulesTableIsCaught.
 //
 // The application stores a domain event inside the transaction that performs a

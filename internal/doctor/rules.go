@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/arandu-io/aru/internal/gen"
@@ -1458,7 +1459,7 @@ func noBuiltSQL(p *project) []Finding {
 				return
 			}
 			lit, ok := call.Args[0].(*ast.BasicLit)
-			if !ok || !looksLikeSQL(lit.Value) {
+			if !ok || lit.Kind != token.STRING || !looksLikeAStatement(unquoted(lit)) {
 				return
 			}
 			file, line := f.at(call)
@@ -1577,6 +1578,12 @@ func parameterNames(fn *ast.FuncDecl) map[string]bool {
 	return out
 }
 
+// looksLikeSQL reports whether a string literal carries any of the words a
+// statement opens or continues with.
+//
+// It is the loose test, and it is right for concatenation: there a statement
+// arrives in pieces -- "SELECT " in one literal and " FROM invoices" in the
+// next -- and no single piece has the whole shape to be judged by.
 func looksLikeSQL(s string) bool {
 	upper := strings.ToUpper(s)
 	for _, kw := range []string{"SELECT ", "INSERT ", "UPDATE ", "DELETE ", " FROM ", " WHERE "} {
@@ -1585,6 +1592,52 @@ func looksLikeSQL(s string) bool {
 		}
 	}
 	return false
+}
+
+// looksLikeAStatement reports whether a whole format string is shaped like SQL:
+// a keyword in the position a statement puts it, and not merely present.
+//
+// The loose test asked whether " WHERE " or "UPDATE " appeared anywhere, and an
+// English sentence says both as readily as a query does -- "report %s is in a
+// state where it cannot be read" was reported as injection. What a sentence
+// does not have is the clause each keyword cannot do without:
+//
+//   - SELECT followed, within the same sentence, by FROM and a table;
+//   - INSERT immediately followed by INTO, and DELETE by FROM;
+//   - UPDATE, one name, then SET;
+//   - WHERE followed by an operand and a comparison -- `WHERE name = '%s'`,
+//     `WHERE %s IN (`, `WHERE id IS NULL` -- which is also how a fragment
+//     appended to a statement built elsewhere is recognised.
+//
+// What still reads as SQL is prose that is shaped like it, "delete from %s"
+// among them. That is a sentence a reviewer reads twice as well, and a rule
+// that guards against injection is allowed to ask.
+func looksLikeAStatement(s string) bool {
+	for _, shape := range statementShapes {
+		if shape.MatchString(s) {
+			return true
+		}
+	}
+	return false
+}
+
+// statementShapes are the clauses looksLikeAStatement accepts, case-insensitive
+// because a statement written in lower case is still a statement.
+var statementShapes = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)\bSELECT\s+[^;!?]+?\s+FROM\s+\S`),
+	regexp.MustCompile(`(?i)\bINSERT\s+INTO\s+\S`),
+	regexp.MustCompile(`(?i)\bDELETE\s+FROM\s+\S`),
+	regexp.MustCompile(`(?i)\bUPDATE\s+\S+\s+SET\b`),
+	regexp.MustCompile("(?i)\\bWHERE\\s+(?:NOT\\s+)?[\\w.\"`%]+\\s*(?:<>|!=|<=|>=|=|<|>|\\bI?LIKE\\b|\\bIN\\s*\\(|\\bIS\\s+(?:NOT\\s+)?NULL\\b)"),
+}
+
+// unquoted is the text of a string literal as the program sees it, escapes
+// resolved, so `\n` between two clauses is the whitespace it stands for.
+func unquoted(lit *ast.BasicLit) string {
+	if text, err := strconv.Unquote(lit.Value); err == nil {
+		return text
+	}
+	return strings.Trim(lit.Value, "\"`")
 }
 
 // 9. A type with a secret in it needs to refuse to serialize itself, or the

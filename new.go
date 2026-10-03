@@ -4,9 +4,11 @@ import (
 	"crypto/rand"
 	_ "embed"
 	"encoding/base64"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -72,6 +74,9 @@ func newProject(args []string, stdout, stderr io.Writer) error {
 	}
 
 	if err := rewriteModulePath(name, path); err != nil {
+		return err
+	}
+	if err := dropRetractions(name); err != nil {
 		return err
 	}
 	if err := writeEnv(name); err != nil {
@@ -154,6 +159,46 @@ func rewriteModulePath(dir, newPath string) error {
 		updated := strings.ReplaceAll(string(content), oldPath, newPath)
 		return os.WriteFile(p, []byte(updated), 0o644)
 	})
+}
+
+// dropRetractions removes the skeleton's retract directives from the new project's go.mod.
+//
+// A retraction is what a module says about its own published versions. The
+// project has published none, so a retraction copied from the skeleton is a claim
+// about versions the project never had, and every new project would carry it.
+func dropRetractions(dir string) error {
+	path := filepath.Join(dir, "go.mod")
+	content, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var kept []string
+	inBlock := false
+	for _, line := range strings.Split(string(content), "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case inBlock:
+			inBlock = trimmed != ")"
+			continue
+		case strings.HasPrefix(trimmed, "retract ("), strings.HasPrefix(trimmed, "retract("):
+			inBlock = !strings.HasSuffix(trimmed, ")")
+			continue
+		case trimmed == "retract", strings.HasPrefix(trimmed, "retract "), strings.HasPrefix(trimmed, "retract\t"):
+			continue
+		}
+		kept = append(kept, line)
+	}
+	updated := strings.Join(kept, "\n")
+	for strings.Contains(updated, "\n\n\n") {
+		updated = strings.ReplaceAll(updated, "\n\n\n", "\n\n")
+	}
+	if updated == string(content) {
+		return nil
+	}
+	return os.WriteFile(path, []byte(updated), 0o644)
 }
 
 // writeEnv copies .env.example to .env with a fresh APP_KEY.

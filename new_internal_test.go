@@ -99,3 +99,25 @@ func copyExecutable(t *testing.T, target string) {
 		t.Fatal(err)
 	}
 }
+
+// TestDropRetractionsLeavesTheProjectOnlyItsOwnDirectives pins that a new
+// project does not inherit what the skeleton says about its own releases, in
+// either the one-line or the block form, and that nothing else in go.mod moves.
+func TestDropRetractionsLeavesTheProjectOnlyItsOwnDirectives(t *testing.T) {
+	dir := t.TempDir()
+	skeleton := "module example.test/app\n\ngo 1.26.0\n\nretract v0.10.0 // Requires retracted Kyse v0.15.1.\n\nretract (\n\tv0.3.0\n\t[v0.4.0, v0.4.2]\n)\n\nrequire github.com/arandu-io/framework v0.50.2\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(skeleton), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := dropRetractions(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "module example.test/app\n\ngo 1.26.0\n\nrequire github.com/arandu-io/framework v0.50.2\n"
+	if string(got) != want {
+		t.Fatalf("go.mod after dropRetractions:\n%s\nwant:\n%s", got, want)
+	}
+}

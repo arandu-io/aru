@@ -71,10 +71,12 @@ func buildBinary(root, name, version, output string, stdout, stderr io.Writer) e
 
 	// -s -w drops the symbol table and DWARF: about 25% off the binary, and
 	// nothing production needs -- a panic still carries file and line, which is
-	// what the error page reads.
+	// what the error page reads. Application keeps the compiler from producing
+	// DWARF in the first place; -w is what keeps the linker from writing the
+	// DWARF line and frame tables it still builds on its own.
 	ldflags := fmt.Sprintf("-s -w -X main.version=%s -X main.commit=%s", version, commit(root))
 
-	cmd := buildcache.Command("build", "-trimpath", "-ldflags", ldflags, "-o", output, appPackage)
+	cmd := buildcache.Application("build", "-trimpath", "-ldflags", ldflags, "-o", output, appPackage)
 	cmd.Dir = root
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"debug/buildinfo"
 	"encoding/base64"
 	"os"
 	"os/exec"
@@ -218,12 +219,7 @@ func TestDelegationRequiresAProject(t *testing.T) {
 // another one before it reached the probe.
 func probeProject(t *testing.T) {
 	t.Helper()
-
-	root := t.TempDir()
-	for name, body := range map[string]string{
-		"go.mod":      "module example.test/probe\n",
-		"arandu.toml": "name = \"probe\"\n",
-		"main.go": `package main
+	probeProjectRunning(t, `package main
 
 import (
 	"fmt"
@@ -232,7 +228,19 @@ import (
 )
 
 func main() { fmt.Println("argv:", strings.Join(os.Args[1:], " ")) }
-`,
+`)
+}
+
+// probeProjectRunning writes the project probeProject describes with main as
+// its entry point, moves into it and answers its root.
+func probeProjectRunning(t *testing.T, main string) string {
+	t.Helper()
+
+	root := t.TempDir()
+	for name, body := range map[string]string{
+		"go.mod":      "module example.test/probe\n",
+		"arandu.toml": "name = \"probe\"\n",
+		"main.go":     main,
 	} {
 		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
@@ -244,6 +252,86 @@ func main() { fmt.Println("argv:", strings.Join(os.Args[1:], " ")) }
 	// refuse before it ever compiled the probe.
 	t.Setenv("GOWORK", "off")
 	t.Chdir(root)
+	return root
+}
+
+// compilerFlagsProbe is a project binary that reports, beside the arguments it
+// was handed, the compiler flags it was built with. The toolchain records those
+// flags in every binary it produces, so they are read from what was compiled
+// rather than from the command line this repository assembled.
+const compilerFlagsProbe = `package main
+
+import (
+	"fmt"
+	"os"
+	"runtime/debug"
+	"strings"
+)
+
+func main() {
+	fmt.Println("argv:", strings.Join(os.Args[1:], " "))
+	gcflags := ""
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range info.Settings {
+			if s.Key == "-gcflags" {
+				gcflags = s.Value
+			}
+		}
+	}
+	fmt.Println("gcflags:", gcflags)
+}
+`
+
+// TestEveryBuildOfTheApplicationLeavesOutDebugInformation reads, from the
+// binary each command compiled, that the compiler was told to write no DWARF.
+//
+// The three ways in are serve -- which dev starts the application through as
+// well -- a command forwarded to the project, and build. All three are meant to
+// share one helper, and the failure this catches is the one that would pass
+// review: a call site that goes back to starting the toolchain directly still
+// builds, still runs and still serves, and only the cache and the memory say
+// anything, much later.
+//
+// The arguments are checked in the same line as the flag, because the flag has
+// to reach the compiler and not the program: one placed after the package would
+// show up in argv and not in the build settings.
+func TestEveryBuildOfTheApplicationLeavesOutDebugInformation(t *testing.T) {
+	goTool(t)
+	root := probeProjectRunning(t, compilerFlagsProbe)
+	const flags = "all=-dwarf=false"
+
+	for _, command := range []string{"serve", "migrate"} {
+		t.Run(command, func(t *testing.T) {
+			code, stdout, stderr := exercise(t, command, "--tenant=t1")
+			if code != 0 {
+				t.Fatalf("%s exited %d inside a project: %s", command, code, stderr)
+			}
+			if got, want := stdout, "argv: "+command+" --tenant=t1\ngcflags: "+flags+"\n"; got != want {
+				t.Errorf("the project binary reported %q, want %q", got, want)
+			}
+		})
+	}
+
+	t.Run("build", func(t *testing.T) {
+		code, _, stderr := exercise(t, "build", "--skip-views", "--version", "v1.0.0")
+		if code != 0 {
+			t.Fatalf("build exited %d inside a project: %s", code, stderr)
+		}
+		binary := filepath.Join(root, "bin", filepath.Base(root))
+		info, err := buildinfo.ReadFile(binary)
+		if err != nil {
+			t.Fatalf("reading the build settings of %s: %v", binary, err)
+		}
+		got := ""
+		for _, s := range info.Settings {
+			if s.Key == "-gcflags" {
+				got = s.Value
+			}
+		}
+		if got != flags {
+			t.Errorf("the built binary was compiled with -gcflags %q, want %q", got, flags)
+		}
+	})
 }
 
 // TestTheQueueCommandsReachTheProject runs every queue command and reads what

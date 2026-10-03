@@ -58,8 +58,7 @@ func delegate(subcommand string) func([]string, io.Writer, io.Writer) error {
 			return err
 		}
 
-		full := append([]string{"run", appPackage, subcommand}, args...)
-		cmd := buildcache.Command(full...)
+		cmd := buildcache.Application("run", append([]string{appPackage, subcommand}, args...)...)
 		cmd.Dir = root
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr

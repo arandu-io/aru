@@ -91,10 +91,37 @@ func Dir() (string, error) {
 //
 // A caller that adds settings of its own -- a target platform, cgo -- appends
 // to cmd.Env rather than replacing it, or the build lands in the shared cache.
+// A build of the person's application goes through Application instead, which
+// calls this.
 func Command(args ...string) *exec.Cmd {
 	cmd := exec.Command("go", args...)
 	cmd.Env = Env()
 	return cmd
+}
+
+// noDebugInfo is the compiler flag every build of an application carries: no
+// DWARF, in any package of the build, the standard library included.
+const noDebugInfo = "-gcflags=all=-dwarf=false"
+
+// Application is every invocation of the toolchain that compiles the person's
+// application to run it or to ship it: `go <verb>`, then the flag that leaves
+// debug information out, then args. `aru dev`, `aru serve`, every command
+// forwarded to the project's binary and `aru build` start the toolchain here,
+// so none of them can compile the application differently from the others.
+//
+// Debug information is about a third of what the cache holds for every
+// compiled package and about a quarter of the memory the compiler and the
+// linker peak at, and nothing these commands do reads it. A panic's stack
+// trace, the error page and a profile read the runtime's own table of
+// functions and lines, which the flag leaves in place. Only a debugger
+// attached to the process reads DWARF, and a debugger builds a binary of its
+// own.
+//
+// The flag goes straight after the verb because `go run` hands everything after
+// the package to the program: placed after the package, the application would
+// receive it as an argument and the compiler would never see it.
+func Application(verb string, args ...string) *exec.Cmd {
+	return Command(append([]string{verb, noDebugInfo}, args...)...)
 }
 
 // Env is the environment the toolchain runs in: the inherited one, with the

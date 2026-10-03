@@ -289,7 +289,7 @@ func startServer(root string, args []string, stdout, stderr io.Writer) (*serverP
 	// know whether trying again can help. See diagnoseExit.
 	said := newTail(stderr)
 
-	cmd := buildcache.Command(append([]string{"run", appPackage, "serve"}, args...)...)
+	cmd := buildcache.Application("run", append([]string{appPackage, "serve"}, args...)...)
 	cmd.Dir = root
 	cmd.Stdout = stdout
 	cmd.Stderr = said

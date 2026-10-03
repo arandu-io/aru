@@ -138,6 +138,12 @@ func TestAComponentLibraryThatCannotBeFoundStopsTheBuild(t *testing.T) {
 	t.Setenv("GOMODCACHE", t.TempDir())
 	t.Setenv("GOPROXY", "off")
 	t.Setenv("GOFLAGS", "")
+	// The toolchain this go command runs is a module too. A go.mod or a go env
+	// that pins a release other than the installed one would be looked up in the
+	// empty module cache above, with the proxy off, and the build would stop on
+	// the toolchain rather than on the library -- an error this test would read
+	// as the one it is waiting for.
+	t.Setenv("GOTOOLCHAIN", "local")
 
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "go.mod"), "module example.test/offline\n\ngo 1.25.0\n\nrequire github.com/arandu-io/kyse v0.2.0\n")

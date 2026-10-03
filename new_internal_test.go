@@ -1,6 +1,7 @@
 package main
 
 import (
+	"go/format"
 	"io"
 	"os"
 	"path/filepath"
@@ -119,5 +120,79 @@ func TestDropRetractionsLeavesTheProjectOnlyItsOwnDirectives(t *testing.T) {
 	want := "module example.test/app\n\ngo 1.26.0\n\nrequire github.com/arandu-io/framework v0.50.2\n"
 	if string(got) != want {
 		t.Fatalf("go.mod after dropRetractions:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// TestRewriteModulePathLeavesTheProjectGofmtClean pins that renaming the module
+// does not hand somebody a project their own gofmt gate refuses.
+//
+// The skeleton sorts its imports with github.com/arandu-io/arandu among the
+// other github.com paths. A project called kuaa.io/app sorts after all of them,
+// so a textual rename leaves the group out of order and gofmt -l lists the
+// file -- in a project nobody has edited yet.
+//
+// A view source and a fixture under testdata are renamed and left as they were
+// otherwise: the first is not Go until it is compiled, and the second may be
+// wrong on purpose.
+func TestRewriteModulePathLeavesTheProjectGofmtClean(t *testing.T) {
+	dir := t.TempDir()
+	controller := "package controllers\n\nimport (\n\t\"github.com/arandu-io/arandu/app/Services\"\n\t\"github.com/arandu-io/framework/security\"\n\t\"github.com/arandu-io/hesape/http\"\n)\n\nvar _ = services.New\nvar _ security.Grant\nvar _ http.Request\n"
+	view := "//go:build kyse\n\npackage views\n\nimport (\n\t\"github.com/arandu-io/arandu/app/Models\"\n\t\"github.com/arandu-io/framework/view\"\n)\n\n@extends('layouts.app')\n"
+	fixture := "package fixture\n\nimport (\n\t\"github.com/arandu-io/arandu/app/Models\"\n\t\"github.com/arandu-io/framework/data\"\n)\n"
+	files := map[string]string{
+		"go.mod": "module github.com/arandu-io/arandu\n\ngo 1.26.0\n",
+		filepath.Join("app", "Http", "Controllers", "HomeController.go"): controller,
+		filepath.Join("resources", "views", "home.kyse.go"):              view,
+		filepath.Join("tests", "testdata", "fixture.go"):                 fixture,
+	}
+	for name, body := range files {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := rewriteModulePath(dir, "kuaa.io/app"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "app", "Http", "Controllers", "HomeController.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := format.Source(got)
+	if err != nil {
+		t.Fatalf("the renamed controller does not parse: %v\n%s", err, got)
+	}
+	if string(formatted) != string(got) {
+		t.Errorf("the renamed controller is not gofmt-clean:\n%s\nwant:\n%s", got, formatted)
+	}
+	if !strings.Contains(string(got), `"kuaa.io/app/app/Services"`) {
+		t.Errorf("the import was not renamed:\n%s", got)
+	}
+
+	for name, before := range map[string]string{
+		filepath.Join("resources", "views", "home.kyse.go"): view,
+		filepath.Join("tests", "testdata", "fixture.go"):    fixture,
+	} {
+		got, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := strings.ReplaceAll(before, "github.com/arandu-io/arandu", "kuaa.io/app")
+		if string(got) != want {
+			t.Errorf("%s was changed beyond the rename:\n%s\nwant:\n%s", name, got, want)
+		}
+	}
+
+	mod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "module kuaa.io/app\n\ngo 1.26.0\n"; string(mod) != want {
+		t.Errorf("go.mod after the rename:\n%s\nwant:\n%s", mod, want)
 	}
 }

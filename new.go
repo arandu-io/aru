@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go/format"
 	"io"
 	"io/fs"
 	"os"
@@ -129,6 +130,12 @@ Postgres is one line in .env and nothing else:
 
 // rewriteModulePath replaces the skeleton's module path with the project's, in
 // go.mod and in every import that referenced it.
+//
+// Every Go file it changes is formatted again afterwards. The skeleton's
+// imports are sorted with its own path among the other github.com paths, and a
+// project path sorts wherever its first letter puts it -- so a textual rename
+// leaves import groups out of order, and the project fails its own gofmt gate
+// before anybody has edited a line. See formatRenamed for what is left alone.
 func rewriteModulePath(dir, newPath string) error {
 	const oldPath = "github.com/arandu-io/arandu"
 	if newPath == oldPath {
@@ -156,9 +163,39 @@ func rewriteModulePath(dir, newPath string) error {
 		if !strings.Contains(string(content), oldPath) {
 			return nil
 		}
-		updated := strings.ReplaceAll(string(content), oldPath, newPath)
-		return os.WriteFile(p, []byte(updated), 0o644)
+		updated := []byte(strings.ReplaceAll(string(content), oldPath, newPath))
+		if rel, err := filepath.Rel(dir, p); err == nil {
+			updated = formatRenamed(filepath.ToSlash(rel), updated)
+		}
+		return os.WriteFile(p, updated, 0o644)
 	})
+}
+
+// formatRenamed formats a renamed Go file the way gofmt would, imports sorted.
+//
+// Two kinds of file are returned as they are. A view source ends in .go and is
+// not Go until `aru view:build` compiles it, so a formatter would refuse it at
+// the first directive. A file under testdata/ is a fixture, and a fixture may be
+// malformed on purpose -- reformatting it would change what it tests.
+//
+// A file that does not parse is returned as it is too. The rename is still
+// right, and refusing to create the project over it would leave half a project
+// on disk; gofmt in that project then names the file, which is the report it
+// needs.
+func formatRenamed(rel string, content []byte) []byte {
+	if !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, ".kyse.go") {
+		return content
+	}
+	for _, segment := range strings.Split(rel, "/") {
+		if segment == "testdata" {
+			return content
+		}
+	}
+	formatted, err := format.Source(content)
+	if err != nil {
+		return content
+	}
+	return formatted
 }
 
 // dropRetractions removes the skeleton's retract directives from the new project's go.mod.

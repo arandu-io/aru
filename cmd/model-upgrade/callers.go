@@ -118,6 +118,7 @@ func (u *upgrader) callersIn(f *source) {
 			u.rowsFromNewInstance(f, fn.Body)
 		}
 	}
+	u.heldConstructors(f)
 }
 
 // call rewrites one call: a chain off a constructor, and a factory

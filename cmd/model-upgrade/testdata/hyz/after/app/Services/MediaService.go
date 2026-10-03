@@ -40,6 +40,13 @@ func (s *MediaService) Search(ctx context.Context, g auth.Grant, key, text strin
 	return q.Clone().Count(ctx, g)
 }
 
+// Latest reads the newest entry of a collection through a model held in a
+// variable and read once, which is one query before the upgrade and after it.
+func (s *MediaService) Latest(ctx context.Context, g auth.Grant, key string) (*models.Entry, error) {
+	entries := models.Entries(s.db)
+	return entries.Where("collection", "=", key).OrderByDesc("created_at").First(ctx, g)
+}
+
 // Shared lists the terms every tenant sees.
 func (s *MediaService) Shared(ctx context.Context, g auth.Grant) ([]*models.Term, error) {
 	return models.Terms(s.db).Get(ctx, g)

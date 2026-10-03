@@ -30,6 +30,14 @@
 // a successful run is what the compiler reports: the methods whose results
 // changed shape, and the code that leaned on the generic types.
 //
+// One shape it reads and still refuses, because the compiler would say nothing
+// about it: a constructor's result held in a variable and used more than once,
+// handed on, or read again by a loop or a closure. The generic model opened a
+// new query for every chain started on it; the concrete constructor returns one
+// mutable query, so a second chain would carry the clauses of the first. A
+// variable read once, to start one chain, means the same before and after and
+// is left as it is.
+//
 // It is not one of aru's commands. It runs once per repository, against a
 // tree that does not build yet, and a command kept in the table forever for a
 // migration done once would be a second way to write models.

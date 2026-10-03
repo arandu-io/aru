@@ -82,6 +82,62 @@ func TestWhatCannotBeReadStopsTheRunAndWritesNothing(t *testing.T) {
 	}
 }
 
+// TestAModelHeldInAVariableIsRefusedUnlessReadOnce: the generic constructor
+// returned a model that opened a query for every chain, and the concrete one
+// returns one mutable query, so a variable holding it stays correct only while
+// it starts a single chain. Two chains on it, inside the models package and
+// out, a helper handed it, a loop or a closure that reads it again, a plain
+// assignment followed by two chains and a package variable are each named at
+// the line that binds them. One chain, a binding inside the loop that reads it,
+// and another variable of the same name in an inner scope are not -- the count
+// of problems is what proves those three passed, and TestTheHyzShapesAreRewritten
+// compiles a variable read once after the rewrite.
+func TestAModelHeldInAVariableIsRefusedUnlessReadOnce(t *testing.T) {
+	root := t.TempDir()
+	copyTree(t, filepath.Join("testdata", "reused", "before"), root)
+	before := snapshotTree(t, root)
+	t.Chdir(root)
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"./..."}, &stdout, &stderr); code != 1 {
+		t.Fatalf("model-upgrade exited %d, want 1:\n%s%s", code, stdout.String(), stderr.String())
+	}
+	const why = ": the constructor now returns one mutable *models.ServiceContractQuery, not a model that opens a " +
+		"new query for every chain, so each use would carry the clauses of the ones before it. " +
+		"Start each query at the constructor"
+	want := []string{
+		"app/Models/ServiceContract.go:28: rows holds ServiceContracts(db) and is used again at line 33: " +
+			"the constructor now returns one mutable *ServiceContractQuery,",
+		"app/Services/ContractService.go:18: rows holds models.ServiceContracts(s.db) and is used again at line 23" + why,
+		"app/Services/ContractService.go:37: rows holds models.ServiceContracts(s.db) and is used at line 38 " +
+			"as a value rather than as the start of one chain" + why,
+		"app/Services/ContractService.go:43: rows holds models.ServiceContracts(s.db) and is used at line 45 " +
+			"inside a loop or a function literal it was not bound in, which can run that chain more than once" + why,
+		"app/Services/ContractService.go:65: rows holds models.ServiceContracts(s.db) and is used at line 67 " +
+			"inside a loop or a function literal it was not bound in",
+		"app/Services/ContractService.go:85: rows holds models.ServiceContracts(s.db) and is used again at line 89" + why,
+		"app/Services/ContractService.go:93: everyone holds models.ServiceContracts(nil) in a package variable, " +
+			"which every use of it shares" + why,
+	}
+	var got []string
+	for _, line := range strings.Split(stderr.String(), "\n") {
+		if strings.HasPrefix(line, "app/") {
+			got = append(got, line)
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("model-upgrade named %d places, want %d:\n%s", len(got), len(want), stderr.String())
+	}
+	for i := range want {
+		if !strings.HasPrefix(got[i], want[i]) {
+			t.Errorf("place %d is\n\t%s\nwant it to start with\n\t%s", i+1, got[i], want[i])
+		}
+	}
+	if after := snapshotTree(t, root); after != before {
+		t.Error("model-upgrade refused and changed the tree anyway")
+	}
+}
+
 // snapshotTree is every file of root and its contents, as one string.
 func snapshotTree(t *testing.T, root string) string {
 	t.Helper()

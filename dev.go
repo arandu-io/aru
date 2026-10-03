@@ -238,10 +238,11 @@ func dev(args []string, stdout, stderr io.Writer) error {
 		// The generated queries follow the entities on every restart, and what
 		// that writes is absorbed into the snapshot here: it is output of this
 		// loop, and seeing it as a change would restart the server a second time
-		// for nothing.
+		// for nothing. A failure is said and the restart goes ahead: it is
+		// usually a file mid-edit that does not parse, and the compiler that
+		// runs next names the line just as well.
 		if err := buildModels(root, stdout, stderr); err != nil {
 			fmt.Fprintf(stderr, "%v\n", err)
-			continue
 		}
 		state = snapshot(root)
 

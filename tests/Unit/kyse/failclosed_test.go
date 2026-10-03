@@ -1,8 +1,6 @@
 package kyse_test
 
 import (
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -179,10 +177,7 @@ func compileView(t *testing.T, root, dir, name, dataType, source string) {
 // runModule runs the module's main package and returns what it printed.
 func runModule(t *testing.T, root string) string {
 	t.Helper()
-	tool := goTool(t)
-	run := exec.Command(tool, "run", ".")
-	run.Dir = root
-	run.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod", "GOPROXY=off", "GOTOOLCHAIN=local")
+	run := goCommand(t, root, "run", ".")
 	out, err := run.CombinedOutput()
 	if err != nil {
 		t.Fatalf("the generated Go does not run: %v\n%s", err, out)

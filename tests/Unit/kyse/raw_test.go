@@ -1,8 +1,6 @@
 package kyse_test
 
 import (
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -61,9 +59,7 @@ type Comment struct {
 			t.Fatalf("Generate: %v", err)
 		}
 		writeFile(t, filepath.Join(root, "views", name+".go"), string(out))
-		cmd := exec.Command(goTool(t), "build", "./...")
-		cmd.Dir = root
-		cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod", "GOPROXY=off", "GOTOOLCHAIN=local")
+		cmd := goCommand(t, root, "build", "./...")
 		got, err := cmd.CombinedOutput()
 		return string(got), err
 	}

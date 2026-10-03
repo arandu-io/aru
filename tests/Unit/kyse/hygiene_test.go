@@ -216,7 +216,7 @@ var shapes = []shape{
 // beside it is a stub, because what is under test is the naming and not the
 // framework -- and handed to the Go compiler.
 func TestALoopBindingCannotTakeTheCompilersOwnNames(t *testing.T) {
-	tool := goTool(t)
+	goTool(t)
 	root := t.TempDir()
 	writeStubModule(t, root)
 
@@ -248,11 +248,9 @@ func TestALoopBindingCannotTakeTheCompilersOwnNames(t *testing.T) {
 		})
 	}
 
-	build := exec.Command(tool, "build", "./...")
-	build.Dir = root
 	// The module is the stub and the standard library, so nothing is fetched:
 	// a proxy that is off proves it rather than trusting it.
-	build.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod", "GOPROXY=off", "GOTOOLCHAIN=local")
+	build := goCommand(t, root, "build", "./...")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("the generated Go does not build: %v\n%s", err, out)
 	}
@@ -392,7 +390,7 @@ func TestGeneratedViewsImportNativeViewDirectly(t *testing.T) {
 // Looking for the import in the output would pass on a file that still does not
 // compile.
 func TestAViewThatCallsThePackageItselfCompiles(t *testing.T) {
-	tool := goTool(t)
+	goTool(t)
 	root := t.TempDir()
 	writeStubModule(t, root)
 
@@ -424,9 +422,7 @@ func TestAViewThatCallsThePackageItselfCompiles(t *testing.T) {
 		writeFile(t, filepath.Join(root, v.dir, "page.go"), string(out))
 	}
 
-	build := exec.Command(tool, "build", "./...")
-	build.Dir = root
-	build.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod", "GOPROXY=off", "GOTOOLCHAIN=local")
+	build := goCommand(t, root, "build", "./...")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("a view that calls the package by its own name does not build: %v\n%s", err, out)
 	}
@@ -564,6 +560,28 @@ func goTool(t *testing.T) string {
 		t.Skip("go is not on PATH")
 	}
 	return path
+}
+
+// goCommand answers the go command for args, run in dir against the stub
+// module: outside any workspace, with nothing fetched, on the local toolchain.
+//
+// A build, run, test or vet is given -trimpath. dir is a t.TempDir, a new path
+// on every run, and without -trimpath the directory of a package is part of its
+// cache key: each run would add a whole new set of entries to the developer's
+// build cache, and nothing would read them again. With it the key is the
+// content, and a second run compiles nothing the first one did not.
+func goCommand(t *testing.T, dir string, args ...string) *exec.Cmd {
+	t.Helper()
+	if len(args) > 0 {
+		switch args[0] {
+		case "build", "run", "test", "vet":
+			args = append([]string{args[0], "-trimpath"}, args[1:]...)
+		}
+	}
+	cmd := exec.Command(goTool(t), args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod", "GOPROXY=off", "GOTOOLCHAIN=local")
+	return cmd
 }
 
 func writeFile(t *testing.T, path, content string) {

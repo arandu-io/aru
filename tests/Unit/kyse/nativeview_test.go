@@ -13,15 +13,16 @@ import (
 // then hands the whole temporary project to the Go toolchain, which is the
 // boundary where an import written inside generated code becomes observable.
 func TestViewBuildProducesAProjectThatImportsNativeViewDirectly(t *testing.T) {
-	tool := goTool(t)
+	goTool(t)
 	repository, err := filepath.Abs(filepath.Join("..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
 	binary := filepath.Join(t.TempDir(), "aru")
 
-	buildAru := exec.Command(tool, "build", "-o", binary, ".")
-	buildAru.Dir = repository
+	buildAru := goCommand(t, repository, "build", "-o", binary, ".")
+	// The checkout is built as its go.mod and go.sum say, never rewritten by
+	// -mod=mod, so this one replaces the stub module's environment.
 	buildAru.Env = append(os.Environ(), "GOWORK=off", "GOPROXY=off", "GOTOOLCHAIN=local")
 	if out, err := buildAru.CombinedOutput(); err != nil {
 		t.Fatalf("building aru from the task checkout: %v\n%s", err, out)
@@ -50,9 +51,7 @@ func TestViewBuildProducesAProjectThatImportsNativeViewDirectly(t *testing.T) {
 		t.Fatalf("the real view build still emitted the Framework bridge:\n%s", generated)
 	}
 
-	buildProject := exec.Command(tool, "build", "./...")
-	buildProject.Dir = root
-	buildProject.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod", "GOPROXY=off", "GOTOOLCHAIN=local")
+	buildProject := goCommand(t, root, "build", "./...")
 	if out, err := buildProject.CombinedOutput(); err != nil {
 		t.Fatalf("the project produced by the real view build does not compile: %v\n%s", err, out)
 	}

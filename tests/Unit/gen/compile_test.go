@@ -470,6 +470,12 @@ func publishedModules() string {
 
 // runGo runs one go command inside the generated project.
 //
+// A build or vet is given -trimpath. root is a t.TempDir, a new path on every
+// run, and without -trimpath the directory of a package is part of its cache
+// key: each run would add the whole generated project, compiled again, to the
+// developer's build cache, and nothing would read it again. With it the key is
+// the content, and a second run compiles nothing the first one did not.
+//
 // GOWORK is off so a workspace on the developer's machine cannot substitute a
 // working tree for the tag; GOPROXY is off so the build resolves only what
 // ensureModules already fetched; GOTOOLCHAIN is local so the go directive
@@ -477,6 +483,10 @@ func publishedModules() string {
 // computed from what is already on this machine, and consulting the database
 // would be the network the previous line just closed.
 func runGo(tool, root string, args ...string) (string, error) {
+	switch args[0] {
+	case "build", "vet":
+		args = append([]string{args[0], "-trimpath"}, args[1:]...)
+	}
 	cmd := exec.Command(tool, args...)
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(),

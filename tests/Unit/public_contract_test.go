@@ -87,10 +87,15 @@ func TestThePublicModuleContractIsModelFirst(t *testing.T) {
 	})
 }
 
+// buildPublicContractCLI compiles the checkout at root into a temporary binary.
+//
+// -trimpath keeps the cache entries it writes keyed by content rather than by
+// the checkout's directory, so building from a second checkout reuses what the
+// first one compiled instead of adding the whole command again.
 func buildPublicContractCLI(t *testing.T, root string) string {
 	t.Helper()
 	binary := filepath.Join(t.TempDir(), "aru")
-	cmd := exec.Command("go", "build", "-o", binary, ".")
+	cmd := exec.Command("go", "build", "-trimpath", "-o", binary, ".")
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "GOWORK=off")
 	if out, err := cmd.CombinedOutput(); err != nil {

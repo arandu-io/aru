@@ -1,8 +1,6 @@
 package kyse_test
 
 import (
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -122,7 +120,7 @@ var goBlockImports = map[string]string{
 // corpus is generated into a module of its own -- the native view package
 // beside it is the same stub -- and handed to the Go compiler.
 func TestAGoBlockThatNamesAPackageCompiles(t *testing.T) {
-	tool := goTool(t)
+	goTool(t)
 	root := t.TempDir()
 	writeStubModule(t, root)
 
@@ -164,10 +162,8 @@ func TestAGoBlockThatNamesAPackageCompiles(t *testing.T) {
 		writeFile(t, filepath.Join(root, v.dir, v.dir+".go"), generated)
 	}
 
-	build := exec.Command(tool, "build", "./...")
-	build.Dir = root
 	// The module is the stub and the standard library, so nothing is fetched.
-	build.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod", "GOPROXY=off", "GOTOOLCHAIN=local")
+	build := goCommand(t, root, "build", "./...")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("a view whose @go block names a package this generator renames does not build: %v\n%s", err, out)
 	}
@@ -281,14 +277,12 @@ func tagWords(p TagProps) []string {
 		t.Errorf("the view's own import of strings was bound %d times rather than 2:\n%s", n, out)
 	}
 
-	tool := goTool(t)
+	goTool(t)
 	root := t.TempDir()
 	writeStubModule(t, root)
 	writeFile(t, filepath.Join(root, "components", "tag.go"), string(out))
 
-	build := exec.Command(tool, "build", "./...")
-	build.Dir = root
-	build.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod", "GOPROXY=off", "GOTOOLCHAIN=local")
+	build := goCommand(t, root, "build", "./...")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("a view that imports a republished package for itself does not build: %v\n%s", err, out)
 	}

@@ -416,6 +416,7 @@ func TestWindowsPublicationRestoresEveryPreviousArtifact(t *testing.T) {
 // every platform that can build the Windows target.
 func writeFakeSignTool(t *testing.T, dir string) {
 	t.Helper()
+	pathIndependentBuilds(t)
 
 	source := filepath.Join(t.TempDir(), "main.go")
 	body := `package main
@@ -460,6 +461,7 @@ func main() {
 // whether the secret arrived in the environment, never the secret itself.
 func writeFakePowerShell(t *testing.T, dir string) {
 	t.Helper()
+	pathIndependentBuilds(t)
 
 	source := filepath.Join(t.TempDir(), "main.go")
 	body := `package main
@@ -513,6 +515,7 @@ func main() {
 // has to be able to say the directory was empty to begin with.
 func probeModule(t *testing.T) string {
 	t.Helper()
+	pathIndependentBuilds(t)
 
 	dir := t.TempDir()
 	for name, body := range map[string]string{

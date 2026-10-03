@@ -2,11 +2,11 @@ package pack
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/arandu-io/aru/internal/buildcache"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -107,7 +107,7 @@ func loadPackageGraph(pkgPath string) (*packages.Package, error) {
 			packages.NeedImports |
 			packages.NeedDeps |
 			packages.NeedModule,
-		Env: append(os.Environ(), targetEnv()...),
+		Env: append(buildcache.Env(), targetEnv()...),
 	}
 	if *extraTags != "" {
 		cfg.BuildFlags = []string{"-tags=" + *extraTags}

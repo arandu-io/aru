@@ -32,6 +32,7 @@ func TestAMacBundleWithoutAKeyIsStillSealed(t *testing.T) {
 
 	t.Setenv("GOWORK", "off")
 	t.Chdir(source)
+	pathIndependentBuilds(t)
 
 	output := filepath.Join(t.TempDir(), "Probe.app")
 	destination(t, output)

@@ -19,6 +19,7 @@ import (
 
 	"github.com/akavel/rsrc/binutil"
 	"github.com/akavel/rsrc/coff"
+	"github.com/arandu-io/aru/internal/buildcache"
 	"golang.org/x/text/encoding/unicode"
 )
 
@@ -504,8 +505,7 @@ func (b *windowsBuilder) buildProgram(buildInfo *buildInfo, name string, arch st
 		ldflags += ` -X "` + buildInfo.runtime.path + `.ID=` + buildInfo.appID + `" `
 	}
 
-	cmd := exec.Command(
-		"go",
+	cmd := buildcache.Command(
 		"build",
 		"-ldflags=-H=windowsgui "+ldflags,
 		"-tags="+buildInfo.tags,
@@ -513,7 +513,7 @@ func (b *windowsBuilder) buildProgram(buildInfo *buildInfo, name string, arch st
 		buildInfo.pkgPath,
 	)
 	cmd.Env = append(
-		os.Environ(),
+		cmd.Env,
 		"GOOS=windows",
 		"GOARCH="+arch,
 	)

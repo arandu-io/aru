@@ -19,6 +19,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/arandu-io/aru/internal/buildcache"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -384,15 +385,14 @@ func exeIOS(tmpDir, target, app string, bi *buildInfo) error {
 		cflagsLine := strings.Join(cflags, " ")
 		exeSlice := filepath.Join(tmpDir, "app-"+a)
 		lipo.Args = append(lipo.Args, exeSlice)
-		compile := exec.Command(
-			"go",
+		compile := buildcache.Command(
 			"build",
 			"-ldflags=-s -w "+bi.ldflags,
 			"-o", exeSlice,
 			"-tags", bi.tags,
 			bi.pkgPath,
 		)
-		compile.Env = iosProgramEnv(a, clang, cflagsLine)
+		compile.Env = iosProgramEnv(compile.Env, a, clang, cflagsLine)
 		builds.Go(func() error {
 			_, err := runCmd(compile)
 			return err
@@ -676,9 +676,12 @@ func iosDeploymentFlags(target, arch string, minsdk int) []string {
 // cgo is asked for rather than inherited: the window is opened through a C
 // library, and a machine with the variable off would build a program that
 // compiles, links, and has no window backend in it.
-func iosProgramEnv(arch, clang, cflags string) []string {
+//
+// base is the environment the toolchain is started with, cache included, and
+// the platform's settings are appended to it, which is what makes them win.
+func iosProgramEnv(base []string, arch, clang, cflags string) []string {
 	return append(
-		os.Environ(),
+		base,
 		"GOOS=ios",
 		"GOARCH="+iosGoArch(arch),
 		"CGO_ENABLED=1",
@@ -696,9 +699,12 @@ func iosProgramEnv(arch, clang, cflags string) []string {
 // It is the program's environment without the C++ half and without the
 // resolver library: what is produced here is linked into somebody else's
 // application, which brings its own.
-func iosFrameworkEnv(arch, clang, cflags string) []string {
+//
+// base is the environment the toolchain is started with, cache included, and
+// the platform's settings are appended to it, which is what makes them win.
+func iosFrameworkEnv(base []string, arch, clang, cflags string) []string {
 	return append(
-		os.Environ(),
+		base,
 		"GOOS=ios",
 		"GOARCH="+iosGoArch(arch),
 		"CGO_ENABLED=1",
@@ -780,8 +786,7 @@ func archiveIOS(tmpDir, target, frameworkRoot string, bi *buildInfo) error {
 			return err
 		}
 		lib := filepath.Join(tmpDir, "ayra-"+a)
-		cmd := exec.Command(
-			"go",
+		cmd := buildcache.Command(
 			"build",
 			"-ldflags=-s -w "+bi.ldflags,
 			"-buildmode=c-archive",
@@ -791,7 +796,7 @@ func archiveIOS(tmpDir, target, frameworkRoot string, bi *buildInfo) error {
 		)
 		lipo.Args = append(lipo.Args, lib)
 		cflagsLine := strings.Join(cflags, " ")
-		cmd.Env = iosFrameworkEnv(a, clang, cflagsLine)
+		cmd.Env = iosFrameworkEnv(cmd.Env, a, clang, cflagsLine)
 		builds.Go(func() error {
 			_, err := runCmd(cmd)
 			return err

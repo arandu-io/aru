@@ -105,6 +105,22 @@ not written, and the archive being read back is the one this program assembled
 four functions earlier. The rules stay on everywhere else, because they are what
 guards the checksum that verifies every downloaded font and binary.
 
+### 8. The toolchain is started where the rest of the command starts it
+
+**Changed:** the seven places that ran `go` directly -- the builds for iOS
+(program and archive), Android, macOS, Windows and the browser, the two
+`go list` calls and `go env GOROOT` -- go through `buildcache.Command`, and the
+package loader is handed `buildcache.Env`. The platform environments are built
+on the environment they are handed rather than on the machine's, so the cache
+setting survives what each platform adds.
+
+**Why:** they compiled into the machine's shared cache, which nothing here
+measures, while every other build of the command compiles into its own cache
+and keeps it under a ceiling. A packaging run is among the largest builds a
+project makes -- one per architecture, with cgo -- and none of it was reachable
+by the trim. `tests/Unit/buildcache` refuses a new `exec.Command("go", ...)`
+in any source that ships.
+
 ## What was left behind
 
 The end-to-end tests, which drive a browser and an emulator through two more

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/arandu-io/aru/internal/buildcache"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/go/packages"
 )
@@ -163,9 +164,12 @@ func buildAndroid(tmpDir string, bi *buildInfo) error {
 // cgo is asked for rather than inherited: the window is opened through a C
 // library, and a machine with the variable off would build a library that
 // compiles, links, and has no window backend in it.
-func androidBuildEnv(arch, clang string) []string {
+//
+// base is the environment the toolchain is started with, cache included, and
+// the platform's settings are appended to it, which is what makes them win.
+func androidBuildEnv(base []string, arch, clang string) []string {
 	return append(
-		os.Environ(),
+		base,
 		"GOOS=android",
 		"GOARCH="+arch,
 		"GOARM=7", // Avoid softfloat.
@@ -211,8 +215,7 @@ func compileAndroid(tmpDir string, tools *androidTools, bi *buildInfo) (err erro
 			return fmt.Errorf("failed to create %q: %v", archDir, err)
 		}
 		libFile := filepath.Join(archDir, "libayra.so")
-		cmd := exec.Command(
-			"go",
+		cmd := buildcache.Command(
 			"build",
 			"-ldflags=-w -s -extldflags \"-Wl,-z,max-page-size=65536\" "+bi.ldflags,
 			"-buildmode=c-shared",
@@ -220,7 +223,7 @@ func compileAndroid(tmpDir string, tools *androidTools, bi *buildInfo) (err erro
 			"-o", libFile,
 			bi.pkgPath,
 		)
-		cmd.Env = androidBuildEnv(a, clang)
+		cmd.Env = androidBuildEnv(cmd.Env, a, clang)
 		builds.Go(func() error {
 			_, err := runCmd(cmd)
 			return err

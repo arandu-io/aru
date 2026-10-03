@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"text/template"
 
+	"github.com/arandu-io/aru/internal/buildcache"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -25,12 +25,12 @@ import (
 // this is the same decision, on the path that produces the artifact somebody
 // ships.
 //
-// It is appended after the environment is read, which is what makes it win: a
-// later entry beats an earlier one, so the same line written first would be the
-// machine's setting overriding the platform's.
-func jsBuildEnv() []string {
+// It is appended to base, the environment the toolchain is started with, which
+// is what makes it win: a later entry beats an earlier one, so the same line
+// written first would be the machine's setting overriding the platform's.
+func jsBuildEnv(base []string) []string {
 	return append(
-		os.Environ(),
+		base,
 		"GOOS=js",
 		"GOARCH=wasm",
 		"CGO_ENABLED=0",
@@ -65,15 +65,14 @@ func buildJS(bi *buildInfo) error {
 	if err := os.MkdirAll(out, 0o700); err != nil {
 		return err
 	}
-	cmd := exec.Command(
-		"go",
+	cmd := buildcache.Command(
 		"build",
 		"-ldflags="+bi.ldflags,
 		"-tags="+bi.tags,
 		"-o", filepath.Join(out, "main.wasm"),
 		bi.pkgPath,
 	)
-	cmd.Env = jsBuildEnv()
+	cmd.Env = jsBuildEnv(cmd.Env)
 	_, err := runCmd(cmd)
 	if err != nil {
 		return err
@@ -101,7 +100,7 @@ func buildJS(bi *buildInfo) error {
 		return err
 	}
 
-	goroot, err := runCmd(exec.Command("go", "env", "GOROOT"))
+	goroot, err := runCmd(buildcache.Command("env", "GOROOT"))
 	if err != nil {
 		return err
 	}

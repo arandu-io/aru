@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	"github.com/arandu-io/aru/internal/buildcache"
 )
 
 func buildMac(tmpDir string, bi *buildInfo) error {
@@ -230,15 +232,14 @@ func (b *macBuilder) buildProgram(buildInfo *buildInfo, binDest string, name str
 		return err
 	}
 
-	cmd := exec.Command(
-		"go",
+	cmd := buildcache.Command(
 		"build",
 		"-ldflags="+buildInfo.ldflags,
 		"-tags="+buildInfo.tags,
 		"-o", filepath.Join(binDest, "/Contents/MacOS/"+name),
 		buildInfo.pkgPath,
 	)
-	cmd.Env = macBuildEnv(arch)
+	cmd.Env = macBuildEnv(cmd.Env, arch)
 	_, err := runCmd(cmd)
 	return err
 }
@@ -249,9 +250,12 @@ func (b *macBuilder) buildProgram(buildInfo *buildInfo, binDest string, name str
 // window is opened through a C library, and a machine with the variable off
 // would build a program that compiles, links, and has no window backend in it.
 // It is also what lets one architecture be built from the other.
-func macBuildEnv(arch string) []string {
+//
+// base is the environment the toolchain is started with, cache included, and
+// the platform's settings are appended to it, which is what makes them win.
+func macBuildEnv(base []string, arch string) []string {
 	return append(
-		os.Environ(),
+		base,
 		"GOOS=darwin",
 		"GOARCH="+arch,
 		"CGO_ENABLED=1",

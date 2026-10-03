@@ -3,7 +3,6 @@ package pack
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -11,6 +10,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/arandu-io/aru/internal/buildcache"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -206,11 +206,11 @@ type packageMetadata struct {
 }
 
 func getPkgMetadata(pkgPath string) (*packageMetadata, error) {
-	pkgImportPath, err := runCmd(exec.Command("go", "list", "-tags", *extraTags, "-f", "{{.ImportPath}}", pkgPath))
+	pkgImportPath, err := runCmd(buildcache.Command("list", "-tags", *extraTags, "-f", "{{.ImportPath}}", pkgPath))
 	if err != nil {
 		return nil, err
 	}
-	pkgDir, err := runCmd(exec.Command("go", "list", "-tags", *extraTags, "-f", "{{.Dir}}", pkgPath))
+	pkgDir, err := runCmd(buildcache.Command("list", "-tags", *extraTags, "-f", "{{.Dir}}", pkgPath))
 	if err != nil {
 		return nil, err
 	}

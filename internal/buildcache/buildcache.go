@@ -2,9 +2,10 @@
 // cache that toolchain compiles Arandu projects into.
 //
 // Every compile, list, vet, test and run this command asks for goes through
-// Command, so the environment is decided in one place. A build that used the
-// shared cache while the tests used this one would compile the same package
-// twice and report a cache that is not the one it filled.
+// Command, or through Env when a library starts the toolchain itself, so the
+// environment is decided in one place. A build that used the shared cache
+// while the tests used this one would compile the same package twice and
+// report a cache that is not the one it filled.
 package buildcache
 
 import (
@@ -85,12 +86,24 @@ func Dir() (string, error) {
 	return filepath.Join(base, "arandu", "build"), nil
 }
 
-// Command is every invocation of the toolchain this command makes.
+// Command is every invocation of the toolchain this command makes: `go` with
+// the given arguments, in the environment Env answers.
 //
-// It answers `go` with the given arguments, the inherited environment, and the
-// cache set to Dir. The cache is appended last, so a GOCACHE the machine
-// exports does not win over it; a caller that adds settings of its own appends
+// A caller that adds settings of its own -- a target platform, cgo -- appends
 // to cmd.Env rather than replacing it, or the build lands in the shared cache.
+func Command(args ...string) *exec.Cmd {
+	cmd := exec.Command("go", args...)
+	cmd.Env = Env()
+	return cmd
+}
+
+// Env is the environment the toolchain runs in: the inherited one, with the
+// cache set to Dir. Command uses it, and so does anything that starts the
+// toolchain on this command's behalf, such as a package loader handed an
+// environment of its own.
+//
+// The cache is appended last, so a GOCACHE the machine exports does not win
+// over it.
 //
 // The cache is trimmed here, before the toolchain is asked to write more,
 // because this is the one function every build, run, test and packaging step
@@ -101,16 +114,14 @@ func Dir() (string, error) {
 //
 // Without a user cache directory the toolchain keeps its own default, and
 // nothing is trimmed: there is no cache here to keep small.
-func Command(args ...string) *exec.Cmd {
-	cmd := exec.Command("go", args...)
-	cmd.Env = os.Environ()
+func Env() []string {
+	env := os.Environ()
 	dir, err := Dir()
 	if err != nil {
-		return cmd
+		return env
 	}
 	trimAndSay(os.Stderr, dir, stampFor(dir), Ceiling, LowWater, time.Now())
-	cmd.Env = append(cmd.Env, "GOCACHE="+dir)
-	return cmd
+	return append(env, "GOCACHE="+dir)
 }
 
 // stampFor is the file recording when the cache in dir was last measured.

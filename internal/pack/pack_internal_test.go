@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/arandu-io/aru/internal/buildcache"
 )
 
 // TestABuildWithNothingToBuildIsRefused keeps the toolchain from being started
@@ -446,7 +448,7 @@ func TestTheBrowserTargetIsBuiltWithoutCgo(t *testing.T) {
 	// is an ordinary setting, and it is what this project's own commands use.
 	t.Setenv("CGO_ENABLED", "1")
 
-	if got := effective("CGO_ENABLED", jsBuildEnv()); got != "0" {
+	if got := effective("CGO_ENABLED", jsBuildEnv(os.Environ())); got != "0" {
 		t.Errorf("the browser build is compiled with cgo %q, and this platform has none", got)
 	}
 }
@@ -464,15 +466,65 @@ func TestEveryPlatformThatNeedsCgoAsksForIt(t *testing.T) {
 	t.Setenv("CGO_ENABLED", "0")
 
 	for name, env := range map[string][]string{
-		"macOS":          macBuildEnv("arm64"),
-		"Android":        androidBuildEnv("arm64", "clang"),
-		"iOS":            iosProgramEnv("arm64", "clang", "-arch arm64"),
-		"an iOS archive": iosFrameworkEnv("arm64", "clang", "-arch arm64"),
+		"macOS":          macBuildEnv(os.Environ(), "arm64"),
+		"Android":        androidBuildEnv(os.Environ(), "arm64", "clang"),
+		"iOS":            iosProgramEnv(os.Environ(), "arm64", "clang", "-arch arm64"),
+		"an iOS archive": iosFrameworkEnv(os.Environ(), "arm64", "clang", "-arch arm64"),
 	} {
 		if got := effective("CGO_ENABLED", env); got != "1" {
 			t.Errorf("%s is compiled with cgo %q, and its window comes from a C library", name, got)
 		}
 	}
+}
+
+// TestEveryPlatformCompilesIntoTheProjectCache keeps packaging in the cache the
+// rest of this command compiles into and trims.
+//
+// Every platform replaces the command's environment with one of its own, and a
+// platform that built it from the machine's environment instead of the one it
+// was handed would compile into the shared cache, where nothing keeps the size
+// down and where a trim here could never reach it.
+func TestEveryPlatformCompilesIntoTheProjectCache(t *testing.T) {
+	want, err := buildcache.Dir()
+	if err != nil {
+		t.Skip("this machine has no user cache directory")
+	}
+	// The machine exports a cache of its own, which is what would win if a
+	// platform started from os.Environ.
+	t.Setenv("GOCACHE", filepath.Join(t.TempDir(), "shared"))
+
+	base := buildcache.Command("build").Env
+	for name, env := range map[string][]string{
+		"the browser":    jsBuildEnv(base),
+		"macOS":          macBuildEnv(base, "arm64"),
+		"Android":        androidBuildEnv(base, "arm64", "clang"),
+		"iOS":            iosProgramEnv(base, "arm64", "clang", "-arch arm64"),
+		"an iOS archive": iosFrameworkEnv(base, "arm64", "clang", "-arch arm64"),
+	} {
+		if got := effective("GOCACHE", env); got != want {
+			t.Errorf("%s compiles into %q, want the project cache %q", name, got, want)
+		}
+	}
+}
+
+// pathIndependentBuilds makes every build the test starts from here on key its
+// cache entries by content rather than by directory.
+//
+// The probes these tests compile live in t.TempDir, which is a new path on
+// every run, and without -trimpath the directory of a package is part of its
+// cache key. Each run would write a whole new set of entries into the cache,
+// and nothing would read them again. -trimpath is added to whatever GOFLAGS
+// already says rather than replacing it, because what is there -- a limit on
+// parallel compiles, say -- was set for a reason.
+func pathIndependentBuilds(t *testing.T) {
+	t.Helper()
+	flags := os.Getenv("GOFLAGS")
+	for _, flag := range strings.Fields(flags) {
+		if flag == "-trimpath" {
+			return
+		}
+	}
+	t.Setenv("GOFLAGS", strings.TrimSpace(flags+" -trimpath"))
 }
 
 // effective answers what a variable is set to in an environment.

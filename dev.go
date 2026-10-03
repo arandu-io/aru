@@ -64,6 +64,9 @@ func serve(args []string, stdout, stderr io.Writer) error {
 		return errors.New("the go toolchain was not found in PATH, and aru needs it to run the project")
 	}
 
+	if err := buildModels(root, stdout, stderr); err != nil {
+		return err
+	}
 	if err := buildViews(root, stdout, stderr); err != nil {
 		return err
 	}
@@ -130,6 +133,9 @@ func dev(args []string, stdout, stderr io.Writer) error {
 	// The build runs once here rather than in watch mode, because the restart
 	// loop below already reacts to view and stylesheet changes -- two watchers
 	// over the same files would race on the generated output.
+	if err := buildModels(root, stdout, stderr); err != nil {
+		return err
+	}
 	if err := buildViews(root, stdout, stderr); err != nil {
 		return err
 	}
@@ -228,6 +234,16 @@ func dev(args []string, stdout, stderr io.Writer) error {
 			}
 			pending = false
 		}
+
+		// The generated queries follow the entities on every restart, and what
+		// that writes is absorbed into the snapshot here: it is output of this
+		// loop, and seeing it as a change would restart the server a second time
+		// for nothing.
+		if err := buildModels(root, stdout, stderr); err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			continue
+		}
+		state = snapshot(root)
 
 		// Read the signal once more before spending seconds on a restart: ctrl-c
 		// during a build is otherwise answered after the build, which reads as

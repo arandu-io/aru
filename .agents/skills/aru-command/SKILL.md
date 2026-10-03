@@ -23,7 +23,7 @@ Ask one question: **does this need to know which modules the project
 registered?**
 
 - **No** — it runs here. `key:generate`, `new`, every `make:*`, `generate`,
-  `schema`, `doctor`, `build`, `view:build`, `lsp`, `action:list`, `trace`,
+  `schema`, `doctor`, `build`, `model:build`, `view:build`, `lsp`, `action:list`, `trace`,
   the five `font:*` and the three `native:*` commands need nothing the project
   registered.
 - **Yes** — it forwards. Modules are wired explicitly in `bootstrap/app.go`,

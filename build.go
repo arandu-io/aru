@@ -46,9 +46,14 @@ func build(args []string, stdout, stderr io.Writer) error {
 		stamp = describe(root)
 	}
 
-	// Views first. A binary built from Go generated before the last edit to a
-	// `.kyse.go` is a binary that serves yesterday's page, and finding that out
-	// in production is expensive for something a build step prevents.
+	// The generated queries first, then the views. A binary built from Go
+	// generated before the last edit to an entity or a `.kyse.go` is a binary
+	// that serves yesterday's code, and finding that out in production is
+	// expensive for something a build step prevents. The queries are not
+	// skippable with the views: without them the application does not compile.
+	if err := buildModels(root, stdout, stderr); err != nil {
+		return err
+	}
 	if !*skipViews {
 		if err := buildViews(root, stdout, stderr); err != nil {
 			return err

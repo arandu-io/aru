@@ -244,6 +244,12 @@ window.`,
 		run:   runLSP,
 	},
 	{
+		name:  "model:build",
+		usage: "aru model:build [--check]",
+		desc:  "write the query beside every entity, and refresh the factories it keeps",
+		run:   modelBuild,
+	},
+	{
 		name:  "view:build",
 		usage: "aru view:build",
 		desc:  "compile templates, CSS and JavaScript bundles without Node or npm",

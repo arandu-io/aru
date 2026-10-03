@@ -611,6 +611,166 @@ func TestOneRowFetchedAfterAuthorizeIsCaughtUnderEveryName(t *testing.T) {
 	}
 }
 
+// TestAFileReadFromADiskIsNotARow: resource-not-reauthorized judged a read by
+// its name and its arguments, so `s.disk.Get(ctx, g, key)` on a
+// filesystem.Disk -- Authorize, then a Get given a key -- was reported as a row
+// that skipped its object-level decision. A file under the tenant's prefix has
+// no entity to hand a second Authorize.
+func TestAFileReadFromADiskIsNotARow(t *testing.T) {
+	for _, f := range gaps(t) {
+		if f.Rule == "resource-not-reauthorized" && strings.Contains(f.File, "ReportArchiveService.go") {
+			t.Errorf("a read from a filesystem disk was reported as a row at %s:%d -- %s", f.File, f.Line, f.Message)
+		}
+	}
+}
+
+// TestARowReadIsRecognisedByWhatItIsCalledOn pins the receivers
+// resource-not-reauthorized counts as reading a row, now that it asks what a
+// call is made on and not only what it is called.
+//
+// Every row-reading shape has to keep firing: a repository of the
+// application's, a model or query builder, the data.Repository contract, a
+// chain opened on the models package, and a service the project wrote. So does
+// a receiver doctor cannot resolve, because a rule that goes quiet where it
+// cannot see is a rule that passes on what it was written for. A disk -- held
+// in a field, passed in, or copied to a local first -- is a store of files, and
+// stays quiet.
+func TestARowReadIsRecognisedByWhatItIsCalledOn(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, body string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module example.test/reads\n\ngo 1.26\n")
+	write("app/Models/Charge.go", "package models\n\ntype Charge struct{ ID, TenantID string }\n")
+	write("app/Services/ChargeService.go", `package services
+
+import (
+	"context"
+
+	"github.com/arandu-io/framework/data"
+	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/database/model"
+	"github.com/arandu-io/hesape/database/query"
+	"github.com/arandu-io/hesape/filesystem"
+
+	models "example.test/reads/app/Models"
+	repositories "example.test/reads/app/Repositories"
+)
+
+type InvoiceService struct{}
+
+type ChargeService struct {
+	db       *data.DB
+	charges  *repositories.ChargeRepository
+	builder  *model.Model[models.Charge]
+	contract data.Repository[models.Charge]
+	table    *query.Builder
+	invoices *InvoiceService
+	disk     *filesystem.Disk
+	storage  *filesystem.Manager
+	policy   security.Policy[models.Charge]
+}
+
+func (s *ChargeService) FromRepository(ctx context.Context, actor security.Subject, id string) error {
+	g, _ := security.Authorize(ctx, s.policy, actor, "charge.view", models.Charge{})
+	_, err := s.charges.Get(ctx, g, id)
+	return err
+}
+
+func (s *ChargeService) FromModel(ctx context.Context, actor security.Subject, id string) error {
+	g, _ := security.Authorize(ctx, s.policy, actor, "charge.view", models.Charge{})
+	_, err := s.builder.Find(ctx, g, id)
+	return err
+}
+
+func (s *ChargeService) FromContract(ctx context.Context, actor security.Subject, id string) error {
+	g, _ := security.Authorize(ctx, s.policy, actor, "charge.view", models.Charge{})
+	_, err := s.contract.Find(ctx, g, id)
+	return err
+}
+
+func (s *ChargeService) FromQuery(ctx context.Context, actor security.Subject, id string) error {
+	g, _ := security.Authorize(ctx, s.policy, actor, "charge.view", models.Charge{})
+	_, err := s.table.Where("archived", false).Find(ctx, g, id)
+	return err
+}
+
+func (s *ChargeService) FromModelsPackage(ctx context.Context, actor security.Subject, id string) error {
+	g, _ := security.Authorize(ctx, s.policy, actor, "charge.view", models.Charge{})
+	_, err := models.Charges(s.db).Where("archived", false).FindOrFail(ctx, g, id)
+	return err
+}
+
+func (s *ChargeService) FromOwnService(ctx context.Context, actor security.Subject, id string) error {
+	g, _ := security.Authorize(ctx, s.policy, actor, "charge.view", models.Charge{})
+	_, err := s.invoices.Get(ctx, g, id)
+	return err
+}
+
+func (s *ChargeService) FromParameter(ctx context.Context, charges *repositories.ChargeRepository, actor security.Subject, id string) error {
+	g, _ := security.Authorize(ctx, s.policy, actor, "charge.view", models.Charge{})
+	_, err := charges.Find(ctx, g, id)
+	return err
+}
+
+func (s *ChargeService) FromSomethingUnseen(ctx context.Context, actor security.Subject, id string) error {
+	g, _ := security.Authorize(ctx, s.policy, actor, "charge.view", models.Charge{})
+	repo := s.lookup()
+	_, err := repo.Find(ctx, g, id)
+	return err
+}
+
+func (s *ChargeService) QuietDiskField(ctx context.Context, actor security.Subject, key string) error {
+	g, _ := security.Authorize(ctx, s.policy, actor, "charge.view", models.Charge{})
+	_, err := s.disk.Get(ctx, g, key)
+	return err
+}
+
+func (s *ChargeService) QuietDiskParameter(ctx context.Context, disk *filesystem.Disk, actor security.Subject, key string) error {
+	g, _ := security.Authorize(ctx, s.policy, actor, "charge.view", models.Charge{})
+	_, err := disk.Get(ctx, g, key)
+	return err
+}
+
+func (s *ChargeService) QuietDiskLocal(ctx context.Context, actor security.Subject, key string) error {
+	g, _ := security.Authorize(ctx, s.policy, actor, "charge.view", models.Charge{})
+	disk := s.disk
+	_, err := disk.Get(ctx, g, key)
+	return err
+}
+
+func (s *ChargeService) QuietNamedDisk(ctx context.Context, actor security.Subject, key string) error {
+	g, _ := security.Authorize(ctx, s.policy, actor, "charge.view", models.Charge{})
+	_, err := s.storage.Disk("r2").Get(ctx, g, key)
+	return err
+}
+`)
+
+	findings, err := doctor.Run(root, doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, method := range []string{
+		"FromRepository", "FromModel", "FromContract", "FromQuery",
+		"FromModelsPackage", "FromOwnService", "FromParameter", "FromSomethingUnseen",
+	} {
+		if !mentions(findings, "resource-not-reauthorized", method+" ") {
+			t.Errorf("%s reads one row after Authorize and was not reported", method)
+		}
+	}
+	for _, method := range []string{"QuietDiskField", "QuietDiskParameter", "QuietDiskLocal", "QuietNamedDisk"} {
+		if mentions(findings, "resource-not-reauthorized", method+" ") {
+			t.Errorf("%s reads a file from a disk and was reported as a row", method)
+		}
+	}
+}
+
 // gaps runs doctor over testdata/gaps, the fixture of the shapes that pass every
 // other rule.
 //

@@ -2909,6 +2909,11 @@ func namesOneRow(call *ast.CallExpr, name string) bool {
 //
 // So the rule looks for methods that call Authorize and read one row in the same
 // body, and warns when every Authorize comes before the last such read.
+//
+// A read is a call that namesOneRow made on something that holds rows. A
+// filesystem.Disk takes a context, the Grant and a key too, and what it answers
+// is a file under the tenant's prefix, with no entity for a second Authorize to
+// be about. See readsRows for how the receiver is told apart.
 func resourceNotReauthorized(p *project) []Finding {
 	var out []Finding
 	for _, f := range p.files {
@@ -2940,7 +2945,7 @@ func resourceNotReauthorized(p *project) []Finding {
 				if name == "security.Authorize" {
 					lastAuthorize = pos
 				}
-				if namesOneRow(call, name) {
+				if namesOneRow(call, name) && readsRows(p, f, fn, call) != sourceNotRows {
 					lastRow = pos
 				}
 				return true

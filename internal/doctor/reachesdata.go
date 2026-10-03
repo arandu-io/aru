@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"go/ast"
+	"go/token"
 	"strings"
 )
 
@@ -199,6 +200,320 @@ func passesIdentifier(fn *ast.FuncDecl, name string) bool {
 			if ident, ok := arg.(*ast.Ident); ok && ident.Name == name {
 				found = true
 				return false
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+// rowSource is what readsRows can say about the value a call is made on.
+type rowSource int
+
+const (
+	// sourceUnknown is a receiver doctor could not follow to a type. The rule
+	// asking keeps judging by the method name, so a shape this cannot read
+	// leaves the rule as it was rather than quiet.
+	sourceUnknown rowSource = iota
+	// sourceRows is the data layer: a model, a query builder, a repository, or
+	// a type the project declares itself.
+	sourceRows
+	// sourceNotRows is a type from another module that is not the data layer:
+	// a filesystem disk, a cache store, a client.
+	sourceNotRows
+)
+
+// readsRows reports whether a method call is made on something that holds
+// rows, judged by the type of what it is called on.
+//
+// The method name cannot say it. Get(ctx, g, key) is a repository answering
+// one entity and a filesystem.Disk answering a file, and both are spelled the
+// same way down to the arguments. The type can: it is followed from the call
+// back to a field of the receiver, a parameter, a local assigned from one of
+// those, or the package a chain was opened on, and its import path decides.
+//
+// It reads declarations, never types, so what it cannot follow -- a value
+// returned by a method, a field of a parameter -- answers sourceUnknown.
+func readsRows(p *project, f *file, fn *ast.FuncDecl, call *ast.CallExpr) rowSource {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return sourceUnknown
+	}
+	return exprSource(p, f, fn, sel.X, 0)
+}
+
+// exprSource follows an expression to the type it is a value of, and answers
+// what that type reads from.
+//
+// A chain answers for its base: models.Charges(db).Where(...) is the models
+// package, and s.storage.Disk("r2") is whatever s.storage holds.
+func exprSource(p *project, f *file, fn *ast.FuncDecl, e ast.Expr, depth int) rowSource {
+	// Deep enough for a local assigned from a local assigned from a field, and
+	// a bound on a definition that refers to itself.
+	if depth > 4 {
+		return sourceUnknown
+	}
+	switch x := e.(type) {
+	case *ast.ParenExpr:
+		return exprSource(p, f, fn, x.X, depth)
+	case *ast.StarExpr:
+		return exprSource(p, f, fn, x.X, depth)
+	case *ast.UnaryExpr:
+		return exprSource(p, f, fn, x.X, depth)
+	case *ast.IndexExpr:
+		return exprSource(p, f, fn, x.X, depth)
+	case *ast.CallExpr:
+		return exprSource(p, f, fn, x.Fun, depth)
+	case *ast.SelectorExpr:
+		id, ok := x.X.(*ast.Ident)
+		if !ok {
+			return exprSource(p, f, fn, x.X, depth)
+		}
+		if id.Name == receiverName(fn) {
+			if declared, typ, ok := fieldOf(p, f, receiverType(fn), x.Sel.Name); ok {
+				return typeSource(p, declared, typ)
+			}
+			return sourceUnknown
+		}
+		if bindsName(fn, id.Name) {
+			// A field of a parameter or a local: the type of the field is in a
+			// declaration this does not go looking for.
+			return sourceUnknown
+		}
+		if path, ok := f.importPath(id.Name); ok {
+			return pathSource(p, path, x.Sel.Name)
+		}
+		return sourceUnknown
+	case *ast.Ident:
+		if x.Name == receiverName(fn) {
+			// A method of the type itself, which the project declares.
+			return sourceRows
+		}
+		if typ, ok := parameterType(fn, x.Name); ok {
+			return typeSource(p, f, typ)
+		}
+		if typ, value, ok := localDefinition(fn, x.Name); ok {
+			if typ != nil {
+				return typeSource(p, f, typ)
+			}
+			return exprSource(p, f, fn, value, depth+1)
+		}
+		if path, ok := f.importPath(x.Name); ok {
+			return pathSource(p, path, "")
+		}
+	}
+	return sourceUnknown
+}
+
+// typeSource answers what a declared type reads from. decl is the file the
+// type expression is written in, because its imports are what the package name
+// in front of the type refers to.
+func typeSource(p *project, decl *file, typ ast.Expr) rowSource {
+	for {
+		switch t := typ.(type) {
+		case *ast.StarExpr:
+			typ = t.X
+			continue
+		case *ast.ParenExpr:
+			typ = t.X
+			continue
+		case *ast.IndexExpr:
+			typ = t.X
+			continue
+		case *ast.IndexListExpr:
+			typ = t.X
+			continue
+		case *ast.Ident:
+			// Declared in this package, so it is the project's own.
+			return sourceRows
+		case *ast.SelectorExpr:
+			pkg, ok := t.X.(*ast.Ident)
+			if !ok {
+				return sourceUnknown
+			}
+			path, ok := decl.importPath(pkg.Name)
+			if !ok {
+				return sourceUnknown
+			}
+			return pathSource(p, path, t.Sel.Name)
+		}
+		return sourceUnknown
+	}
+}
+
+// rowPackages are the import paths whose types hold rows: the application's
+// models and repositories, and the libraries under them -- the model and query
+// builders, the database package around them, and the data.Repository
+// contract.
+var rowPackages = []string{
+	"/app/models",
+	"/app/repositories",
+	"/database/model",
+	"/database/query",
+	"/hesape/database",
+	"/framework/data",
+}
+
+// pathSource answers what a type from an import path reads from.
+//
+// A type the project declares answers rows whatever package it is in: a
+// service written by hand that hands out one entity is a read of a row, and is
+// what this rule was first written for. A type named like a repository answers
+// rows wherever it comes from. Anything else from another module is not the
+// data layer -- a filesystem disk, a cache store -- and its Get is not a row.
+func pathSource(p *project, path, typeName string) rowSource {
+	lowered := strings.ToLower(path)
+	for _, candidate := range rowPackages {
+		if strings.Contains(lowered, candidate) {
+			return sourceRows
+		}
+	}
+	if strings.HasSuffix(typeName, "Repository") {
+		return sourceRows
+	}
+	if p.modulePath != "" && (path == p.modulePath || strings.HasPrefix(path, p.modulePath+"/")) {
+		return sourceRows
+	}
+	return sourceNotRows
+}
+
+// receiverName is the name a method gives its receiver, or "" when it gives
+// none.
+func receiverName(fn *ast.FuncDecl) string {
+	if fn.Recv == nil || len(fn.Recv.List) == 0 || len(fn.Recv.List[0].Names) == 0 {
+		return ""
+	}
+	if name := fn.Recv.List[0].Names[0].Name; name != "_" {
+		return name
+	}
+	return ""
+}
+
+// fieldOf finds a field of a struct type declared in the same package as f,
+// and answers the file that declares it with the field's type.
+func fieldOf(p *project, f *file, typeName, field string) (*file, ast.Expr, bool) {
+	if typeName == "" {
+		return nil, nil, false
+	}
+	for _, candidate := range p.files {
+		if candidate.dir != f.dir || candidate.isTest {
+			continue
+		}
+		var found ast.Expr
+		candidate.types(func(ts *ast.TypeSpec) {
+			if found != nil || ts.Name.Name != typeName {
+				return
+			}
+			st, ok := ts.Type.(*ast.StructType)
+			if !ok || st.Fields == nil {
+				return
+			}
+			for _, fld := range st.Fields.List {
+				for _, name := range fld.Names {
+					if name.Name == field {
+						found = fld.Type
+					}
+				}
+			}
+		})
+		if found != nil {
+			return candidate, found, true
+		}
+	}
+	return nil, nil, false
+}
+
+// parameterType is the declared type of a parameter of fn.
+func parameterType(fn *ast.FuncDecl, name string) (ast.Expr, bool) {
+	if fn.Type == nil || fn.Type.Params == nil {
+		return nil, false
+	}
+	for _, field := range fn.Type.Params.List {
+		for _, n := range field.Names {
+			if n.Name == name {
+				return field.Type, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// localDefinition finds where a local of fn is first given a value: a `var`
+// with a type, or a `:=` or `var` from one expression. It answers the type when
+// one is written, and the expression otherwise.
+//
+// A local assigned from a call that answers two values -- `file, err :=
+// disk.Get(...)` -- has the type of the call's result, which no declaration in
+// view says, so it is not found.
+func localDefinition(fn *ast.FuncDecl, name string) (ast.Expr, ast.Expr, bool) {
+	if fn.Body == nil {
+		return nil, nil, false
+	}
+	var typ, value ast.Expr
+	found := false
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		switch s := n.(type) {
+		case *ast.AssignStmt:
+			if s.Tok != token.DEFINE || len(s.Lhs) != len(s.Rhs) {
+				return true
+			}
+			for i, lhs := range s.Lhs {
+				if id, ok := lhs.(*ast.Ident); ok && id.Name == name {
+					value, found = s.Rhs[i], true
+					return false
+				}
+			}
+		case *ast.ValueSpec:
+			for i, ident := range s.Names {
+				if ident.Name != name {
+					continue
+				}
+				switch {
+				case s.Type != nil:
+					typ, found = s.Type, true
+				case len(s.Values) == len(s.Names):
+					value, found = s.Values[i], true
+				}
+				return false
+			}
+		}
+		return true
+	})
+	return typ, value, found
+}
+
+// bindsName reports whether fn declares name as a parameter or a local, which
+// is what keeps a local called like an imported package from being read as
+// the package.
+func bindsName(fn *ast.FuncDecl, name string) bool {
+	if _, ok := parameterType(fn, name); ok {
+		return true
+	}
+	if fn.Body == nil {
+		return false
+	}
+	found := false
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		switch s := n.(type) {
+		case *ast.AssignStmt:
+			if s.Tok == token.DEFINE {
+				for _, lhs := range s.Lhs {
+					if id, ok := lhs.(*ast.Ident); ok && id.Name == name {
+						found = true
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			for _, ident := range s.Names {
+				if ident.Name == name {
+					found = true
+				}
 			}
 		}
 		return !found

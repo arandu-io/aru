@@ -172,7 +172,9 @@ func TestAssetBuildUsesConsumerNativeVersionAndGeneratedGoCompiles(t *testing.T)
 	if strings.Index(code, "window.htmx=") > strings.Index(code, "window.sequence=") {
 		t.Fatal("native dependency executed after its consumer")
 	}
-	cmd := exec.Command("go", "test", "./...")
+	// -trimpath keeps the temporary directory out of the build cache key, so
+	// each run reuses the last one's packages instead of storing a new set.
+	cmd := exec.Command("go", "test", "-trimpath", "./...")
 	cmd.Dir = root
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("generated registration does not compile: %v\n%s", err, out)

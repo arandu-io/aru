@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/arandu-io/aru/internal/buildcache"
 )
 
 // appPackage is where the skeleton puts the application entry point.
@@ -57,7 +59,7 @@ func delegate(subcommand string) func([]string, io.Writer, io.Writer) error {
 		}
 
 		full := append([]string{"run", appPackage, subcommand}, args...)
-		cmd := goCommand(full...)
+		cmd := buildcache.Command(full...)
 		cmd.Dir = root
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr

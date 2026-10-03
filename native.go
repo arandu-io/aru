@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/arandu-io/aru/internal/buildcache"
 )
 
 // nativePackage is where a project's native target lives.
@@ -233,7 +235,7 @@ func compileNative(root, output, goos, goarch string, stdout, stderr io.Writer) 
 		cgo = "1"
 	}
 
-	cmd := goCommand("build", "-trimpath", "-o", output, nativePackage)
+	cmd := buildcache.Command("build", "-trimpath", "-o", output, nativePackage)
 	cmd.Dir = root
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr

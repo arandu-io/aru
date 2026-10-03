@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/arandu-io/aru/internal/buildcache"
 )
 
 // build compiles the application into one static binary.
@@ -72,9 +74,7 @@ func buildBinary(root, name, version, output string, stdout, stderr io.Writer) e
 	// what the error page reads.
 	ldflags := fmt.Sprintf("-s -w -X main.version=%s -X main.commit=%s", version, commit(root))
 
-	trimCache(stderr)
-
-	cmd := goCommand("build", "-trimpath", "-ldflags", ldflags, "-o", output, appPackage)
+	cmd := buildcache.Command("build", "-trimpath", "-ldflags", ldflags, "-o", output, appPackage)
 	cmd.Dir = root
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr

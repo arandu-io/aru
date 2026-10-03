@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/arandu-io/aru/internal/buildcache"
 	"github.com/arandu-io/aru/internal/kyse"
 	"github.com/arandu-io/aru/internal/toolchain"
 )
@@ -317,7 +318,7 @@ func listComponentLibrary(root string) (dir, version string, err error) {
 // fetched said the exit status of a program the person did not know was
 // running. The explanation is folded into the error instead.
 func goOutput(dir string, args ...string) (string, error) {
-	cmd := goCommand(args...)
+	cmd := buildcache.Command(args...)
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

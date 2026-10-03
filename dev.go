@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/arandu-io/aru/internal/buildcache"
 	"github.com/arandu-io/aru/internal/kyse"
 )
 
@@ -62,10 +63,6 @@ func serve(args []string, stdout, stderr io.Writer) error {
 	if _, err := exec.LookPath("go"); err != nil {
 		return errors.New("the go toolchain was not found in PATH, and aru needs it to run the project")
 	}
-
-	// The cache the project compiles into is this command's to keep, and the
-	// only moment its size is known is before a build asks it to grow again.
-	trimCache(stderr)
 
 	if err := buildViews(root, stdout, stderr); err != nil {
 		return err
@@ -292,7 +289,7 @@ func startServer(root string, args []string, stdout, stderr io.Writer) (*serverP
 	// know whether trying again can help. See diagnoseExit.
 	said := newTail(stderr)
 
-	cmd := goCommand(append([]string{"run", appPackage, "serve"}, args...)...)
+	cmd := buildcache.Command(append([]string{"run", appPackage, "serve"}, args...)...)
 	cmd.Dir = root
 	cmd.Stdout = stdout
 	cmd.Stderr = said

@@ -23,9 +23,13 @@
 package tests
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/arandu-io/aru/internal/gen"
+	"github.com/arandu-io/aru/internal/gomod"
 )
 
 // Root is the directory holding the module's go.mod.
@@ -77,4 +81,55 @@ func Fixture(tb testing.TB, pkg string, parts ...string) string {
 		tb.Fatalf("fixture %s: %v", path, err)
 	}
 	return path
+}
+
+// HesapeQuery is the go command whose output ModelCore reads, run by the
+// caller from inside this module: a suite starts the toolchain itself, and
+// this package does not.
+var HesapeQuery = []string{"list", "-m", "-json", "github.com/arandu-io/hesape"}
+
+// ModelCore answers how a project the generators write reaches the hesape this
+// module is built against, from the output of `go` with HesapeQuery: the
+// version to require and, when that hesape is a working tree -- a workspace
+// member or a directory replace -- the directory to replace it with.
+//
+// The generated entity, query and factory are written for the model core that
+// gen.ModelCoreRelease names, so a build of them against an older hesape proves
+// nothing about the generator. When this module still pins one, the test is
+// skipped saying so, and fails on a build agent, where a skip reads as a pass.
+func ModelCore(tb testing.TB, listed []byte, listErr error) (version, dir string) {
+	tb.Helper()
+	if listErr != nil {
+		tb.Skipf("go %v: %v", HesapeQuery, listErr)
+	}
+	var resolved struct {
+		Version string
+		Dir     string
+		Replace *struct {
+			Version string
+			Dir     string
+		}
+	}
+	if err := json.Unmarshal(listed, &resolved); err != nil {
+		tb.Fatalf("decode go list output: %v\n%s", err, listed)
+	}
+	switch {
+	case resolved.Replace != nil && resolved.Replace.Version == "":
+		return gen.ModelCoreRelease, resolved.Replace.Dir
+	case resolved.Replace == nil && resolved.Version == "":
+		return gen.ModelCoreRelease, resolved.Dir
+	case resolved.Replace != nil:
+		version = resolved.Replace.Version
+	default:
+		version = resolved.Version
+	}
+	if gomod.Less(version, gen.ModelCoreRelease) {
+		say := tb.Skipf
+		if os.Getenv("CI") != "" {
+			say = tb.Fatalf
+		}
+		say("this module is built against hesape %s, which predates the model core the generators write for (%s): "+
+			"nothing compiled against it would prove anything until go.mod moves", version, gen.ModelCoreRelease)
+	}
+	return version, ""
 }

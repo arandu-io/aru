@@ -7,6 +7,13 @@ import (
 	"strings"
 )
 
+// ModelCoreRelease is the first hesape release whose database/model is the
+// non-generic core everything here writes for: model.Model embedded without a
+// type argument, model.NewTable, and the builder the generated query forwards
+// to. A project pinned below it would receive files its hesape cannot compile,
+// so the commands that write them refuse it, and the upgrade tool names it.
+const ModelCoreRelease = "v0.47.0"
+
 // QueryHeaderPrefix opens every file `aru model:build` writes beside an entity.
 //
 // It is the standard marker for generated Go -- editors refuse to edit the file

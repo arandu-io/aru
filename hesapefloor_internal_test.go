@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/arandu-io/aru/internal/gen"
 )
 
 // TestAProjectPinnedBelowTheModelCoreIsRefused: the entity make:model and
@@ -30,9 +32,9 @@ func TestAProjectPinnedBelowTheModelCoreIsRefused(t *testing.T) {
 			}
 			for _, want := range []string{
 				"pins github.com/arandu-io/hesape v0.46.0",
-				"needs " + modelCoreRelease + " or later",
+				"needs " + gen.ModelCoreRelease + " or later",
 				"go run github.com/arandu-io/aru/cmd/model-upgrade@latest ./...",
-				"go get github.com/arandu-io/hesape@" + modelCoreRelease,
+				"go get github.com/arandu-io/hesape@" + gen.ModelCoreRelease,
 			} {
 				if !strings.Contains(stderr, want) {
 					t.Errorf("the refusal does not say %q:\n%s", want, stderr)

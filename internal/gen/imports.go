@@ -34,16 +34,21 @@ func Merge(file string, existing, generated []byte) []byte {
 	if !strings.HasSuffix(file, ".go") || strings.HasSuffix(file, ".kyse.go") || bytes.Equal(merged, generated) {
 		return merged
 	}
-	tidy, err := tidyImports(merged, existing, generated)
+	tidy, err := TidyImports(merged, existing, generated)
 	if err != nil {
 		return merged
 	}
 	return tidy
 }
 
-// tidyImports drops the imports src does not use and adds the ones it uses
-// from the candidate files' import lists.
-func tidyImports(src []byte, candidates ...[]byte) ([]byte, error) {
+// TidyImports drops the imports src does not use and adds the ones it uses
+// from the candidate files' import lists, then formats it.
+//
+// A candidate is Go source read only for its imports, so a caller that knows
+// which path a name it wrote stands for passes a file that is nothing but that
+// import. A blank or a dot import is never dropped: what it is for is not a
+// name in the file.
+func TidyImports(src []byte, candidates ...[]byte) ([]byte, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "", src, parser.ParseComments)
 	if err != nil {
@@ -60,19 +65,26 @@ func tidyImports(src []byte, candidates ...[]byte) ([]byte, error) {
 		return true
 	})
 
+	// Collected first and deleted after: deleting an import edits the slice
+	// the loop would be reading.
 	present := map[string]bool{}
+	var unused []*ast.ImportSpec
 	for _, imp := range file.Imports {
 		p, _ := strconv.Unquote(imp.Path.Value)
 		present[p] = true
-		name, explicit := importName(imp)
-		if name == "_" || name == "." || used[name] {
-			continue
+		name, _, certain := importName(imp)
+		if certain && name != "_" && name != "." && !used[name] {
+			unused = append(unused, imp)
 		}
-		if explicit {
+	}
+	for _, imp := range unused {
+		p, _ := strconv.Unquote(imp.Path.Value)
+		if name, explicit, _ := importName(imp); explicit {
 			astutil.DeleteNamedImport(fset, file, name, p)
 		} else {
 			astutil.DeleteImport(fset, file, p)
 		}
+		delete(present, p)
 	}
 
 	for _, candidate := range candidates {
@@ -82,8 +94,8 @@ func tidyImports(src []byte, candidates ...[]byte) ([]byte, error) {
 		}
 		for _, imp := range other.Imports {
 			p, _ := strconv.Unquote(imp.Path.Value)
-			name, explicit := importName(imp)
-			if present[p] || !used[name] {
+			name, explicit, certain := importName(imp)
+			if present[p] || !certain || !used[name] {
 				continue
 			}
 			present[p] = true
@@ -102,13 +114,27 @@ func tidyImports(src []byte, candidates ...[]byte) ([]byte, error) {
 	return format.Source(buf.Bytes())
 }
 
-// importName is the name an import binds, and whether it was written out. An
-// unnamed import binds the last element of its path, which is what every
-// package this generator writes an import for is called.
-func importName(imp *ast.ImportSpec) (string, bool) {
+// importName is the name an import binds, whether it was written out, and
+// whether it is known.
+//
+// An unnamed import binds the package clause of what it imports, which only
+// the package says. The last element of the path is that name by convention,
+// and the convention is trusted only where it can hold: a lowercase
+// identifier. ".../app/Models" binds models, "gopkg.in/yaml.v3" binds yaml,
+// and an import whose name is not known is neither dropped nor added -- a
+// guess that removed it would delete an import the file uses.
+func importName(imp *ast.ImportSpec) (name string, explicit, certain bool) {
 	if imp.Name != nil {
-		return imp.Name.Name, true
+		return imp.Name.Name, true, true
 	}
 	p, _ := strconv.Unquote(imp.Path.Value)
-	return path.Base(p), false
+	base := path.Base(p)
+	for i, r := range base {
+		lower := r >= 'a' && r <= 'z'
+		digit := i > 0 && r >= '0' && r <= '9'
+		if !lower && !digit {
+			return base, false, false
+		}
+	}
+	return base, false, true
 }

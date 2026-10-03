@@ -14,6 +14,7 @@ package gomod
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -22,11 +23,17 @@ import (
 type File struct {
 	Path     string
 	Versions map[string]string
+	// Replaced maps a module to the directory that replaces it.
 	Replaced map[string]string
+	// ReplacedVersions maps a module to the version of the module that
+	// replaces it, for a replace whose target is not a directory.
+	ReplacedVersions map[string]string
 }
 
+// Parse reads the module line, the requirements and the replacements of a
+// go.mod.
 func Parse(source string) *File {
-	module := &File{Versions: map[string]string{}, Replaced: map[string]string{}}
+	module := &File{Versions: map[string]string{}, Replaced: map[string]string{}, ReplacedVersions: map[string]string{}}
 	block := ""
 	for _, line := range strings.Split(source, "\n") {
 		if at := strings.Index(line, "//"); at >= 0 {
@@ -83,10 +90,90 @@ func (m *File) record(keyword, rest string) {
 			return
 		}
 		target := fields[at+1]
-		if strings.HasPrefix(target, ".") || strings.HasPrefix(target, "/") || filepath.IsAbs(target) {
+		switch {
+		case strings.HasPrefix(target, ".") || strings.HasPrefix(target, "/") || filepath.IsAbs(target):
 			m.Replaced[fields[0]] = target
+		case at+2 < len(fields):
+			m.ReplacedVersions[fields[0]] = fields[at+2]
 		}
 	}
+}
+
+// Pinned answers the version the build resolves module to, after a replace
+// that names a version. A module replaced by a directory, or not required,
+// has no version, and answers false.
+func (m *File) Pinned(module string) (string, bool) {
+	if _, local := m.Replaced[module]; local {
+		return "", false
+	}
+	if v, ok := m.ReplacedVersions[module]; ok {
+		return v, true
+	}
+	v, ok := m.Versions[module]
+	return v, ok
+}
+
+// Less reports whether version a sorts before b: by the three numbers, then a
+// pre-release -- which a pseudo-version is -- before the release it precedes.
+//
+// A version that does not parse is not less than anything, so a caller that
+// refuses below a floor does not refuse for a string it could not read.
+func Less(a, b string) bool {
+	x, okA := parseVersion(a)
+	y, okB := parseVersion(b)
+	if !okA || !okB {
+		return false
+	}
+	for i := range x.nums {
+		if x.nums[i] != y.nums[i] {
+			return x.nums[i] < y.nums[i]
+		}
+	}
+	switch {
+	case x.pre == y.pre, x.pre == "":
+		return false
+	case y.pre == "":
+		return true
+	}
+	return x.pre < y.pre
+}
+
+// IsVersion reports whether v is a semantic version Less can order.
+func IsVersion(v string) bool {
+	_, ok := parseVersion(v)
+	return ok
+}
+
+type version struct {
+	nums [3]int
+	pre  string
+}
+
+func parseVersion(v string) (version, bool) {
+	v, ok := strings.CutPrefix(v, "v")
+	if !ok {
+		return version{}, false
+	}
+	if i := strings.IndexByte(v, '+'); i >= 0 {
+		v = v[:i]
+	}
+	var out version
+	core := v
+	if i := strings.IndexByte(v, '-'); i >= 0 {
+		core, out.pre = v[:i], v[i+1:]
+	}
+	parts := strings.Split(core, ".")
+	if len(parts) != 3 {
+		return version{}, false
+	}
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 || p == "" {
+			return version{}, false
+		}
+		out.nums[i] = n
+	}
+	return out, true
 }
 
 // Under reports whether the import path is the prefix or lies inside

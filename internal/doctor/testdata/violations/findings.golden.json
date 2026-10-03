@@ -1,5 +1,29 @@
 [
   {
+    "rule": "driver-not-linked",
+    "severity": "warning",
+    "file": ".env.example",
+    "line": 7,
+    "message": "DATABASE_URL asks for pgsql and nothing in this project imports github.com/arandu-io/hesape/database/connectors/pgx",
+    "why": "the binary stops at boot with \"DATABASE_URL asks for pgsql and no connector for it is linked into this binary\" in every environment configured from this file, the first being the .env a fresh checkout copies from it. Add it: `go get github.com/arandu-io/hesape/database/connectors/pgx`, and blank-import it in bootstrap/app.go, next to the other connectors: `_ \"github.com/arandu-io/hesape/database/connectors/pgx\"`."
+  },
+  {
+    "rule": "driver-not-linked",
+    "severity": "warning",
+    "file": ".env.example",
+    "line": 14,
+    "message": "CACHE_STORE asks for redis and nothing in this project imports github.com/arandu-io/hesape/redis",
+    "why": "the binary stops at boot with \"CACHE_STORE asks for redis and no connector for it is linked into this binary\" in every environment configured from this file, the first being the .env a fresh checkout copies from it. Add it: `go get github.com/arandu-io/hesape/redis`, and blank-import it in bootstrap/app.go, next to the other connectors: `_ \"github.com/arandu-io/hesape/redis\"`."
+  },
+  {
+    "rule": "driver-not-linked",
+    "severity": "warning",
+    "file": ".env.example",
+    "line": 19,
+    "message": "QUEUE_CONNECTION asks for redis and only a test imports github.com/arandu-io/hesape/queue/connectors/redis, which is not compiled into the binary that boots",
+    "why": "the binary stops at boot with \"QUEUE_CONNECTION asks for redis and no connector for it is linked into this binary\" in every environment configured from this file, the first being the .env a fresh checkout copies from it. Add it: `go get github.com/arandu-io/hesape/queue/connectors/redis`, and blank-import it in bootstrap/app.go, next to the other connectors: `_ \"github.com/arandu-io/hesape/queue/connectors/redis\"`."
+  },
+  {
     "rule": "session-not-rotated",
     "severity": "error",
     "file": "app/Http/Controllers/Auth/LoginController.go",

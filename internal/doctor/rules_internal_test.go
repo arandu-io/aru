@@ -141,6 +141,7 @@ func emitsByRule() map[string][]string {
 		"migrationsMustReachTheBinary":       {"migrations-not-linked"},
 		"addedColumnsMustBeNullable":         {"added-column-not-nullable"},
 		"migrationsMustBeReversible":         {"rollback-does-nothing"},
+		"configuredEnginesAreLinked":         {"driver-not-linked"},
 		"theProfileIsDeclared":               {"profile-not-declared"},
 		"queriesReachOneAggregate":           {"join-across-aggregates"},
 		"transactionsStayInsideOneAggregate": {"transaction-across-aggregates"},

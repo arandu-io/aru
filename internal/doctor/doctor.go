@@ -131,6 +131,12 @@ type project struct {
 	// repository and not a directory inside it. Read follows that -- it joins
 	// the file to one directory and looks nowhere else.
 	manifest *manifest.Module
+	// env is what .env.example sets, or nil when there is no such file.
+	//
+	// It is the one piece of configuration a rule reads, and the only one in
+	// the repository: production's comes from wherever the deployment keeps
+	// it, which is not here. See configuredEnginesAreLinked.
+	env map[string]envSetting
 	// views are the `.kyse.go` sources. They are not Go -- the build tag keeps
 	// the compiler away from the markup -- so they are kept as text, and the
 	// rules that read them are looking at markup, not at syntax.
@@ -289,7 +295,7 @@ func Analyze(dir string, profile Profile) (Analysis, error) {
 	}
 	p := &project{
 		root: dir, profile: profile, files: files, modulePath: readModulePath(dir),
-		manifest: declared, views: views, unreadable: unreadable,
+		manifest: declared, env: readEnvExample(dir), views: views, unreadable: unreadable,
 	}
 
 	var findings []Finding

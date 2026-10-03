@@ -13,6 +13,11 @@ import (
 	// in the binary at all -- so its init never runs and the schema is never
 	// applied. Nothing else here names the package, so the import is blank.
 	_ "example.test/p/database/migrations"
+
+	// The one engine this binary speaks, and the one .env.example names. A
+	// connector registers itself from init(), so like the migrations it is
+	// linked by importing it and by nothing else.
+	_ "github.com/arandu-io/hesape/database/connectors/sqlite"
 )
 
 func main() {

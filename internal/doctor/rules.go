@@ -67,6 +67,7 @@ var rules = []func(*project) []Finding{
 	migrationsMustReachTheBinary,
 	addedColumnsMustBeNullable,
 	migrationsMustBeReversible,
+	configuredEnginesAreLinked,
 	theProfileIsDeclared,
 	queriesReachOneAggregate,
 	transactionsStayInsideOneAggregate,
@@ -3803,6 +3804,83 @@ func migrationsMustReachTheBinary(p *project) []Finding {
 			Why: fmt.Sprintf("Go leaves a package nobody imports out of the binary, so all %d migration(s) here are absent from it and the registry `aru migrate` reads is empty. "+
 				"It does not fail: it reports that there is nothing to apply, which is the same thing it says about a database that is already migrated, and the schema is never created. "+
 				"Blank-import the package where the application is wired -- `_ %q` in bootstrap/app.go.", count[dir], pkg),
+		})
+	}
+	return out
+}
+
+// configuredEnginesAreLinked: a setting that names an engine the binary does
+// not link stops the boot.
+//
+// An engine reaches the binary the way a migration does: its connector is a
+// package with an init() that registers it, and a package nothing imports is
+// not in the binary. So DATABASE_URL=postgres://... in a project that links
+// only SQLite is not a typo the process could correct at run time. The boot
+// refuses it and prints the two lines that fix it, and this is the same fact
+// asked earlier, before anybody deploys: the finding names the setting, the
+// engine it asks for, the `go get` line and the import, in the boot error's
+// own words. A DATABASE_URL is named by its engine and never quoted, because
+// the URL can carry a password.
+//
+// It is the first rule here that reads configuration rather than Go, and it
+// reads one file: .env.example, the configuration a project commits and the
+// one `aru new` copies into .env. The configuration production runs with is
+// not in the repository, which is why there is deliberately no rule for the
+// other direction -- a connector imported that no setting here asks for. The
+// deployment may well ask for it, and nothing here can see that.
+//
+// Any import of the connector links it, named or blank, because the init runs
+// either way. An import from a _test.go file does not: a test is not compiled
+// into the binary that boots.
+//
+// It concludes from an absence, so it says nothing when it cannot see: a file
+// that did not parse might be the one holding the import. And it reads only
+// what the project's own source imports, so a connector linked through a
+// dependency of the project is reported anyway -- the framework imports none,
+// which is what makes the import the project's to write.
+func configuredEnginesAreLinked(p *project) []Finding {
+	if len(p.env) == 0 || len(p.unreadable) > 0 {
+		return nil
+	}
+
+	// What the binary is built from, and what only a test imports -- which is
+	// worth saying, because it is the import that looks like it is there.
+	linked, inTests := map[string]bool{}, map[string]bool{}
+	for _, f := range p.files {
+		for path := range f.imports {
+			if f.isTest {
+				inTests[path] = true
+			} else {
+				linked[path] = true
+			}
+		}
+	}
+
+	var out []Finding
+	for _, name := range connectorSettings {
+		set, stated := p.env[name]
+		if !stated {
+			continue
+		}
+		driver, module := connectorFor(name, set.value)
+		if module == "" || linked[module] {
+			continue
+		}
+
+		// The first sentence of the error the boot gives, without the list of
+		// what that binary links: the list describes a binary that does not
+		// exist yet.
+		boot := fmt.Sprintf("%s asks for %s and no connector for it is linked into this binary", name, driver)
+		message := fmt.Sprintf("%s asks for %s and nothing in this project imports %s", name, driver, module)
+		if inTests[module] {
+			message = fmt.Sprintf("%s asks for %s and only a test imports %s, which is not compiled into the binary that boots", name, driver, module)
+		}
+		out = append(out, Finding{
+			Rule: "driver-not-linked", Severity: Warning,
+			File: envExample, Line: set.line,
+			Message: message,
+			Why: fmt.Sprintf("the binary stops at boot with %q in every environment configured from this file, the first being the .env a fresh checkout copies from it. "+
+				"Add it: `go get %s`, and blank-import it in bootstrap/app.go, next to the other connectors: `_ %q`.", boot, module, module),
 		})
 	}
 	return out

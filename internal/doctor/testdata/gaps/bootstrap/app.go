@@ -5,6 +5,10 @@ import (
 	frameevents "github.com/arandu-io/framework/events"
 	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/hesape/view"
+
+	// The engine .env.example names. A connector registers itself from init(),
+	// so this line is what puts MySQL in the binary.
+	_ "github.com/arandu-io/hesape/database/connectors/mysql"
 )
 
 // Boot builds an application-owned outbox writer and registers the modules of

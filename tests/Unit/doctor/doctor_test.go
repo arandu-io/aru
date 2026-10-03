@@ -1517,6 +1517,152 @@ func TestALinkedMigrationsPackageIsNotReported(t *testing.T) {
 	}
 }
 
+// TestAnEngineTheProjectDoesNotLinkIsCaught: a setting in .env.example that
+// names an engine whose connector nothing imports stops the boot, with an error
+// that prints the two lines that fix it. The finding has to carry the same two
+// lines and the error's own first sentence, or it predicts an error nobody will
+// recognise when it arrives.
+//
+// The queue is the case worth planting: its connector is imported, by a test,
+// and a test is not compiled into the binary that boots.
+func TestAnEngineTheProjectDoesNotLinkIsCaught(t *testing.T) {
+	root := fixture(t, "violations")
+	findings, err := doctor.Run(root, doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	env, err := os.ReadFile(filepath.Join(root, ".env.example"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lineOf := func(setting string) int {
+		for i, line := range strings.Split(string(env), "\n") {
+			if strings.HasPrefix(line, setting+"=") {
+				return i + 1
+			}
+		}
+		t.Fatalf("the fixture's .env.example does not set %s", setting)
+		return 0
+	}
+
+	var reported []doctor.Finding
+	for _, f := range findings {
+		if f.Rule == "driver-not-linked" {
+			reported = append(reported, f)
+		}
+	}
+
+	for _, want := range []struct {
+		setting, driver, module string
+		onlyInTests             bool
+	}{
+		{"DATABASE_URL", "pgsql", "github.com/arandu-io/hesape/database/connectors/pgx", false},
+		{"CACHE_STORE", "redis", "github.com/arandu-io/hesape/redis", false},
+		{"QUEUE_CONNECTION", "redis", "github.com/arandu-io/hesape/queue/connectors/redis", true},
+	} {
+		var caught *doctor.Finding
+		for i, f := range reported {
+			if strings.HasPrefix(f.Message, want.setting+" ") {
+				caught = &reported[i]
+			}
+		}
+		if caught == nil {
+			t.Errorf("%s names %s, nothing imports %s, and nothing was reported", want.setting, want.driver, want.module)
+			continue
+		}
+		if caught.File != ".env.example" || caught.Line != lineOf(want.setting) {
+			t.Errorf("%s was reported at %s:%d, want the line that sets it, .env.example:%d",
+				want.setting, caught.File, caught.Line, lineOf(want.setting))
+		}
+		if caught.Severity != doctor.Warning {
+			t.Errorf("%s: severity = %v, want Warning -- the project compiles and its tests pass", want.setting, caught.Severity)
+		}
+		if !strings.Contains(caught.Message, want.module) {
+			t.Errorf("the finding does not name the module that links %s: %s", want.driver, caught)
+		}
+		if saysTest := strings.Contains(caught.Message, "only a test imports"); saysTest != want.onlyInTests {
+			t.Errorf("%s: the finding says a test imports the connector = %t, want %t: %s", want.setting, saysTest, want.onlyInTests, caught)
+		}
+		for _, line := range []string{
+			want.setting + " asks for " + want.driver + " and no connector for it is linked into this binary",
+			"go get " + want.module,
+			`_ "` + want.module + `"`,
+		} {
+			if !strings.Contains(caught.Why, line) {
+				t.Errorf("the finding does not spell %q: %s", line, caught)
+			}
+		}
+	}
+
+	// SESSION_DRIVER=memory is in the same file and needs nothing linked.
+	if len(reported) != 3 {
+		t.Errorf("%d driver findings, want 3:\n%v", len(reported), reported)
+	}
+}
+
+// TestALinkedEngineIsNotReported is the control, and without it the rule above
+// is satisfied by one that fires on every project that has an .env.example.
+//
+// The clean fixture names SQLite and blank-imports its connector, which is what
+// the skeleton ships. The gaps fixture holds the shapes the loader reads and a
+// careless reader would not: a commented-out setting, an `export` prefix,
+// quotes, a named import, and a name set twice, where the first line wins.
+func TestALinkedEngineIsNotReported(t *testing.T) {
+	for _, name := range []string{"clean", "gaps"} {
+		findings, err := doctor.Run(fixture(t, name), doctor.Conventional)
+		if err != nil {
+			t.Fatalf("Run(%s): %v", name, err)
+		}
+		for _, f := range findings {
+			if f.Rule == "driver-not-linked" {
+				t.Errorf("%s: an engine the project links was reported: %s", name, f)
+			}
+		}
+	}
+}
+
+// TestTheDriverRuleSaysNothingItCannotSee: the rule concludes from an absence,
+// so a project it cannot read whole gets no answer rather than an invented one.
+// A .env is somebody's machine rather than the repository, so it is not read
+// even when it is all there is; and a file that does not parse might be the one
+// holding the import.
+func TestTheDriverRuleSaysNothingItCannotSee(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		files map[string]string
+	}{
+		{"a .env and no .env.example", map[string]string{
+			".env":    "CACHE_STORE=redis\n",
+			"main.go": "package main\n\nfunc main() {}\n",
+		}},
+		{"a file that does not parse", map[string]string{
+			".env.example":     "CACHE_STORE=redis\n",
+			"main.go":          "package main\n\nfunc main() {}\n",
+			"bootstrap/app.go": "package bootstrap\n\nimport (\n",
+		}},
+	} {
+		root := t.TempDir()
+		c.files["go.mod"] = "module example.test/blind\n\ngo 1.26\n"
+		for rel, body := range c.files {
+			if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, rel), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		findings, err := doctor.Run(root, doctor.Conventional)
+		if err != nil {
+			t.Fatalf("%s: Run: %v", c.name, err)
+		}
+		if caught := findRule(findings, "driver-not-linked"); caught != nil {
+			t.Errorf("%s: the rule answered without being able to see: %s", c.name, caught)
+		}
+	}
+}
+
 // TestANotNullColumnAddedToAnExistingTableIsCaught: it fails on every row
 // already in the table, and again on the previous binary still inserting rows
 // during the rollout.

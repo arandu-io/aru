@@ -145,6 +145,8 @@ func emitsByRule() map[string][]string {
 		"theProfileIsDeclared":               {"profile-not-declared"},
 		"queriesReachOneAggregate":           {"join-across-aggregates"},
 		"transactionsStayInsideOneAggregate": {"transaction-across-aggregates"},
+		"modelQueryIsCurrent":                {"model-query-stale"},
+		"modelCoreStaysInTheModels":          {"model-core-outside-models"},
 	}
 }
 

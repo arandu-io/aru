@@ -192,6 +192,14 @@
     "why": "one observability.Dump or one log line publishes it on the debug page. Add LogValue() slog.Value and MarshalJSON to the type, so no caller has to remember."
   },
   {
+    "rule": "model-query-stale",
+    "severity": "error",
+    "file": "app/Models/TicketQuery.go",
+    "line": 1,
+    "message": "app/Models/TicketQuery.go is stale: run aru model:build",
+    "why": "this file is generated from the entities of the project, and what is on disk is not what they generate. A build compiles what is on disk, so the application would run against the query of an entity that is not the one in the source. aru build and aru dev run model:build first; a pipeline that calls go build directly has to run it too, or check with aru model:build --check."
+  },
+  {
     "rule": "policy-never-opened",
     "severity": "warning",
     "file": "app/Policies/ChargePolicy.go",
@@ -382,6 +390,30 @@
     "line": 34,
     "message": "the action here is built from a concatenation",
     "why": "Grant.Check compares the action a Grant was issued for with the action the method demands, so an action that first exists while the process runs is refused on a path nobody can trace back to a line -- and `aru action:list` reads the source, so a permission screen has no row to offer for it. Name it: `const InvoiceDelete security.Action = \"invoice.delete\"`, and pass the constant."
+  },
+  {
+    "rule": "model-core-outside-models",
+    "severity": "error",
+    "file": "app/Services/TicketService.go",
+    "line": 11,
+    "message": "model.NewTable is called outside a package that declares entities",
+    "why": "the model core hands back untyped rows, and only the package of the entity has the typed query around it. A query written on the core from here is a second way to reach the table, one the generated surface does not describe. Call the generated constructor -- models.Users(db) -- or write the query as a local scope in the custom block of the entity's file."
+  },
+  {
+    "rule": "model-core-outside-models",
+    "severity": "error",
+    "file": "app/Services/TicketService.go",
+    "line": 15,
+    "message": "the core builder's Where is called through Base() outside a package that declares entities",
+    "why": "the model core hands back untyped rows, and only the package of the entity has the typed query around it. A query written on the core from here is a second way to reach the table, one the generated surface does not describe. Call the generated constructor -- models.Users(db) -- or write the query as a local scope in the custom block of the entity's file."
+  },
+  {
+    "rule": "model-core-outside-models",
+    "severity": "error",
+    "file": "app/Services/TicketService.go",
+    "line": 20,
+    "message": "the core Builder's Where is called on b outside a package that declares entities",
+    "why": "the model core hands back untyped rows, and only the package of the entity has the typed query around it. A query written on the core from here is a second way to reach the table, one the generated surface does not describe. Call the generated constructor -- models.Users(db) -- or write the query as a local scope in the custom block of the entity's file."
   },
   {
     "rule": "permission-not-declared",

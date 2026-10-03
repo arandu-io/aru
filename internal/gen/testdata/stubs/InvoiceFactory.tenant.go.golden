@@ -75,7 +75,7 @@ func (x *InvoiceFactory) AfterCreating(fn func(context.Context, auth.Grant, *mod
 // Make returns the rows without storing any of them.
 func (x *InvoiceFactory) Make() (models.InvoiceCollection, error) {
 	rows, err := x.f.Make()
-	return models.InvoiceCollectionOf(rows), err
+	return x.collection(rows), err
 }
 
 // MakeOne returns one row without storing it, whatever Count says.
@@ -88,7 +88,7 @@ func (x *InvoiceFactory) MakeOne() (*models.Invoice, error) {
 // Create stores the rows and returns them.
 func (x *InvoiceFactory) Create(ctx context.Context, g auth.Grant) (models.InvoiceCollection, error) {
 	rows, err := x.f.Create(ctx, g)
-	return models.InvoiceCollectionOf(rows), err
+	return x.collection(rows), err
 }
 
 // CreateOne stores one row and returns it, whatever Count says.
@@ -96,6 +96,12 @@ func (x *InvoiceFactory) CreateOne(ctx context.Context, g auth.Grant) (*models.I
 	e, err := x.f.CreateOne(ctx, g)
 	row, _ := e.(*models.Invoice)
 	return row, err
+}
+
+// collection converts the rows the core factory returns. It is a method of
+// its own so that Create, which spends a Grant, calls nothing but the core.
+func (x *InvoiceFactory) collection(rows model.Rows) models.InvoiceCollection {
+	return models.InvoiceCollectionOf(rows)
 }
 
 // arandu:begin custom

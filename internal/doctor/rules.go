@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -14,6 +15,7 @@ import (
 	"github.com/arandu-io/aru/internal/gen"
 	"github.com/arandu-io/aru/internal/kyse"
 	"github.com/arandu-io/aru/internal/manifest"
+	"github.com/arandu-io/aru/internal/modelbuild"
 	"github.com/arandu-io/aru/internal/testlayout"
 )
 
@@ -71,6 +73,8 @@ var rules = []func(*project) []Finding{
 	theProfileIsDeclared,
 	queriesReachOneAggregate,
 	transactionsStayInsideOneAggregate,
+	modelQueryIsCurrent,
+	modelCoreStaysInTheModels,
 }
 
 // 0. A file doctor could not read makes every other rule unreliable.
@@ -4147,4 +4151,133 @@ func reversibleChange(f *file, fn *ast.FuncDecl) string {
 		})
 	})
 	return found
+}
+
+// 22. A generated query file that is not what its entity generates.
+//
+// modelQueryIsCurrent reports a generated query file that is missing, stale or
+// orphaned, and a factory model:build would render differently.
+//
+// It asks modelbuild.Plan, which is what `aru model:build --check` asks, so the
+// two cannot disagree about whether a project is up to date. An entity
+// model:build cannot generate from -- a struct with no table, a name the
+// package already uses -- is reported here too, at its line: it is the same
+// question, and the answer is that the file cannot be current.
+//
+// An error, because the file is Go the application imports: a build that did
+// not run model:build compiles against the query of an entity that no longer
+// looks like this one, and a missing one does not compile at all.
+//
+// A file that does not parse stops the plan, and is said once, as
+// file-does-not-parse; this rule says nothing then rather than guess.
+func modelQueryIsCurrent(p *project) []Finding {
+	changes, err := modelbuild.Plan(p.root)
+	var refused *modelbuild.Error
+	switch {
+	case errors.As(err, &refused):
+		return []Finding{{
+			Rule: "model-query-stale", Severity: Error,
+			File: refused.File, Line: refused.Line,
+			Message: "model:build cannot write the query of this entity: " + refused.Message,
+			Why: "the query file is generated from the entity and its table, and until it can be the entity has no " +
+				"typed query -- the code that uses it does not compile, or compiles against the last one written.",
+		}}
+	case err != nil:
+		return nil
+	}
+
+	var out []Finding
+	for _, c := range changes {
+		out = append(out, Finding{
+			Rule: "model-query-stale", Severity: Error,
+			File: c.Path, Line: 1,
+			Message: c.Path + " is " + c.Why + ": run aru model:build",
+			Why: "this file is generated from the entities of the project, and what is on disk is not what they " +
+				"generate. A build compiles what is on disk, so the application would run against the query of an " +
+				"entity that is not the one in the source. aru build and aru dev run model:build first; a pipeline " +
+				"that calls go build directly has to run it too, or check with aru model:build --check.",
+		})
+	}
+	return out
+}
+
+// 23. The model core reached from outside the package of the entity.
+//
+// modelCoreStaysInTheModels reports the model core used outside a package that
+// declares entities: a model.NewTable, or a method called on a *model.Table or
+// a *model.Builder -- including the one Base hands out.
+//
+// The core hands back model.Entity rows. Inside the package of the entity, the
+// generated query converts them, and a local scope written there returns the
+// typed query. Anywhere else there is nothing around the core but type
+// assertions, and a query written that way is a second way to reach the table:
+// one the typed surface does not describe, that the next model:build does not
+// follow, and that a reviewer looking for the generated calls does not see.
+//
+// Passing Base() along is not a use: the generated factory hands the builder
+// to the core factory without calling anything on it.
+//
+// It reads names, not types. A *model.Builder held in a parameter, a variable
+// or the result of Base is followed inside the function it was declared in;
+// one that travels through a struct field or a return value is not, and saying
+// so is better than implying a reach this does not have.
+func modelCoreStaysInTheModels(p *project) []Finding {
+	entityDirs := map[string]bool{}
+	entityImports := map[string]bool{}
+	for _, f := range p.files {
+		if declaresEntity(f) {
+			entityDirs[f.dir] = true
+			if p.modulePath != "" {
+				entityImports[p.modulePath+"/"+f.dir] = true
+			}
+		}
+	}
+
+	var out []Finding
+	for _, f := range p.files {
+		if entityDirs[f.dir] {
+			continue
+		}
+		core := f.imports[modelbuild.ModelPath]
+		// Base is a common method name, so a call through it is only read in
+		// a file that can reach an entity: one importing the core or a package
+		// that declares entities.
+		reachesEntities := core != ""
+		for path := range f.imports {
+			reachesEntities = reachesEntities || entityImports[path]
+		}
+		if !reachesEntities {
+			continue
+		}
+		report := func(n ast.Node, what string) {
+			out = append(out, Finding{
+				Rule: "model-core-outside-models", Severity: Error,
+				File: f.rel, Line: f.line(n),
+				Message: what + " outside a package that declares entities",
+				Why: "the model core hands back untyped rows, and only the package of the entity has the typed " +
+					"query around it. A query written on the core from here is a second way to reach the table, " +
+					"one the generated surface does not describe. Call the generated constructor -- models.Users(db) -- " +
+					"or write the query as a local scope in the custom block of the entity's file.",
+			})
+		}
+
+		ast.Inspect(f.ast, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.CallExpr:
+				if core != "" && isSelector(x.Fun, core, "NewTable") {
+					report(x, "model.NewTable is called")
+				}
+			case *ast.FuncDecl:
+				if x.Body != nil {
+					coreCallsIn(x.Type, x.Body, core, report)
+				}
+				return false
+			case *ast.FuncLit:
+				coreCallsIn(x.Type, x.Body, core, report)
+				return false
+			}
+			return true
+		})
+	}
+	return out
 }

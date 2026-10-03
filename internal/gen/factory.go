@@ -301,7 +301,7 @@ func (x *{{.Type}}) AfterCreating(fn func(context.Context, auth.Grant, *models.{
 // Make returns the rows without storing any of them.
 func (x *{{.Type}}) Make() (models.{{.Entity}}Collection, error) {
 	rows, err := x.f.Make()
-	return models.{{.Entity}}CollectionOf(rows), err
+	return x.collection(rows), err
 }
 
 // MakeOne returns one row without storing it, whatever Count says.
@@ -314,7 +314,7 @@ func (x *{{.Type}}) MakeOne() (*models.{{.Entity}}, error) {
 // Create stores the rows and returns them.
 func (x *{{.Type}}) Create(ctx context.Context, g auth.Grant) (models.{{.Entity}}Collection, error) {
 	rows, err := x.f.Create(ctx, g)
-	return models.{{.Entity}}CollectionOf(rows), err
+	return x.collection(rows), err
 }
 
 // CreateOne stores one row and returns it, whatever Count says.
@@ -322,6 +322,12 @@ func (x *{{.Type}}) CreateOne(ctx context.Context, g auth.Grant) (*models.{{.Ent
 	e, err := x.f.CreateOne(ctx, g)
 	row, _ := e.(*models.{{.Entity}})
 	return row, err
+}
+
+// collection converts the rows the core factory returns. It is a method of
+// its own so that Create, which spends a Grant, calls nothing but the core.
+func (x *{{.Type}}) collection(rows model.Rows) models.{{.Entity}}Collection {
+	return models.{{.Entity}}CollectionOf(rows)
 }
 
 // arandu:begin custom

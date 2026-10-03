@@ -11,10 +11,10 @@ AST and never runs the code, so it works on a project that does not compile —
 which is exactly when someone needs to be told what is wrong.
 
 ```sh
-awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 30  rule functions
+awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 32  rule functions
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/testlayout/testlayout.go \
-	| sort -u | wc -l                                                     # 40  names a report can carry
-grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go | sort -u | wc -l    # 36  of them declared here
+	| sort -u | wc -l                                                     # 42  names a report can carry
+grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go | sort -u | wc -l    # 38  of them declared here
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/testlayout/testlayout.go \
 	| sort -u | wc -l                                                     # 4  forwarded, declared there
 ```

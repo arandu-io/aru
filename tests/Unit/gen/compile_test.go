@@ -46,7 +46,7 @@ const generatedModulePath = "example.test/project"
 // a person. Keeping the literal here makes the generator harness compare its
 // dependency graph with the independently published project rather than with a
 // sibling checkout that a build agent does not have.
-const publishedSkeletonModule = "github.com/arandu-io/arandu@v0.29.0"
+const publishedSkeletonModule = "github.com/arandu-io/arandu@v0.29.1"
 
 // TestTheGeneratedModuleCompiles hands every generator's output to the Go
 // compiler.

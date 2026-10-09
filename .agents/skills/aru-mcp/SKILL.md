@@ -36,18 +36,22 @@ grep -c '"name":' internal/contract/contract.json   # recipes
    `routes/` (`untouchable`). The wiring a generator prints is returned for a
    person to paste, as in a terminal.
 
-## The contract is one file with three readers
+## The contract is one file with two readers
 
 `internal/contract/contract.json` is embedded. `where_does_it_go` and
-`feature_recipe` answer from it, the doctor attaches the card its rule
-verifies to each finding (`Finding.Contract`), and the skill `make:module`
-writes lists the cards of what a module is made of. Change a card there and
-all three move; never copy a card's text into one of them.
+`feature_recipe` answer from it, and the doctor attaches the card its rule
+verifies to each finding (`Finding.Contract`). Change a card there and both
+move; never copy a card's text into either. A recipe step that names a
+generator is one a person runs, and the code it leads to has to compile: the
+webhook recipe stores an event that a listener handles, because a service
+that dispatched a job would import `app/Jobs`, which imports `app/Services`
+as soon as a handler takes a service.
 
 Tests that hold it:
 
 - `tests/Unit/contract`: every rule a card names is a doctor rule; the six
-  recipes the decision names exist; no card teaches a bridge import.
+  recipes the decision names exist; no card teaches a bridge import; the
+  webhook recipe stores an event for a listener and dispatches no job.
 - `TestEveryGeneratorACardNamesIsACommand`: every generator a card or a
   recipe names is a command of this binary.
 

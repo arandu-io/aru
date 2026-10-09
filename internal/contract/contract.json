@@ -347,15 +347,23 @@
       "kind": "webhook",
       "title": "Received webhook",
       "path": "app/Http/Controllers/<Vendor>WebhookController.go",
-      "imports": [{"path": "github.com/arandu-io/hesape/webhook", "names": []}],
+      "imports": [{"path": "github.com/arandu-io/hesape/webhook", "names": ["Verify", "SecretSet"]}],
       "signature": "func (c *<Vendor>WebhookController) Store(ctx *hhttp.Context) error",
-      "calledBy": ["the router"],
-      "may": ["1. verify the signature with hesape/webhook", "2. record the delivery", "3. dispatch a job", "4. answer 2xx"],
-      "mayNot": ["process the payload in the request"],
+      "calledBy": ["the router, under a path CSRFExcept exempts in bootstrap/app.go"],
+      "may": [
+        "1. verify the signature over the raw body with webhook.Verify, before binding anything",
+        "2. bind the request from the same bytes",
+        "3. hand it to a service that stores an event in the outbox, inside database.Transaction, under the delivery id",
+        "4. answer 2xx; a listener does the processing after the commit"
+      ],
+      "mayNot": [
+        "process the payload in the request",
+        "dispatch a job from the service: a job whose handler takes services imports app/Services, so a service importing app/Jobs is an import cycle"
+      ],
       "errors": "a bad signature is refused before anything is recorded",
-      "generators": ["make:controller", "make:job"],
-      "example": "",
-      "verifiedBy": ["handler-reaches-data"]
+      "generators": ["make:controller", "make:request", "make:event", "make:listener"],
+      "example": "app/Http/Controllers/NewsletterWebhookController.go",
+      "verifiedBy": ["csrf-exempt-without-signature", "handler-reaches-data"]
     }
   ],
   "recipes": [
@@ -430,12 +438,12 @@
       "name": "webhook",
       "title": "A received webhook",
       "steps": [
-        "a controller verifies the signature with hesape/webhook",
-        "it records the delivery",
-        "it dispatches a job (aru make:job)",
-        "it answers 2xx; the job does the processing"
+        "aru make:controller <Vendor>Webhook: one action that verifies the signature over the raw body with webhook.Verify before anything else, on a route under a prefix CSRFExcept exempts in bootstrap/app.go",
+        "aru make:event <Vendor><Fact> --aggregate=<vendor>_delivery: the service the controller hands the delivery to stores it with outbox.Store inside database.Transaction, under the delivery id, as the command prints",
+        "aru make:listener <Name> --event=<vendor>_delivery.<fact>: add it to listeners.Each in bootstrap/app.go; it does the processing after the commit, retried by the relay, and keys on the delivery id because delivery is at-least-once",
+        "the controller answers 2xx as soon as the event is stored; the service dispatches no job, because app/Jobs imports app/Services once a handler takes a service and the reverse import is a cycle"
       ],
-      "cards": ["webhook", "job", "service"]
+      "cards": ["webhook", "event", "listener", "service"]
     },
     {
       "name": "integration",

@@ -69,9 +69,10 @@ func TestAFindingCarriesTheCardItsRuleVerifies(t *testing.T) {
 		seen[f.Rule] = f.Contract
 	}
 	for rule, kind := range map[string]string{
-		"handler-reaches-data":         "controller",
-		"sensitive-field-not-redacted": "model",
-		"client-outside-clients":       "client",
+		"handler-reaches-data":          "controller",
+		"sensitive-field-not-redacted":  "model",
+		"client-outside-clients":        "client",
+		"csrf-exempt-without-signature": "webhook",
 	} {
 		got, fired := seen[rule]
 		if !fired {
@@ -81,5 +82,45 @@ func TestAFindingCarriesTheCardItsRuleVerifies(t *testing.T) {
 		if got != kind {
 			t.Errorf("%s carries the card %q, want %q", rule, got, kind)
 		}
+	}
+}
+
+// TestTheWebhookRecipeStoresAnEventAndDispatchesNoJob: a received webhook is
+// verified, stored as an event in the outbox and handled by a listener after
+// the commit. The recipe used to have the service dispatch a job, and a job
+// whose handler takes a service imports app/Services: the service importing
+// app/Jobs back is an import cycle, so the recipe taught code that does not
+// compile once any job takes a service.
+func TestTheWebhookRecipeStoresAnEventAndDispatchesNoJob(t *testing.T) {
+	r, ok := contract.RecipeNamed("webhook")
+	if !ok {
+		t.Fatal("no webhook recipe")
+	}
+	steps := strings.Join(r.Steps, "\n")
+	for _, want := range []string{"webhook.Verify", "CSRFExcept", "aru make:event", "outbox.Store", "database.Transaction", "aru make:listener", "listeners.Each"} {
+		if !strings.Contains(steps, want) {
+			t.Errorf("the webhook recipe does not say %q:\n%s", want, steps)
+		}
+	}
+	for _, step := range r.Steps {
+		if strings.HasPrefix(step, "aru make:job") || strings.Contains(step, "dispatches a job") {
+			t.Errorf("the webhook recipe has the service dispatch a job: %q", step)
+		}
+	}
+	if strings.Join(r.Cards, ",") != "webhook,event,listener,service" {
+		t.Errorf("the webhook recipe touches %v, want webhook, event, listener and service", r.Cards)
+	}
+
+	card, _ := contract.Lookup("webhook")
+	if strings.Join(card.Generators, ",") != "make:controller,make:request,make:event,make:listener" {
+		t.Errorf("the webhook card names the generators %v", card.Generators)
+	}
+	for _, step := range card.May {
+		if strings.Contains(step, "job") {
+			t.Errorf("the webhook card may %q", step)
+		}
+	}
+	if verified, _ := contract.ForRule("csrf-exempt-without-signature"); verified.Kind != "webhook" {
+		t.Errorf("csrf-exempt-without-signature verifies the card %q, want webhook", verified.Kind)
 	}
 }

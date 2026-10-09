@@ -160,15 +160,20 @@ func RenderTest(m Module) (File, error) {
 // own: the command that writes four things and the command that writes one are
 // the same code path with a different struct, so a part cannot behave
 // differently depending on how it was asked for.
-type ModelParts struct{ Migration, Factory, Seeder, Policy, Request bool }
+//
+// Service has no flag of its own. A service needs the policy and the request
+// it joins, so it is written only when both are -- which is what --all asks
+// for -- and the controller is then built with it.
+type ModelParts struct{ Migration, Factory, Seeder, Policy, Request, Controller, Service bool }
 
 // Everything is ModelParts with every part set, which is what --all means.
 //
-// It is the data side of a module and not the module: `aru make:module` writes
-// the controller, the service, the views and the route wiring as well, and this
-// writes what belongs to the entity itself.
+// It is the entity and the path to it, and not the module: `aru make:module`
+// writes the screens, the actions behind them and the module's own skill as
+// well. The controller here is the resource controller whose seven actions
+// answer 501 until they are written, built with the service.
 func Everything() ModelParts {
-	return ModelParts{Migration: true, Factory: true, Seeder: true, Policy: true, Request: true}
+	return ModelParts{Migration: true, Factory: true, Seeder: true, Policy: true, Request: true, Controller: true, Service: true}
 }
 
 // GenerateModel produces the model, and the parts the flags asked for.
@@ -234,6 +239,9 @@ func GenerateModel(m Module, parts ModelParts) ([]File, error) {
 	// `aru make:module` renders, for the reason the model is: a policy written
 	// by one command and a policy written by the other would be two shapes of
 	// one file, and the second one to change would be the one nobody noticed.
+	if parts.Service && !(parts.Policy && parts.Request) {
+		return nil, fmt.Errorf("a service joins the policy and the request, so it is written with both")
+	}
 	for _, t := range []struct {
 		want bool
 		path string
@@ -241,6 +249,7 @@ func GenerateModel(m Module, parts ModelParts) ([]File, error) {
 	}{
 		{parts.Policy, filepath.Join("app", "Policies", m.Entity()+"Policy.go"), policyTemplate},
 		{parts.Request, filepath.Join("app", "Http", "Requests", m.Entity()+"Request.go"), requestTemplate + requestRulesTemplate},
+		{parts.Service, filepath.Join("app", "Services", m.Entity()+"Service.go"), serviceTemplate + serviceBlocks},
 	} {
 		if !t.want {
 			continue
@@ -251,7 +260,31 @@ func GenerateModel(m Module, parts ModelParts) ([]File, error) {
 		}
 		out = append(out, File{Path: t.path, Content: content})
 	}
+
+	// The controller is the one `aru make:controller --resource` writes, from
+	// the same template: seven actions answering 501, built with the service
+	// when there is one.
+	if parts.Controller {
+		files, err := GenerateController(m.ControllerStub(parts.Service))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, files...)
+	}
 	return out, nil
+}
+
+// ControllerStub is the resource controller of the entity, as `aru make:model
+// --controller` and `aru make:controller --resource` write it, built with the
+// entity's service when withService is set.
+func (m Module) ControllerStub(withService bool) Stub {
+	s := Stub{
+		Type: m.Controller(), ModulePath: m.ModulePath, Resource: m.Resource(), Entity: m.Entity(), Kind: KindResource,
+	}
+	if withService {
+		s.Service = m.ServiceType()
+	}
+	return s
 }
 
 // renderModelQuery is the module's app/Models/<Entity>Query.go.

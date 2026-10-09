@@ -57,4 +57,17 @@ func (p PurchaseOrder) LogValue() slog.Value {
 // Local scopes are methods on *PurchaseOrderQuery, relations are registered
 // on purchaseOrderTable in an init function, and MarshalJSON, computed fields
 // and anything else about this entity go here too.
+//
+// So do the rules of the entity itself: an invariant, a derived value, a
+// transition that changes only this row's fields. They are pure -- no
+// database, no network, no Grant, and no clock read here: the time is an
+// argument -- and the service calls them between the policy and the save.
+//
+//	func (p *PurchaseOrder) Approve(at time.Time) error {
+//		if !p.ApprovedAt.IsZero() {
+//			return errors.New("this purchase order is already approved")
+//		}
+//		p.ApprovedAt = at
+//		return nil
+//	}
 // arandu:end custom

@@ -134,10 +134,10 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 	one("aru make:test PurchaseOrder", func() (gen.File, error) { return gen.RenderTest(tenantModule) })
 	one("aru make:test StockItem", func() (gen.File, error) { return gen.RenderTest(globalModule) })
 
-	// make:model --all, which is the data half of a module: the model, the
-	// migration, the factory, the seeder, the policy and the request. It is a
-	// separate path through the same templates and it emits two files no module
-	// emits at all.
+	// make:model --all: the model, the migration, the factory, the seeder,
+	// the policy, the request, the service and a resource controller built
+	// with it. It is a separate path through the same templates, and it emits
+	// files no module emits at all.
 	model := compiled("warehouse", true)
 	emit("aru make:model warehouse --all --tenant", func() ([]gen.File, error) {
 		return gen.GenerateModel(model, gen.Everything())

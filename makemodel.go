@@ -13,16 +13,16 @@ import (
 // beside the long ones: a flag the usage line leaves out is one nobody finds
 // without reading the source.
 const makeModelUsage = `aru make:model <Name> --fields "reference:string!u,total:money" [--tenant] ` +
-	`[-m|--migration] [-f|--factory] [-s|--seed] [--policy] [--requests] [-a|--all] [--force] [--dry-run]`
+	`[-m|--migration] [-f|--factory] [-s|--seed] [--policy] [--requests] [-c|--controller] [-a|--all] [--force] [--dry-run]`
 
 // makeModel writes the entity, and the parts the flags ask for.
 //
 // It is for somebody porting forty models who wants the struct and the migration
-// in one gesture. --all is the data side of an entity -- migration, factory,
-// seeder, policy and request -- and `aru make:module` is the whole feature, with
-// the controller, the service, the views and the route wiring besides. The two
-// are not two ways to write one thing: one writes an entity and the other writes
-// a feature.
+// in one gesture. --all is the entity and the path to it -- migration, factory,
+// seeder, policy, request, service and a resource controller whose actions
+// answer 501 -- and `aru make:module` is the whole feature, with the screens and
+// the actions behind them besides. The two are not two ways to write one thing:
+// one writes the path and leaves the actions to you, the other writes them.
 //
 // Neither command writes a Repository for CRUD. The Model is the data entry
 // point, and the output of this command is the cheapest place there is to teach
@@ -37,7 +37,8 @@ func makeModel(args []string, stdout, stderr io.Writer) error {
 	withSeeder := fs.Bool("seed", false, "also write the seeder that fills the table")
 	withPolicy := fs.Bool("policy", false, "also write the policy that decides who may reach the entity")
 	withRequests := fs.Bool("requests", false, "also write the request that validates the input")
-	all := fs.Bool("all", false, "write the migration, factory, seeder, policy and request as well")
+	withController := fs.Bool("controller", false, "also write the resource controller, its seven actions answering 501")
+	all := fs.Bool("all", false, "write the migration, factory, seeder, policy, request, service and controller as well")
 	force := fs.Bool("force", false, "overwrite existing files, preserving the custom blocks")
 	dryRun := fs.Bool("dry-run", false, "print what would be written, and write nothing")
 
@@ -48,6 +49,7 @@ func makeModel(args []string, stdout, stderr io.Writer) error {
 	fs.BoolVar(withMigration, "m", false, "short for --migration")
 	fs.BoolVar(withFactory, "f", false, "short for --factory")
 	fs.BoolVar(withSeeder, "s", false, "short for --seed")
+	fs.BoolVar(withController, "c", false, "short for --controller")
 	fs.BoolVar(all, "a", false, "short for --all")
 
 	name, args := takeName(args)
@@ -83,11 +85,12 @@ func makeModel(args []string, stdout, stderr io.Writer) error {
 	}
 
 	parts := gen.ModelParts{
-		Migration: *withMigration,
-		Factory:   *withFactory,
-		Seeder:    *withSeeder,
-		Policy:    *withPolicy,
-		Request:   *withRequests,
+		Migration:  *withMigration,
+		Factory:    *withFactory,
+		Seeder:     *withSeeder,
+		Policy:     *withPolicy,
+		Request:    *withRequests,
+		Controller: *withController,
 	}
 	if *all {
 		parts = gen.Everything()
@@ -122,37 +125,45 @@ func makeModel(args []string, stdout, stderr io.Writer) error {
 		return nil
 	}
 
-	fmt.Fprint(stdout, modelWiring(spec, parts.Migration))
+	fmt.Fprint(stdout, modelWiring(spec, parts))
 	return nil
 }
 
 // modelWiring is the part of this command that matters most: it names, in one
-// screen, the difference between the data side of an entity and a whole
-// feature.
-func modelWiring(m gen.Module, migration bool) string {
+// screen, the difference between the entity and a whole feature, and the lines
+// to paste for what was written.
+func modelWiring(m gen.Module, parts gen.ModelParts) string {
 	out := fmt.Sprintf(`
 A model here is data plus its Hesape Model entry point. Rows returned by a query
 carry their connection and can be saved again. Application use cases reach that
-persistence through a Service, after a Policy issues a security.Grant.
+persistence through a Service, after a Policy issues an auth.Grant.
 
 What writes the whole feature:
 
     aru make:module %s --fields "..."
         a Model-backed entity, policy, service, request, controller, migration,
-        four screens and test
+        four screens and test -- every action written, where this command
+        leaves the controller's seven answering 501
 
     aru make:policy %s
         the policy alone, for a use-case path written by hand
 
 A Repository remains available for a complex query, read model or report; the
 generated CRUD path uses the Model directly.
-
---all writes the data side of the entity -- migration, factory, seeder, policy
-and request. It is not a smaller make:module: the controller, the service, the
-screens and the route wiring are the feature, and this is the entity.
 `, m.Name, m.Name)
 
-	if migration {
+	if parts.Controller {
+		stub := m.ControllerStub(parts.Service)
+		out += wiringController(stub, m)
+		out += fmt.Sprintf(`
+Put the route behind the sign-in guard, as every resource that reads who is
+asking is:
+
+      r.Group("", middleware.RequireAuth(d.Sessions)).Resource(%q, d.%s)
+`, m.Resource(), m.Entity())
+	}
+
+	if parts.Migration {
 		out += fmt.Sprintf(`
 The migration is written and not applied. Nothing has to list it: %s registers
 itself in its own init, in database/migrations. What it needs is to be linked --

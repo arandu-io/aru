@@ -81,6 +81,19 @@ func ({{.Receiver}} {{.Entity}}) LogValue() slog.Value {
 // Local scopes are methods on *{{.Entity}}Query, relations are registered
 // on {{.TableVar}} in an init function, and MarshalJSON, computed fields
 // and anything else about this entity go here too.
+//
+// So do the rules of the entity itself: an invariant, a derived value, a
+// transition that changes only this row's fields. They are pure -- no
+// database, no network, no Grant, and no clock read here: the time is an
+// argument -- and the service calls them between the policy and the save.
+//
+//	func ({{.Receiver}} *{{.Entity}}) Approve(at time.Time) error {
+//		if !{{.Receiver}}.ApprovedAt.IsZero() {
+//			return errors.New("this {{.Human}} is already approved")
+//		}
+//		{{.Receiver}}.ApprovedAt = at
+//		return nil
+//	}
 // arandu:end custom
 `
 

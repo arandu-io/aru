@@ -9,15 +9,16 @@ import (
 	"github.com/arandu-io/aru/internal/gen"
 )
 
-// TestEverythingWritesTheDataSideAndNothingElse.
+// TestEverythingWritesTheEntityAndThePathToIt.
 //
-// --all is the entity: the migration that creates its table, the factory that
-// builds it, the seeder that fills it, the policy that decides who may reach it,
-// and the request that validates the input. It is not a smaller make:module --
-// the controller, the service, the views and the route wiring are the feature,
-// and a --all that wrote them would be a second spelling of a command that
-// already exists.
-func TestEverythingWritesTheDataSideAndNothingElse(t *testing.T) {
+// --all is the entity and the path a request takes to it: the migration that
+// creates its table, the factory that builds it, the seeder that fills it, the
+// policy that decides who may reach it, the request that validates the input,
+// the service that joins them, and a resource controller built with that
+// service whose seven actions answer 501. It is still not make:module: no
+// screen, no action written, no skill -- and no Repository, which the CRUD
+// path does not have whichever command writes it.
+func TestEverythingWritesTheEntityAndThePathToIt(t *testing.T) {
 	files, err := gen.GenerateModel(invoiceModule(), gen.Everything())
 	if err != nil {
 		t.Fatalf("GenerateModel: %v", err)
@@ -30,10 +31,12 @@ func TestEverythingWritesTheDataSideAndNothingElse(t *testing.T) {
 	slices.Sort(got)
 
 	want := []string{
+		"app/Http/Controllers/InvoiceController.go",
 		"app/Http/Requests/InvoiceRequest.go",
 		"app/Models/Invoice.go",
 		"app/Models/InvoiceQuery.go",
 		"app/Policies/InvoicePolicy.go",
+		"app/Services/InvoiceService.go",
 		"database/factories/InvoiceFactory.go",
 		"database/migrations/2026_08_07_000001_create_invoices_table.go",
 		"database/seeders/InvoiceSeeder.go",
@@ -41,14 +44,37 @@ func TestEverythingWritesTheDataSideAndNothingElse(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("--all wrote\n  %s\nwant\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))
 	}
-
-	// Repositories is checked explicitly so this granular path cannot revive the
-	// generated CRUD layer. Controllers and Services belong only to the whole
-	// feature written by make:module.
 	for _, f := range got {
-		if strings.Contains(f, "Repositories") || strings.Contains(f, "Controllers") || strings.Contains(f, "Services") {
-			t.Errorf("--all wrote %s, which belongs to make:module", f)
+		if strings.Contains(f, "Repositories") || strings.Contains(f, "resources/views") || strings.Contains(f, "SKILL.md") {
+			t.Errorf("--all wrote %s, which belongs to make:module or to nobody", f)
 		}
+	}
+
+	// The service is make:module's, byte for byte: one template, so the
+	// mandatory path cannot be written two ways depending on the command.
+	fromModule, err := gen.Generate(invoiceModule())
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	find := func(files []gen.File, path string) string {
+		for _, f := range files {
+			if filepath.ToSlash(f.Path) == path {
+				return string(f.Content)
+			}
+		}
+		return ""
+	}
+	if find(files, "app/Services/InvoiceService.go") != find(fromModule, "app/Services/InvoiceService.go") {
+		t.Error("make:model --all and make:module write different services for one entity")
+	}
+}
+
+// TestAServiceIsNotWrittenWithoutWhatItJoins: the service calls the policy
+// and takes the request, so a part set that asks for it without both is
+// refused rather than written as a file that does not compile.
+func TestAServiceIsNotWrittenWithoutWhatItJoins(t *testing.T) {
+	if _, err := gen.GenerateModel(invoiceModule(), gen.ModelParts{Service: true, Policy: true}); err == nil {
+		t.Error("a service was written without the request it takes")
 	}
 }
 
@@ -67,6 +93,7 @@ func TestEachPartIsOneFile(t *testing.T) {
 		{"seeder", gen.ModelParts{Seeder: true}, "database/seeders/InvoiceSeeder.go"},
 		{"policy", gen.ModelParts{Policy: true}, "app/Policies/InvoicePolicy.go"},
 		{"request", gen.ModelParts{Request: true}, "app/Http/Requests/InvoiceRequest.go"},
+		{"controller", gen.ModelParts{Controller: true}, "app/Http/Controllers/InvoiceController.go"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			files, err := gen.GenerateModel(invoiceModule(), c.parts)

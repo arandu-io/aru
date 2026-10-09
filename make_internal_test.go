@@ -170,7 +170,7 @@ func TestTheSeederWiringNamesTheDeclaredType(t *testing.T) {
 func TestTheModelMessageNamesTheTwoCommandsThatReachTheTable(t *testing.T) {
 	m := gen.Module{Name: "invoice", Fields: []gen.Field{{Name: "reference", Type: gen.TypeString}},
 		ModulePath: "example.test/project", Date: "2026_08_07"}
-	message := modelWiring(m, true)
+	message := modelWiring(m, gen.ModelParts{Migration: true})
 
 	for _, want := range []string{"aru make:module invoice", "aru make:policy invoice", "CreateInvoicesTable registers"} {
 		if !strings.Contains(message, want) {
@@ -187,8 +187,47 @@ func TestTheModelMessageNamesTheTwoCommandsThatReachTheTable(t *testing.T) {
 	}
 	// Without --migration there is no migration, and a message that talked about
 	// one would send you looking for a file that is not there.
-	if strings.Contains(modelWiring(m, false), "CreateInvoicesTable") {
+	if strings.Contains(modelWiring(m, gen.ModelParts{}), "CreateInvoicesTable") {
 		t.Error("the message names a migration the command did not write")
+	}
+}
+
+// TestTheModelMessageWiresTheControllerItWrote: --all writes the service and
+// a controller built with it, so the bootstrap line has to construct both --
+// a controller pasted without its service would leave the service nothing
+// calls -- and -c alone writes a controller that takes nothing.
+func TestTheModelMessageWiresTheControllerItWrote(t *testing.T) {
+	m := gen.Module{Name: "invoice", Fields: []gen.Field{{Name: "reference", Type: gen.TypeString}},
+		ModulePath: "example.test/project", Date: "2026_08_07"}
+
+	all := modelWiring(m, gen.Everything())
+	for _, want := range []string{
+		"Invoice: controllers.NewInvoiceController(services.NewInvoiceService(db)),",
+		`r.Group("", middleware.RequireAuth(d.Sessions)).Resource("invoices", d.Invoice)`,
+	} {
+		if !strings.Contains(all, want) {
+			t.Errorf("the --all message does not say %q:\n%s", want, all)
+		}
+	}
+	files, err := gen.GenerateModel(m, gen.Everything())
+	if err != nil {
+		t.Fatalf("GenerateModel: %v", err)
+	}
+	declared := map[string]string{}
+	for _, f := range files {
+		declared[filepath.ToSlash(f.Path)] = string(f.Content)
+	}
+	if !strings.Contains(declared["app/Http/Controllers/InvoiceController.go"],
+		"func NewInvoiceController(svc *services.InvoiceService) *InvoiceController") {
+		t.Error("--all wrote a controller that does not take the service the message passes it")
+	}
+	if !strings.Contains(declared["app/Services/InvoiceService.go"], "func NewInvoiceService(db *database.DB) *InvoiceService") {
+		t.Error("--all wrote no service of the shape the message constructs")
+	}
+
+	alone := modelWiring(m, gen.ModelParts{Controller: true})
+	if !strings.Contains(alone, "Invoice: controllers.NewInvoiceController(),") || strings.Contains(alone, "services.New") {
+		t.Errorf("-c alone wires a service it did not write:\n%s", alone)
 	}
 }
 

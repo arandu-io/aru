@@ -67,7 +67,7 @@ func TestThePublicModuleContractIsModelFirst(t *testing.T) {
 		text := oneLine(out)
 		for _, want := range []string{
 			"A model here is data plus its Hesape Model entry point.",
-			"Application use cases reach that persistence through a Service, after a Policy issues a security.Grant.",
+			"Application use cases reach that persistence through a Service, after a Policy issues an auth.Grant.",
 			"a Model-backed entity, policy, service, request, controller, migration, four screens and test",
 		} {
 			if !strings.Contains(text, want) {

@@ -340,8 +340,8 @@ func TestEveryGrantConstructorIsGuarded(t *testing.T) {
 	found := map[string]string{} // import path + symbol -> file
 	var read int
 	for _, module := range []string{"framework", "hesape"} {
-		root := filepath.Join("..", "..", "..", module)
-		if _, err := os.Stat(root); err != nil {
+		root, checkedOut := siblingCheckout(module)
+		if !checkedOut {
 			t.Logf("%s is not checked out next to this repository", module)
 			continue
 		}
@@ -450,6 +450,23 @@ func TestAGrantConstructorIsResolvedThroughTheImportBlock(t *testing.T) {
 			t.Errorf("grantConstructor(%q) = %q, want %q: %s", c.called, got.name, c.want, c.why)
 		}
 	}
+}
+
+// siblingCheckout is the directory of a module checked out next to this
+// repository, with a symbolic link at that place resolved.
+//
+// filepath.WalkDir does not follow a link it is handed as its root: it reads
+// the link itself, visits it as a file and stops, so a sibling that is a link
+// to the real checkout -- the layout of a worktree that shares one -- read as a
+// module with no files in it, and every test below reported that it had
+// stopped testing anything.
+func siblingCheckout(module string) (string, bool) {
+	root, err := filepath.EvalSymlinks(filepath.Join("..", "..", "..", module))
+	if err != nil {
+		return "", false
+	}
+	info, err := os.Stat(root)
+	return root, err == nil && info.IsDir()
 }
 
 // importPathOf is the import path of a directory inside a checked-out module.
@@ -711,8 +728,8 @@ func TestEverySessionCallTheRuleAcceptsExists(t *testing.T) {
 	found := map[string][]string{} // method -> files declaring it
 	var read int
 	for _, module := range []string{"framework", "hesape"} {
-		root := filepath.Join("..", "..", "..", module)
-		if _, err := os.Stat(root); err != nil {
+		root, checkedOut := siblingCheckout(module)
+		if !checkedOut {
 			t.Logf("%s is not checked out next to this repository", module)
 			continue
 		}

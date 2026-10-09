@@ -4,7 +4,6 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -21,8 +20,8 @@ import (
 // bridge carries -- what to import instead -- is the one statement both sides
 // agree to keep, so it is what this reads.
 func TestEveryBridgeIsMapped(t *testing.T) {
-	root := filepath.Join("..", "..", "..", "framework")
-	if _, err := os.Stat(root); err != nil {
+	root, checkedOut := siblingCheckout("framework")
+	if !checkedOut {
 		t.Skip("framework is not checked out next to this repository")
 	}
 

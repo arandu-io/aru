@@ -33,9 +33,9 @@ import (
 // The cost is that these three lines go stale the day the skeleton moves, and
 // that is what TestThePinnedTagsMatchTheSkeleton answers.
 var published = map[string]string{
-	"github.com/arandu-io/framework": "v0.53.0",
+	"github.com/arandu-io/framework": "v0.54.0",
 	"github.com/arandu-io/hesape":    "v0.50.3",
-	"github.com/arandu-io/kyse":      "v0.30.0",
+	"github.com/arandu-io/kyse":      "v0.32.0",
 }
 
 // generatedModulePath is the module path the fixtures already generate imports
@@ -47,7 +47,7 @@ const generatedModulePath = "example.test/project"
 // a person. Keeping the literal here makes the generator harness compare its
 // dependency graph with the independently published project rather than with a
 // sibling checkout that a build agent does not have.
-const publishedSkeletonModule = "github.com/arandu-io/arandu@v0.32.0"
+const publishedSkeletonModule = "github.com/arandu-io/arandu@v0.33.0"
 
 // TestTheGeneratedModuleCompiles hands every generator's output to the Go
 // compiler.

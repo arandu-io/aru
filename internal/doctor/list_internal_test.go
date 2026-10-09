@@ -23,7 +23,15 @@ import (
 // left behind by a deleted rule, and a severity changed in one place and not
 // the other all fail, naming the rule.
 func TestTheListIsWhatTheSourceReports(t *testing.T) {
-	reported := severitiesInSource(t, "rules.go")
+	reported := map[string][]Severity{}
+	for _, path := range ruleFiles {
+		for name, severities := range severitiesInSource(t, path) {
+			if _, twice := reported[name]; twice && name != "" {
+				t.Errorf("%s is constructed in more than one of %v", name, ruleFiles)
+			}
+			reported[name] = severities
+		}
+	}
 	forwarded := declaredRuleNames(t, "../testlayout/testlayout.go")
 	borrowed, ok := reported[""]
 	if !ok || len(forwarded) == 0 {

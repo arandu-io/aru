@@ -11,10 +11,11 @@ AST and never runs the code, so it works on a project that does not compile —
 which is exactly when someone needs to be told what is wrong.
 
 ```sh
-awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 35  rule functions
-grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/testlayout/testlayout.go \
-	| sort -u | wc -l                                                     # 45  names a report can carry
-grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go | sort -u | wc -l    # 41  of them declared here
+awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 54  rule functions
+grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/doctor/structure.go \
+	internal/testlayout/testlayout.go | sort -u | wc -l                   # 64  names a report can carry
+grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/doctor/structure.go \
+	| sort -u | wc -l                                                     # 60  of them declared here
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/testlayout/testlayout.go \
 	| sort -u | wc -l                                                     # 4  forwarded, declared there
 ```
@@ -107,15 +108,15 @@ the CLI accepts the fixture as a project:
 ```sh
 cp -R internal/doctor/testdata/violations /tmp/viol && touch /tmp/viol/arandu.toml
 (cd /tmp/viol && /tmp/aru-src doctor > /tmp/viol.out 2>&1); echo $?   # 1
-tail -1 /tmp/viol.out                                                 # 39 error(s), 44 warning(s)
-grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 38
+tail -1 /tmp/viol.out                                                 # 39 error(s), 68 warning(s)
+grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 57
 ```
 
 `violations` carries a `vendor/` directory holding a slice of the framework:
 the bridge packages it imports, declared the way the framework declares them.
 `import-not-canonical` decides from the framework's own source, at the version
 go.mod requires, and a vendor directory is the one place that source can sit
-inside a fixture and survive the `cp -R` above. Sixteen of the forty-four
+inside a fixture and survive the `cp -R` above. Sixteen of the sixty-eight
 warnings are that rule. The other fixtures require a framework version no
 module cache here holds, so the rule is silent on them -- which is its declared
 limit, not an accident.
@@ -202,7 +203,7 @@ deliberate two-line diff, not like a line that quietly disappeared.
 
 **5b. Add it to `catalogue` in `internal/doctor/list.go`**, with its severity
 and, for a profile rule, its profile. `TestTheListIsWhatTheSourceReports` reads
-every `Finding` literal in `rules.go` and fails on a name or a severity the list
+every `Finding` literal in `rules.go` and `structure.go` and fails on a name or a severity the list
 does not carry, in either direction, and on a rule listed out of the order the
 slice runs them.
 

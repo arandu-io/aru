@@ -56,6 +56,22 @@
     "why": "keeping the pre-login id is session fixation: an attacker plants a known id and inherits the session once the victim signs in. After Authenticate, call Regenerate with the id the request arrived with -- SessionStore spells the same call Rotate. Start is not enough: it takes no old id, so it mints a new one and leaves the planted record readable."
   },
   {
+    "rule": "input-read-by-hand",
+    "severity": "warning",
+    "file": "app/Http/Controllers/Auth/LoginController.go",
+    "line": 20,
+    "message": "LoginController.Login reads the request by hand: ctx.Input (x2)",
+    "why": "a field read here is a second request type that the service, a job and a command cannot share, and a field that is missing arrives as an empty string instead of a message. Declare the fields on the struct in app/Http/Requests with form tags and call ctx.Bind(\u0026in)."
+  },
+  {
+    "rule": "redirect-to-literal-path",
+    "severity": "warning",
+    "file": "app/Http/Controllers/Auth/LoginController.go",
+    "line": 23,
+    "message": "this redirect is written as the path \"/\"",
+    "why": "a path written here is a second copy of the route table: when the route moves or gains a prefix, this still compiles and sends the person to a 404. Use ctx.RedirectRoute with the route's name."
+  },
+  {
     "rule": "handler-reaches-data",
     "severity": "error",
     "file": "app/Http/Controllers/BillingController.go",
@@ -200,6 +216,94 @@
     "why": "it is the one way past a policy, and its call sites are the audit. If this is a request path, the Grant should come from security.Authorize instead. If the escape is deliberate, write `//arandu:system-grant \u003creason\u003e` on the line, so the reason is read in review rather than inferred from the function name."
   },
   {
+    "rule": "controller-too-many-actions",
+    "severity": "warning",
+    "file": "app/Http/Controllers/ChargeController.go",
+    "line": 21,
+    "message": "ChargeController has 13 actions, past the 12 this report starts at",
+    "why": "a count is where to look, not proof: a controller this size is usually several resources registered by hand, whose routes, policies and views are found only by reading all of it. Split it by resource -- a nested resource, a singleton, or an invokable controller for an action that stands alone."
+  },
+  {
+    "rule": "generated-not-wired",
+    "severity": "warning",
+    "file": "app/Http/Controllers/ChargeController.go",
+    "line": 28,
+    "message": "NewChargeController is never called: bootstrap and routes do not construct it, and nothing else does",
+    "why": "code nothing constructs is code the router never reaches: its tests pass and a change to it changes nothing anybody sees. Paste the wiring make:module printed into bootstrap/app.go and routes/web.go, or delete what nothing reaches."
+  },
+  {
+    "rule": "input-read-by-hand",
+    "severity": "warning",
+    "file": "app/Http/Controllers/ChargeController.go",
+    "line": 35,
+    "message": "ChargeController.Store reads the request by hand: ctx.Input, ctx.Request.FormValue",
+    "why": "a field read here is a second request type that the service, a job and a command cannot share, and a field that is missing arrives as an empty string instead of a message. Declare the fields on the struct in app/Http/Requests with form tags and call ctx.Bind(\u0026in)."
+  },
+  {
+    "rule": "validate-called-by-controller",
+    "severity": "warning",
+    "file": "app/Http/Controllers/ChargeController.go",
+    "line": 36,
+    "message": "ChargeController.Store validates the request itself: in.Validate",
+    "why": "a job or a command that calls the same service has no controller in front of it, so it skips this validation or repeats it. Pass the bound request to the service and call Validate() at the start of the service method; the router answers the validation.Errors it returns."
+  },
+  {
+    "rule": "invalid-form-answered-by-hand",
+    "severity": "warning",
+    "file": "app/Http/Controllers/ChargeController.go",
+    "line": 44,
+    "message": "ChargeController.Reject answers a rejected form with 422 itself",
+    "why": "htmx discards a 422 swap by default, so the person sees the form unchanged, and a reload of the answer submits the form again. Return the validation.Errors: the router redirects back with what was typed and the messages in the flash."
+  },
+  {
+    "rule": "json-written-by-hand",
+    "severity": "warning",
+    "file": "app/Http/Controllers/ChargeController.go",
+    "line": 50,
+    "message": "ChargeController.Export writes the response by hand: json.NewEncoder",
+    "why": "the body and the error format chosen here are this handler's alone, so a client learns one shape per endpoint and an error escapes the problem+json the router writes. Return ctx.JSON with a JsonResource, and return the error instead of writing it."
+  },
+  {
+    "rule": "session-loaded-in-controller",
+    "severity": "warning",
+    "file": "app/Http/Controllers/ChargeController.go",
+    "line": 55,
+    "message": "ChargeController.Show loads the session itself: c.sessions.Load",
+    "why": "the route guard already loaded the session and put the subject on the request, so this is a second place that decides who is signed in and what an expired session answers. Put the route behind the auth guard and read the subject with ctx.User()."
+  },
+  {
+    "rule": "fragment-without-partial",
+    "severity": "warning",
+    "file": "app/Http/Controllers/ChargeController.go",
+    "line": 63,
+    "message": "ctx.Fragment answers \"billing.index\", which is not in resources/views/partials",
+    "why": "a fragment is a piece a page includes, so page and fragment render one template; a view outside partials/ answered as a fragment is a whole page swapped into an element, or a status chosen by hand. Move it to resources/views/partials/ and @include it, and answer pages with ctx.View."
+  },
+  {
+    "rule": "redirect-to-literal-path",
+    "severity": "warning",
+    "file": "app/Http/Controllers/ChargeController.go",
+    "line": 68,
+    "message": "this redirect is written as the path \"/charges/\"",
+    "why": "a path written here is a second copy of the route table: when the route moves or gains a prefix, this still compiles and sends the person to a 404. Use ctx.RedirectRoute with the route's name."
+  },
+  {
+    "rule": "input-read-by-hand",
+    "severity": "warning",
+    "file": "app/Http/Controllers/ChargeController.go",
+    "line": 73,
+    "message": "ChargeController.Act reads the request by hand: ctx.Input",
+    "why": "a field read here is a second request type that the service, a job and a command cannot share, and a field that is missing arrives as an empty string instead of a message. Declare the fields on the struct in app/Http/Requests with form tags and call ctx.Bind(\u0026in)."
+  },
+  {
+    "rule": "operation-chosen-by-form-field",
+    "severity": "warning",
+    "file": "app/Http/Controllers/ChargeController.go",
+    "line": 73,
+    "message": "ChargeController.Act picks the operation from a form field: svc.Refund, svc.Void",
+    "why": "each branch is an action without a route of its own: one name in the route table for all of them, the authorization of each written by hand, and an operation the client picks by editing a hidden input. Give each operation its own named action with r.ResourceAction."
+  },
+  {
     "rule": "import-not-canonical",
     "severity": "warning",
     "file": "app/Http/Requests/ChargeRequest.go",
@@ -243,9 +347,17 @@
     "rule": "sensitive-field-not-redacted",
     "severity": "warning",
     "file": "app/Models/Billing.go",
-    "line": 5,
+    "line": 7,
     "message": "Charge holds APIToken and does not redact itself",
     "why": "one observability.Dump or one log line publishes it on the debug page. Add LogValue() slog.Value and MarshalJSON to the type, so no caller has to remember."
+  },
+  {
+    "rule": "model-rule-touches-io",
+    "severity": "warning",
+    "file": "app/Models/Billing.go",
+    "line": 18,
+    "message": "Charge.Overdue is an entity rule and reaches time.Now",
+    "why": "a rule of the entity changes only the fields of the row; one that reaches the database or the network is a service hiding in the model, and one that reads the clock cannot be tested against a date. Take the time as a parameter and let the service read, write and call."
   },
   {
     "rule": "model-query-stale",
@@ -272,6 +384,38 @@
     "why": "this is how `aru make:policy` generates it, on purpose. Open what the application needs inside the custom block -- until then every request that reaches this entity is refused."
   },
   {
+    "rule": "html-template-in-app",
+    "severity": "warning",
+    "file": "app/Presentation/Money.go",
+    "line": 7,
+    "message": "this file imports html/template",
+    "why": "a page is a view with typed data and the escaping the view compiler writes; html/template here is a second template engine, and template.HTML is the value that skips escaping. Render a view, or a kyse component for a piece of markup."
+  },
+  {
+    "rule": "helper-reimplemented",
+    "severity": "warning",
+    "file": "app/Presentation/Money.go",
+    "line": 12,
+    "message": "FormatBRL reimplements a BRL amount in the application",
+    "why": "the catalog already has this -- str.Slug in hesape, and the hyz-is/arandu-br module for CPF, CNPJ and BRL -- and a copy is one more place where the accent, the check digit or the rounding of a cent is fixed in one implementation and wrong in the other. Call the catalog's and delete this one."
+  },
+  {
+    "rule": "helper-reimplemented",
+    "severity": "warning",
+    "file": "app/Presentation/Money.go",
+    "line": 17,
+    "message": "Slugify reimplements a slug in the application",
+    "why": "the catalog already has this -- str.Slug in hesape, and the hyz-is/arandu-br module for CPF, CNPJ and BRL -- and a copy is one more place where the accent, the check digit or the rounding of a cent is fixed in one implementation and wrong in the other. Call the catalog's and delete this one."
+  },
+  {
+    "rule": "helper-reimplemented",
+    "severity": "warning",
+    "file": "app/Presentation/Money.go",
+    "line": 20,
+    "message": "ValidCPF reimplements a CPF in the application",
+    "why": "the catalog already has this -- str.Slug in hesape, and the hyz-is/arandu-br module for CPF, CNPJ and BRL -- and a copy is one more place where the accent, the check digit or the rounding of a cent is fixed in one implementation and wrong in the other. Call the catalog's and delete this one."
+  },
+  {
     "rule": "import-not-canonical",
     "severity": "warning",
     "file": "app/Reporting/InvoiceRepo.go",
@@ -294,6 +438,14 @@
     "line": 22,
     "message": "the SELECT in All reaches invoices and does not filter by tenant_id",
     "why": "other statements on invoices in this project scope it by tenant, so the table has the column and this one reaches every customer's rows -- reading them, or writing them. Add `AND tenant_id = ?` to the WHERE and pass data.Tenant(g), which is the only source of a tenant for SQL. If this statement is meant to cross tenants, write `//arandu:system-grant \u003creason\u003e` on the line, so the reason is read in review."
+  },
+  {
+    "rule": "raw-sql-outside-repository",
+    "severity": "warning",
+    "file": "app/Reporting/InvoiceRepo.go",
+    "line": 22,
+    "message": "a SELECT statement runs outside app/Repositories",
+    "why": "a statement here is a read or a write of the table that nobody looking in app/Repositories finds, and its tenant predicate and Grant are written again by hand beside it. Use the generated model, or app/Repositories/\u003cName\u003eRepository.go with the Grant for what the model does not express."
   },
   {
     "rule": "import-not-canonical",
@@ -456,6 +608,30 @@
     "why": "a test beside the code is a claim that it reads something the package does not export, which is the one reason Go leaves no choice about. Name it _internal_test.go if that is true, and move it under tests/ if it is not -- otherwise every listing of the package is doubled by files nobody opens on purpose."
   },
   {
+    "rule": "service-takes-http",
+    "severity": "warning",
+    "file": "app/Services/CheckoutService.go",
+    "line": 23,
+    "message": "this service names http.Request from net/http",
+    "why": "a job, a command, a listener or a tool calls a service with no request in hand, so a service that takes the request, the response, the session or a cookie can only be reached from a controller. Take the request struct and the subject as arguments, and return an error with HTTPStatus() for the router to map."
+  },
+  {
+    "rule": "subject-built-by-hand",
+    "severity": "warning",
+    "file": "app/Services/CheckoutService.go",
+    "line": 30,
+    "message": "this Subject is given its Roles by the code that builds it",
+    "why": "access written into a literal is granted by this line: no permission screen shows it and no administrator can revoke it. Derive the subject from the stored account and let arandu-permission fill its roles; a background task runs with the Grant its service issued."
+  },
+  {
+    "rule": "service-subpackage",
+    "severity": "warning",
+    "file": "app/Services/Gateway/Gateway.go",
+    "line": 1,
+    "message": "app/Services/Gateway is a package inside app/Services",
+    "why": "a service is one file per aggregate beside the others; a subpackage is a second tree of ownership whose rules nobody looking in app/Services finds. An external system goes to app/Clients, an engine or a reusable client is a module, and a state machine is the entity's rule driven by jobs."
+  },
+  {
     "rule": "import-not-canonical",
     "severity": "warning",
     "file": "app/Services/JobGrantService.go",
@@ -536,6 +712,14 @@
     "why": "Grant.Check compares the action a Grant was issued for with the action the method demands, so an action that first exists while the process runs is refused on a path nobody can trace back to a line -- and `aru action:list` reads the source, so a permission screen has no row to offer for it. Name it: `const InvoiceDelete security.Action = \"invoice.delete\"`, and pass the constant."
   },
   {
+    "rule": "service-file-too-large",
+    "severity": "warning",
+    "file": "app/Services/StatementService.go",
+    "line": 1,
+    "message": "this service file has 611 lines, past the 600 this report starts at",
+    "why": "a line count is where to look, not proof of a problem: a service this long is usually several aggregates sharing one file. Split it by aggregate, move the entity's rules into the model's custom block, and move calls to another system into a client."
+  },
+  {
     "rule": "model-core-outside-models",
     "severity": "error",
     "file": "app/Services/TicketService.go",
@@ -558,6 +742,14 @@
     "line": 20,
     "message": "the core Builder's Where is called on b outside a package that declares entities",
     "why": "the model core hands back untyped rows, and only the package of the entity has the typed query around it. A query written on the core from here is a second way to reach the table, one the generated surface does not describe. Call the generated constructor -- models.Users(db) -- or write the query as a local scope in the custom block of the entity's file."
+  },
+  {
+    "rule": "client-outside-clients",
+    "severity": "warning",
+    "file": "app/Services/WebhookService.go",
+    "line": 9,
+    "message": "this file calls out over HTTP outside app/Clients: http.Get",
+    "why": "a call to another system carries a contract -- configuration, retries, errors, and the fake the tests use -- and written here it is invented again and a test reaches the network. Move it to app/Clients/\u003cVendor\u003eClient.go with an interface and a fake, or to a module when more than one project needs it."
   },
   {
     "rule": "permission-not-declared",

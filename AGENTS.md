@@ -12,19 +12,21 @@ live inside it that share almost no code:
 | the commands | the root package `main` | 63 entries in one slice, 23 of which forward to the project's own binary |
 | the view compiler | `internal/kyse` | a `.kyse.go` becomes Go, and the Go it writes has to compile |
 | the language server | `internal/lsp` and `lsp.go` | `aru lsp` serves Kyse diagnostics and completion over standard input and output |
-| the checker | `internal/doctor` | 35 rule functions reading a project's parsed AST, emitting 41 rule names of their own and 4 borrowed from `internal/testlayout` |
+| the checker | `internal/doctor` | 54 rule functions reading a project's parsed AST, emitting 60 rule names of their own and 4 borrowed from `internal/testlayout` |
 
 ```sh
 grep -c '^\t\tname:' commands.go                                      # 63
 grep -c 'run:   delegate(' commands.go                                # 23
-grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go \
-	internal/testlayout/testlayout.go | sort -u | wc -l           # 45
+grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/doctor/structure.go \
+	internal/testlayout/testlayout.go | sort -u | wc -l           # 64
 ```
 
-The last command reads both files because the sentence above it counts both.
-`testsAreWhereTheyCanRun` forwards four names it does not declare, so a `grep`
-over `rules.go` alone cannot reach them however long it is left in place — which
-is how that count went stale while looking measured.
+The last command reads every file that declares a name because the sentence
+above it counts them all. `structure.go` holds the structural warnings -- where
+code lives -- and `rules.go` everything else, and `testsAreWhereTheyCanRun`
+forwards four names it does not declare, so a `grep` over `rules.go` alone
+cannot reach them however long it is left in place — which is how that count
+went stale while looking measured.
 
 Read `.agents/skills/` before writing code. Each file is a procedure, named by
 the situation you are in.
@@ -97,7 +99,8 @@ is no longer here.
 What checks this repository's own source is `.golangci.yml`, with three linters
 on — `errcheck`, `gosec`, `staticcheck` — and its header states the line: a
 check about `aru`'s own Go goes there, a check about the application `aru`
-generates goes in `internal/doctor/rules.go`, and neither ever sees the other's
+generates goes in `internal/doctor/rules.go` (or `structure.go`, for a warning
+about where code lives), and neither ever sees the other's
 files.
 
 ## The dependency budget

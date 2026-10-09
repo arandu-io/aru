@@ -6,6 +6,9 @@ import (
 	"github.com/arandu-io/framework/kernel"
 	"github.com/arandu-io/hesape/view"
 
+	controllers "example.test/gaps/app/Http/Controllers"
+	services "example.test/gaps/app/Services"
+
 	// The engine .env.example names. A connector registers itself from init(),
 	// so this line is what puts MySQL in the binary.
 	_ "github.com/arandu-io/hesape/database/connectors/mysql"
@@ -26,4 +29,10 @@ func Boot() *kernel.Kernel {
 		view.NewModule(),
 	)
 	return k
+}
+
+// Reports builds the reports controller, which is what makes its constructor
+// wired: a constructor nothing calls is code no route reaches.
+func Reports(exports *services.ExportService) *controllers.ReportController {
+	return controllers.NewReportController(exports)
 }

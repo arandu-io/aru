@@ -1175,6 +1175,10 @@ func TestTheGapsFixtureReportsNothingElse(t *testing.T) {
 		"view-keeps-state-in-the-browser": true,
 		"permission-not-used":             true,
 		"outbox-not-registered":           true,
+		// The SQL the tenant rule reads in app/Services is SQL outside a
+		// repository too, and saying so is right: the gaps put it there to
+		// test the predicate, not the place.
+		"raw-sql-outside-repository": true,
 	}
 	for _, f := range gaps(t) {
 		if !expected[f.Rule] {

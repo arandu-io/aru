@@ -150,6 +150,25 @@ func emitsByRule() map[string][]string {
 		"transactionsStayInsideOneAggregate": {"transaction-across-aggregates"},
 		"modelQueryIsCurrent":                {"model-query-stale"},
 		"modelCoreStaysInTheModels":          {"model-core-outside-models"},
+		"inputIsBoundNotRead":                {"input-read-by-hand"},
+		"theServiceValidates":                {"validate-called-by-controller"},
+		"jsonIsWrittenByTheFramework":        {"json-written-by-hand"},
+		"aRejectedFormIsARedirect":           {"invalid-form-answered-by-hand"},
+		"theSessionIsLoadedByTheGuard":       {"session-loaded-in-controller"},
+		"redirectsNameARoute":                {"redirect-to-literal-path"},
+		"markupIsAView":                      {"html-template-in-app"},
+		"servicesSpeakNoHTTP":                {"service-takes-http"},
+		"servicesAreFlat":                    {"service-subpackage"},
+		"serviceFilesStayReadable":           {"service-file-too-large"},
+		"controllersStaySmall":               {"controller-too-many-actions"},
+		"operationsAreRoutes":                {"operation-chosen-by-form-field"},
+		"externalCallsGoThroughAClient":      {"client-outside-clients"},
+		"entityRulesArePure":                 {"model-rule-touches-io"},
+		"fragmentsArePartials":               {"fragment-without-partial"},
+		"helpersComeFromTheCatalog":          {"helper-reimplemented"},
+		"sqlLivesInRepositories":             {"raw-sql-outside-repository"},
+		"constructorsAreWired":               {"generated-not-wired"},
+		"subjectsComeFromStoredAccess":       {"subject-built-by-hand"},
 	}
 }
 
@@ -183,11 +202,15 @@ func TestTheDocumentedRuleCountIsTheOneThisPackageHas(t *testing.T) {
 		agents = "../../AGENTS.md"
 		readme = "../../README.md"
 
-		rulesFile  = "rules.go"
 		layoutFile = "../testlayout/testlayout.go"
 	)
 
-	own := declaredRuleNames(t, rulesFile)
+	own := map[string]bool{}
+	for _, rulesFile := range ruleFiles {
+		for name := range declaredRuleNames(t, rulesFile) {
+			own[name] = true
+		}
+	}
 	forwarded := declaredRuleNames(t, layoutFile)
 	if len(own) == 0 || len(forwarded) == 0 {
 		t.Fatal("one of the two files declares no rule name at all, so every figure below measures nothing")
@@ -206,7 +229,7 @@ func TestTheDocumentedRuleCountIsTheOneThisPackageHas(t *testing.T) {
 	}
 	for name := range own {
 		if !total[name] {
-			t.Errorf("%s declares %s and no rule in emitsByRule reports it", rulesFile, name)
+			t.Errorf("%v declare %s and no rule in emitsByRule reports it", ruleFiles, name)
 		}
 	}
 	for name := range forwarded {
@@ -259,6 +282,11 @@ func TestTheDocumentedRuleCountIsTheOneThisPackageHas(t *testing.T) {
 		}
 	}
 }
+
+// ruleFiles are the files of this package that declare the rule names it
+// reports: the rules that guard authorization and data, and the structural
+// warnings about where code lives.
+var ruleFiles = []string{"rules.go", "structure.go"}
 
 // declaredRuleNames reads the rule names one file declares, with the expression
 // the documented commands match on.

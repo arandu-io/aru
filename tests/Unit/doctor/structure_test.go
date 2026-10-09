@@ -464,6 +464,20 @@ func (c *C) Row(ctx *hhttp.Context) error {
 			"app/Services/AuditService.go":           "package services\n\nfunc NewAuditService() int { return 0 }\n",
 			"bootstrap/app.go":                       "package bootstrap\n\nimport controllers \"example.test/shape/app/Http/Controllers\"\n\nvar _ = controllers.NewNoteController\n",
 		}, 0},
+		// The formerly false case: a fake in app/Services that only a test
+		// constructs is a test double, and the test is its wiring.
+		{"a fake only a test constructs", "generated-not-wired", map[string]string{
+			"app/Services/CieloFakeAdapter.go": "package services\n\ntype CieloFakeAdapter struct{}\n\nfunc NewCieloFakeAdapter() *CieloFakeAdapter { return nil }\n",
+			"app/Services/PaymentPort.go":      "package services\n\ntype FakePaymentPort struct{}\n\nfunc NewFakePaymentPort() *FakePaymentPort { return nil }\n",
+			"app/Services/Gateway.go":          "package services\n\ntype stubGateway struct{}\n\nfunc NewGateway() *stubGateway { return nil }\n",
+			"tests/Unit/FakeAdapters_test.go":  "package unit\n\nvar _, _, _ = NewCieloFakeAdapter, NewFakePaymentPort, NewGateway\n",
+		}, 0},
+		{"a fake nothing constructs, and a real service only its test constructs", "generated-not-wired", map[string]string{
+			"app/Services/PixFakeAdapter.go": "package services\n\ntype PixFakeAdapter struct{}\n\nfunc NewPixFakeAdapter() *PixFakeAdapter { return nil }\n",
+			"app/Services/PixService.go":     "package services\n\ntype PixService struct{}\n\nfunc NewPixService() *PixService { return nil }\n",
+			"app/Services/Fakery.go":         "package services\n\ntype Fakery struct{}\n\nfunc NewFakery() *Fakery { return nil }\n",
+			"tests/Unit/PixService_test.go":  "package unit\n\nvar _, _ = NewPixService, NewFakery\n",
+		}, 3},
 
 		// subject-built-by-hand
 		{"roles and actions written into a literal", "subject-built-by-hand", map[string]string{

@@ -256,7 +256,7 @@ and near misses in `gaps` and `clean`.
 | `fragment-without-partial` | `ctx.Fragment` of a literal view outside `partials.` | call |
 | `helper-reimplemented` | functions under `app/` named Slugify, or with BRL, CPF or CNPJ beside a validating or formatting word | declaration, by name |
 | `raw-sql-outside-repository` | a body that runs a statement, outside `app/Repositories` and `database/` | body |
-| `generated-not-wired` | a `New*` in Controllers or Services that no other non-test file names | project, by name |
+| `generated-not-wired` | a `New*` in Controllers or Services that no other non-test file names; a test double (Fake, Stub, Mock, Spy or Dummy in the constructor, its result type or its file) that a `_test.go` file constructs is exempt | project, by name |
 | `subject-built-by-hand` | a `Subject` literal whose `Roles` or `Actions` the code chose, outside tests and `database/` | literal |
 
 `aru doctor --list` prints them with the rest, and is what the skeleton's

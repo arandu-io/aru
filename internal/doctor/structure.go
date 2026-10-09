@@ -1599,13 +1599,22 @@ func sqlLivesInRepositories(p *project) []Finding {
 // Positive: NewInvoiceService, declared and named nowhere else.
 //
 // Negative: a constructor bootstrap/app.go or routes/web.go calls; one
-// another constructor calls, which is wiring the rule cannot judge.
+// another constructor calls, which is wiring the rule cannot judge; a test
+// double -- Fake, Stub, Mock, Spy or Dummy is a word of the constructor, of
+// the type it returns or of its file -- that a _test.go file constructs. A
+// double exists for the tests, and a test calling it is the wiring it has.
+//
+// Formerly false: NewCieloFakeAdapter in app/Services, constructed only by
+// tests/Unit/FakeAdapters_test.go, was reported as unwired.
 //
 // Known false positive: a constructor kept for a caller in another module.
 //
 // Limit. The project, by name and not by type: a different function with the
 // same name anywhere counts as a reference, so a collision hides a finding
-// rather than inventing one.
+// rather than inventing one. A test double is recognised by its name; one
+// named like production code and called only from tests is still reported,
+// which is the case the rule exists for: a service whose only caller is its
+// own test.
 //
 // Correction: paste the wiring make:module printed into bootstrap/app.go and
 // routes/web.go, or delete the code nothing reaches.
@@ -1629,17 +1638,19 @@ func constructorsAreWired(p *project) []Finding {
 		return nil
 	}
 	referenced := map[string]bool{}
+	tested := map[string]bool{}
 	declared := map[*ast.Ident]bool{}
 	for _, c := range ctors {
 		declared[c.fn.Name] = true
 	}
 	for _, f := range p.files {
+		into := referenced
 		if f.isTest {
-			continue
+			into = tested
 		}
 		ast.Inspect(f.ast, func(n ast.Node) bool {
 			if id, ok := n.(*ast.Ident); ok && !declared[id] {
-				referenced[id.Name] = true
+				into[id.Name] = true
 			}
 			return true
 		})
@@ -1647,6 +1658,9 @@ func constructorsAreWired(p *project) []Finding {
 	var out []Finding
 	for _, c := range ctors {
 		if referenced[c.fn.Name.Name] || len(p.unreadable) > 0 {
+			continue
+		}
+		if tested[c.fn.Name.Name] && isTestDouble(c.f, c.fn) {
 			continue
 		}
 		out = append(out, Finding{
@@ -1659,6 +1673,38 @@ func constructorsAreWired(p *project) []Finding {
 		})
 	}
 	return out
+}
+
+// testDoubleWords are the words that name a stand-in a test constructs in
+// place of the real thing.
+// They are compared in lower case, so stubGateway, an unexported type, counts.
+var testDoubleWords = map[string]bool{"fake": true, "stub": true, "mock": true, "spy": true, "dummy": true}
+
+// isTestDouble reports whether a constructor builds a test double: one of
+// testDoubleWords is a word of its name, of the type its first result names,
+// or of the file it is declared in.
+func isTestDouble(f *file, fn *ast.FuncDecl) bool {
+	names := []string{fn.Name.Name, strings.TrimSuffix(path.Base(f.rel), ".go")}
+	if fn.Type.Results != nil && len(fn.Type.Results.List) > 0 {
+		result := fn.Type.Results.List[0].Type
+		if star, ok := result.(*ast.StarExpr); ok {
+			result = star.X
+		}
+		switch t := result.(type) {
+		case *ast.Ident:
+			names = append(names, t.Name)
+		case *ast.SelectorExpr:
+			names = append(names, t.Sel.Name)
+		}
+	}
+	for _, name := range names {
+		for _, word := range camelWords(name) {
+			if testDoubleWords[strings.ToLower(word)] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // chosenByTheCode reports whether the value of Roles or Actions names roles

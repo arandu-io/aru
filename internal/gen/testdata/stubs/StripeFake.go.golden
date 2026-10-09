@@ -1,0 +1,30 @@
+package clients
+
+import "context"
+
+// StripeFake is Stripe for the tests: it answers what it was told to,
+// records what it was asked, and never reaches the network. A service under
+// test is built with one in place of StripeClient.
+type StripeFake struct {
+	// StatusAnswer is what Status answers.
+	StatusAnswer StripeStatus
+	// Err, when set, is what every call answers instead.
+	Err error
+	// Calls are the methods called, in order.
+	Calls []string
+}
+
+// Compile-time proof that the fake stands in for the client.
+var _ Stripe = (*StripeFake)(nil)
+
+// Status records the call and answers StatusAnswer, or Err.
+func (f *StripeFake) Status(ctx context.Context) (StripeStatus, error) {
+	f.Calls = append(f.Calls, "Status")
+	if f.Err != nil {
+		return StripeStatus{}, f.Err
+	}
+	return f.StatusAnswer, nil
+}
+
+// arandu:begin custom
+// arandu:end custom

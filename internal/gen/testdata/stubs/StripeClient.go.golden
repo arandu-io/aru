@@ -1,0 +1,93 @@
+package clients
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/arandu-io/hesape/http/client"
+)
+
+// StripeConfig is what the Stripe client needs, typed. bootstrap/app.go
+// reads it from the configuration once and hands it over; nothing here looks a
+// setting up again.
+type StripeConfig struct {
+	// BaseURL is where Stripe answers, with its scheme.
+	BaseURL string
+	// Token is the credential every request carries, as a bearer token.
+	Token string
+	// Timeout bounds each attempt. Zero leaves the client's own deadline.
+	Timeout time.Duration
+}
+
+// Stripe is what a service, a job or a listener depends on: the calls
+// this application makes to Stripe, and nothing else. It is small on
+// purpose and declared here, beside the one implementation, so the code that
+// calls Stripe names this interface and a test hands it StripeFake.
+type Stripe interface {
+	Status(ctx context.Context) (StripeStatus, error)
+
+	// arandu:begin custom
+	// The next call to Stripe goes here, and on the client and the fake.
+	// arandu:end custom
+}
+
+// StripeStatus is what Status answers: a type of this client's own, so the code
+// that calls it never reads Stripe's wire format.
+type StripeStatus struct {
+	OK bool `json:"ok"`
+}
+
+// StripeClient talks to Stripe over hesape/http/client, which is the only way
+// a request leaves this application: every attempt carries a deadline, reads a
+// bounded body, and refuses an address inside the network.
+//
+// It holds no Grant, no model and no session. It is reached by the service
+// that decided to call it -- after the policy -- and answers with its own
+// types, so what Stripe changes on its side changes this file and no other.
+type StripeClient struct {
+	config StripeConfig
+	http   *client.Factory
+}
+
+// NewStripeClient builds the client with its configuration and the factory its
+// requests are made from: client.NewFactory(nil) in bootstrap/app.go, and the
+// same factory faked in a test that wants to see the request.
+func NewStripeClient(config StripeConfig, http *client.Factory) *StripeClient {
+	return &StripeClient{config: config, http: http}
+}
+
+// Compile-time proof that the client is what the code calling it depends on.
+var _ Stripe = (*StripeClient)(nil)
+
+// Status asks Stripe whether it is answering.
+func (c *StripeClient) Status(ctx context.Context) (StripeStatus, error) {
+	res, err := c.request().Get(ctx, "/status", nil)
+	if err != nil {
+		return StripeStatus{}, fmt.Errorf("stripe: %w", err)
+	}
+	if res.Failed() {
+		return StripeStatus{}, fmt.Errorf("stripe: status answered %d", res.Status())
+	}
+	var out StripeStatus
+	if err := res.Object(&out); err != nil {
+		return StripeStatus{}, fmt.Errorf("stripe: reading the status: %w", err)
+	}
+	return out, nil
+}
+
+// request is every call's starting point: the base address, the credential and
+// the deadline, set once rather than at each call.
+func (c *StripeClient) request() *client.PendingRequest {
+	r := c.http.CreatePendingRequest().BaseURL(c.config.BaseURL).AcceptJSON()
+	if c.config.Token != "" {
+		r = r.WithToken(c.config.Token, "Bearer")
+	}
+	if c.config.Timeout > 0 {
+		r = r.Timeout(c.config.Timeout)
+	}
+	return r
+}
+
+// arandu:begin custom
+// arandu:end custom

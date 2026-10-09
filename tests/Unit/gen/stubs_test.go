@@ -130,6 +130,9 @@ func TestGoldenStubs(t *testing.T) {
 				Type: "InvoicePaid", ModulePath: "example.test/project", Channels: []string{"mail", "database"},
 			})
 		})},
+		{"StripeClient.go", fileAt(0, func() ([]gen.File, error) { return gen.RenderClient(clientSpec()) })},
+		{"StripeFake.go", fileAt(1, func() ([]gen.File, error) { return gen.RenderClient(clientSpec()) })},
+		{"StripeClient_test.go", fileAt(2, func() ([]gen.File, error) { return gen.RenderClient(clientSpec()) })},
 		{"WelcomeEmail.go", fileAt(0, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
 		{"welcome-email.kyse.go", fileAt(1, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
 		{"welcome-email-text.kyse.go", fileAt(2, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
@@ -227,6 +230,10 @@ func resourceSpec() gen.ResourceSpec {
 			{GoName: "Total", Key: "total"}, {GoName: "CreatedAt", Key: "created_at"},
 		},
 	}
+}
+
+func clientSpec() gen.ClientSpec {
+	return gen.ClientSpec{Vendor: "Stripe", ModulePath: "example.test/project"}
 }
 
 func factorySpec(tenant bool) gen.FactorySpec {

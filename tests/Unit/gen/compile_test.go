@@ -185,6 +185,11 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 		})
 	}
 
+	// make:client: the client, its fake and the test that uses both.
+	emit("aru make:client Carrier", func() ([]gen.File, error) {
+		return gen.RenderClient(gen.ClientSpec{Vendor: "Carrier", ModulePath: generatedModulePath})
+	})
+
 	// make:controller, in its four shapes, and a resource nested under a
 	// parent with a named action. A controller stub declares no entity, so each
 	// one gets a name of its own; what is proved is that every shape imports
@@ -310,6 +315,12 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 	}{
 		{"go build", []string{"build", "./..."}},
 		{"go vet", []string{"vet", "./..."}},
+		// And the generated tests run. A test the generator writes is a claim
+		// about the code beside it -- that a service asks before it writes, that
+		// a resource answers its list and nothing more, that a client sends what
+		// it was configured with -- and a claim that compiles and fails is a red
+		// suite in a project nobody has touched yet.
+		{"go test", []string{"test", "-count=1", "./tests/..."}},
 	} {
 		out, err := runGo(tool, root, stage.args...)
 		if err == nil {
@@ -604,7 +615,7 @@ func publishedModules() string {
 // would be the network the previous line just closed.
 func runGo(tool, root string, args ...string) (string, error) {
 	switch args[0] {
-	case "build", "vet":
+	case "build", "vet", "test":
 		args = append([]string{args[0], "-trimpath"}, args[1:]...)
 	}
 	cmd := exec.Command(tool, args...)

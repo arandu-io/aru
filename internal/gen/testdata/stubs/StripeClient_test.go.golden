@@ -1,0 +1,50 @@
+package unit_test
+
+import (
+	"context"
+	"net/http"
+	"testing"
+
+	"github.com/arandu-io/hesape/http/client"
+
+	clients "example.test/project/app/Clients"
+)
+
+// TestTheStripeFakeStandsInForTheClient is the shape every test of code that
+// calls Stripe takes: the code depends on clients.Stripe, and the
+// test hands it the fake and reads what was asked.
+func TestTheStripeFakeStandsInForTheClient(t *testing.T) {
+	fake := &clients.StripeFake{StatusAnswer: clients.StripeStatus{OK: true}}
+	var vendor clients.Stripe = fake
+
+	status, err := vendor.Status(context.Background())
+	if err != nil || !status.OK {
+		t.Fatalf("Status = %+v, %v: want the answer the fake was given", status, err)
+	}
+	if len(fake.Calls) != 1 || fake.Calls[0] != "Status" {
+		t.Errorf("the fake recorded %v, want one Status", fake.Calls)
+	}
+}
+
+// TestTheStripeClientSendsWhatItIsConfiguredWith runs the real client against a
+// faked factory: the request it builds is read, and nothing leaves the
+// process.
+func TestTheStripeClientSendsWhatItIsConfiguredWith(t *testing.T) {
+	var sent *http.Request
+	factory := client.NewFactory(nil).Fake(func(r *http.Request) (*http.Response, error) {
+		sent = r
+		return client.NewResponseFromBytes(http.StatusOK, []byte(`{"ok":true}`), nil).HTTPResponse(), nil
+	})
+	c := clients.NewStripeClient(clients.StripeConfig{BaseURL: "https://stripe.example.test", Token: "secret"}, factory)
+
+	status, err := c.Status(context.Background())
+	if err != nil || !status.OK {
+		t.Fatalf("Status = %+v, %v", status, err)
+	}
+	if sent == nil || sent.URL.Path != "/status" || sent.Header.Get("Authorization") != "Bearer secret" {
+		t.Errorf("the request was not the one configured: %+v", sent)
+	}
+}
+
+// arandu:begin custom
+// arandu:end custom

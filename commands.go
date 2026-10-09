@@ -352,6 +352,12 @@ window.`,
 		run:   makeNotification,
 	},
 	{
+		name:  "make:client",
+		usage: makeClientUsage,
+		desc:  "generate the client of an external system: config, interface, the client, a fake and the test",
+		run:   makeClient,
+	},
+	{
 		name:  "make:migration",
 		usage: makeMigrationUsage,
 		desc:  "generate one migration: a table, or columns added to one",

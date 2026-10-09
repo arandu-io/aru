@@ -520,7 +520,7 @@ func TestMakeTestWritesTheTestMakeModuleWrites(t *testing.T) {
 	// function and checked nothing would satisfy every line above.
 	for _, want := range []string{
 		"func TestEveryPurchaseOrderReadRequiresAuthorization(t *testing.T)",
-		"security.ErrForbidden",
+		"auth.ErrForbidden",
 		"services.NewPurchaseOrderService(nil)",
 		"model.Entity",
 		"(*models.PurchaseOrderQuery).Get",

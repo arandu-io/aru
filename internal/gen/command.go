@@ -130,7 +130,7 @@ func New{{ .Type }}() *{{ .Type }} {
 // here, because the compiler already checked this function.
 //
 // A command runs outside a request, so there is no session and no Grant from a
-// signed-in person. Work that touches tenant data takes security.SystemGrant
+// signed-in person. Work that touches tenant data takes auth.SystemGrant
 // with the tenant named explicitly, and ` + "`aru doctor`" + ` checks that it is
 // scoped.
 func ({{ .Receiver }} *{{ .Type }}) Run(ctx context.Context, args []string) error {

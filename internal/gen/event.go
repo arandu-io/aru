@@ -104,7 +104,7 @@ import (
 	"time"
 
 {{end}}
-	fwevents "github.com/arandu-io/framework/events"
+	hevents "github.com/arandu-io/hesape/events"
 )
 
 // {{.Const}} is the event, in the vocabulary of the domain rather than of the
@@ -133,16 +133,16 @@ type {{.Type}} struct {
 //		// the fields above
 //	}.Event({{.Aggregate}}.ID))
 //
-//	// then, inside data.Transaction, in the service:
+//	// then, inside database.Transaction, in the service:
 //	if err := outbox.Store(ctx, g, {{.Aggregate}}.PullEvents()); err != nil {
 //		return err
 //	}
 //
-// Store outside data.Transaction returns ErrNoTransaction on purpose. An event
-// stored next to a row that then rolled back is worse than no event, and an
-// event stored after the commit is one process crash away from being lost.
-func (e {{.Type}}) Event(aggregateID string) fwevents.Event {
-	return fwevents.Event{
+// Store outside database.Transaction returns ErrNoTransaction on purpose. An
+// event stored next to a row that then rolled back is worse than no event, and
+// an event stored after the commit is one process crash away from being lost.
+func (e {{.Type}}) Event(aggregateID string) hevents.Event {
+	return hevents.Event{
 		Name:        {{.Const}},
 		Aggregate:   "{{.Aggregate}}",
 		AggregateID: aggregateID,

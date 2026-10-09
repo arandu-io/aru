@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/arandu-io/framework/data"
-	"github.com/arandu-io/framework/observability"
-	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
+	"github.com/arandu-io/hesape/database"
+	"github.com/arandu-io/hesape/log"
 	"github.com/arandu-io/hesape/pagination"
 
 	requests "example.test/project/app/Http/Requests"
@@ -26,25 +26,25 @@ const purchaseOrderPerPage = 25
 // are the ones the router answers: validation.Errors back to the form, a missing
 // row as 404, a refusal as 403 and a duplicate on a unique column as 409.
 type PurchaseOrderService struct {
-	db     *data.DB
+	db     *database.DB
 	policy policies.PurchaseOrderPolicy
 }
 
 // NewPurchaseOrderService wires the service.
-func NewPurchaseOrderService(db *data.DB) *PurchaseOrderService {
+func NewPurchaseOrderService(db *database.DB) *PurchaseOrderService {
 	return &PurchaseOrderService{db: db}
 }
 
 // Create walks the mandatory path: validate, Authorize, Grant, Model.
 // There is no other order that compiles.
-func (s *PurchaseOrderService) Create(ctx context.Context, actor security.Subject, in requests.PurchaseOrderRequest) (*models.PurchaseOrder, error) {
+func (s *PurchaseOrderService) Create(ctx context.Context, actor auth.Subject, in requests.PurchaseOrderRequest) (*models.PurchaseOrder, error) {
 	if errs := in.Validate(); errs.Any() {
 		return nil, errs
 	}
 
 	var proposed models.PurchaseOrder
 	s.fill(&proposed, in)
-	g, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderCreate, proposed)
+	g, err := auth.Authorize(ctx, s.policy, actor, policies.PurchaseOrderCreate, proposed)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func (s *PurchaseOrderService) Create(ctx context.Context, actor security.Subjec
 	}
 	// Guarded: the entity is a struct value, and boxing it into `any` allocates
 	// at the call site even though RecordEvent is a no-op on a nil Collector.
-	if col := observability.FromContext(ctx); col != nil {
+	if col := log.FromContext(ctx); col != nil {
 		col.RecordEvent("purchase_order.created", record)
 	}
 	return record, nil
@@ -69,8 +69,8 @@ func (s *PurchaseOrderService) Create(ctx context.Context, actor security.Subjec
 //
 // It authorizes twice: once to look at all, and once with the row that was
 // read, which is the decision about this row rather than about the action.
-func (s *PurchaseOrderService) Get(ctx context.Context, actor security.Subject, id string) (*models.PurchaseOrder, error) {
-	g, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderView, models.PurchaseOrder{})
+func (s *PurchaseOrderService) Get(ctx context.Context, actor auth.Subject, id string) (*models.PurchaseOrder, error) {
+	g, err := auth.Authorize(ctx, s.policy, actor, policies.PurchaseOrderView, models.PurchaseOrder{})
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func (s *PurchaseOrderService) Get(ctx context.Context, actor security.Subject, 
 	if err != nil {
 		return nil, err
 	}
-	if _, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderView, *found); err != nil {
+	if _, err := auth.Authorize(ctx, s.policy, actor, policies.PurchaseOrderView, *found); err != nil {
 		return nil, err
 	}
 	return found, nil
@@ -86,8 +86,8 @@ func (s *PurchaseOrderService) Get(ctx context.Context, actor security.Subject, 
 
 // List returns one page of purchase_orders, newest first, and where the
 // previous and the next page are.
-func (s *PurchaseOrderService) List(ctx context.Context, actor security.Subject, page int) (models.PurchaseOrderCollection, *pagination.Page, error) {
-	g, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderList, models.PurchaseOrder{})
+func (s *PurchaseOrderService) List(ctx context.Context, actor auth.Subject, page int) (models.PurchaseOrderCollection, *pagination.Page, error) {
+	g, err := auth.Authorize(ctx, s.policy, actor, policies.PurchaseOrderList, models.PurchaseOrder{})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -100,7 +100,7 @@ func (s *PurchaseOrderService) List(ctx context.Context, actor security.Subject,
 // It reads before writing, so the policy decides against the stored row rather
 // than against what the client claims the row is. Skipping this is how a check
 // passes on attacker-supplied data.
-func (s *PurchaseOrderService) Update(ctx context.Context, actor security.Subject, id string, in requests.PurchaseOrderRequest) (*models.PurchaseOrder, error) {
+func (s *PurchaseOrderService) Update(ctx context.Context, actor auth.Subject, id string, in requests.PurchaseOrderRequest) (*models.PurchaseOrder, error) {
 	if errs := in.Validate(); errs.Any() {
 		return nil, errs
 	}
@@ -110,7 +110,7 @@ func (s *PurchaseOrderService) Update(ctx context.Context, actor security.Subjec
 		return nil, err
 	}
 
-	g, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderUpdate, *stored)
+	g, err := auth.Authorize(ctx, s.policy, actor, policies.PurchaseOrderUpdate, *stored)
 	if err != nil {
 		return nil, err
 	}
@@ -122,20 +122,20 @@ func (s *PurchaseOrderService) Update(ctx context.Context, actor security.Subjec
 }
 
 // Delete removes a purchase_order.
-func (s *PurchaseOrderService) Delete(ctx context.Context, actor security.Subject, id string) error {
+func (s *PurchaseOrderService) Delete(ctx context.Context, actor auth.Subject, id string) error {
 	stored, err := s.Get(ctx, actor, id)
 	if err != nil {
 		return err
 	}
 
-	g, err := security.Authorize(ctx, s.policy, actor, policies.PurchaseOrderDelete, *stored)
+	g, err := auth.Authorize(ctx, s.policy, actor, policies.PurchaseOrderDelete, *stored)
 	if err != nil {
 		return err
 	}
 	if _, err := stored.Delete(ctx, g); err != nil {
 		return err
 	}
-	if col := observability.FromContext(ctx); col != nil {
+	if col := log.FromContext(ctx); col != nil {
 		col.RecordEvent("purchase_order.deleted", stored)
 	}
 	return nil
@@ -149,7 +149,7 @@ func (s *PurchaseOrderService) fill(p *models.PurchaseOrder, in requests.Purchas
 	p.Total = in.Total
 	p.Approved = in.Approved
 	p.Notes = in.Notes
-	p.DeliveryDate = data.Day(in.DeliveryDate)
+	p.DeliveryDate = database.Day(in.DeliveryDate)
 }
 
 // arandu:begin custom

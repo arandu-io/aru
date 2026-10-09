@@ -191,6 +191,54 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 		})
 	})
 
+	// The granular commands that write outside a module: a job, an event, a
+	// listener in both of its shapes, a mailable, a console command and a
+	// middleware. Each names the framework or one of its components, and which
+	// path it names is what the import catalog decides, so a symbol moved to a
+	// component whose published tag does not have it fails here and not in
+	// somebody's project. A timestamp field takes the job and the event through
+	// the branch that imports time.
+	payload := []gen.Field{
+		{Name: "purchase_order_id", Type: gen.TypeUUID},
+		{Name: "amount", Type: gen.TypeMoney},
+		{Name: "due_at", Type: gen.TypeTimestamp},
+	}
+	one("aru make:job SettlePurchaseOrder", func() (gen.File, error) {
+		return gen.RenderJob(gen.JobSpec{
+			Type: "SettlePurchaseOrder", EventName: "purchase-order.settle",
+			ModulePath: generatedModulePath, Fields: payload,
+		})
+	})
+	one("aru make:event PurchaseOrderApproved", func() (gen.File, error) {
+		return gen.RenderEvent(gen.EventSpec{
+			Type: "PurchaseOrderApproved", Aggregate: "purchase_order", EventName: "purchase_order.approved",
+			ModulePath: generatedModulePath, Fields: payload,
+		})
+	})
+	emit("aru make:listener NotifyBuyer --event=purchase_order.approved", func() ([]gen.File, error) {
+		return gen.GenerateListener(gen.Listener{
+			Name: "NotifyBuyer", Event: "purchase_order.approved", ModulePath: generatedModulePath,
+		})
+	})
+	emit("aru make:listener RecordEverything", func() ([]gen.File, error) {
+		return gen.GenerateListener(gen.Listener{Name: "RecordEverything", ModulePath: generatedModulePath})
+	})
+	emit("aru make:mail OrderConfirmation", func() ([]gen.File, error) {
+		return gen.RenderMail(gen.MailSpec{
+			Type: "OrderConfirmation", ModulePath: generatedModulePath, Subject: "Your order",
+			Fields: []gen.Field{{Name: "reference", Type: gen.TypeString}, {Name: "total", Type: gen.TypeMoney}},
+		})
+	})
+	emit("aru make:command ClosePurchaseOrders", func() ([]gen.File, error) {
+		return gen.GenerateCommand(gen.Command{
+			Name: "ClosePurchaseOrders", Signature: "purchase-orders:close",
+			Description: "Close the purchase orders past their due date", ModulePath: generatedModulePath,
+		})
+	})
+	emit("aru make:middleware EnsureBuyerIsActive", func() ([]gen.File, error) {
+		return gen.GenerateMiddleware(gen.Stub{Type: "EnsureBuyerIsActive", ModulePath: generatedModulePath})
+	})
+
 	// The views are compiled the way the CLI compiles them, because the
 	// controller imports the package they compile into: a module whose views
 	// were left as markup does not build, and the failure would be about a

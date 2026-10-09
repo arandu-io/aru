@@ -56,7 +56,7 @@ var types = map[Type]struct {
 	// VARCHAR for the short kinds, TEXT for the long one. That is the
 	// distinction the DSL already draws -- "short text, up to a line" against
 	// "long text". Collapsing both to TEXT leaves MySQL refusing a UNIQUE or an
-	// index without a prefix length. See data.KeyText.
+	// index without a prefix length. See hesape/database.KeyText.
 	TypeString: {Go: "string", SQL: "VARCHAR(255)", Zero: `""`, SQLZero: "''", Blueprint: "String"},
 	TypeText:   {Go: "string", SQL: "TEXT", Zero: `""`, SQLZero: "''", Blueprint: "Text"},
 	TypeInt:    {Go: "int64", SQL: "INTEGER", Zero: "0", SQLZero: "0", Blueprint: "BigInteger"},
@@ -117,13 +117,13 @@ func (f Field) IsEmail() bool { return f.Type == TypeEmail }
 
 // Bind renders the field as an argument to a statement.
 //
-// A date goes through data.Day, which truncates to midnight UTC. DATE is the one
+// A date goes through database.Day, which truncates to midnight UTC. DATE is the one
 // type in the portable subset the engines do not agree about: PostgreSQL drops
 // the time part on write and SQLite keeps it, so the same code returns different
 // values on different engines. Everything else binds as it is.
 func (f Field) Bind(receiver string) string {
 	if f.Type == TypeDate {
-		return "data.Day(" + receiver + "." + f.GoName() + ")"
+		return "database.Day(" + receiver + "." + f.GoName() + ")"
 	}
 	return receiver + "." + f.GoName()
 }
@@ -573,7 +573,7 @@ func (m Module) Receiver() string {
 
 	// The generated Policy signature already binds ctx, s and a:
 	//
-	//	Can(ctx context.Context, s security.Subject, a security.Action, x Entity)
+	//	Can(ctx context.Context, s auth.Subject, a auth.Action, x Entity)
 	//
 	// So an entity whose initial is one of those -- Subscription, Account,
 	// Category -- would shadow the parameter it needs, and the file would not
@@ -593,7 +593,7 @@ func (m Module) Receiver() string {
 func taken(name string) bool {
 	switch name {
 	case "s", "a", "c", "w", "r":
-		// s: security.Subject   a: security.Action   c: context, in some templates
+		// s: auth.Subject   a: auth.Action   c: context, in some templates
 		// w: http.ResponseWriter   r: *http.Request
 		return true
 	}

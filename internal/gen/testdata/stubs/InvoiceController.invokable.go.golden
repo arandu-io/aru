@@ -3,16 +3,16 @@ package controllers
 import (
 	"net/http"
 
-	fhttp "github.com/arandu-io/framework/http"
+	hhttp "github.com/arandu-io/hesape/http"
 )
 
 // InvoiceController answers the one route it is registered for.
 //
 // It is thin on purpose: read the request, call a service, render. There is no
-// repository here and there cannot be one -- fhttp.Context carries no database
-// handle, so a controller that reached the data layer would be a controller
-// that skipped the service, and therefore skipped the policy. `aru
-// doctor` refuses it.
+// repository here and there cannot be one -- the Context an action receives
+// carries no database handle, so a controller that reached the data layer
+// would be a controller that skipped the service, and therefore skipped the
+// policy. `aru doctor` refuses it.
 //
 // An action answers with ctx.View for a screen and ctx.JSON for data. ctx.TOON
 // answers the same JsonResource in the token-oriented form, for a payload going
@@ -54,7 +54,7 @@ func NewInvoiceController() *InvoiceController {
 // The body answers 501 and not an empty 200. A generated action that answered
 // success with no body looks like it worked -- in the browser, in the logs and
 // on every dashboard -- and that is the failure nobody debugs.
-func (c *InvoiceController) Handle(ctx *fhttp.Context) error {
+func (c *InvoiceController) Handle(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 

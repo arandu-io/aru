@@ -4,15 +4,16 @@ import (
 	"net/http"
 
 	fhttp "github.com/arandu-io/framework/http"
+	hhttp "github.com/arandu-io/hesape/http"
 )
 
 // InvoiceController answers the invoices routes.
 //
 // It is thin on purpose: read the request, call a service, render. There is no
-// repository here and there cannot be one -- fhttp.Context carries no database
-// handle, so a controller that reached the data layer would be a controller
-// that skipped the service, and therefore skipped the policy. `aru
-// doctor` refuses it.
+// repository here and there cannot be one -- the Context an action receives
+// carries no database handle, so a controller that reached the data layer
+// would be a controller that skipped the service, and therefore skipped the
+// policy. `aru doctor` refuses it.
 //
 // An action answers with ctx.View for a screen and ctx.JSON for data. ctx.TOON
 // answers the same JsonResource in the token-oriented form, for a payload going
@@ -65,37 +66,37 @@ var (
 // success with no body looks like it worked -- in the browser, in the logs and
 // on every dashboard -- and that is the failure nobody debugs. Replace it with
 // the screen.
-func (c *InvoiceController) Index(ctx *fhttp.Context) error {
+func (c *InvoiceController) Index(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Create renders the empty form.
-func (c *InvoiceController) Create(ctx *fhttp.Context) error {
+func (c *InvoiceController) Create(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Store takes the submitted form.
-func (c *InvoiceController) Store(ctx *fhttp.Context) error {
+func (c *InvoiceController) Store(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Show renders one record.
-func (c *InvoiceController) Show(ctx *fhttp.Context) error {
+func (c *InvoiceController) Show(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Edit renders the form filled in.
-func (c *InvoiceController) Edit(ctx *fhttp.Context) error {
+func (c *InvoiceController) Edit(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Update writes the submitted form onto the stored record.
-func (c *InvoiceController) Update(ctx *fhttp.Context) error {
+func (c *InvoiceController) Update(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Destroy removes the record.
-func (c *InvoiceController) Destroy(ctx *fhttp.Context) error {
+func (c *InvoiceController) Destroy(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 

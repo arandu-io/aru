@@ -96,7 +96,7 @@ import (
 	"time"
 {{- end}}
 
-	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
 	hqueue "github.com/arandu-io/hesape/queue"
 	hjobs "github.com/arandu-io/hesape/queue/jobs"
 )
@@ -125,11 +125,11 @@ type {{.Type}} struct {
 // the system carries the tenant, an id and the Grant that authorized it -- there
 // is no shape of Job that skipped any of the three.
 //
-// Called inside data.Transaction, the push is committed by the same transaction
-// as the row that produced it. That is the outbox guarantee applied to work
-// instead of to an event, and it is the reason the default queue is a table and
-// not Redis.
-func Dispatch{{.Type}}(ctx context.Context, q hqueue.Queue, g security.Grant, in {{.Type}}) error {
+// Called inside database.Transaction, the push is committed by the same
+// transaction as the row that produced it. That is the outbox guarantee applied
+// to work instead of to an event, and it is the reason the default queue is a
+// table and not Redis.
+func Dispatch{{.Type}}(ctx context.Context, q hqueue.Queue, g auth.Grant, in {{.Type}}) error {
 	j, err := hjobs.New(g, hjobs.DefaultQueue, {{.Const}}, in)
 	if err != nil {
 		return err
@@ -160,9 +160,7 @@ var _ hqueue.Handler = (*{{.Handler}})(nil)
 //
 // The Grant is rebuilt by the worker from the row -- the action and the tenant
 // the push was authorized under, and not one permission more -- so this reaches
-// repositories on exactly the same authorized path a request does. It is spelt
-// security.Grant here and auth.Grant in the queue's own signature, and they are
-// one type: the framework's name for it is an alias.
+// repositories on exactly the same authorized path a request does.
 //
 // The job arrives as a pointer because on this contract a job settles itself:
 // releasing it, or parking it, is a call on j rather than on the queue.
@@ -171,7 +169,7 @@ var _ hqueue.Handler = (*{{.Handler}})(nil)
 // process can die between doing the work and acknowledging it, and no queue
 // anywhere solves that. j.UUID is stable across retries and is the key to
 // deduplicate on.
-func (h *{{.Handler}}) Handle(ctx context.Context, g security.Grant, j *hjobs.Job) error {
+func (h *{{.Handler}}) Handle(ctx context.Context, g auth.Grant, j *hjobs.Job) error {
 	var in {{.Type}}
 	if err := j.Decode(&in); err != nil {
 		return err

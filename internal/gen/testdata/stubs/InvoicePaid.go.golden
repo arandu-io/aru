@@ -1,7 +1,7 @@
 package events
 
 import (
-	fwevents "github.com/arandu-io/framework/events"
+	hevents "github.com/arandu-io/hesape/events"
 )
 
 // InvoicePaidName is the event, in the vocabulary of the domain rather than of the
@@ -29,16 +29,16 @@ type InvoicePaid struct {
 //		// the fields above
 //	}.Event(invoice.ID))
 //
-//	// then, inside data.Transaction, in the service:
+//	// then, inside database.Transaction, in the service:
 //	if err := outbox.Store(ctx, g, invoice.PullEvents()); err != nil {
 //		return err
 //	}
 //
-// Store outside data.Transaction returns ErrNoTransaction on purpose. An event
-// stored next to a row that then rolled back is worse than no event, and an
-// event stored after the commit is one process crash away from being lost.
-func (e InvoicePaid) Event(aggregateID string) fwevents.Event {
-	return fwevents.Event{
+// Store outside database.Transaction returns ErrNoTransaction on purpose. An
+// event stored next to a row that then rolled back is worse than no event, and
+// an event stored after the commit is one process crash away from being lost.
+func (e InvoicePaid) Event(aggregateID string) hevents.Event {
+	return hevents.Event{
 		Name:        InvoicePaidName,
 		Aggregate:   "invoice",
 		AggregateID: aggregateID,

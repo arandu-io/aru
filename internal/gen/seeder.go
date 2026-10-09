@@ -86,7 +86,7 @@ const seederTemplate = `package seeders
 {{if .Factory}}import (
 	"context"
 
-	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
 
 	models "{{.ModelsImport}}"
 	policies "{{.PoliciesImport}}"
@@ -95,8 +95,8 @@ const seederTemplate = `package seeders
 
 // {{.Type}} seeds the {{.Human}} rows this application needs to exist.
 //
-// A seeder writes, and a write needs a security.Grant. This is one of the few
-// places security.SystemGrant is legitimate -- there is no request and no
+// A seeder writes, and a write needs an auth.Grant. This is one of the few
+// places auth.SystemGrant is legitimate -- there is no request and no
 // actor behind it -- and ` + "`" + `aru doctor` + "`" + ` allows it here
 // because of the directory this file is in, not because of what the function
 // is called. Anywhere else it is a warning that has to be answered with
@@ -114,11 +114,11 @@ func ({{.Type}}) Name() string { return "{{.Type}}" }
 // table that already has rows is left as it is, which is what makes a second
 // run safe.
 func ({{.Type}}) Run(ctx context.Context, d Deps) error {
-	seeded, err := models.{{.Constructor}}(d.DB).Exists(ctx, security.SystemGrant(policies.{{.Entity}}List, d.Tenant))
+	seeded, err := models.{{.Constructor}}(d.DB).Exists(ctx, auth.SystemGrant(policies.{{.Entity}}List, d.Tenant))
 	if err != nil || seeded {
 		return err
 	}
-	if _, err := factories.{{.Constructor}}(d.DB).Count(10).Create(ctx, security.SystemGrant(policies.{{.Entity}}Create, d.Tenant)); err != nil {
+	if _, err := factories.{{.Constructor}}(d.DB).Count(10).Create(ctx, auth.SystemGrant(policies.{{.Entity}}Create, d.Tenant)); err != nil {
 		return err
 	}
 
@@ -135,7 +135,7 @@ func ({{.Type}}) Run(ctx context.Context, d Deps) error {
 	// Once the entity has its factory -- ` + "`" + `aru make:factory {{.Entity}}` + "`" + ` -- this is
 	// two calls, in d.Tenant and never a tenant this file picked:
 	//
-	//	g := security.SystemGrant(policies.{{.Entity}}Create, d.Tenant)
+	//	g := auth.SystemGrant(policies.{{.Entity}}Create, d.Tenant)
 	//	_, err := factories.{{.Constructor}}(d.DB).Count(10).Create(ctx, g)
 	//
 	// Twice safely: ask whether the table already has rows before writing.

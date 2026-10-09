@@ -4,8 +4,8 @@ import "context"
 
 // InvoiceSeeder seeds the invoice rows this application needs to exist.
 //
-// A seeder writes, and a write needs a security.Grant. This is one of the few
-// places security.SystemGrant is legitimate -- there is no request and no
+// A seeder writes, and a write needs an auth.Grant. This is one of the few
+// places auth.SystemGrant is legitimate -- there is no request and no
 // actor behind it -- and `aru doctor` allows it here
 // because of the directory this file is in, not because of what the function
 // is called. Anywhere else it is a warning that has to be answered with
@@ -24,7 +24,7 @@ func (InvoiceSeeder) Run(ctx context.Context, d Deps) error {
 	// Once the entity has its factory -- `aru make:factory Invoice` -- this is
 	// two calls, in d.Tenant and never a tenant this file picked:
 	//
-	//	g := security.SystemGrant(policies.InvoiceCreate, d.Tenant)
+	//	g := auth.SystemGrant(policies.InvoiceCreate, d.Tenant)
 	//	_, err := factories.Invoices(d.DB).Count(10).Create(ctx, g)
 	//
 	// Twice safely: ask whether the table already has rows before writing.

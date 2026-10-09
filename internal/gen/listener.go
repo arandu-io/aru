@@ -88,8 +88,8 @@ package listeners
 import (
 	"context"
 
-	"github.com/arandu-io/framework/events"
-	"github.com/arandu-io/framework/observability"
+	"github.com/arandu-io/hesape/events"
+	"github.com/arandu-io/hesape/log"
 )
 
 // {{ .Type }} answers {{ .Answers }}.
@@ -141,7 +141,7 @@ func ({{ .Receiver }} *{{ .Type }}) Publish(ctx context.Context, e events.Stored
 	// The payload is the JSON the producer stored. Unmarshal it into a struct
 	// declared HERE, not shared with the producer: a consumer that compiles
 	// against the producer's type is a consumer that has to be deployed with it.
-	observability.Log(ctx).Info("event received", "event", e.Name, "id", e.ID)
+	log.For(ctx).Info("event received", "event", e.Name, "id", e.ID)
 
 	// arandu:begin custom
 	return nil

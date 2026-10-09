@@ -3,7 +3,7 @@ package seeders
 import (
 	"context"
 
-	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
 
 	models "example.test/project/app/Models"
 	policies "example.test/project/app/Policies"
@@ -12,8 +12,8 @@ import (
 
 // InvoiceSeeder seeds the invoice rows this application needs to exist.
 //
-// A seeder writes, and a write needs a security.Grant. This is one of the few
-// places security.SystemGrant is legitimate -- there is no request and no
+// A seeder writes, and a write needs an auth.Grant. This is one of the few
+// places auth.SystemGrant is legitimate -- there is no request and no
 // actor behind it -- and `aru doctor` allows it here
 // because of the directory this file is in, not because of what the function
 // is called. Anywhere else it is a warning that has to be answered with
@@ -31,11 +31,11 @@ func (InvoiceSeeder) Name() string { return "InvoiceSeeder" }
 // table that already has rows is left as it is, which is what makes a second
 // run safe.
 func (InvoiceSeeder) Run(ctx context.Context, d Deps) error {
-	seeded, err := models.Invoices(d.DB).Exists(ctx, security.SystemGrant(policies.InvoiceList, d.Tenant))
+	seeded, err := models.Invoices(d.DB).Exists(ctx, auth.SystemGrant(policies.InvoiceList, d.Tenant))
 	if err != nil || seeded {
 		return err
 	}
-	if _, err := factories.Invoices(d.DB).Count(10).Create(ctx, security.SystemGrant(policies.InvoiceCreate, d.Tenant)); err != nil {
+	if _, err := factories.Invoices(d.DB).Count(10).Create(ctx, auth.SystemGrant(policies.InvoiceCreate, d.Tenant)); err != nil {
 		return err
 	}
 

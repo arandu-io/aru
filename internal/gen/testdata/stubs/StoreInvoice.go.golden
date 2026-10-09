@@ -3,7 +3,7 @@ package requests
 import (
 	"time"
 
-	"github.com/arandu-io/framework/validation"
+	"github.com/arandu-io/hesape/validation"
 )
 
 // StoreInvoice is an input contract: what the request is allowed to carry, and
@@ -16,7 +16,7 @@ import (
 //
 // A request object often answers authorize() as well. This one does not, and
 // that is the decision rather than an omission: authorization is the Policy, asked with
-// security.Authorize inside the service, and a second place to say yes is a
+// auth.Authorize inside the service, and a second place to say yes is a
 // second place to forget. See app/Policies.
 type StoreInvoice struct {
 	Reference     string    `form:"reference"`

@@ -3,7 +3,7 @@ package requests
 import (
 	"time"
 
-	"github.com/arandu-io/framework/validation"
+	"github.com/arandu-io/hesape/validation"
 )
 
 // PurchaseOrderRequest is the input contract of creation and update, which take the

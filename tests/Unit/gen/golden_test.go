@@ -175,7 +175,7 @@ func TestEveryServiceMethodAuthorizesBeforeTheModel(t *testing.T) {
 		if end := strings.Index(body[1:], "\nfunc "); end > 0 {
 			body = body[:end]
 		}
-		authorized := strings.Index(body, "security.Authorize(")
+		authorized := strings.Index(body, "auth.Authorize(")
 		model := strings.Index(body, "models.PurchaseOrders(s.db)")
 		if authorized < 0 || model < 0 || authorized > model {
 			t.Errorf("%s does not authorize before reaching the Model", declaration)
@@ -196,7 +196,7 @@ func TestEveryServiceMethodAuthorizesBeforeTheModel(t *testing.T) {
 			body = body[:end]
 		}
 		read := strings.Index(body, "s.Get(ctx, actor")
-		authorized := strings.Index(body, "security.Authorize(")
+		authorized := strings.Index(body, "auth.Authorize(")
 		terminal := strings.Index(body, path.terminal)
 		if read < 0 || authorized < read || terminal < authorized {
 			t.Errorf("%s does not read, authorize and then write through the Model", declaration)
@@ -257,16 +257,16 @@ func TestTenantScopesEveryQuery(t *testing.T) {
 //
 // The generated Policy binds ctx, s and a:
 //
-//	Can(ctx context.Context, s security.Subject, a security.Action, x Entity)
+//	Can(ctx context.Context, s auth.Subject, a auth.Action, x Entity)
 //
 // An entity whose initial is one of those -- Subscription, Account, Category --
 // shadowed the parameter it needed, and the file did not compile. Every
 // existing golden file used purchase_order, which starts with p.
 func TestTheReceiverDoesNotShadowTheSignature(t *testing.T) {
 	for _, name := range []string{
-		"subscription",   // s, like security.Subject
+		"subscription",   // s, like auth.Subject
 		"stock_movement", // s again
-		"account",        // a, like security.Action
+		"account",        // a, like auth.Action
 		"category",       // c, like context in some templates
 		"warehouse",      // w, like http.ResponseWriter
 		"reservation",    // r, like *http.Request

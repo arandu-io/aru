@@ -90,7 +90,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
 
 	models "{{.ModelsImport}}"
 )
@@ -103,15 +103,15 @@ import (
 // compile past the first module.
 const (
 	// {{.Entity}}View is reading one record.
-	{{.Entity}}View security.Action = "{{.Name}}.view"
+	{{.Entity}}View auth.Action = "{{.Name}}.view"
 	// {{.Entity}}List is paging through the records.
-	{{.Entity}}List security.Action = "{{.Name}}.list"
+	{{.Entity}}List auth.Action = "{{.Name}}.list"
 	// {{.Entity}}Create is adding one.
-	{{.Entity}}Create security.Action = "{{.Name}}.create"
+	{{.Entity}}Create auth.Action = "{{.Name}}.create"
 	// {{.Entity}}Update is changing one.
-	{{.Entity}}Update security.Action = "{{.Name}}.update"
+	{{.Entity}}Update auth.Action = "{{.Name}}.update"
 	// {{.Entity}}Delete is removing one.
-	{{.Entity}}Delete security.Action = "{{.Name}}.delete"
+	{{.Entity}}Delete auth.Action = "{{.Name}}.delete"
 )
 
 {{if .Rules -}}
@@ -130,10 +130,10 @@ const (
 type {{.PolicyType}} struct{}
 
 // Compile-time proof that the policy answers about this entity and no other.
-var _ security.Policy[models.{{.Entity}}] = {{.PolicyType}}{}
+var _ auth.Policy[models.{{.Entity}}] = {{.PolicyType}}{}
 
 // Can decides whether the subject may perform the action.
-func ({{.PolicyType}}) Can(ctx context.Context, s security.Subject, a security.Action, {{.Receiver}} models.{{.Entity}}) error {
+func ({{.PolicyType}}) Can(ctx context.Context, s auth.Subject, a auth.Action, {{.Receiver}} models.{{.Entity}}) error {
 {{- if .Tenant}}
 	// Tenant isolation comes first and applies to every action. Without it every
 	// check below would be pointless in a multi-tenant system.
@@ -173,9 +173,9 @@ import (
 	"strings"
 {{- end}}
 
-	"github.com/arandu-io/framework/data"
-	"github.com/arandu-io/framework/observability"
-	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
+	"github.com/arandu-io/hesape/database"
+	"github.com/arandu-io/hesape/log"
 	"github.com/arandu-io/hesape/pagination"
 
 	models "{{.ModelsImport}}"
@@ -195,25 +195,25 @@ const {{.Unexported}}PerPage = 25
 // are the ones the router answers: validation.Errors back to the form, a missing
 // row as 404, a refusal as 403{{if .UniqueFields}} and a duplicate on a unique column as 409{{end}}.
 type {{.ServiceType}} struct {
-	db     *data.DB
+	db     *database.DB
 	policy policies.{{.PolicyType}}
 }
 
 // New{{.ServiceType}} wires the service.
-func New{{.ServiceType}}(db *data.DB) *{{.ServiceType}} {
+func New{{.ServiceType}}(db *database.DB) *{{.ServiceType}} {
 	return &{{.ServiceType}}{db: db}
 }
 
 // Create walks the mandatory path: validate, Authorize, Grant, Model.
 // There is no other order that compiles.
-func (s *{{.ServiceType}}) Create(ctx context.Context, actor security.Subject, in requests.{{.Request}}) (*models.{{.Entity}}, error) {
+func (s *{{.ServiceType}}) Create(ctx context.Context, actor auth.Subject, in requests.{{.Request}}) (*models.{{.Entity}}, error) {
 	if errs := in.Validate(); errs.Any() {
 		return nil, errs
 	}
 
 	var proposed models.{{.Entity}}
 	s.fill(&proposed, in)
-	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}Create, proposed)
+	g, err := auth.Authorize(ctx, s.policy, actor, policies.{{.Entity}}Create, proposed)
 	if err != nil {
 		return nil, err
 	}
@@ -226,14 +226,14 @@ func (s *{{.ServiceType}}) Create(ctx context.Context, actor security.Subject, i
 {{- if .Tenant}}
 	// The tenant comes from the Grant, never from the request or the subject
 	// directly. The model writes the same value over the insert attributes.
-	record.TenantID = data.Tenant(g)
+	record.TenantID = auth.Tenant(g)
 {{- end}}
 	if _, err := record.Save(ctx, g); err != nil {
 		return nil, err
 	}
 	// Guarded: the entity is a struct value, and boxing it into ` + "`" + `any` + "`" + ` allocates
 	// at the call site even though RecordEvent is a no-op on a nil Collector.
-	if col := observability.FromContext(ctx); col != nil {
+	if col := log.FromContext(ctx); col != nil {
 		col.RecordEvent("{{.Name}}.created", record)
 	}
 	return record, nil
@@ -243,8 +243,8 @@ func (s *{{.ServiceType}}) Create(ctx context.Context, actor security.Subject, i
 //
 // It authorizes twice: once to look at all, and once with the row that was
 // read, which is the decision about this row rather than about the action.
-func (s *{{.ServiceType}}) Get(ctx context.Context, actor security.Subject, id string) (*models.{{.Entity}}, error) {
-	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}View, models.{{.Entity}}{})
+func (s *{{.ServiceType}}) Get(ctx context.Context, actor auth.Subject, id string) (*models.{{.Entity}}, error) {
+	g, err := auth.Authorize(ctx, s.policy, actor, policies.{{.Entity}}View, models.{{.Entity}}{})
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +252,7 @@ func (s *{{.ServiceType}}) Get(ctx context.Context, actor security.Subject, id s
 	if err != nil {
 		return nil, err
 	}
-	if _, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}View, *found); err != nil {
+	if _, err := auth.Authorize(ctx, s.policy, actor, policies.{{.Entity}}View, *found); err != nil {
 		return nil, err
 	}
 	return found, nil
@@ -260,8 +260,8 @@ func (s *{{.ServiceType}}) Get(ctx context.Context, actor security.Subject, id s
 
 // List returns one page of {{.Table}}, newest first, and where the
 // previous and the next page are.
-func (s *{{.ServiceType}}) List(ctx context.Context, actor security.Subject, page int) (models.{{.Entity}}Collection, *pagination.Page, error) {
-	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}List, models.{{.Entity}}{})
+func (s *{{.ServiceType}}) List(ctx context.Context, actor auth.Subject, page int) (models.{{.Entity}}Collection, *pagination.Page, error) {
+	g, err := auth.Authorize(ctx, s.policy, actor, policies.{{.Entity}}List, models.{{.Entity}}{})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -274,7 +274,7 @@ func (s *{{.ServiceType}}) List(ctx context.Context, actor security.Subject, pag
 // It reads before writing, so the policy decides against the stored row rather
 // than against what the client claims the row is. Skipping this is how a check
 // passes on attacker-supplied data.
-func (s *{{.ServiceType}}) Update(ctx context.Context, actor security.Subject, id string, in requests.{{.Request}}) (*models.{{.Entity}}, error) {
+func (s *{{.ServiceType}}) Update(ctx context.Context, actor auth.Subject, id string, in requests.{{.Request}}) (*models.{{.Entity}}, error) {
 	if errs := in.Validate(); errs.Any() {
 		return nil, errs
 	}
@@ -284,7 +284,7 @@ func (s *{{.ServiceType}}) Update(ctx context.Context, actor security.Subject, i
 		return nil, err
 	}
 
-	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}Update, *stored)
+	g, err := auth.Authorize(ctx, s.policy, actor, policies.{{.Entity}}Update, *stored)
 	if err != nil {
 		return nil, err
 	}
@@ -296,20 +296,20 @@ func (s *{{.ServiceType}}) Update(ctx context.Context, actor security.Subject, i
 }
 
 // Delete removes a {{.Name}}.
-func (s *{{.ServiceType}}) Delete(ctx context.Context, actor security.Subject, id string) error {
+func (s *{{.ServiceType}}) Delete(ctx context.Context, actor auth.Subject, id string) error {
 	stored, err := s.Get(ctx, actor, id)
 	if err != nil {
 		return err
 	}
 
-	g, err := security.Authorize(ctx, s.policy, actor, policies.{{.Entity}}Delete, *stored)
+	g, err := auth.Authorize(ctx, s.policy, actor, policies.{{.Entity}}Delete, *stored)
 	if err != nil {
 		return err
 	}
 	if _, err := stored.Delete(ctx, g); err != nil {
 		return err
 	}
-	if col := observability.FromContext(ctx); col != nil {
+	if col := log.FromContext(ctx); col != nil {
 		col.RecordEvent("{{.Name}}.deleted", stored)
 	}
 	return nil
@@ -337,8 +337,8 @@ const requestTemplate = `package requests
 {{if .NeedsTimeParse}}import (
 	"time"
 
-	"github.com/arandu-io/framework/validation"
-){{else}}import "github.com/arandu-io/framework/validation"{{end}}
+	"github.com/arandu-io/hesape/validation"
+){{else}}import "github.com/arandu-io/hesape/validation"{{end}}
 
 // {{.Request}} is the input contract of creation and update, which take the
 // same fields. ctx.Bind fills it through the form tags, and only those: there is
@@ -403,6 +403,7 @@ import (
 
 {{end}}
 	fhttp "github.com/arandu-io/framework/http"
+	hhttp "github.com/arandu-io/hesape/http"
 	"github.com/arandu-io/hesape/pagination"
 	"github.com/arandu-io/hesape/view"
 
@@ -415,7 +416,7 @@ import (
 // {{.Controller}} answers the seven routes of the {{.Resource}} resource.
 //
 // It is thin on purpose: read the request, call the service, render. There is no
-// repository here and there cannot be one -- fhttp.Context carries no database
+// repository here and there cannot be one -- hhttp.Context carries no database
 // handle, so a controller that reached the data layer would be a controller that
 // skipped the service, and therefore skipped the policy.
 //
@@ -455,7 +456,7 @@ var (
 )
 
 // Index renders the listing, one page at a time.
-func (c *{{.Controller}}) Index(ctx *fhttp.Context) error {
+func (c *{{.Controller}}) Index(ctx *hhttp.Context) error {
 	who, _ := ctx.User()
 	found, page, err := c.svc.List(ctx.Ctx(), who, pagination.ResolveCurrentPage(ctx.Request.URL, ""))
 	if err != nil {
@@ -475,7 +476,7 @@ func (c *{{.Controller}}) Index(ctx *fhttp.Context) error {
 }
 
 // Show renders one record.
-func (c *{{.Controller}}) Show(ctx *fhttp.Context) error {
+func (c *{{.Controller}}) Show(ctx *hhttp.Context) error {
 	who, _ := ctx.User()
 	found, err := c.svc.Get(ctx.Ctx(), who, ctx.Param("id"))
 	if err != nil {
@@ -493,7 +494,7 @@ func (c *{{.Controller}}) Show(ctx *fhttp.Context) error {
 
 // Create renders the empty form, or the rejected one: the page carries what
 // was typed and the messages, from the flash the router left.
-func (c *{{.Controller}}) Create(ctx *fhttp.Context) error {
+func (c *{{.Controller}}) Create(ctx *hhttp.Context) error {
 	return ctx.View("{{.ViewName "create"}}", views.{{.ViewData "create"}}{
 		Page: view.New(ctx, "New {{.Human}}"),
 		IndexURL: ctx.URL("{{.RouteName "index"}}"),
@@ -502,7 +503,7 @@ func (c *{{.Controller}}) Create(ctx *fhttp.Context) error {
 }
 
 // Store takes the submitted form.
-func (c *{{.Controller}}) Store(ctx *fhttp.Context) error {
+func (c *{{.Controller}}) Store(ctx *hhttp.Context) error {
 	var in requests.{{.Request}}
 	if err := ctx.Bind(&in); err != nil {
 		return err
@@ -516,7 +517,7 @@ func (c *{{.Controller}}) Store(ctx *fhttp.Context) error {
 }
 
 // Edit renders the form filled in with the stored record.
-func (c *{{.Controller}}) Edit(ctx *fhttp.Context) error {
+func (c *{{.Controller}}) Edit(ctx *hhttp.Context) error {
 	who, _ := ctx.User()
 	found, err := c.svc.Get(ctx.Ctx(), who, ctx.Param("id"))
 	if err != nil {
@@ -532,7 +533,7 @@ func (c *{{.Controller}}) Edit(ctx *fhttp.Context) error {
 }
 
 // Update writes the submitted form onto the stored record.
-func (c *{{.Controller}}) Update(ctx *fhttp.Context) error {
+func (c *{{.Controller}}) Update(ctx *hhttp.Context) error {
 	var in requests.{{.Request}}
 	if err := ctx.Bind(&in); err != nil {
 		return err
@@ -546,7 +547,7 @@ func (c *{{.Controller}}) Update(ctx *fhttp.Context) error {
 }
 
 // Destroy removes the record.
-func (c *{{.Controller}}) Destroy(ctx *fhttp.Context) error {
+func (c *{{.Controller}}) Destroy(ctx *hhttp.Context) error {
 	who, _ := ctx.User()
 	if err := c.svc.Delete(ctx.Ctx(), who, ctx.Param("id")); err != nil {
 		return err
@@ -564,7 +565,7 @@ func (c *{{.Controller}}) Destroy(ctx *fhttp.Context) error {
 // The address is settled here too, for the same reason and one more: the view
 // has no route table, so a link written there could only be a literal. This
 // takes the context so it can ask for the route by name.
-func (c *{{.Controller}}) row(ctx *fhttp.Context, {{.Receiver}} *models.{{.Entity}}) views.{{.RowStruct}} {
+func (c *{{.Controller}}) row(ctx *hhttp.Context, {{.Receiver}} *models.{{.Entity}}) views.{{.RowStruct}} {
 	return views.{{.RowStruct}}{
 		ID:  {{.Receiver}}.ID,
 		URL: ctx.URL("{{.RouteName "show"}}", {{.Receiver}}.ID),
@@ -588,7 +589,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
 	"github.com/arandu-io/hesape/database/model"
 
 	models "{{.ModelsImport}}"
@@ -602,12 +603,12 @@ import (
 // generated query can be run without a Grant.
 type {{.Unexported}}Persistent interface {
 	model.Entity
-	Save(context.Context, security.Grant) (bool, error)
+	Save(context.Context, auth.Grant) (bool, error)
 }
 
 var (
 	_ {{.Unexported}}Persistent = (*models.{{.Entity}})(nil)
-	_ func(*models.{{.Entity}}Query, context.Context, security.Grant, ...any) (models.{{.Entity}}Collection, error) = (*models.{{.Entity}}Query).Get
+	_ func(*models.{{.Entity}}Query, context.Context, auth.Grant, ...any) (models.{{.Entity}}Collection, error) = (*models.{{.Entity}}Query).Get
 )
 
 // TestEvery{{.Entity}}ReadRequiresAuthorization needs no database: the service
@@ -616,7 +617,7 @@ var (
 func TestEvery{{.Entity}}ReadRequiresAuthorization(t *testing.T) {
 	svc := services.New{{.ServiceType}}(nil)
 	ctx := context.Background()
-	var anonymous security.Subject
+	var anonymous auth.Subject
 
 	calls := map[string]func() error{
 		"Get": func() error {
@@ -634,7 +635,7 @@ func TestEvery{{.Entity}}ReadRequiresAuthorization(t *testing.T) {
 
 	for name, call := range calls {
 		t.Run(name+" with no subject", func(t *testing.T) {
-			if err := call(); !errors.Is(err, security.ErrForbidden) {
+			if err := call(); !errors.Is(err, auth.ErrForbidden) {
 				t.Fatalf("error = %v, want ErrForbidden", err)
 			}
 		})
@@ -649,7 +650,7 @@ func TestEvery{{.Entity}}ReadRequiresAuthorization(t *testing.T) {
 // the real ones -- a test that breaks when you do what the generator told you to
 // do is a test people delete.
 func TestThe{{.Entity}}PolicyDeniesWhatItDoesNotKnow(t *testing.T) {
-	admin := security.Subject{ID: "a1", Tenant: "t1", Roles: []string{"admin", "staff"}}
+	admin := auth.Subject{ID: "a1", Tenant: "t1", Roles: []string{"admin", "staff"}}
 
 	err := (policies.{{.PolicyType}}{}).Can(context.Background(), admin,
 		"{{.Name}}.action_that_does_not_exist", models.{{.Entity}}{})
@@ -719,15 +720,15 @@ query here is global on purpose rather than by omission.
 There is one way, and the compiler is what says so.
 
 ` + "```" + `go
-g, err := security.Authorize(ctx, policy, subject, action, models.{{ .Entity }}{})
+g, err := auth.Authorize(ctx, policy, subject, action, models.{{ .Entity }}{})
 if err != nil {
     return err
 }
 record, err := models.{{ .Constructor }}(db).FindOrFail(ctx, g, id)
 ` + "```" + `
 
-Every terminal of ` + "`" + `{{ .Entity }}Query` + "`" + ` takes ` + "`" + `security.Grant` + "`" + `, and nothing outside the
-security package can build one. The Service owns the database handle, authorizes first,
+Every terminal of ` + "`" + `{{ .Entity }}Query` + "`" + ` takes ` + "`" + `auth.Grant` + "`" + `, and nothing outside the
+auth package can build one. The Service owns the database handle, authorizes first,
 and then spends that Grant on the Model. A Controller has neither dependency and
 cannot grow a second persistence path.
 

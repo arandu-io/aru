@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/arandu-io/framework/security"
+	"github.com/arandu-io/hesape/auth"
 
 	models "example.test/project/app/Models"
 )
@@ -17,15 +17,15 @@ import (
 // compile past the first module.
 const (
 	// PurchaseOrderView is reading one record.
-	PurchaseOrderView security.Action = "purchase_order.view"
+	PurchaseOrderView auth.Action = "purchase_order.view"
 	// PurchaseOrderList is paging through the records.
-	PurchaseOrderList security.Action = "purchase_order.list"
+	PurchaseOrderList auth.Action = "purchase_order.list"
 	// PurchaseOrderCreate is adding one.
-	PurchaseOrderCreate security.Action = "purchase_order.create"
+	PurchaseOrderCreate auth.Action = "purchase_order.create"
 	// PurchaseOrderUpdate is changing one.
-	PurchaseOrderUpdate security.Action = "purchase_order.update"
+	PurchaseOrderUpdate auth.Action = "purchase_order.update"
 	// PurchaseOrderDelete is removing one.
-	PurchaseOrderDelete security.Action = "purchase_order.delete"
+	PurchaseOrderDelete auth.Action = "purchase_order.delete"
 )
 
 // PurchaseOrderPolicy is the only authority over who does what with PurchaseOrder.
@@ -36,10 +36,10 @@ const (
 type PurchaseOrderPolicy struct{}
 
 // Compile-time proof that the policy answers about this entity and no other.
-var _ security.Policy[models.PurchaseOrder] = PurchaseOrderPolicy{}
+var _ auth.Policy[models.PurchaseOrder] = PurchaseOrderPolicy{}
 
 // Can decides whether the subject may perform the action.
-func (PurchaseOrderPolicy) Can(ctx context.Context, s security.Subject, a security.Action, p models.PurchaseOrder) error {
+func (PurchaseOrderPolicy) Can(ctx context.Context, s auth.Subject, a auth.Action, p models.PurchaseOrder) error {
 	// Tenant isolation comes first and applies to every action. Without it every
 	// check below would be pointless in a multi-tenant system.
 	if p.ID != "" && p.TenantID != s.Tenant {

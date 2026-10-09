@@ -43,15 +43,15 @@ Grant, and its tenant never comes from a path segment, a body, a query or a head
 There is one way, and the compiler is what says so.
 
 ```go
-g, err := security.Authorize(ctx, policy, subject, action, models.PurchaseOrder{})
+g, err := auth.Authorize(ctx, policy, subject, action, models.PurchaseOrder{})
 if err != nil {
     return err
 }
 record, err := models.PurchaseOrders(db).FindOrFail(ctx, g, id)
 ```
 
-Every terminal of `PurchaseOrderQuery` takes `security.Grant`, and nothing outside the
-security package can build one. The Service owns the database handle, authorizes first,
+Every terminal of `PurchaseOrderQuery` takes `auth.Grant`, and nothing outside the
+auth package can build one. The Service owns the database handle, authorizes first,
 and then spends that Grant on the Model. A Controller has neither dependency and
 cannot grow a second persistence path.
 

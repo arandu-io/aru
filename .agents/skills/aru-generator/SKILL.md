@@ -120,6 +120,29 @@ file. The constructor is `gen.Constructor`: the plural, or `<Entity>Records` whe
 the plural is the entity itself (`Media`), because a function and a type of one
 name in one package do not compile.
 
+## One import path per symbol
+
+A template names each framework symbol by the path `aru imports:catalog` prints
+for it, and never by package. The catalog is read from the framework's source:
+a symbol the framework only aliases or calls through to is written with the
+component's path -- `auth.Grant`, `database.DB`, `log.FromContext`, `*hhttp.Context`
+-- and one it declares or envelops keeps the framework's: `fhttp.Router` and the
+resource interfaces, `fhttp.Middleware`, the `mail` package. So a controller
+imports both `http` packages, under `fhttp` and `hhttp`, beside `net/http`.
+
+```sh
+GOWORK=off go build -o /tmp/aru-src . && (cd <a project> && /tmp/aru-src imports:catalog)
+GOWORK=off go test -count=1 ./tests/Unit/gen -run TestTheGeneratorNamesEverySymbolByItsCanonicalPath
+```
+
+The test reads every golden file against the catalog of the framework version
+the compile harness pins, and `TestTheGeneratedModuleCompiles` builds the result
+-- `make:module` in both scopes and the granular commands among them, job, event,
+listener, mail, command and middleware -- against the versions a new project
+requires. A canonical path whose symbol the pinned component does not have yet
+fails there, and the template keeps the bridge path for that symbol until it
+does.
+
 ## The one shape of each thing
 
 `make:module` and the granular commands render the **same templates**, not two
@@ -176,11 +199,11 @@ it is also `internal/doctor/testdata/clean`. Break one and you break the other.
 
 - **Every service method asks the policy, and every Model read and write takes
   the Grant it issued.** The generator emits no repository: the service takes
-  the acting `security.Subject`, calls `security.Authorize` before it touches a
-  row, and passes the resulting `security.Grant` to every Model terminal —
+  the acting `auth.Subject`, calls `auth.Authorize` before it touches a
+  row, and passes the resulting `auth.Grant` to every Model terminal —
   `First`, `Get`, `Value`, `Save`, `Delete`. A loaded row is authorized again
   before it is returned or changed.
-- **The tenant comes from `data.Tenant(g)`** — never from a path segment, a
+- **The tenant comes from `auth.Tenant(g)`** — never from a path segment, a
   body, a query or a header.
 - **The generated policy denies every action**, with no allow-everything branch
   to delete later.

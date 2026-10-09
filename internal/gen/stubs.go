@@ -151,7 +151,8 @@ const controllerStubTemplate = `package controllers
 {{if or .IsResource .IsInvokable}}import (
 	"net/http"
 
-	fhttp "github.com/arandu-io/framework/http"
+{{if .IsResource}}	fhttp "github.com/arandu-io/framework/http"
+{{end}}	hhttp "github.com/arandu-io/hesape/http"
 )
 
 {{end -}}
@@ -165,10 +166,10 @@ const controllerStubTemplate = `package controllers
 {{- end}}
 //
 // It is thin on purpose: read the request, call a service, render. There is no
-// repository here and there cannot be one -- fhttp.Context carries no database
-// handle, so a controller that reached the data layer would be a controller
-// that skipped the service, and therefore skipped the policy. ` + "`" + `aru
-// doctor` + "`" + ` refuses it.
+// repository here and there cannot be one -- the Context an action receives
+// carries no database handle, so a controller that reached the data layer
+// would be a controller that skipped the service, and therefore skipped the
+// policy. ` + "`" + `aru doctor` + "`" + ` refuses it.
 //
 // An action answers with ctx.View for a screen and ctx.JSON for data. ctx.TOON
 // answers the same JsonResource in the token-oriented form, for a payload going
@@ -221,37 +222,37 @@ var (
 // success with no body looks like it worked -- in the browser, in the logs and
 // on every dashboard -- and that is the failure nobody debugs. Replace it with
 // the screen.
-func (c *{{.Type}}) Index(ctx *fhttp.Context) error {
+func (c *{{.Type}}) Index(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Create renders the empty form.
-func (c *{{.Type}}) Create(ctx *fhttp.Context) error {
+func (c *{{.Type}}) Create(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Store takes the submitted form.
-func (c *{{.Type}}) Store(ctx *fhttp.Context) error {
+func (c *{{.Type}}) Store(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Show renders one record.
-func (c *{{.Type}}) Show(ctx *fhttp.Context) error {
+func (c *{{.Type}}) Show(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Edit renders the form filled in.
-func (c *{{.Type}}) Edit(ctx *fhttp.Context) error {
+func (c *{{.Type}}) Edit(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Update writes the submitted form onto the stored record.
-func (c *{{.Type}}) Update(ctx *fhttp.Context) error {
+func (c *{{.Type}}) Update(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Destroy removes the record.
-func (c *{{.Type}}) Destroy(ctx *fhttp.Context) error {
+func (c *{{.Type}}) Destroy(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 {{end}}{{if .IsInvokable}}
@@ -268,7 +269,7 @@ func (c *{{.Type}}) Destroy(ctx *fhttp.Context) error {
 // The body answers 501 and not an empty 200. A generated action that answered
 // success with no body looks like it worked -- in the browser, in the logs and
 // on every dashboard -- and that is the failure nobody debugs.
-func (c *{{.Type}}) Handle(ctx *fhttp.Context) error {
+func (c *{{.Type}}) Handle(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 {{end}}
@@ -338,8 +339,8 @@ const requestStubTemplate = `package requests
 {{if .NeedsTimeParse}}import (
 	"time"
 
-	"github.com/arandu-io/framework/validation"
-){{else}}import "github.com/arandu-io/framework/validation"{{end}}
+	"github.com/arandu-io/hesape/validation"
+){{else}}import "github.com/arandu-io/hesape/validation"{{end}}
 
 // {{.Type}} is an input contract: what the request is allowed to carry, and
 // what makes it valid.
@@ -351,7 +352,7 @@ const requestStubTemplate = `package requests
 //
 // A request object often answers authorize() as well. This one does not, and
 // that is the decision rather than an omission: authorization is the Policy, asked with
-// security.Authorize inside the service, and a second place to say yes is a
+// auth.Authorize inside the service, and a second place to say yes is a
 // second place to forget. See app/Policies.
 type {{.Type}} struct {
 {{- if .Fields}}

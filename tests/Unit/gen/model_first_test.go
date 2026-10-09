@@ -49,8 +49,8 @@ func TestGeneratedModulesUseTheModelFirstPath(t *testing.T) {
 
 	service := byPath["app/Services/PurchaseOrderService.go"]
 	for _, want := range []string{
-		"db     *data.DB",
-		"func NewPurchaseOrderService(db *data.DB) *PurchaseOrderService",
+		"db     *database.DB",
+		"func NewPurchaseOrderService(db *database.DB) *PurchaseOrderService",
 		"models.PurchaseOrders(s.db)",
 	} {
 		if !strings.Contains(service, want) {
@@ -63,7 +63,7 @@ func TestGeneratedModulesUseTheModelFirstPath(t *testing.T) {
 
 	controller := byPath["app/Http/Controllers/PurchaseOrderController.go"]
 	for _, want := range []string{
-		"row(ctx *fhttp.Context, p *models.PurchaseOrder)",
+		"row(ctx *hhttp.Context, p *models.PurchaseOrder)",
 		"fill(p *models.PurchaseOrder, in requests.PurchaseOrderRequest)",
 	} {
 		if !strings.Contains(controller+service, want) {

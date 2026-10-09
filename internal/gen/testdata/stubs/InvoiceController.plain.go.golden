@@ -4,10 +4,10 @@ package controllers
 // the custom block at the end, and register each one in routes/web.go.
 //
 // It is thin on purpose: read the request, call a service, render. There is no
-// repository here and there cannot be one -- fhttp.Context carries no database
-// handle, so a controller that reached the data layer would be a controller
-// that skipped the service, and therefore skipped the policy. `aru
-// doctor` refuses it.
+// repository here and there cannot be one -- the Context an action receives
+// carries no database handle, so a controller that reached the data layer
+// would be a controller that skipped the service, and therefore skipped the
+// policy. `aru doctor` refuses it.
 //
 // An action answers with ctx.View for a screen and ctx.JSON for data. ctx.TOON
 // answers the same JsonResource in the token-oriented form, for a payload going

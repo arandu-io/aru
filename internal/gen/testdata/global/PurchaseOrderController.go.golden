@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	fhttp "github.com/arandu-io/framework/http"
+	hhttp "github.com/arandu-io/hesape/http"
 	"github.com/arandu-io/hesape/pagination"
 	"github.com/arandu-io/hesape/view"
 
@@ -16,7 +17,7 @@ import (
 // PurchaseOrderController answers the seven routes of the purchase-orders resource.
 //
 // It is thin on purpose: read the request, call the service, render. There is no
-// repository here and there cannot be one -- fhttp.Context carries no database
+// repository here and there cannot be one -- hhttp.Context carries no database
 // handle, so a controller that reached the data layer would be a controller that
 // skipped the service, and therefore skipped the policy.
 //
@@ -56,7 +57,7 @@ var (
 )
 
 // Index renders the listing, one page at a time.
-func (c *PurchaseOrderController) Index(ctx *fhttp.Context) error {
+func (c *PurchaseOrderController) Index(ctx *hhttp.Context) error {
 	who, _ := ctx.User()
 	found, page, err := c.svc.List(ctx.Ctx(), who, pagination.ResolveCurrentPage(ctx.Request.URL, ""))
 	if err != nil {
@@ -76,7 +77,7 @@ func (c *PurchaseOrderController) Index(ctx *fhttp.Context) error {
 }
 
 // Show renders one record.
-func (c *PurchaseOrderController) Show(ctx *fhttp.Context) error {
+func (c *PurchaseOrderController) Show(ctx *hhttp.Context) error {
 	who, _ := ctx.User()
 	found, err := c.svc.Get(ctx.Ctx(), who, ctx.Param("id"))
 	if err != nil {
@@ -94,7 +95,7 @@ func (c *PurchaseOrderController) Show(ctx *fhttp.Context) error {
 
 // Create renders the empty form, or the rejected one: the page carries what
 // was typed and the messages, from the flash the router left.
-func (c *PurchaseOrderController) Create(ctx *fhttp.Context) error {
+func (c *PurchaseOrderController) Create(ctx *hhttp.Context) error {
 	return ctx.View("purchase-orders.create", views.PurchaseOrdersCreateData{
 		Page:     view.New(ctx, "New purchase order"),
 		IndexURL: ctx.URL("purchase-orders.index"),
@@ -103,7 +104,7 @@ func (c *PurchaseOrderController) Create(ctx *fhttp.Context) error {
 }
 
 // Store takes the submitted form.
-func (c *PurchaseOrderController) Store(ctx *fhttp.Context) error {
+func (c *PurchaseOrderController) Store(ctx *hhttp.Context) error {
 	var in requests.PurchaseOrderRequest
 	if err := ctx.Bind(&in); err != nil {
 		return err
@@ -117,7 +118,7 @@ func (c *PurchaseOrderController) Store(ctx *fhttp.Context) error {
 }
 
 // Edit renders the form filled in with the stored record.
-func (c *PurchaseOrderController) Edit(ctx *fhttp.Context) error {
+func (c *PurchaseOrderController) Edit(ctx *hhttp.Context) error {
 	who, _ := ctx.User()
 	found, err := c.svc.Get(ctx.Ctx(), who, ctx.Param("id"))
 	if err != nil {
@@ -133,7 +134,7 @@ func (c *PurchaseOrderController) Edit(ctx *fhttp.Context) error {
 }
 
 // Update writes the submitted form onto the stored record.
-func (c *PurchaseOrderController) Update(ctx *fhttp.Context) error {
+func (c *PurchaseOrderController) Update(ctx *hhttp.Context) error {
 	var in requests.PurchaseOrderRequest
 	if err := ctx.Bind(&in); err != nil {
 		return err
@@ -147,7 +148,7 @@ func (c *PurchaseOrderController) Update(ctx *fhttp.Context) error {
 }
 
 // Destroy removes the record.
-func (c *PurchaseOrderController) Destroy(ctx *fhttp.Context) error {
+func (c *PurchaseOrderController) Destroy(ctx *hhttp.Context) error {
 	who, _ := ctx.User()
 	if err := c.svc.Delete(ctx.Ctx(), who, ctx.Param("id")); err != nil {
 		return err
@@ -165,7 +166,7 @@ func (c *PurchaseOrderController) Destroy(ctx *fhttp.Context) error {
 // The address is settled here too, for the same reason and one more: the view
 // has no route table, so a link written there could only be a literal. This
 // takes the context so it can ask for the route by name.
-func (c *PurchaseOrderController) row(ctx *fhttp.Context, p *models.PurchaseOrder) views.PurchaseOrderRow {
+func (c *PurchaseOrderController) row(ctx *hhttp.Context, p *models.PurchaseOrder) views.PurchaseOrderRow {
 	return views.PurchaseOrderRow{
 		ID:            p.ID,
 		URL:           ctx.URL("purchase-orders.show", p.ID),

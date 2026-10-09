@@ -12,7 +12,7 @@ import (
 // this one; nothing here edits a go.mod.
 const (
 	MCPModule  = "github.com/arandu-io/mcp"
-	MCPRelease = "v0.4.0"
+	MCPRelease = "v0.4.1"
 )
 
 // MCPKind is which of the three things a client reaches an application through

@@ -259,6 +259,15 @@ window.`,
 		run:   runLSP,
 	},
 	{
+		// The second server beside lsp: the same analyses, for an assistant
+		// rather than an editor, and one generator it may run on request.
+		name:  "mcp",
+		usage: mcpUsage,
+		desc:  "serve the doctor, the project map, the implementation contract and the generators to an assistant over MCP",
+		help:  mcpHelp,
+		run:   runMCP,
+	},
+	{
 		name:  "model:build",
 		usage: "aru model:build [--check]",
 		desc:  "write the query beside every entity, and refresh the factories it keeps",

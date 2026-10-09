@@ -870,6 +870,7 @@ func TestTheMakeModelUsageNamesEveryFlag(t *testing.T) {
 var flagsWithoutAFlagSet = map[string]string{
 	"key:generate": "takes no argument",
 	"lsp":          "takes no argument",
+	"mcp":          "takes no argument",
 	"serve":        "forwards what follows -- to the application",
 	"dev":          "forwards what follows -- to the application",
 	"font:add":     "reads its own arguments",

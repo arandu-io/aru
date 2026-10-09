@@ -19,6 +19,7 @@ names the situation you are in rather than the topic it covers.
 | `aru-view-compiler` | changing `internal/kyse`: the parser, the generator, an escape, a directive |
 | `aru-generator` | changing what `make:*`, `generate` or `new` writes into somebody's project |
 | `aru-project-map` | changing what `aru lsp` answers about a project: the map, its kinds and edges, the navigation on it |
+| `aru-mcp` | changing what `aru mcp` serves an assistant: a tool, the contract it answers from, what `generate` may run |
 
 ## Why these exist
 

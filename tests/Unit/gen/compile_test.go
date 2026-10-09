@@ -156,6 +156,19 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 		return gen.GenerateService(service)
 	})
 
+	// make:resource, over the tenant module's model as make:module wrote it:
+	// the columns are read back off the file, which is what the command does.
+	emit("aru make:resource PurchaseOrder", func() ([]gen.File, error) {
+		fields, tenant, err := gen.ColumnsFromModel(filepath.Join(root, "app", "Models", "PurchaseOrder.go"), "PurchaseOrder")
+		if err != nil {
+			return nil, err
+		}
+		return gen.RenderResource(gen.ResourceSpec{
+			Entity: "PurchaseOrder", Table: tenantModule.Table(), Tenant: tenant, Fields: fields,
+			ModulePath: generatedModulePath,
+		})
+	})
+
 	// make:controller, in its four shapes, and a resource nested under a
 	// parent with a named action. A controller stub declares no entity, so each
 	// one gets a name of its own; what is proved is that every shape imports

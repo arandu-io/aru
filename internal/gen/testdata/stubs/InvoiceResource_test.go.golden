@@ -1,0 +1,55 @@
+package unit_test
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"sort"
+	"strings"
+	"testing"
+
+	hhttp "github.com/arandu-io/hesape/http"
+
+	resources "example.test/project/app/Http/Resources"
+	models "example.test/project/app/Models"
+)
+
+// TestTheInvoiceResourceAnswersOnlyWhatItLists writes one Invoice through
+// ctx.JSON, as a controller does, and reads the keys of what was answered.
+// They have to be the allow-list and nothing more -- the tenant
+// in particular, which is set on the record and must not leave.
+func TestTheInvoiceResourceAnswersOnlyWhatItLists(t *testing.T) {
+	record := &models.Invoice{ID: "record-1", TenantID: "tenant-a"}
+
+	w := httptest.NewRecorder()
+	ctx := hhttp.NewContext(w, httptest.NewRequest(http.MethodGet, "/", nil), nil, nil)
+	if err := ctx.JSON(http.StatusOK, resources.NewInvoiceResource(record)); err != nil {
+		t.Fatalf("ctx.JSON: %v", err)
+	}
+
+	var answer struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &answer); err != nil {
+		t.Fatalf("the answer is not JSON: %v\n%s", err, w.Body.String())
+	}
+	answered := make([]string, 0, len(answer.Data))
+	for key := range answer.Data {
+		answered = append(answered, key)
+	}
+	sort.Strings(answered)
+
+	// The allow-list, as ToArray writes it. A field added there is added here,
+	// on purpose: what leaves is decided twice, in two files, by somebody
+	// reading both.
+	listed := []string{"created_at", "id", "reference", "total"}
+	if strings.Join(answered, ",") != strings.Join(listed, ",") {
+		t.Errorf("answered %v, want exactly %v", answered, listed)
+	}
+	if answer.Data["id"] != "record-1" {
+		t.Errorf("id = %v, want the record's", answer.Data["id"])
+	}
+}
+
+// arandu:begin custom
+// arandu:end custom

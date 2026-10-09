@@ -118,6 +118,8 @@ func TestGoldenStubs(t *testing.T) {
 		})},
 		{"InvoiceService.go", fileAt(0, func() ([]gen.File, error) { return gen.GenerateService(serviceModule()) })},
 		{"InvoiceService_test.go", fileAt(1, func() ([]gen.File, error) { return gen.GenerateService(serviceModule()) })},
+		{"InvoiceResource.go", fileAt(0, func() ([]gen.File, error) { return gen.RenderResource(resourceSpec()) })},
+		{"InvoiceResource_test.go", fileAt(1, func() ([]gen.File, error) { return gen.RenderResource(resourceSpec()) })},
 		{"WelcomeEmail.go", fileAt(0, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
 		{"welcome-email.kyse.go", fileAt(1, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
 		{"welcome-email-text.kyse.go", fileAt(2, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
@@ -203,6 +205,18 @@ func serviceModule() gen.Module {
 		{GoName: "DeliveryDate", GoType: "string"},
 	}
 	return gen.Module{Name: "invoice", Tenant: true, ModulePath: "example.test/project", Fields: gen.ServiceFields(model, request)}
+}
+
+// resourceSpec is what make:resource reads off a tenant-scoped model: its
+// columns under their db tags, the tenant left out.
+func resourceSpec() gen.ResourceSpec {
+	return gen.ResourceSpec{
+		Entity: "Invoice", Table: "invoices", Tenant: true, ModulePath: "example.test/project",
+		Fields: []gen.Answered{
+			{GoName: "ID", Key: "id"}, {GoName: "Reference", Key: "reference"},
+			{GoName: "Total", Key: "total"}, {GoName: "CreatedAt", Key: "created_at"},
+		},
+	}
 }
 
 func factorySpec(tenant bool) gen.FactorySpec {

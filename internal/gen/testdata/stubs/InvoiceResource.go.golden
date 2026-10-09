@@ -1,0 +1,79 @@
+package resources
+
+import (
+	hhttp "github.com/arandu-io/hesape/http"
+
+	models "example.test/project/app/Models"
+)
+
+// InvoiceResource is what one Invoice answers with as JSON: the fields ToArray
+// lists, and nothing else.
+//
+// It exists because an encoder handed the entity answers with whatever fields
+// the entity has, including the ones somebody adds to it later without reading
+// this file: a password hash, an internal note, the tenant the row belongs to.
+// A resource answers with a list somebody wrote. ctx.JSON takes one and no
+// other value, and so does mcp.JSON, so a controller and a tool over the same
+// service answer the same document.
+type InvoiceResource struct {
+	record *models.Invoice
+}
+
+// NewInvoiceResource wraps one Invoice.
+func NewInvoiceResource(record *models.Invoice) InvoiceResource {
+	return InvoiceResource{record: record}
+}
+
+// Compile-time proof that ctx.JSON takes it.
+var _ hhttp.JsonResource = InvoiceResource{}
+
+// ToArray returns the fields that may leave, by name. The tenant is not among
+// them, and a field added to the model is not either until somebody adds it
+// here: delete a line for a field this answer should not carry.
+func (r InvoiceResource) ToArray() map[string]any {
+	return map[string]any{
+		"id":         r.record.ID,
+		"reference":  r.record.Reference,
+		"total":      r.record.Total,
+		"created_at": r.record.CreatedAt,
+		// arandu:begin custom
+		// A computed field, or one that leaves only for some readers, goes
+		// here; a value that reports itself missing is left out of the answer.
+		// arandu:end custom
+	}
+}
+
+// With returns what goes beside "data" at the top of the answer: metadata about
+// the answer rather than about the Invoice. There is none yet.
+func (r InvoiceResource) With() map[string]any { return nil }
+
+// InvoiceCollection is what a list of invoices answers with: each row through
+// InvoiceResource, under "invoices".
+type InvoiceCollection struct {
+	rows models.InvoiceCollection
+}
+
+// NewInvoiceCollection wraps a page of rows, as the service's List returns them.
+func NewInvoiceCollection(rows models.InvoiceCollection) InvoiceCollection {
+	return InvoiceCollection{rows: rows}
+}
+
+// Compile-time proof that ctx.JSON takes it.
+var _ hhttp.JsonResource = InvoiceCollection{}
+
+// ToArray returns every row through InvoiceResource, so a list answers with the same
+// fields one record does.
+func (c InvoiceCollection) ToArray() map[string]any {
+	items := make([]map[string]any, 0, len(c.rows))
+	for _, row := range c.rows {
+		items = append(items, NewInvoiceResource(row).ToArray())
+	}
+	return map[string]any{"invoices": items}
+}
+
+// With returns what goes beside "data": the links of the next and previous
+// page belong here, once the controller hands them over.
+func (c InvoiceCollection) With() map[string]any { return nil }
+
+// arandu:begin custom
+// arandu:end custom

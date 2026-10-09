@@ -340,6 +340,12 @@ window.`,
 		run:   makeService,
 	},
 	{
+		name:  "make:resource",
+		usage: makeResourceUsage,
+		desc:  "generate the JSON Resource of an existing entity: the fields it answers with, and its collection",
+		run:   makeResource,
+	},
+	{
 		name:  "make:migration",
 		usage: makeMigrationUsage,
 		desc:  "generate one migration: a table, or columns added to one",

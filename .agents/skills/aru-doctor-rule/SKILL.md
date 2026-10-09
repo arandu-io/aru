@@ -60,6 +60,9 @@ The tree decides, not the topic.
 
 - **`internal/doctor/rules.go`** — the check is about the application `aru`
   generates: the tree with `app/`, `routes/` and `resources/views/` in it.
+- **`internal/doctor/structure.go`** — the same tree, when the check is about
+  where code lives rather than what it lets through: a structural warning (see
+  below). The function still goes into the one `rules` slice in `rules.go`.
 - **`.golangci.yml`** — the check is about `aru`'s own source. Which also means
   it is a check about Go, because an off-the-shelf linter cannot be taught what
   a `Grant` is.
@@ -217,6 +220,47 @@ for the wrong reason on the right fixture passes every test above.
 A rule that rejects code somebody already wrote enters as a `Warning` in a minor
 release and becomes an `Error` in the next major. The comment above the slice
 says so, and it is the only version policy this package has.
+
+## Structural warnings
+
+Nineteen rules in `internal/doctor/structure.go` report where code lives, not
+what it lets through: a second way to do something the application tree
+already has an owner for. They are all `Warning` and stay so until the
+applications' reports show a rule is never wrong; promotion to `Error` is a
+decision per rule. A file name or a line count says where to look and proves
+nothing on its own.
+
+Each one says in its comment, in this order: reason, scope, severity, the
+positive and the negative case, the known false positive, the limit of the
+analysis (function, file or project) and the correction. Keep that shape when
+changing one. Every rule has a positive and a negative case in
+`tests/Unit/doctor/structure_test.go`, a planted instance in `violations`,
+and near misses in `gaps` and `clean`.
+
+| rule | reads | limit |
+| --- | --- | --- |
+| `input-read-by-hand` | `ctx.Input`, `FormValue`, `PostFormValue`, `ParseForm`, `ParseMultipartForm`, `json.NewDecoder` in a controller | function, by name |
+| `validate-called-by-controller` | `x.Validate()` with no argument, `validation.Validate` in a controller | function, by name |
+| `json-written-by-hand` | `json.NewEncoder`, and `WriteHeader` beside JSON, in a controller | function |
+| `invalid-form-answered-by-hand` | `http.StatusUnprocessableEntity` or `422` in a controller, outside a comparison | function |
+| `session-loaded-in-controller` | a `Load` on a receiver named after a session, outside `Controllers/Auth` | function, by receiver name |
+| `redirect-to-literal-path` | a `Redirect` whose argument opens with `/` | call |
+| `html-template-in-app` | `import "html/template"` under `app/` | file |
+| `service-takes-http` | names from `net/http`, `framework/http`, `hesape/http`, `hesape/session`, and `template.HTML`, in `app/Services`; status, method and byte functions excluded | file |
+| `service-subpackage` | a directory under `app/Services` holding Go | file tree |
+| `service-file-too-large` | a service file past 600 lines | file |
+| `controller-too-many-actions` | a controller type with more than 12 handler-shaped methods | package |
+| `operation-chosen-by-form-field` | a `switch` on a form field whose branches call two methods of the receiver's fields | function; a call graph would be needed to say more, so it says nothing more |
+| `client-outside-clients` | outgoing `net/http` names and `hesape/http/client` under `app/`, outside `app/Clients` | file |
+| `model-rule-touches-io` | database, network or `time.Now` in a function of a model's custom block; scopes on `*Query` and `init` excluded | function |
+| `fragment-without-partial` | `ctx.Fragment` of a literal view outside `partials.` | call |
+| `helper-reimplemented` | functions under `app/` named Slugify, or with BRL, CPF or CNPJ beside a validating or formatting word | declaration, by name |
+| `raw-sql-outside-repository` | a body that runs a statement, outside `app/Repositories` and `database/` | body |
+| `generated-not-wired` | a `New*` in Controllers or Services that no other non-test file names | project, by name |
+| `subject-built-by-hand` | a `Subject` literal whose `Roles` or `Actions` the code chose, outside tests and `database/` | literal |
+
+`aru doctor --list` prints them with the rest, and is what the skeleton's
+`arandu-doctor` skill is checked against.
 
 ## Profile rules
 

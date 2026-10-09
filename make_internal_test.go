@@ -19,18 +19,26 @@ import (
 
 func TestTheControllerWiringNamesWhatTheFileDeclares(t *testing.T) {
 	for _, c := range []struct {
-		kind  gen.Kind
-		route string
+		name     string
+		stub     gen.Stub
+		routes   []string
+		declared []string
 	}{
-		{gen.KindResource, `r.Resource("invoices", d.Invoice)`},
-		{gen.KindInvokable, `r.Action("GET", "/invoices", d.Invoice.Handle).Name("invoices")`},
-		{gen.KindPlain, "(no route yet"},
+		{"resource", gen.Stub{Kind: gen.KindResource, Resource: "invoices"},
+			[]string{`r.Resource("invoices", d.Invoice)`}, []string{"func (c *InvoiceController) Index("}},
+		{"singleton", gen.Stub{Kind: gen.KindSingleton, Resource: "invoice"},
+			[]string{`r.Singleton("invoice", d.Invoice)`}, []string{"func (c *InvoiceController) Show(", "_ fhttp.Updater"}},
+		{"invokable", gen.Stub{Kind: gen.KindInvokable, Resource: "invoices"},
+			[]string{`r.Invokable("POST", "/invoices", d.Invoice).Name("invoices")`},
+			[]string{"func (c *InvoiceController) Invoke(", "_ fhttp.Invoker"}},
+		{"nested with an action", gen.Stub{Kind: gen.KindResource, Resource: "invoices", Parent: "accounts", Action: "send"},
+			[]string{`r.Resource("accounts.invoices", d.Invoice)`, `r.ResourceAction("POST", "accounts.invoices", "send", d.Invoice.Send)`},
+			[]string{"func (c *InvoiceController) Send(", `ctx.Param("account")`, `ctx.Param("invoice")`}},
+		{"plain", gen.Stub{Kind: gen.KindPlain, Resource: "invoices"}, []string{"(no route yet"}, nil},
 	} {
-		t.Run(string(c.kind), func(t *testing.T) {
-			stub := gen.Stub{
-				Type: "InvoiceController", ModulePath: "example.test/project",
-				Resource: "invoices", Entity: "Invoice", Kind: c.kind,
-			}
+		t.Run(c.name, func(t *testing.T) {
+			stub := c.stub
+			stub.Type, stub.ModulePath, stub.Entity = "InvoiceController", "example.test/project", "Invoice"
 			files, err := gen.GenerateController(stub)
 			if err != nil {
 				t.Fatalf("GenerateController: %v", err)
@@ -38,8 +46,10 @@ func TestTheControllerWiringNamesWhatTheFileDeclares(t *testing.T) {
 			source := string(files[0].Content)
 			message := wiringController(stub, gen.Module{Name: "invoice", ModulePath: "example.test/project"})
 
-			if !strings.Contains(message, c.route) {
-				t.Errorf("the printed route is not %q:\n%s", c.route, message)
+			for _, route := range c.routes {
+				if !strings.Contains(message, route) {
+					t.Errorf("the printed routes do not hold %q:\n%s", route, message)
+				}
 			}
 			// The constructor the message tells you to call has to exist, with
 			// the arguments the message passes it.
@@ -49,8 +59,10 @@ func TestTheControllerWiringNamesWhatTheFileDeclares(t *testing.T) {
 			if !strings.Contains(message, "Invoice: controllers.NewInvoiceController(),") {
 				t.Errorf("the printed bootstrap line does not call the generated constructor:\n%s", message)
 			}
-			if c.kind == gen.KindInvokable && !strings.Contains(source, "func (c *InvoiceController) Handle(") {
-				t.Error("the message registers Handle and the file does not declare it")
+			for _, d := range c.declared {
+				if !strings.Contains(source, d) {
+					t.Errorf("the message registers what the file does not declare: %q is missing", d)
+				}
 			}
 		})
 	}

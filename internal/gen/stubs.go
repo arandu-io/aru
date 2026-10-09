@@ -3,12 +3,18 @@ package gen
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
+
+	"github.com/arandu-io/hesape/str"
 )
 
 // Kind is which shape of controller was asked for.
 //
-// Three shapes, and the set is closed for the same reason the type list is: a
-// generator whose shapes grow on demand becomes a language.
+// Four shapes, and the set is closed for the same reason the type list is: a
+// generator whose shapes grow on demand becomes a language. A nested resource
+// and a named action are not shapes of their own -- they are a resource with a
+// parent, and a resource with one more verb -- so they are fields of the Stub
+// rather than kinds.
 type Kind string
 
 // The closed set.
@@ -17,7 +23,10 @@ const (
 	KindPlain Kind = "plain"
 	// KindResource is the seven actions fhttp.Router.Resource looks for.
 	KindResource Kind = "resource"
-	// KindInvokable is one action, Handle.
+	// KindSingleton is the three fhttp.Router.Singleton looks for: show, edit
+	// and update, with no id, for a thing there is one of where it is reached.
+	KindSingleton Kind = "singleton"
+	// KindInvokable is one action, Invoke, registered with fhttp.Router.Invokable.
 	KindInvokable Kind = "invokable"
 )
 
@@ -42,6 +51,16 @@ type Stub struct {
 	Entity string
 	// Kind picks the shape of controller. It is ignored by the other stubs.
 	Kind Kind
+	// Parent is the resource a resource or a singleton nests under, as the
+	// route table names it: "projects". Empty is a top-level one.
+	Parent string
+	// Action is one named action on a record of a resource, beyond the seven:
+	// "publish". Empty is none.
+	Action string
+	// Service is the service a resource controller is built with, when the
+	// command that writes it writes the service too: "InvoiceService". Empty
+	// is a controller that takes nothing yet.
+	Service string
 	// Fields are the columns a request carries. Empty is legitimate: it is the
 	// empty stub.
 	Fields []Field
@@ -95,6 +114,59 @@ func (s Stub) Validate() error {
 	return nil
 }
 
+// validateController reports what is wrong with the shape of a controller the
+// stub asks for: a parent on a shape that cannot nest, an action on one that
+// has no record to act on, a service on one with nothing to call it from.
+func (s Stub) validateController() error {
+	switch s.Kind {
+	case KindPlain, KindResource, KindSingleton, KindInvokable:
+	default:
+		return fmt.Errorf("unknown controller kind %q", s.Kind)
+	}
+	if s.Parent != "" {
+		if s.Kind != KindResource && s.Kind != KindSingleton {
+			return fmt.Errorf("a %s controller does not nest: only a resource or a singleton has a parent", s.Kind)
+		}
+		if !isSegment(s.Parent) {
+			return fmt.Errorf("parent %q is not a route segment: lowercase letters, digits and dashes, as the route table names it (projects)", s.Parent)
+		}
+	}
+	if s.Action != "" {
+		if s.Kind != KindResource {
+			return fmt.Errorf("an action acts on a record of a resource, and a %s controller has none: ask for a resource", s.Kind)
+		}
+		if !isSegment(s.Action) {
+			return fmt.Errorf("action %q is not a route segment: lowercase letters, digits and dashes (publish)", s.Action)
+		}
+		if seven[s.Action] {
+			return fmt.Errorf("%q is one of the seven actions a resource already has", s.Action)
+		}
+	}
+	if s.Service != "" && s.Kind != KindResource {
+		return fmt.Errorf("only a resource controller is written with its service")
+	}
+	return nil
+}
+
+// seven are the actions of a resource, which a named action may not shadow.
+var seven = map[string]bool{
+	"index": true, "create": true, "store": true, "show": true, "edit": true, "update": true, "destroy": true,
+}
+
+// isSegment reports whether s can be one segment of a route: lowercase letters,
+// digits and dashes, starting with a letter.
+func isSegment(s string) bool {
+	if s == "" || s[0] < 'a' || s[0] > 'z' {
+		return false
+	}
+	for _, r := range s {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
 // GenerateController produces app/Http/Controllers/<Type>.go.
 //
 // One file, always: a controller is not a module, and a command that also wrote
@@ -103,10 +175,8 @@ func GenerateController(s Stub) ([]File, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err
 	}
-	switch s.Kind {
-	case KindPlain, KindResource, KindInvokable:
-	default:
-		return nil, fmt.Errorf("unknown controller kind %q", s.Kind)
+	if err := s.validateController(); err != nil {
+		return nil, err
 	}
 
 	content, err := render(s.Type+".go", controllerStubTemplate, s)
@@ -143,21 +213,105 @@ func GenerateRequest(s Stub) ([]File, error) {
 // IsResource reports whether the seven actions are emitted.
 func (s Stub) IsResource() bool { return s.Kind == KindResource }
 
-// IsInvokable reports whether the single Handle action is emitted.
+// IsSingleton reports whether show, edit and update are emitted, with no id.
+func (s Stub) IsSingleton() bool { return s.Kind == KindSingleton }
+
+// IsInvokable reports whether the single Invoke action is emitted.
 func (s Stub) IsInvokable() bool { return s.Kind == KindInvokable }
+
+// IsNested reports whether the controller answers under a parent.
+func (s Stub) IsNested() bool { return s.Parent != "" }
+
+// RouteResource is the name the route table registers the controller under:
+// "invoices", or "projects.tasks" when it nests.
+func (s Stub) RouteResource() string {
+	if s.Parent != "" {
+		return s.Parent + "." + s.Resource
+	}
+	return s.Resource
+}
+
+// ParentParam is the path parameter that carries the parent: "project".
+func (s Stub) ParentParam() string { return ResourceParameter(s.Parent) }
+
+// MemberParam is the path parameter that carries one record: "id" on a
+// top-level resource, the singular of the segment on a nested one, as the
+// router names it.
+func (s Stub) MemberParam() string {
+	if s.Parent != "" {
+		return ResourceParameter(s.Resource)
+	}
+	return "id"
+}
+
+// ActionMethod is the Go method a named action is written as: "Publish".
+func (s Stub) ActionMethod() string { return Exported(s.Action) }
+
+// MemberPath is the path one record answers at, for the doc comments:
+// "/invoices/{id}", or "/tasks/{task}" on a nested resource.
+func (s Stub) MemberPath() string {
+	return "/" + s.Resource + "/{" + s.MemberParam() + "}"
+}
+
+// CollectionPath is the path of the listing, for the doc comments:
+// "/invoices", or "/projects/{project}/tasks".
+func (s Stub) CollectionPath() string {
+	if s.Parent != "" {
+		return "/" + s.Parent + "/{" + s.ParentParam() + "}/" + s.Resource
+	}
+	return "/" + s.Resource
+}
+
+// ServicesImport is where the service a resource controller is built with
+// lives.
+func (s Stub) ServicesImport() string { return s.ModulePath + "/app/Services" }
+
+// ResourceParameter is the path parameter the router names for one record of
+// a route segment: the singular of its last element, with dashes as
+// underscores -- "purchase-orders" gives purchase_order.
+//
+// It is hesape's inflector rather than one of this package's own, because the
+// router reads the parameter by the name hesape gives it, and a generated
+// ctx.Param that disagreed by one letter would read the empty string on every
+// request.
+func ResourceParameter(segment string) string {
+	if i := strings.LastIndexByte(segment, '/'); i >= 0 {
+		segment = segment[i+1:]
+	}
+	return strings.ReplaceAll(str.Singular(segment), "-", "_")
+}
 
 const controllerStubTemplate = `package controllers
 
-{{if or .IsResource .IsInvokable}}import (
+{{if or .IsResource .IsSingleton .IsInvokable}}import (
 	"net/http"
 
-{{if .IsResource}}	fhttp "github.com/arandu-io/framework/http"
-{{end}}	hhttp "github.com/arandu-io/hesape/http"
+	fhttp "github.com/arandu-io/framework/http"
+	hhttp "github.com/arandu-io/hesape/http"
+{{- if .Service}}
+
+	services "{{.ServicesImport}}"
+{{- end}}
 )
 
 {{end -}}
 {{if .IsResource -}}
-// {{.Type}} answers the {{.Resource}} routes.
+// {{.Type}} answers the {{.RouteResource}} routes.
+{{- if .IsNested}}
+//
+// It nests under {{.Parent}}, shallow: the listing, the form and the store sit
+// at {{.CollectionPath}}, and the four that act on one record at
+// {{.MemberPath}}. The {{.ParentParam}} in the path is where the person
+// navigated, never whose data it is -- the service loads it under the Grant
+// and filters by it.
+{{- end}}
+{{- else if .IsSingleton -}}
+// {{.Type}} answers the {{.RouteResource}} singleton: show, edit and update,
+// with no id, because there is one of it where it is reached.
+{{- if .IsNested}} It nests under
+// {{.Parent}}, and the {{.ParentParam}} in the path is where the person
+// navigated, never whose data it is.
+{{- end}}
 {{- else if .IsInvokable -}}
 // {{.Type}} answers the one route it is registered for.
 {{- else -}}
@@ -184,7 +338,16 @@ const controllerStubTemplate = `package controllers
 // method as that status.
 type {{.Type}} struct {
 	Controller
+{{if .Service}}
+	svc *services.{{.Service}}
+}
 
+// New{{.Type}} returns the controller, with the service every action calls.
+// bootstrap/app.go builds it and hands it to the routes.
+func New{{.Type}}(svc *services.{{.Service}}) *{{.Type}} {
+	return &{{.Type}}{svc: svc}
+}
+{{- else}}
 	// The collaborators arrive through the constructor, never from a container
 	// and never from a package-level variable: a controller that builds its own
 	// dependencies is a controller no test can pin. Declare the service this
@@ -197,6 +360,7 @@ type {{.Type}} struct {
 func New{{.Type}}() *{{.Type}} {
 	return &{{.Type}}{}
 }
+{{- end}}
 {{if .IsResource}}
 // Compile-time proof of the seven actions fhttp.Router.Resource looks for. It
 // registers the ones the controller implements and nothing else, so a route that
@@ -223,53 +387,102 @@ var (
 // on every dashboard -- and that is the failure nobody debugs. Replace it with
 // the screen.
 func (c *{{.Type}}) Index(ctx *hhttp.Context) error {
+{{- template "parentParam" .}}
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Create renders the empty form.
 func (c *{{.Type}}) Create(ctx *hhttp.Context) error {
+{{- template "parentParam" .}}
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Store takes the submitted form.
 func (c *{{.Type}}) Store(ctx *hhttp.Context) error {
+{{- template "parentParam" .}}
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Show renders one record.
 func (c *{{.Type}}) Show(ctx *hhttp.Context) error {
+{{- template "memberParam" .}}
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Edit renders the form filled in.
 func (c *{{.Type}}) Edit(ctx *hhttp.Context) error {
+{{- template "memberParam" .}}
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Update writes the submitted form onto the stored record.
 func (c *{{.Type}}) Update(ctx *hhttp.Context) error {
+{{- template "memberParam" .}}
 	return ctx.Status(http.StatusNotImplemented)
 }
 
 // Destroy removes the record.
 func (c *{{.Type}}) Destroy(ctx *hhttp.Context) error {
+{{- template "memberParam" .}}
 	return ctx.Status(http.StatusNotImplemented)
 }
-{{end}}{{if .IsInvokable}}
-// Handle answers the one route this controller has.
+{{- if .Action}}
+
+// {{.ActionMethod}} answers POST {{.MemberPath}}/{{.Action}}: one named action on a
+// record, beyond the seven. It is registered with fhttp.Router.ResourceAction,
+// under the route name {{.RouteResource}}.{{.Action}}, behind the same guard as
+// the rest of the resource.
 //
-// The usual shape registers the class itself and calls a magic method. Here the
-// route names the method, which is the same idea with a compiler behind it:
-//
-//	r.Action("GET", "/{{.Resource}}", d.{{.Entity}}.Handle).Name("{{.Resource}}")
-//
-// There is no interface to assert against and none is needed: that line is
-// itself the proof, and it fails the build if this method is renamed.
+// It changes state, so its method is POST, PUT, PATCH or DELETE and never GET:
+// a GET that changes state is one a prefetching browser fires without anybody
+// choosing to. The transition itself is a rule of the entity, written in its
+// model, and the service is what loads the record, asks the policy and saves.
+func (c *{{.Type}}) {{.ActionMethod}}(ctx *hhttp.Context) error {
+	_ = ctx.Param("{{.MemberParam}}") // the record, for the service call that goes here
+	return ctx.Status(http.StatusNotImplemented)
+}
+{{- end}}
+{{end}}{{if .IsSingleton}}
+// Compile-time proof of the three actions fhttp.Router.Singleton looks for. It
+// registers the ones the controller implements and nothing else.
+var (
+	_ fhttp.Shower  = (*{{.Type}})(nil)
+	_ fhttp.Editor  = (*{{.Type}})(nil)
+	_ fhttp.Updater = (*{{.Type}})(nil)
+)
+
+// Show renders the one there is.
 //
 // The body answers 501 and not an empty 200. A generated action that answered
 // success with no body looks like it worked -- in the browser, in the logs and
 // on every dashboard -- and that is the failure nobody debugs.
-func (c *{{.Type}}) Handle(ctx *hhttp.Context) error {
+func (c *{{.Type}}) Show(ctx *hhttp.Context) error {
+{{- template "parentParam" .}}
+	return ctx.Status(http.StatusNotImplemented)
+}
+
+// Edit renders the form filled in.
+func (c *{{.Type}}) Edit(ctx *hhttp.Context) error {
+{{- template "parentParam" .}}
+	return ctx.Status(http.StatusNotImplemented)
+}
+
+// Update writes the submitted form onto it.
+func (c *{{.Type}}) Update(ctx *hhttp.Context) error {
+{{- template "parentParam" .}}
+	return ctx.Status(http.StatusNotImplemented)
+}
+{{end}}{{if .IsInvokable}}
+// Compile-time proof that fhttp.Router.Invokable takes this controller. A
+// renamed Invoke fails the build here rather than registering nothing.
+var _ fhttp.Invoker = (*{{.Type}})(nil)
+
+// Invoke answers the one route this controller has.
+//
+// The body answers 501 and not an empty 200. A generated action that answered
+// success with no body looks like it worked -- in the browser, in the logs and
+// on every dashboard -- and that is the failure nobody debugs.
+func (c *{{.Type}}) Invoke(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 {{end}}
@@ -277,6 +490,18 @@ func (c *{{.Type}}) Handle(ctx *hhttp.Context) error {
 // Actions beyond the ones above go here, and survive regeneration. Register
 // them in the custom block of routes/web.go.
 // arandu:end custom
+{{- define "parentParam"}}
+{{- if .IsNested}}
+	// The {{.ParentParam}} the person navigated to: where they are, never whose
+	// data it is. The service loads it under the Grant.
+	_ = ctx.Param("{{.ParentParam}}")
+{{- end}}
+{{- end}}
+{{- define "memberParam"}}
+{{- if .IsNested}}
+	_ = ctx.Param("{{.MemberParam}}") // the record, for the service call that goes here
+{{- end}}
+{{- end}}
 `
 
 const middlewareTemplate = `package middleware

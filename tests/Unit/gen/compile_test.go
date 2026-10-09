@@ -143,21 +143,25 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 		return gen.GenerateModel(model, gen.Everything())
 	})
 
-	// make:controller, in its three shapes. A controller stub declares no
-	// entity, so each one gets a name of its own; what is proved is that every
-	// shape imports what it uses and nothing else.
+	// make:controller, in its four shapes, and a resource nested under a
+	// parent with a named action. A controller stub declares no entity, so each
+	// one gets a name of its own; what is proved is that every shape imports
+	// what it uses and nothing else.
 	for _, c := range []struct {
-		name string
-		kind gen.Kind
+		name, parent, action string
+		kind                 gen.Kind
 	}{
-		{"ReportController", gen.KindPlain},
-		{"InvoiceController", gen.KindResource},
-		{"ExportController", gen.KindInvokable},
+		{name: "ReportController", kind: gen.KindPlain},
+		{name: "InvoiceController", kind: gen.KindResource},
+		{name: "SettingsController", kind: gen.KindSingleton},
+		{name: "ExportController", kind: gen.KindInvokable},
+		{name: "TaskController", kind: gen.KindResource, parent: "projects", action: "close"},
 	} {
 		emit("aru make:controller "+c.name+" --"+string(c.kind), func() ([]gen.File, error) {
 			return gen.GenerateController(gen.Stub{
 				Type: c.name, ModulePath: generatedModulePath,
 				Resource: "reports", Entity: strings.TrimSuffix(c.name, "Controller"), Kind: c.kind,
+				Parent: c.parent, Action: c.action,
 			})
 		})
 	}

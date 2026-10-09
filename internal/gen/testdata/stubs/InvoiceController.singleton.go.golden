@@ -7,7 +7,8 @@ import (
 	hhttp "github.com/arandu-io/hesape/http"
 )
 
-// InvoiceController answers the one route it is registered for.
+// InvoiceController answers the invoice singleton: show, edit and update,
+// with no id, because there is one of it where it is reached.
 //
 // It is thin on purpose: read the request, call a service, render. There is no
 // repository here and there cannot be one -- the Context an action receives
@@ -42,16 +43,30 @@ func NewInvoiceController() *InvoiceController {
 	return &InvoiceController{}
 }
 
-// Compile-time proof that fhttp.Router.Invokable takes this controller. A
-// renamed Invoke fails the build here rather than registering nothing.
-var _ fhttp.Invoker = (*InvoiceController)(nil)
+// Compile-time proof of the three actions fhttp.Router.Singleton looks for. It
+// registers the ones the controller implements and nothing else.
+var (
+	_ fhttp.Shower  = (*InvoiceController)(nil)
+	_ fhttp.Editor  = (*InvoiceController)(nil)
+	_ fhttp.Updater = (*InvoiceController)(nil)
+)
 
-// Invoke answers the one route this controller has.
+// Show renders the one there is.
 //
 // The body answers 501 and not an empty 200. A generated action that answered
 // success with no body looks like it worked -- in the browser, in the logs and
 // on every dashboard -- and that is the failure nobody debugs.
-func (c *InvoiceController) Invoke(ctx *hhttp.Context) error {
+func (c *InvoiceController) Show(ctx *hhttp.Context) error {
+	return ctx.Status(http.StatusNotImplemented)
+}
+
+// Edit renders the form filled in.
+func (c *InvoiceController) Edit(ctx *hhttp.Context) error {
+	return ctx.Status(http.StatusNotImplemented)
+}
+
+// Update writes the submitted form onto it.
+func (c *InvoiceController) Update(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 

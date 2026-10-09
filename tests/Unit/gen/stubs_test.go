@@ -47,6 +47,16 @@ func TestGoldenStubs(t *testing.T) {
 		{"InvoiceController.invokable.go", fileAt(0, func() ([]gen.File, error) {
 			return gen.GenerateController(controllerStub(gen.KindInvokable))
 		})},
+		{"InvoiceController.singleton.go", fileAt(0, func() ([]gen.File, error) {
+			stub := controllerStub(gen.KindSingleton)
+			stub.Resource = "invoice"
+			return gen.GenerateController(stub)
+		})},
+		{"InvoiceController.nested.go", fileAt(0, func() ([]gen.File, error) {
+			stub := controllerStub(gen.KindResource)
+			stub.Parent, stub.Action = "accounts", "send"
+			return gen.GenerateController(stub)
+		})},
 		{"EnsureAccountIsActive.go", fileAt(0, func() ([]gen.File, error) {
 			return gen.GenerateMiddleware(gen.Stub{Type: "EnsureAccountIsActive", ModulePath: "example.test/project"})
 		})},
@@ -329,7 +339,7 @@ func TestTheGranularCommandsAndMakeModuleAgree(t *testing.T) {
 // body that answered 200 would look like it worked in the browser, in the logs
 // and on every dashboard, which is the failure nobody debugs.
 func TestTheGeneratedActionsDoNotAnswerSuccess(t *testing.T) {
-	for _, kind := range []gen.Kind{gen.KindResource, gen.KindInvokable} {
+	for _, kind := range []gen.Kind{gen.KindResource, gen.KindSingleton, gen.KindInvokable} {
 		files, err := gen.GenerateController(controllerStub(kind))
 		if err != nil {
 			t.Fatalf("GenerateController: %v", err)
@@ -356,7 +366,7 @@ func TestTheGeneratedActionsDoNotAnswerSuccess(t *testing.T) {
 // would put a branch nobody asked for into every controller, and a generated
 // line somebody deletes on sight teaches nothing.
 func TestTheGeneratedControllerNamesBothResponseFormats(t *testing.T) {
-	for _, kind := range []gen.Kind{gen.KindPlain, gen.KindResource, gen.KindInvokable} {
+	for _, kind := range []gen.Kind{gen.KindPlain, gen.KindResource, gen.KindSingleton, gen.KindInvokable} {
 		files, err := gen.GenerateController(controllerStub(kind))
 		if err != nil {
 			t.Fatalf("GenerateController: %v", err)

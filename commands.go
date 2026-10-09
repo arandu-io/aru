@@ -341,7 +341,7 @@ window.`,
 	},
 	{
 		name:  "make:controller",
-		usage: "aru make:controller <Name> [--resource] [--invokable] [--force]",
+		usage: makeControllerUsage,
 		desc:  "generate one controller, in the flat app/Http/Controllers package",
 		run:   makeController,
 	},

@@ -1,0 +1,139 @@
+package controllers
+
+import (
+	"net/http"
+
+	fhttp "github.com/arandu-io/framework/http"
+	hhttp "github.com/arandu-io/hesape/http"
+)
+
+// InvoiceController answers the accounts.invoices routes.
+//
+// It nests under accounts, shallow: the listing, the form and the store sit
+// at /accounts/{account}/invoices, and the four that act on one record at
+// /invoices/{invoice}. The account in the path is where the person
+// navigated, never whose data it is -- the service loads it under the Grant
+// and filters by it.
+//
+// It is thin on purpose: read the request, call a service, render. There is no
+// repository here and there cannot be one -- the Context an action receives
+// carries no database handle, so a controller that reached the data layer
+// would be a controller that skipped the service, and therefore skipped the
+// policy. `aru doctor` refuses it.
+//
+// An action answers with ctx.View for a screen and ctx.JSON for data. ctx.TOON
+// answers the same JsonResource in the token-oriented form, for a payload going
+// to a language model; it is chosen here in the code and never from a request
+// header, and JSON stays the format everything else is written in.
+//
+// Who is asking is ctx.User, put on the request by middleware.RequireAuth on the
+// route, and view.New(ctx, title) is a screen's page, with the CSRF token the
+// protecting middleware issued. An error an action returns is answered by the
+// router: validation.Errors back to the form, a missing row as 404, a refusal as
+// 403, a duplicate on a unique column as 409, and an error with an HTTPStatus
+// method as that status.
+type InvoiceController struct {
+	Controller
+
+	// The collaborators arrive through the constructor, never from a container
+	// and never from a package-level variable: a controller that builds its own
+	// dependencies is a controller no test can pin. Declare the service this
+	// controller calls as a field here, take it as a parameter below, and pass
+	// it in bootstrap/app.go.
+}
+
+// NewInvoiceController returns the controller. bootstrap/app.go builds it and
+// hands it to the routes.
+func NewInvoiceController() *InvoiceController {
+	return &InvoiceController{}
+}
+
+// Compile-time proof of the seven actions fhttp.Router.Resource looks for. It
+// registers the ones the controller implements and nothing else, so a route that
+// exists is a route that answers -- and a renamed method fails the build here
+// rather than answering 404 in production.
+//
+// Delete the pair -- the line below and the method -- for every action this
+// resource does not have: a controller without Create and Edit registers five
+// routes instead of seven.
+var (
+	_ fhttp.Indexer   = (*InvoiceController)(nil)
+	_ fhttp.Creator   = (*InvoiceController)(nil)
+	_ fhttp.Storer    = (*InvoiceController)(nil)
+	_ fhttp.Shower    = (*InvoiceController)(nil)
+	_ fhttp.Editor    = (*InvoiceController)(nil)
+	_ fhttp.Updater   = (*InvoiceController)(nil)
+	_ fhttp.Destroyer = (*InvoiceController)(nil)
+)
+
+// Index renders the listing.
+//
+// The body answers 501 and not an empty 200. A generated action that answered
+// success with no body looks like it worked -- in the browser, in the logs and
+// on every dashboard -- and that is the failure nobody debugs. Replace it with
+// the screen.
+func (c *InvoiceController) Index(ctx *hhttp.Context) error {
+	// The account the person navigated to: where they are, never whose
+	// data it is. The service loads it under the Grant.
+	_ = ctx.Param("account")
+	return ctx.Status(http.StatusNotImplemented)
+}
+
+// Create renders the empty form.
+func (c *InvoiceController) Create(ctx *hhttp.Context) error {
+	// The account the person navigated to: where they are, never whose
+	// data it is. The service loads it under the Grant.
+	_ = ctx.Param("account")
+	return ctx.Status(http.StatusNotImplemented)
+}
+
+// Store takes the submitted form.
+func (c *InvoiceController) Store(ctx *hhttp.Context) error {
+	// The account the person navigated to: where they are, never whose
+	// data it is. The service loads it under the Grant.
+	_ = ctx.Param("account")
+	return ctx.Status(http.StatusNotImplemented)
+}
+
+// Show renders one record.
+func (c *InvoiceController) Show(ctx *hhttp.Context) error {
+	_ = ctx.Param("invoice") // the record, for the service call that goes here
+	return ctx.Status(http.StatusNotImplemented)
+}
+
+// Edit renders the form filled in.
+func (c *InvoiceController) Edit(ctx *hhttp.Context) error {
+	_ = ctx.Param("invoice") // the record, for the service call that goes here
+	return ctx.Status(http.StatusNotImplemented)
+}
+
+// Update writes the submitted form onto the stored record.
+func (c *InvoiceController) Update(ctx *hhttp.Context) error {
+	_ = ctx.Param("invoice") // the record, for the service call that goes here
+	return ctx.Status(http.StatusNotImplemented)
+}
+
+// Destroy removes the record.
+func (c *InvoiceController) Destroy(ctx *hhttp.Context) error {
+	_ = ctx.Param("invoice") // the record, for the service call that goes here
+	return ctx.Status(http.StatusNotImplemented)
+}
+
+// Send answers POST /invoices/{invoice}/send: one named action on a
+// record, beyond the seven. It is registered with fhttp.Router.ResourceAction,
+// under the route name accounts.invoices.send, behind the same guard as
+// the rest of the resource.
+//
+// It changes state, so its method is POST, PUT, PATCH or DELETE and never GET:
+// a GET that changes state is one a prefetching browser fires without anybody
+// choosing to. The transition itself is a rule of the entity, written in its
+// model, and the service is what loads the record, asks the policy and saves.
+func (c *InvoiceController) Send(ctx *hhttp.Context) error {
+	_ = ctx.Param("invoice") // the record, for the service call that goes here
+	return ctx.Status(http.StatusNotImplemented)
+}
+
+// arandu:begin custom
+// Actions beyond the ones above go here, and survive regeneration. Register
+// them in the custom block of routes/web.go.
+// arandu:end custom

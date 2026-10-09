@@ -346,6 +346,12 @@ window.`,
 		run:   makeResource,
 	},
 	{
+		name:  "make:notification",
+		usage: makeNotificationUsage,
+		desc:  "generate a notification: the channels it travels by and the message each one sends",
+		run:   makeNotification,
+	},
+	{
 		name:  "make:migration",
 		usage: makeMigrationUsage,
 		desc:  "generate one migration: a table, or columns added to one",

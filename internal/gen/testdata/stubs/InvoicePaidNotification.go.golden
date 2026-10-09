@@ -1,0 +1,74 @@
+package notifications
+
+import (
+	hnotifications "github.com/arandu-io/hesape/notifications"
+	"github.com/arandu-io/hesape/notifications/channels"
+	"github.com/arandu-io/hesape/notifications/messages"
+)
+
+// InvoicePaid is one thing this application tells somebody.
+//
+// It is sent by a service, after the policy issued the Grant, through the
+// Notifier bootstrap/app.go builds with the channels the application has:
+//
+//	err := s.notifier.Send(ctx, g, recipient, notifications.InvoicePaid{})
+//
+// What it carries is its fields, filled by the service that sends it. It never
+// reads a model or the database itself: by the time it is built, everything it
+// says is known.
+type InvoicePaid struct {
+	hnotifications.NotificationBase
+
+	// arandu:begin custom
+	// What the message needs to say, as fields: Number string, Amount int64.
+	// arandu:end custom
+}
+
+// InvoicePaidKey is the stable name of this kind of notification. It is written
+// to the stored row and is what Suppress silences, so it stays the same when
+// the type is renamed.
+const InvoicePaidKey hnotifications.Key = "invoice-paid"
+
+// Key names the kind.
+func (n InvoicePaid) Key() hnotifications.Key { return InvoicePaidKey }
+
+// Via is which channels this notification takes for this recipient. The
+// recipient is an argument because the answer can depend on them: somebody who
+// turned e-mail off gets the stored row and nothing else, and that decision
+// belongs here rather than in a filter downstream.
+func (n InvoicePaid) Via(to hnotifications.Notifiable) []hnotifications.ChannelName {
+	return []hnotifications.ChannelName{hnotifications.ChannelMail, hnotifications.ChannelDatabase}
+}
+
+// ToMail is the message by e-mail, built for this recipient.
+//
+// It is written in lines rather than with a template: messages.Mail renders its
+// subject, its lines and its button itself, in HTML and in plain text, escaped
+// on the way out, so there is no view to keep in step with this method. A link
+// in Action has to be absolute -- a mail client has no host to resolve a path
+// against -- and the message refuses to send without a subject or a body.
+func (n InvoicePaid) ToMail(to hnotifications.Notifiable) messages.Mail {
+	message := messages.NewMail().Subject("Invoice paid")
+	// arandu:begin custom
+	message = message.Line("Write the message here, one line at a time.")
+	// arandu:end custom
+	return message
+}
+
+// ToDatabase is the row the bell menu renders from: the payload stored in the
+// notifications table, as JSON, for the recipient to read back.
+func (n InvoicePaid) ToDatabase(to hnotifications.Notifiable) messages.Database {
+	return messages.NewDatabase(map[string]any{
+		"title": "Invoice paid",
+		// arandu:begin custom
+		// arandu:end custom
+	})
+}
+
+// Compile-time proof that the notification answers every channel Via names:
+// a channel without its method is a recipient who never receives it.
+var (
+	_ hnotifications.Notification   = InvoicePaid{}
+	_ channels.MailNotification     = InvoicePaid{}
+	_ channels.DatabaseNotification = InvoicePaid{}
+)

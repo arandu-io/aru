@@ -169,6 +169,22 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 		})
 	})
 
+	// make:notification, by each channel alone and by both: each one is a
+	// method and an interface assertion the type carries only when Via names
+	// the channel.
+	for _, n := range []struct {
+		name     string
+		channels []string
+	}{
+		{"OrderShipped", []string{"mail"}},
+		{"OrderDelayed", []string{"database"}},
+		{"OrderCancelled", []string{"mail", "database"}},
+	} {
+		emit("aru make:notification "+n.name+" --channels="+strings.Join(n.channels, ","), func() ([]gen.File, error) {
+			return gen.RenderNotification(gen.NotificationSpec{Type: n.name, ModulePath: generatedModulePath, Channels: n.channels})
+		})
+	}
+
 	// make:controller, in its four shapes, and a resource nested under a
 	// parent with a named action. A controller stub declares no entity, so each
 	// one gets a name of its own; what is proved is that every shape imports

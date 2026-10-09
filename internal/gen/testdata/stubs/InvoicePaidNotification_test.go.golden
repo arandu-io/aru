@@ -1,0 +1,42 @@
+package unit_test
+
+import (
+	"testing"
+
+	hnotifications "github.com/arandu-io/hesape/notifications"
+
+	notifications "example.test/project/app/Notifications"
+)
+
+// TestTheInvoicePaidNotificationCanBeDelivered builds the notification for a
+// recipient and asks each channel's representation the question the channel
+// asks before it sends: a key that can be stored, the channels Via promised,
+// a mail with a subject and a body, a payload that encodes, so a message that would be refused at
+// midnight is refused here.
+func TestTheInvoicePaidNotificationCanBeDelivered(t *testing.T) {
+	n := notifications.InvoicePaid{}
+	to := hnotifications.Route(hnotifications.ChannelMail, "ada@example.com")
+
+	if !n.Key().Valid() {
+		t.Errorf("key %q cannot be stored: lowercase, dotted, no spaces", n.Key())
+	}
+	via := n.Via(to)
+	want := []hnotifications.ChannelName{hnotifications.ChannelMail, hnotifications.ChannelDatabase}
+	if len(via) != len(want) {
+		t.Fatalf("Via = %v, want %v", via, want)
+	}
+	for i := range want {
+		if via[i] != want[i] {
+			t.Errorf("Via = %v, want %v", via, want)
+		}
+	}
+	if err := n.ToMail(to).Validate(); err != nil {
+		t.Errorf("the mail would be refused: %v", err)
+	}
+	if _, err := n.ToDatabase(to).JSON(); err != nil {
+		t.Errorf("the stored payload does not encode: %v", err)
+	}
+}
+
+// arandu:begin custom
+// arandu:end custom

@@ -120,6 +120,16 @@ func TestGoldenStubs(t *testing.T) {
 		{"InvoiceService_test.go", fileAt(1, func() ([]gen.File, error) { return gen.GenerateService(serviceModule()) })},
 		{"InvoiceResource.go", fileAt(0, func() ([]gen.File, error) { return gen.RenderResource(resourceSpec()) })},
 		{"InvoiceResource_test.go", fileAt(1, func() ([]gen.File, error) { return gen.RenderResource(resourceSpec()) })},
+		{"InvoicePaidNotification.go", fileAt(0, func() ([]gen.File, error) {
+			return gen.RenderNotification(gen.NotificationSpec{
+				Type: "InvoicePaid", ModulePath: "example.test/project", Channels: []string{"mail", "database"},
+			})
+		})},
+		{"InvoicePaidNotification_test.go", fileAt(1, func() ([]gen.File, error) {
+			return gen.RenderNotification(gen.NotificationSpec{
+				Type: "InvoicePaid", ModulePath: "example.test/project", Channels: []string{"mail", "database"},
+			})
+		})},
 		{"WelcomeEmail.go", fileAt(0, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
 		{"welcome-email.kyse.go", fileAt(1, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
 		{"welcome-email-text.kyse.go", fileAt(2, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},

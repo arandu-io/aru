@@ -26,6 +26,12 @@ it does not own, because `internal/testlayout` answers the same four questions
 for this repository's own tree and a second copy is how the two would come to
 disagree in silence.
 
+`aru doctor --list` prints every name a report can carry, one per line, with
+the severity it reports at and the profile a rule is limited to. It reads
+`internal/doctor/list.go`, which `TestTheListIsWhatTheSourceReports` holds to
+the source, and it is what a table of the rules written anywhere else -- the
+skeleton's `arandu-doctor` skill has one -- is checked against.
+
 **Every figure above has a command beside it that can reach it, and no figure is
 written anywhere twice.** This count has aged eight times, and the last one
 failed differently in kind: the number was wrong because the command beside it

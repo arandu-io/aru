@@ -453,7 +453,7 @@ window.`,
 	},
 	{
 		name:  "doctor",
-		usage: "aru doctor [--strict] [--profile=performance]",
+		usage: "aru doctor [--strict] [--profile=performance] | --list",
 		desc:  "check that the project honors the framework contracts",
 		run:   runDoctor,
 	},

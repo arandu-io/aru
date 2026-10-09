@@ -22,8 +22,15 @@ func runDoctor(args []string, stdout, stderr io.Writer) error {
 	// ones arandu.mod.toml already uses. Naming the default explicitly is how a
 	// pipeline says which profile it meant.
 	name := fs.String("profile", string(doctor.Conventional), "check against a deployment profile: conventional or performance")
+	list := fs.Bool("list", false, "print every rule with the severity it reports at, and check nothing")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("doctor: %w", err)
+	}
+	// The list is answered before a project is looked for: it is a fact about
+	// this binary, and a skill that documents the rules is checked against it
+	// from wherever the skill is being written.
+	if *list {
+		return doctor.WriteList(stdout)
 	}
 	profile, err := doctor.ParseProfile(*name)
 	if err != nil {

@@ -194,6 +194,12 @@ the compiler cannot tell which, and it is checked both ways:
 That second direction is the point. Deleting a security rule should look like a
 deliberate two-line diff, not like a line that quietly disappeared.
 
+**5b. Add it to `catalogue` in `internal/doctor/list.go`**, with its severity
+and, for a profile rule, its profile. `TestTheListIsWhatTheSourceReports` reads
+every `Finding` literal in `rules.go` and fails on a name or a severity the list
+does not carry, in either direction, and on a rule listed out of the order the
+slice runs them.
+
 **6. Run the fixture and read the output, not the exit code.** A rule that fires
 for the wrong reason on the right fixture passes every test above.
 

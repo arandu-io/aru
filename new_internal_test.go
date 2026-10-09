@@ -48,7 +48,7 @@ func TestNewClonesThePublishedSkeletonRelease(t *testing.T) {
 	got := strings.Split(string(body), "\x00")
 	want := []string{
 		"clone",
-		"--branch", "v0.31.0",
+		"--branch", "v0.32.0",
 		"--single-branch",
 		"--depth", "1",
 		"--quiet",

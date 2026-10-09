@@ -190,6 +190,18 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 		return gen.RenderClient(gen.ClientSpec{Vendor: "Carrier", ModulePath: generatedModulePath})
 	})
 
+	// make:mcp-tool and make:mcp-resource over the tenant module's service,
+	// which has the Get and the List they call, and make:mcp-prompt, which
+	// calls nothing.
+	for _, m := range []gen.MCPSpec{
+		{Type: "ShowPurchaseOrder", Kind: gen.MCPTool, Service: "PurchaseOrder"},
+		{Type: "PurchaseOrders", Kind: gen.MCPResource, Service: "PurchaseOrder"},
+		{Type: "ReviewPurchaseOrder", Kind: gen.MCPPrompt},
+	} {
+		m.ModulePath = generatedModulePath
+		emit("aru make:mcp-"+string(m.Kind)+" "+m.Type, func() ([]gen.File, error) { return gen.RenderMCP(m) })
+	}
+
 	// make:controller, in its four shapes, and a resource nested under a
 	// parent with a named action. A controller stub declares no entity, so each
 	// one gets a name of its own; what is proved is that every shape imports
@@ -508,6 +520,10 @@ func writeProjectSkeleton(t *testing.T, root string) {
 		}
 		modules = append(modules, "\t"+path+" "+version)
 	}
+	// The mcp module is not the skeleton's: a project takes it with the
+	// `go get` make:mcp-* prints, at the release named there, and that is the
+	// release the generated tools are built against here.
+	modules = append(modules, "\t"+gen.MCPModule+" "+gen.MCPRelease)
 	sort.Strings(modules)
 	replace := ""
 	if hesapeDir != "" {

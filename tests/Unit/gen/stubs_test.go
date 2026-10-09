@@ -133,6 +133,12 @@ func TestGoldenStubs(t *testing.T) {
 		{"StripeClient.go", fileAt(0, func() ([]gen.File, error) { return gen.RenderClient(clientSpec()) })},
 		{"StripeFake.go", fileAt(1, func() ([]gen.File, error) { return gen.RenderClient(clientSpec()) })},
 		{"StripeClient_test.go", fileAt(2, func() ([]gen.File, error) { return gen.RenderClient(clientSpec()) })},
+		{"ShowInvoice.go", fileAt(0, func() ([]gen.File, error) { return gen.RenderMCP(mcpSpec(gen.MCPTool, "ShowInvoice")) })},
+		{"ShowInvoiceMCP_test.go", fileAt(1, func() ([]gen.File, error) { return gen.RenderMCP(mcpSpec(gen.MCPTool, "ShowInvoice")) })},
+		{"Invoices.go", fileAt(0, func() ([]gen.File, error) { return gen.RenderMCP(mcpSpec(gen.MCPResource, "Invoices")) })},
+		{"InvoicesMCP_test.go", fileAt(1, func() ([]gen.File, error) { return gen.RenderMCP(mcpSpec(gen.MCPResource, "Invoices")) })},
+		{"ReviewInvoice.go", fileAt(0, func() ([]gen.File, error) { return gen.RenderMCP(mcpSpec(gen.MCPPrompt, "ReviewInvoice")) })},
+		{"ReviewInvoiceMCP_test.go", fileAt(1, func() ([]gen.File, error) { return gen.RenderMCP(mcpSpec(gen.MCPPrompt, "ReviewInvoice")) })},
 		{"WelcomeEmail.go", fileAt(0, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
 		{"welcome-email.kyse.go", fileAt(1, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
 		{"welcome-email-text.kyse.go", fileAt(2, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
@@ -230,6 +236,14 @@ func resourceSpec() gen.ResourceSpec {
 			{GoName: "Total", Key: "total"}, {GoName: "CreatedAt", Key: "created_at"},
 		},
 	}
+}
+
+func mcpSpec(kind gen.MCPKind, name string) gen.MCPSpec {
+	s := gen.MCPSpec{Type: name, Kind: kind, ModulePath: "example.test/project"}
+	if kind != gen.MCPPrompt {
+		s.Service = "Invoice"
+	}
+	return s
 }
 
 func clientSpec() gen.ClientSpec {

@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 	"text/tabwriter"
+
+	"github.com/arandu-io/aru/internal/gen"
 )
 
 // command is one CLI entry. The list is a slice, not a map: the order of the
@@ -356,6 +358,24 @@ window.`,
 		usage: makeClientUsage,
 		desc:  "generate the client of an external system: config, interface, the client, a fake and the test",
 		run:   makeClient,
+	},
+	{
+		name:  "make:mcp-tool",
+		usage: makeMCPToolUsage,
+		desc:  "generate a tool of the application's MCP server, calling a service as who is asking",
+		run:   makeMCP(gen.MCPTool, makeMCPToolUsage),
+	},
+	{
+		name:  "make:mcp-resource",
+		usage: makeMCPResourceUsage,
+		desc:  "generate a resource of the application's MCP server, read through a service",
+		run:   makeMCP(gen.MCPResource, makeMCPResourceUsage),
+	},
+	{
+		name:  "make:mcp-prompt",
+		usage: makeMCPPromptUsage,
+		desc:  "generate a prompt of the application's MCP server",
+		run:   makeMCP(gen.MCPPrompt, makeMCPPromptUsage),
 	},
 	{
 		name:  "make:migration",

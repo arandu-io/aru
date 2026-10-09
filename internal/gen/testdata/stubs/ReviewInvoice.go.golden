@@ -1,0 +1,42 @@
+package mcp
+
+import (
+	"context"
+
+	"github.com/arandu-io/mcp"
+)
+
+// ReviewInvoice is a conversation this application knows how to start: the client
+// fills the arguments in, and Render builds the messages.
+//
+// It reads no data. A prompt that needs a record is a prompt whose client
+// calls a tool for it, through the policy, rather than one handed the record
+// here.
+type ReviewInvoice struct{}
+
+// Compile-time proof that the server takes it.
+var _ mcp.Prompt = ReviewInvoice{}
+
+// Name is what the client calls it by.
+func (ReviewInvoice) Name() string { return "review_invoice" }
+
+// Description is what the client lists it as.
+func (ReviewInvoice) Description() string { return "Review invoice." }
+
+// Arguments are what the client fills in. A required one that is missing is
+// refused before Render runs.
+func (ReviewInvoice) Arguments() []mcp.Argument {
+	return []mcp.Argument{
+		{Name: "topic", Description: "What the conversation is about", Required: true},
+	}
+}
+
+// Render builds the messages from the arguments.
+func (ReviewInvoice) Render(ctx context.Context, r mcp.Request) ([]mcp.Message, error) {
+	topic, _ := r.String("topic")
+	// arandu:begin custom
+	return []mcp.Message{
+		mcp.User("Help me with " + topic + "."),
+	}, nil
+	// arandu:end custom
+}

@@ -1,0 +1,27 @@
+package unit_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/arandu-io/mcp"
+
+	appmcp "example.test/project/app/Mcp"
+)
+
+// TestTheReviewInvoicePromptRendersItsArguments renders the prompt with its
+// arguments and requires a message built from them.
+func TestTheReviewInvoicePromptRendersItsArguments(t *testing.T) {
+	server := &mcp.Server{Name: "test", Version: "0", Prompts: []mcp.Prompt{appmcp.ReviewInvoice{}}}
+	if err := server.Validate(); err != nil {
+		t.Fatalf("the server refuses the prompt: %v", err)
+	}
+
+	messages, err := appmcp.ReviewInvoice{}.Render(context.Background(), mcp.Request{Arguments: map[string]any{"topic": "the invoices"}})
+	if err != nil || len(messages) == 0 {
+		t.Fatalf("Render = %v, %v: want at least one message", messages, err)
+	}
+}
+
+// arandu:begin custom
+// arandu:end custom

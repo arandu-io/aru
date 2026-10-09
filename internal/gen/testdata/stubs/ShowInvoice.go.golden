@@ -1,0 +1,60 @@
+package mcp
+
+import (
+	"context"
+
+	"github.com/arandu-io/mcp"
+
+	services "example.test/project/app/Services"
+)
+
+// ShowInvoice is a tool an assistant can call.
+//
+// It is written the way a controller is: it reads its arguments, calls the
+// service with the subject the request carried, and answers. The service asks
+// the policy and spends the Grant; this type never reaches a model, a
+// repository or a client, because a tool that queries the database itself is
+// the largest hole an application can hand a language model.
+type ShowInvoice struct {
+	svc *services.InvoiceService
+}
+
+// NewShowInvoice builds the tool with the service it calls.
+func NewShowInvoice(svc *services.InvoiceService) ShowInvoice {
+	return ShowInvoice{svc: svc}
+}
+
+// Compile-time proof that the server takes it.
+var _ mcp.Tool = ShowInvoice{}
+
+// Name is what the client calls it by.
+func (ShowInvoice) Name() string { return "show_invoice" }
+
+// Description is what the model reads to decide whether to call it: the single
+// string here most worth rewriting, because a model that calls the wrong tool
+// was told the wrong thing.
+func (ShowInvoice) Description() string { return "Show invoice." }
+
+// Schema declares the arguments. A call without the id is refused before
+// Handle runs, so Handle reads it without checking.
+func (ShowInvoice) Schema() mcp.Schema {
+	return mcp.Object(
+		mcp.String("id", "The invoice to read").Required(),
+	)
+}
+
+// Handle calls the service as who is asking. A refusal is returned as the
+// error, and the server answers it as a failure the model reads -- never as an
+// empty result it would take for "there is nothing there".
+func (t ShowInvoice) Handle(ctx context.Context, r mcp.Request) (mcp.Response, error) {
+	id, _ := r.String("id")
+	found, err := t.svc.Get(ctx, r.Subject(), id)
+	if err != nil {
+		return mcp.Response{}, err
+	}
+	// arandu:begin custom
+	// Answer with a JSON Resource -- mcp.JSON(resources.New...Resource(found))
+	// -- for structured data, the same document a controller answers with.
+	return mcp.Text("invoice %s", found.ID), nil
+	// arandu:end custom
+}

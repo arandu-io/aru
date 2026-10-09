@@ -1,0 +1,48 @@
+package mcp
+
+import (
+	"context"
+
+	"github.com/arandu-io/hesape/auth"
+	"github.com/arandu-io/mcp"
+
+	services "example.test/project/app/Services"
+)
+
+// Invoices is a resource an assistant can read, at app://invoices.
+//
+// It is an MCP resource -- a document a client asks for by address -- and not
+// a JSON Resource. It reads through the service as the subject the request
+// carried, so the policy that decides about a controller decides about it.
+type Invoices struct {
+	svc *services.InvoiceService
+}
+
+// NewInvoices builds the resource with the service it reads through.
+func NewInvoices(svc *services.InvoiceService) Invoices {
+	return Invoices{svc: svc}
+}
+
+// Compile-time proof that the server takes it.
+var _ mcp.Resource = Invoices{}
+
+// URI is where a client reads it.
+func (Invoices) URI() string { return "app://invoices" }
+
+// Name and Description are what the client lists it as.
+func (Invoices) Name() string        { return "invoices" }
+func (Invoices) Description() string { return "Invoices." }
+
+// MimeType is what the content is.
+func (Invoices) MimeType() string { return "text/plain" }
+
+// Read lists the first page through the service, as who is asking.
+func (res Invoices) Read(ctx context.Context, s auth.Subject) (mcp.Response, error) {
+	found, _, err := res.svc.List(ctx, s, 1)
+	if err != nil {
+		return mcp.Response{}, err
+	}
+	// arandu:begin custom
+	return mcp.Text("%d invoice records on the first page", len(found)), nil
+	// arandu:end custom
+}

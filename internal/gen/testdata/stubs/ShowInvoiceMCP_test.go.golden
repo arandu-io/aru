@@ -1,0 +1,36 @@
+package unit_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/arandu-io/hesape/auth"
+	"github.com/arandu-io/mcp"
+
+	appmcp "example.test/project/app/Mcp"
+	services "example.test/project/app/Services"
+)
+
+// TestTheShowInvoiceToolGoesThroughThePolicy calls the tool through a server, as
+// a client does, with nobody signed in. The service refuses before it reaches
+// the database -- the nil handle below would panic otherwise -- and the server
+// answers the refusal as a failure, never as a result.
+func TestTheShowInvoiceToolGoesThroughThePolicy(t *testing.T) {
+	server := &mcp.Server{Name: "test", Version: "0", Tools: []mcp.Tool{
+		appmcp.NewShowInvoice(services.NewInvoiceService(nil)),
+	}}
+	if err := server.Validate(); err != nil {
+		t.Fatalf("the server refuses the tool: %v", err)
+	}
+
+	var anonymous auth.Subject
+	if got := server.Call(context.Background(), anonymous, "show_invoice", map[string]any{"id": "1"}); !got.IsError {
+		t.Errorf("an anonymous call was answered as a result: %q", got.Text)
+	}
+	if got := server.Call(context.Background(), anonymous, "show_invoice", nil); !got.IsError {
+		t.Errorf("a call without the id was answered as a result: %q", got.Text)
+	}
+}
+
+// arandu:begin custom
+// arandu:end custom

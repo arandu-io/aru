@@ -1,0 +1,32 @@
+package unit_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/arandu-io/hesape/auth"
+	"github.com/arandu-io/mcp"
+
+	appmcp "example.test/project/app/Mcp"
+	services "example.test/project/app/Services"
+)
+
+// TestTheInvoicesResourceGoesThroughThePolicy reads the resource through a
+// server with nobody signed in: the service refuses before the database, and
+// the server answers the refusal as a failure.
+func TestTheInvoicesResourceGoesThroughThePolicy(t *testing.T) {
+	server := &mcp.Server{Name: "test", Version: "0", Resources: []mcp.Resource{
+		appmcp.NewInvoices(services.NewInvoiceService(nil)),
+	}}
+	if err := server.Validate(); err != nil {
+		t.Fatalf("the server refuses the resource: %v", err)
+	}
+
+	var anonymous auth.Subject
+	if got := server.Read(context.Background(), anonymous, "app://invoices"); !got.IsError {
+		t.Errorf("an anonymous read was answered as a result: %q", got.Text)
+	}
+}
+
+// arandu:begin custom
+// arandu:end custom

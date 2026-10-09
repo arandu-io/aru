@@ -65,7 +65,7 @@ plus `help` and `version`. The native and inspection commands, in the words of `
   more thing to keep true.
 - **`aru generate`** — the same output, from a written specification: the
   model writes the spec, never the Go.
-- **`aru doctor`** — 64 named rules read the AST of a project, without
+- **`aru doctor`** — 65 named rules read the AST of a project, without
   running it, and fail CI on the first error. Among them:
   `repository-without-policy`, `grant-not-checked`, `sql-without-tenant-scope`,
   `tenant-from-request`, `tenant-from-header`, `sql-built-by-concatenation`,

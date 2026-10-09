@@ -216,6 +216,14 @@
     "why": "it is the one way past a policy, and its call sites are the audit. If this is a request path, the Grant should come from security.Authorize instead. If the escape is deliberate, write `//arandu:system-grant \u003creason\u003e` on the line, so the reason is read in review rather than inferred from the function name."
   },
   {
+    "rule": "csrf-exempt-without-signature",
+    "severity": "warning",
+    "file": "app/Http/Controllers/BillingWebhookController.go",
+    "line": 15,
+    "message": "BillingWebhookController.Receive answers POST /webhooks/billing, which CSRFExcept(\"/webhooks/\") at bootstrap/http.go:9 exempts from the CSRF check, and it never calls webhook.Verify",
+    "why": "the exemption is safe only because the route proves the sender with a signature over the body instead of a token: without one, any page a signed-in person opens can post to it, and anybody who can reach it can forge what it receives. Verify the request in the action with webhook.Verify(secrets, timestamp, deliveryID, body, signature) from github.com/arandu-io/hesape/webhook and answer 401 when it fails, or take the route out of the exempt prefix."
+  },
+  {
     "rule": "controller-too-many-actions",
     "severity": "warning",
     "file": "app/Http/Controllers/ChargeController.go",

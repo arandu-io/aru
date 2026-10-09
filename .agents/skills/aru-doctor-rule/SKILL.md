@@ -11,11 +11,11 @@ AST and never runs the code, so it works on a project that does not compile —
 which is exactly when someone needs to be told what is wrong.
 
 ```sh
-awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 54  rule functions
+awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 55  rule functions
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/doctor/structure.go \
-	internal/testlayout/testlayout.go | sort -u | wc -l                   # 64  names a report can carry
+	internal/testlayout/testlayout.go | sort -u | wc -l                   # 65  names a report can carry
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/doctor/structure.go \
-	| sort -u | wc -l                                                     # 60  of them declared here
+	| sort -u | wc -l                                                     # 61  of them declared here
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/testlayout/testlayout.go \
 	| sort -u | wc -l                                                     # 4  forwarded, declared there
 ```
@@ -111,15 +111,15 @@ the CLI accepts the fixture as a project:
 ```sh
 cp -R internal/doctor/testdata/violations /tmp/viol && touch /tmp/viol/arandu.toml
 (cd /tmp/viol && /tmp/aru-src doctor > /tmp/viol.out 2>&1); echo $?   # 1
-tail -1 /tmp/viol.out                                                 # 39 error(s), 68 warning(s)
-grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 57
+tail -1 /tmp/viol.out                                                 # 39 error(s), 69 warning(s)
+grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 58
 ```
 
 `violations` carries a `vendor/` directory holding a slice of the framework:
 the bridge packages it imports, declared the way the framework declares them.
 `import-not-canonical` decides from the framework's own source, at the version
 go.mod requires, and a vendor directory is the one place that source can sit
-inside a fixture and survive the `cp -R` above. Sixteen of the sixty-eight
+inside a fixture and survive the `cp -R` above. Sixteen of the sixty-nine
 warnings are that rule. The other fixtures require a framework version no
 module cache here holds, so the rule is silent on them -- which is its declared
 limit, not an accident.
@@ -266,6 +266,21 @@ and near misses in `gaps` and `clean`.
 
 `aru doctor --list` prints them with the rest, and is what the skeleton's
 `arandu-doctor` skill is checked against.
+
+## The CSRF exemption rule
+
+`csrf-exempt-without-signature` is a warning in `rules.go`, and it is the one
+rule that reads the route table: `CSRFExcept` literals under `bootstrap/` give
+the exempt prefixes, the project map built from the same AST gives every route
+that changes state under one (matched the way the framework matches it: the
+path itself, or anything below a prefix that ends in a slash), and the action
+each reaches is read, alone, for a call of `Verify` through the file's import
+of `hesape/webhook`. Its comment carries reason, scope, positive, negative,
+known false positive (an action that hands the body to a helper that
+verifies), limit (function-local) and fix, and
+`tests/Unit/doctor/csrf_test.go` holds eleven cases. `violations` plants the
+unverified webhook; `gaps` holds the verified one, a read under the prefix, and
+the paths the framework does not exempt.
 
 ## Profile rules
 

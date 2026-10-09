@@ -87,6 +87,7 @@ var catalogue = []RuleInfo{
 	{Name: "sql-built-by-concatenation", Severities: errorOnly},
 	{Name: "sensitive-field-not-redacted", Severities: warningOnly},
 	{Name: "session-not-rotated", Severities: errorOnly},
+	{Name: "csrf-exempt-without-signature", Severities: warningOnly},
 	{Name: "view-data-is-a-map", Severities: errorOnly},
 	{Name: "view-does-not-exist", Severities: errorOnly},
 	{Name: "permission-not-declared", Severities: errorOnly},

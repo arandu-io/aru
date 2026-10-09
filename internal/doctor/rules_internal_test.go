@@ -125,6 +125,7 @@ func emitsByRule() map[string][]string {
 		"noBuiltSQL":                              {"sql-built-with-sprintf", "sql-built-by-concatenation"},
 		"sensitiveFieldNeedsRedaction":            {"sensitive-field-not-redacted"},
 		"sessionMustRotateOnLogin":                {"session-not-rotated"},
+		"csrfExemptionsVerifyASignature":          {"csrf-exempt-without-signature"},
 		"viewDataMustBeAStruct":                   {"view-data-is-a-map"},
 		"viewMustExist":                           {"view-does-not-exist"},
 		"declaredPermissionsMatchTheCode":         {"permission-not-declared", "permission-not-used"},

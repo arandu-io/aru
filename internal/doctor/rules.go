@@ -57,6 +57,7 @@ var rules = []func(*project) []Finding{
 	noBuiltSQL,
 	sensitiveFieldNeedsRedaction,
 	sessionMustRotateOnLogin,
+	csrfExemptionsVerifyASignature,
 	viewDataMustBeAStruct,
 	viewMustExist,
 	declaredPermissionsMatchTheCode,
@@ -1871,6 +1872,143 @@ func sessionMustRotateOnLogin(p *project) []Finding {
 		}
 	}
 	return out
+}
+
+// 10b. A path exempt from the CSRF check is reached only by an action that
+// verifies a signature.
+//
+// Reason. CSRFExcept, passed to CSRFProtect in bootstrap, switches the CSRF
+// check off for every write under a path. It exists for the route another
+// system calls -- a webhook -- which proves who sent it with a signature over
+// the body instead of with a cookie and a token, and the exemption is safe on
+// that promise alone. An exempt route that verifies nothing takes a write from
+// any page a signed-in person opens, and from anybody who can reach it.
+//
+// Scope. Every CSRFExcept call outside a test under bootstrap/, by its string
+// literal arguments; every route registered under routes/ that changes state
+// -- POST, PUT, PATCH, DELETE or any method -- whose pattern the prefix exempts
+// by the framework's own test (the path itself, or anything under a prefix
+// that ends in a slash); and the controller action each such route reaches.
+//
+// Severity. Warning: a new rule enters as one.
+//
+// Positive. CSRFExcept("/webhooks/") and r.Post("/webhooks/billing",
+// billing.Receive), where Receive never calls Verify of hesape/webhook.
+//
+// Negative. The action calls webhook.Verify. A route outside the prefix, a GET
+// under it (a read is never checked), and a route below "/webhooks" written
+// without the slash, which the framework does not exempt.
+//
+// Known false positive. An action that hands the raw body to a service, a
+// helper or a middleware that verifies it: the read stops at the action.
+//
+// Limit. Function-local: the body of the action the route reaches is read for
+// a call of Verify through the file's import of hesape/webhook, and nothing it
+// calls is followed. A prefix held in a variable, a route whose handler is a
+// function literal or a controller the route table does not resolve, and a
+// pattern whose prefix sits behind a path parameter are not read; a clean
+// report means no unverified action was found, not that none exists.
+//
+// Fix. Verify the request in the action before anything reads the body as
+// true -- webhook.Verify(secrets, timestamp, deliveryID, body, signature) from
+// github.com/arandu-io/hesape/webhook, answering 401 when it fails -- or take
+// the route out of the exempt prefix.
+func csrfExemptionsVerifyASignature(p *project) []Finding {
+	type exemption struct {
+		prefix, file string
+		line         int
+	}
+	var exempt []exemption
+	for _, f := range p.files {
+		if f.isTest || !strings.HasPrefix(f.rel, "bootstrap/") {
+			continue
+		}
+		f.calls(func(call *ast.CallExpr, name string) {
+			if name != "CSRFExcept" && !strings.HasSuffix(name, ".CSRFExcept") {
+				return
+			}
+			for _, arg := range call.Args {
+				if prefix, ok := stringLiteral(arg); ok && prefix != "" {
+					exempt = append(exempt, exemption{prefix: prefix, file: f.rel, line: f.line(call)})
+				}
+			}
+		})
+	}
+	if len(exempt) == 0 {
+		return nil
+	}
+
+	routes := buildProjectMap(p, nil)
+	nodes := make(map[string]MapNode, len(routes.Nodes))
+	for _, n := range routes.Nodes {
+		nodes[n.ID] = n
+	}
+	byFile := make(map[string]*file, len(p.files))
+	for _, f := range p.files {
+		byFile[f.rel] = f
+	}
+
+	var out []Finding
+	reported := map[string]bool{}
+	for _, edge := range routes.Edges {
+		if edge.Kind != EdgeRoutesTo {
+			continue
+		}
+		route, action := nodes[edge.From], nodes[edge.To]
+		if route.Kind != "route" || action.Kind != "action" || !changesState(route.Method) {
+			continue
+		}
+		for _, e := range exempt {
+			if route.Pattern != e.prefix && !(strings.HasSuffix(e.prefix, "/") && strings.HasPrefix(route.Pattern, e.prefix)) {
+				continue
+			}
+			key := action.ID + "\x00" + e.prefix
+			if reported[key] {
+				continue
+			}
+			f := byFile[action.File]
+			if f == nil || actionVerifiesASignature(f, action.Line) {
+				continue
+			}
+			reported[key] = true
+			out = append(out, Finding{
+				Rule: "csrf-exempt-without-signature", Severity: Warning,
+				File: action.File, Line: action.Line,
+				Message: fmt.Sprintf("%s answers %s %s, which CSRFExcept(%q) at %s:%d exempts from the CSRF check, and it never calls webhook.Verify",
+					action.Label, route.Method, route.Pattern, e.prefix, e.file, e.line),
+				Why: "the exemption is safe only because the route proves the sender with a signature over the body instead of a token: without one, any page a signed-in person opens can post to it, and anybody who can reach it can forge what it receives. Verify the request in the action with webhook.Verify(secrets, timestamp, deliveryID, body, signature) from github.com/arandu-io/hesape/webhook and answer 401 when it fails, or take the route out of the exempt prefix.",
+			})
+		}
+	}
+	return out
+}
+
+// changesState reports whether a route's method is one the CSRF check guards:
+// every method but the reads, and a route registered for any method.
+func changesState(method string) bool {
+	switch method {
+	case "GET", "HEAD", "OPTIONS":
+		return false
+	}
+	return true
+}
+
+// actionVerifiesASignature reports whether the method whose name is on line
+// of f calls Verify through the file's import of hesape/webhook. Only the
+// method's own body is read.
+func actionVerifiesASignature(f *file, line int) bool {
+	local, imported := f.imports[hesapePrefix+"webhook"]
+	if !imported {
+		return false
+	}
+	verified := false
+	f.functions(func(fn *ast.FuncDecl) {
+		if f.line(fn.Name) != line {
+			return
+		}
+		verified = funcBodyContains(fn, func(name string) bool { return name == local+".Verify" })
+	})
+	return verified
 }
 
 // renderCall is a ctx.View or ctx.Fragment call, with the two arguments the view

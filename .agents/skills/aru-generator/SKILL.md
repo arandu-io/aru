@@ -180,6 +180,15 @@ either controller), the request's fields and rules, the migration, the model
 and the unit test. If you add a template that both paths can reach, add it there
 too.
 
+`make:factory` reads the model and renders the factory template `make:module`
+renders. A text field `<Parent>ID` whose `app/Models/<Parent>.go` declares the
+type `<Parent>` is taken out of the default state by `gen.SplitParents` and
+becomes `For<Parent>(id)`, the state a nested module's factory has, instead of
+`f.UUID()` -- a key no row carries. A field naming no model of the project
+keeps its UUID. The compile harness runs `make:factory Task` over the nested
+module it generated, and `emit` refuses it unless the bytes are the ones
+`make:module` wrote.
+
 `make:service` renders the same `serviceStruct`, `serviceCreate` and
 `serviceFill` blocks (`serviceBlocks` in `templates.go`) the module's service
 is made of, so the Create a person meets in either file is one method, and

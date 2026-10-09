@@ -1156,3 +1156,46 @@ func TestTheEventWiringNamesWhatCompiles(t *testing.T) {
 		}
 	}
 }
+
+// TestMakeFactoryStatesTheParentsTheModelNames: make:factory over a nested
+// entity reads NoteID off the model, finds the Note model beside it, and
+// writes the state make:module writes -- ForNote(noteID) -- instead of a
+// default state that draws a key nobody stored. The message names the state.
+func TestMakeFactoryStatesTheParentsTheModelNames(t *testing.T) {
+	root := bareProject(t)
+	t.Chdir(root)
+
+	var out, errOut strings.Builder
+	if err := makeModule([]string{"note", "--fields", "title:string!", "--tenant"}, &out, &errOut); err != nil {
+		t.Fatalf("make:module note: %v\n%s", err, errOut.String())
+	}
+	if err := makeModule([]string{"comment", "--fields", "body:text!", "--tenant", "--parent=notes"}, &out, &errOut); err != nil {
+		t.Fatalf("make:module comment: %v\n%s", err, errOut.String())
+	}
+	factory := filepath.Join(root, "database", "factories", "CommentFactory.go")
+	byModule, err := os.ReadFile(factory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(factory); err != nil {
+		t.Fatal(err)
+	}
+
+	out.Reset()
+	if err := makeFactory([]string{"Comment"}, &out, &errOut); err != nil {
+		t.Fatalf("make:factory: %v\n%s", err, errOut.String())
+	}
+	byFactory, err := os.ReadFile(factory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(byFactory), "NoteID: f.UUID()") {
+		t.Errorf("the default state draws the note's key:\n%s", byFactory)
+	}
+	if !bytes.Equal(byFactory, byModule) {
+		t.Errorf("make:factory and make:module write two factories of one nested entity:\n--- make:module\n%s\n--- make:factory\n%s", byModule, byFactory)
+	}
+	if !strings.Contains(out.String(), "ForNote(noteID)") {
+		t.Errorf("the message does not name the state that fills NoteID:\n%s", out.String())
+	}
+}

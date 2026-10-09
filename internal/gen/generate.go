@@ -291,7 +291,7 @@ func (m Module) FactorySpec() FactorySpec {
 	}
 	spec := FactorySpec{Entity: m.Entity(), Tenant: m.Tenant, Fields: fields, ModelsImport: m.ModelsImport()}
 	if m.Parent != "" {
-		spec.Parent = &FactoryParent{Entity: m.ParentEntity(), Field: m.ParentField(), Arg: m.ParentArg(), Human: m.ParentHuman()}
+		spec.Parents = []FactoryParent{{Entity: m.ParentEntity(), Field: m.ParentField(), Arg: m.ParentArg(), Human: m.ParentHuman()}}
 	}
 	return spec
 }

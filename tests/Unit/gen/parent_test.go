@@ -178,3 +178,69 @@ func TestATopLevelModuleNamesNoParent(t *testing.T) {
 		}
 	}
 }
+
+// TestAFactoryReadOffAModelNamesNoParentItWouldDraw is make:factory over a
+// model that points at others: a text field <Parent>ID naming a model the
+// project has leaves the default state and becomes For<Parent>(id), the state
+// make:module writes for a nested module. It used to be f.UUID(), a key no row
+// carries.
+func TestAFactoryReadOffAModelNamesNoParentItWouldDraw(t *testing.T) {
+	root := t.TempDir()
+	writeInto(t, filepath.Join(root, "app", "Models", "Note.go"), []byte(parentModel("ID string `db:\"id\"`", `Name: "notes",`)))
+	writeInto(t, filepath.Join(root, "app", "Models", "PurchaseOrder.go"),
+		[]byte("package models\n\ntype PurchaseOrder struct{ ID string }\n"))
+	// A file named after a model that declares something else is no model.
+	writeInto(t, filepath.Join(root, "app", "Models", "Ledger.go"), []byte("package models\n\ntype LedgerEntry struct{}\n"))
+
+	fields := []gen.FactoryField{
+		{GoName: "NoteID", GoType: "string"},
+		{GoName: "PurchaseOrderID", GoType: "string"},
+		{GoName: "ExternalID", GoType: "string"},
+		{GoName: "LedgerID", GoType: "string"},
+		{GoName: "CountID", GoType: "int64"},
+		{GoName: "Body", GoType: "string"},
+	}
+	kept, parents := gen.SplitParents(root, fields)
+
+	var keptNames []string
+	for _, f := range kept {
+		keptNames = append(keptNames, f.GoName)
+	}
+	if got, want := strings.Join(keptNames, ","), "ExternalID,LedgerID,CountID,Body"; got != want {
+		t.Errorf("the default state keeps %s, want %s", got, want)
+	}
+	want := []gen.FactoryParent{
+		{Entity: "Note", Field: "NoteID", Arg: "noteID", Human: "note"},
+		{Entity: "PurchaseOrder", Field: "PurchaseOrderID", Arg: "purchaseOrderID", Human: "purchase order"},
+	}
+	if len(parents) != len(want) {
+		t.Fatalf("parents = %+v, want %+v", parents, want)
+	}
+	for i := range want {
+		if parents[i] != want[i] {
+			t.Errorf("parent %d = %+v, want %+v", i, parents[i], want[i])
+		}
+	}
+
+	file, err := gen.RenderFactory(gen.FactorySpec{
+		Entity: "Comment", Fields: kept, Parents: parents, ModelsImport: "example.test/project/app/Models",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(file.Content)
+	for _, line := range []string{
+		"func (x *CommentFactory) ForNote(noteID string) *CommentFactory {",
+		"func (x *CommentFactory) ForPurchaseOrder(purchaseOrderID string) *CommentFactory {",
+		"ExternalID: f.UUID(),",
+	} {
+		if !strings.Contains(content, line) {
+			t.Errorf("the factory does not carry %q:\n%s", line, content)
+		}
+	}
+	for _, drawn := range []string{"NoteID: f.UUID()", "PurchaseOrderID: f.UUID()"} {
+		if strings.Contains(content, drawn) {
+			t.Errorf("the default state draws %q, a key nobody stored:\n%s", drawn, content)
+		}
+	}
+}

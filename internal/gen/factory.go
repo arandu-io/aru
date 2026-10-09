@@ -65,13 +65,14 @@ type FactorySpec struct {
 	Tenant       bool
 	Fields       []FactoryField
 	ModelsImport string
-	// Parent is the entity every row belongs to, for a module nested under
-	// one; nil for a top-level entity. The default state names no parent, and
-	// the factory gains the state that names one.
-	Parent *FactoryParent
+	// Parents are the entities a row points at by key: the parent of a module
+	// nested under one, or each field <Parent>ID of a model that names a model
+	// the project has. The default state names none of them, and the factory
+	// gains, for each, the state that names one.
+	Parents []FactoryParent
 }
 
-// FactoryParent is what the factory of a nested entity knows about the parent:
+// FactoryParent is what the factory knows about an entity its rows belong to:
 // the field the parent's id goes in, and the names of the state that fills it.
 type FactoryParent struct {
 	// Entity is the parent's type: Project.
@@ -190,6 +191,59 @@ func FieldsFromModel(path, entity string) (fields []FactoryField, tenant bool, e
 		}
 	}
 	return fields, tenant, nil
+}
+
+// SplitParents takes out of fields the ones that hold the key of another
+// model of the project rooted at root, and answers them as the states that
+// fill them.
+//
+// A text field named <Parent>ID is one when app/Models/<Parent>.go declares
+// the type <Parent>: NoteID on a comment, when the project has a Note. The
+// default state then leaves it empty rather than drawing a UUID, because a key
+// nobody stored is a row pointing at nothing -- and the factory offers
+// For<Parent>(id), the state make:module writes for the parent of a nested
+// module, so a caller hands the id of a row it stored. A field whose name names
+// no model of the project, such as an id another system issued, keeps its
+// UUID.
+func SplitParents(root string, fields []FactoryField) (kept []FactoryField, parents []FactoryParent) {
+	for _, f := range fields {
+		entity, isKey := strings.CutSuffix(f.GoName, "ID")
+		if !isKey || f.GoType != "string" || !IsExportedIdentifier(entity) || !declaresModel(root, entity) {
+			kept = append(kept, f)
+			continue
+		}
+		parents = append(parents, FactoryParent{
+			Entity: entity,
+			Field:  f.GoName,
+			Arg:    lowerFirst(exported(Normalize(entity))) + "ID",
+			Human:  strings.ReplaceAll(Normalize(entity), "_", " "),
+		})
+	}
+	return kept, parents
+}
+
+// declaresModel reports whether app/Models/<entity>.go under root declares the
+// struct type entity. A file that does not parse declares nothing here, and
+// the field keeps the value it had.
+func declaresModel(root, entity string) bool {
+	path := filepath.Join(root, "app", "Models", entity+".go")
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
+	if err != nil {
+		return false
+	}
+	for _, d := range file.Decls {
+		decl, ok := d.(*ast.GenDecl)
+		if !ok || decl.Tok != token.TYPE {
+			continue
+		}
+		for _, spec := range decl.Specs {
+			if ts, ok := spec.(*ast.TypeSpec); ok && ts.Name.Name == entity {
+				_, isStruct := ts.Type.(*ast.StructType)
+				return isStruct
+			}
+		}
+	}
+	return false
 }
 
 // typeExpr renders a field's type back to source, for the subset a generated
@@ -359,7 +413,7 @@ func define{{.Entity}}(f faker.Faker) models.{{.Entity}} {
 {{- end}}
 	}
 }
-{{- with .Parent}}
+{{- range .Parents}}
 
 // For{{.Entity}} returns a factory whose rows belong to the {{.Human}} with this id.
 //

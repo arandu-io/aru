@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/arandu-io/aru/internal/gen"
 )
@@ -68,11 +69,13 @@ func makeFactory(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("make:factory: %w", err)
 	}
 
+	fields, parents := gen.SplitParents(root, fields)
 	spec := gen.FactorySpec{
 		Entity:       entity,
 		Tenant:       tenant,
 		Fields:       fields,
 		ModelsImport: gen.Module{Name: "x", ModulePath: modulePath}.ModelsImport(),
+		Parents:      parents,
 	}
 
 	file, err := gen.RenderFactory(spec)
@@ -96,6 +99,9 @@ follow the entity without anybody running this again.
 Make builds rows and stores nothing; Create stores them and takes a Grant, like
 every other write -- a factory is no way around the policy that guards the table.
 `, entity)
+	if len(parents) > 0 {
+		fmt.Fprint(stdout, parentStates(parents))
+	}
 	if !uniqueIDs.Match(source) {
 		fmt.Fprintf(stdout, `
 The factory leaves the key empty, and the table in app/Models/%s.go does not
@@ -104,4 +110,28 @@ model.TableSpec, in place of ManualKey and KeyType.
 `, entity)
 	}
 	return nil
+}
+
+// parentStates is what make:factory says about the fields it left out of the
+// default state: each holds the key of another model of the project, and the
+// state that fills it is named, with the line a test or a seeder writes.
+func parentStates(parents []gen.FactoryParent) string {
+	var b strings.Builder
+	b.WriteString("\nThe default state leaves ")
+	for i, p := range parents {
+		if i > 0 {
+			b.WriteString(" and ")
+		}
+		b.WriteString(p.Field)
+	}
+	b.WriteString(` empty.
+Each holds the key of a model this project has, and a drawn key would point at
+a row nobody stored. The custom block has a state for each, which takes the id
+of a row the caller stored:
+`)
+	for _, p := range parents {
+		fmt.Fprintf(&b, "\n    For%s(%s)", p.Entity, p.Arg)
+	}
+	b.WriteString("\n")
+	return b.String()
 }

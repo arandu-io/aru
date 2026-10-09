@@ -164,6 +164,22 @@ func generatedProject(t *testing.T) (string, map[string]string) {
 	nested := compiled("task", true)
 	nested.Parent = "projects"
 	emit("aru make:module task --tenant --parent=projects", func() ([]gen.File, error) { return gen.Generate(nested) })
+	// make:factory over the nested model writes the factory make:module wrote,
+	// byte for byte -- emit refuses two commands that disagree about one
+	// path. The model it reads holds ProjectID, which names the Project model,
+	// so the default state leaves it empty and ForProject fills it: one
+	// template, and one answer about a key, whichever command asked.
+	one("aru make:factory Task", func() (gen.File, error) {
+		fields, tenant, err := gen.FieldsFromModel(filepath.Join(root, "app", "Models", "Task.go"), "Task")
+		if err != nil {
+			return gen.File{}, err
+		}
+		fields, parents := gen.SplitParents(root, fields)
+		return gen.RenderFactory(gen.FactorySpec{
+			Entity: "Task", Tenant: tenant, Fields: fields, Parents: parents,
+			ModelsImport: gen.Module{Name: "task", ModulePath: generatedModulePath}.ModelsImport(),
+		})
+	})
 
 	// A noun whose plural is itself. The constructor cannot be the plural --
 	// a function and the type would share one name in one package -- so it is

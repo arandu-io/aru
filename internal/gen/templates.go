@@ -949,14 +949,7 @@ The gates, all of them, as ` + "`" + `AGENTS.md` + "`" + ` lists them. While ite
 because the race detector compiles every package a second time.
 
 ` + "```" + `sh
-export GOWORK=off
-aru model:build
-aru view:build
-gofmt -l $(find . -name '*.go' -not -path '*/testdata/*' -not -name '*.kyse.go')
-go build ./...
-go vet ./...
-go test -race ./...
-aru doctor
+{{ .GateBlock }}
 ` + "```" + `
 
 <!-- arandu:begin custom -->

@@ -315,6 +315,30 @@ type Module struct {
 	// is: a golden file that tested the binary's version would fail on every
 	// release.
 	Generator string
+	// Gates is the gate block of the project's AGENTS.md, as ProjectGates
+	// reads it, without its fences. The module's skill repeats it, so the
+	// project states its gates once; empty is the block this generator knows.
+	Gates string
+}
+
+// defaultGates is the gate block a module's skill carries when the project's
+// AGENTS.md declares none.
+const defaultGates = `export GOWORK=off
+aru model:build
+aru view:build
+gofmt -l $(find . -name '*.go' -not -path '*/testdata/*' -not -name '*.kyse.go')
+go build ./...
+go vet ./...
+go test -race ./...
+aru doctor`
+
+// GateBlock is the block of commands the module's skill lists as its gates:
+// the project's, or defaultGates when the project declares none.
+func (m Module) GateBlock() string {
+	if m.Gates != "" {
+		return m.Gates
+	}
+	return defaultGates
 }
 
 // SkillSource is what the module's skill records as its source: aru, at the

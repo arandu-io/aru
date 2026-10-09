@@ -74,6 +74,7 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 		ModulePath: modulePath,
 		Parent:     strings.ToLower(strings.ReplaceAll(*parent, "_", "-")),
 		Generator:  version,
+		Gates:      gen.ProjectGates(root),
 	})
 	if err != nil {
 		return fmt.Errorf("make:module: %w", err)

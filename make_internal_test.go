@@ -926,3 +926,48 @@ func TestEveryUsageLineNamesEveryFlag(t *testing.T) {
 		}
 	}
 }
+
+// TestTheModuleSkillRepeatsTheProjectsGates: the gates are decided in the
+// project's AGENTS.md, and the skill make:module writes repeats that block
+// rather than a second list of its own. A project with no AGENTS.md, or one
+// with no block that opens with export GOWORK=off, gets the generator's block.
+func TestTheModuleSkillRepeatsTheProjectsGates(t *testing.T) {
+	projectGates := "export GOWORK=off\naru model:build --check\naru view:build\n" +
+		"gofmt -l $(find . -name '*.go' -not -path '*/testdata/*' -not -name '*.kyse.go')\n" +
+		"go vet ./...\nbash tests/test-layout-guard.sh\ngo test -race ./...\ngo build ./...\naru doctor"
+	agents := "# Working here\n\nSome prose.\n\n```sh\ngo run .\n```\n\nThe gates:\n\n```sh\n" + projectGates + "\n```\n\nMore prose.\n"
+
+	for _, c := range []struct {
+		name   string
+		agents string
+		want   string
+		absent string
+	}{
+		{"the project declares them", agents, "```sh\n" + projectGates + "\n```", "aru model:build\naru view:build"},
+		{"no AGENTS.md", "", "```sh\nexport GOWORK=off\naru model:build\naru view:build\n", "test-layout-guard"},
+		{"an AGENTS.md without the block", "# Working here\n\n```sh\ngo test ./...\n```\n", "```sh\nexport GOWORK=off\naru model:build\naru view:build\n", "go test ./...\n```\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := bareProject(t)
+			if c.agents != "" {
+				writeFile(t, filepath.Join(root, "AGENTS.md"), c.agents)
+			}
+			t.Chdir(root)
+
+			var out, errOut strings.Builder
+			if err := makeModule([]string{"invoice", "--fields", "reference:string!"}, &out, &errOut); err != nil {
+				t.Fatalf("make:module: %v\n%s", err, errOut.String())
+			}
+			skill, err := os.ReadFile(filepath.Join(root, ".agents", "skills", "invoices", "SKILL.md"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(skill), c.want) {
+				t.Errorf("the skill does not carry the gate block %q:\n%s", c.want, skill)
+			}
+			if strings.Contains(string(skill), c.absent) {
+				t.Errorf("the skill carries %q, which is not this project's block", c.absent)
+			}
+		})
+	}
+}

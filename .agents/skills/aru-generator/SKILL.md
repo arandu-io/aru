@@ -319,6 +319,14 @@ markers `publish.Merge` matches. `tests/Unit/gen/skill_test.go` proves the
 stamp, the block surviving a regeneration, and the absence of the sentences the
 template used to carry and the code never did.
 
+Its gate block is the project's, not the template's: `gen.ProjectGates` reads
+the first fenced block of the project's `AGENTS.md` that opens with
+`export GOWORK=off`, `make:module` and `generate` put it in `Module.Gates`, and
+the template prints `Module.GateBlock()`. Only a project with no such block gets
+the generator's own (`defaultGates` in `internal/gen/spec.go`), so a project
+states its gates once. `TestTheModuleSkillRepeatsTheProjectsGates` holds the
+three cases.
+
 If you change what a module is made of, change `skillTemplate` in the same
 commit. The table of files in that template is a claim about a tree.
 

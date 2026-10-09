@@ -334,6 +334,12 @@ window.`,
 		run:   makeModel,
 	},
 	{
+		name:  "make:service",
+		usage: makeServiceUsage,
+		desc:  "generate the service of an existing entity, with one use case that validates, authorizes and persists",
+		run:   makeService,
+	},
+	{
 		name:  "make:migration",
 		usage: makeMigrationUsage,
 		desc:  "generate one migration: a table, or columns added to one",

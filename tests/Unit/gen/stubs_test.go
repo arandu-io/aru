@@ -116,6 +116,8 @@ func TestGoldenStubs(t *testing.T) {
 				Description: "Close the invoices past their due date", ModulePath: "example.test/project",
 			})
 		})},
+		{"InvoiceService.go", fileAt(0, func() ([]gen.File, error) { return gen.GenerateService(serviceModule()) })},
+		{"InvoiceService_test.go", fileAt(1, func() ([]gen.File, error) { return gen.GenerateService(serviceModule()) })},
 		{"WelcomeEmail.go", fileAt(0, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
 		{"welcome-email.kyse.go", fileAt(1, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
 		{"welcome-email-text.kyse.go", fileAt(2, func() ([]gen.File, error) { return gen.RenderMail(mailSpec()) })},
@@ -186,6 +188,21 @@ func controllerStub(k gen.Kind) gen.Stub {
 		Entity:     "Invoice",
 		Kind:       k,
 	}
+}
+
+// serviceModule is what make:service reads off a model and a request that
+// already exist: the entity, its tenant column, and the fields the two share --
+// here every one of them but the date, which the request carries as text.
+func serviceModule() gen.Module {
+	model := []gen.FactoryField{
+		{GoName: "Reference", GoType: "string"}, {GoName: "Total", GoType: "int64"},
+		{GoName: "DeliveryDate", GoType: "time.Time"}, {GoName: "Internal", GoType: "string"},
+	}
+	request := []gen.FactoryField{
+		{GoName: "Reference", GoType: "string"}, {GoName: "Total", GoType: "int64"},
+		{GoName: "DeliveryDate", GoType: "string"},
+	}
+	return gen.Module{Name: "invoice", Tenant: true, ModulePath: "example.test/project", Fields: gen.ServiceFields(model, request)}
 }
 
 func factorySpec(tenant bool) gen.FactorySpec {

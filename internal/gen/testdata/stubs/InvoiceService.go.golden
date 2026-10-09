@@ -1,0 +1,76 @@
+package services
+
+import (
+	"context"
+
+	"github.com/arandu-io/hesape/auth"
+	"github.com/arandu-io/hesape/database"
+	"github.com/arandu-io/hesape/log"
+
+	requests "example.test/project/app/Http/Requests"
+	models "example.test/project/app/Models"
+	policies "example.test/project/app/Policies"
+)
+
+// InvoiceService holds the business rules. It receives its dependencies through
+// the constructor -- explicit wiring, no container.
+//
+// Every method authorizes before it reaches the Model, and the errors it returns
+// are the ones the router answers: validation.Errors back to the form, a missing
+// row as 404, a refusal as 403.
+type InvoiceService struct {
+	db     *database.DB
+	policy policies.InvoicePolicy
+}
+
+// NewInvoiceService wires the service.
+func NewInvoiceService(db *database.DB) *InvoiceService {
+	return &InvoiceService{db: db}
+}
+
+// Create walks the mandatory path: validate, Authorize, Grant, Model.
+// There is no other order that compiles.
+func (s *InvoiceService) Create(ctx context.Context, actor auth.Subject, in requests.InvoiceRequest) (*models.Invoice, error) {
+	if errs := in.Validate(); errs.Any() {
+		return nil, errs
+	}
+
+	var proposed models.Invoice
+	s.fill(&proposed, in)
+	g, err := auth.Authorize(ctx, s.policy, actor, policies.InvoiceCreate, proposed)
+	if err != nil {
+		return nil, err
+	}
+
+	record, err := models.Invoices(s.db).New()
+	if err != nil {
+		return nil, err
+	}
+	s.fill(record, in)
+	// The tenant comes from the Grant, never from the request or the subject
+	// directly. The model writes the same value over the insert attributes.
+	record.TenantID = auth.Tenant(g)
+	if _, err := record.Save(ctx, g); err != nil {
+		return nil, err
+	}
+	// Guarded: the entity is a struct value, and boxing it into `any` allocates
+	// at the call site even though RecordEvent is a no-op on a nil Collector.
+	if col := log.FromContext(ctx); col != nil {
+		col.RecordEvent("invoice.created", record)
+	}
+	return record, nil
+}
+
+// fill writes the request onto the record. It is the one place a field of the
+// form becomes a column, for Create and Update alike.
+func (s *InvoiceService) fill(i *models.Invoice, in requests.InvoiceRequest) {
+	i.Reference = in.Reference
+	i.Total = in.Total
+}
+
+// arandu:begin custom
+// The next use case goes here, in the same shape: (ctx, actor auth.Subject, in
+// requests.X) or an id, validated, authorized, then the Model with the Grant.
+// A rule about one invoice -- a transition, an invariant -- is a method of the
+// entity in app/Models/Invoice.go, and this service calls it.
+// arandu:end custom

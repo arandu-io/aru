@@ -1,0 +1,34 @@
+package unit_test
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/arandu-io/hesape/auth"
+	"github.com/arandu-io/hesape/validation"
+
+	requests "example.test/project/app/Http/Requests"
+	services "example.test/project/app/Services"
+)
+
+// TestTheInvoiceServiceAsksBeforeItWrites needs no database: Create validates
+// and then authorizes before it reaches the Model, so the nil handle below turns
+// a write that skipped either into a panic here rather than a row in
+// production. Nobody is asking, so the answer is a rejected form or a refusal,
+// and never a record.
+func TestTheInvoiceServiceAsksBeforeItWrites(t *testing.T) {
+	svc := services.NewInvoiceService(nil)
+	var anonymous auth.Subject
+
+	created, err := svc.Create(context.Background(), anonymous, requests.InvoiceRequest{})
+
+	var invalid validation.Errors
+	if created != nil || (!errors.Is(err, auth.ErrForbidden) && !errors.As(err, &invalid)) {
+		t.Fatalf("Create = %v, %v: want no record and a validation error or ErrForbidden", created, err)
+	}
+}
+
+// arandu:begin custom
+// Tests for the use cases you add go here, and survive regeneration.
+// arandu:end custom

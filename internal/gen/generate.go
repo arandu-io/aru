@@ -43,7 +43,7 @@ func Generate(m Module) ([]File, error) {
 		{filepath.Join("app", "Http", "Controllers", m.Entity()+"Controller.go"), controllerTemplate},
 		{filepath.Join("app", "Models", m.Entity()+".go"), modelTemplate},
 		{filepath.Join("app", "Policies", m.Entity()+"Policy.go"), policyTemplate},
-		{filepath.Join("app", "Services", m.Entity()+"Service.go"), serviceTemplate},
+		{filepath.Join("app", "Services", m.Entity()+"Service.go"), serviceTemplate + serviceBlocks},
 		{filepath.Join("app", "Http", "Requests", m.Entity()+"Request.go"), requestTemplate + requestRulesTemplate},
 		// The skill an assistant reads when it meets this module.
 		//

@@ -143,6 +143,19 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 		return gen.GenerateModel(model, gen.Everything())
 	})
 
+	// make:service, over an entity that has its model, its policy and its
+	// request -- written by make:model, which is what the command asks for
+	// when one of the three is missing.
+	shipment := compiled("shipment", true)
+	emit("aru make:model shipment --policy --requests --tenant", func() ([]gen.File, error) {
+		return gen.GenerateModel(shipment, gen.ModelParts{Policy: true, Request: true})
+	})
+	emit("aru make:service Shipment", func() ([]gen.File, error) {
+		service := shipment
+		service.Fields = gen.ServiceFields(fieldsOf(shipment), fieldsOf(shipment))
+		return gen.GenerateService(service)
+	})
+
 	// make:controller, in its four shapes, and a resource nested under a
 	// parent with a named action. A controller stub declares no entity, so each
 	// one gets a name of its own; what is proved is that every shape imports
@@ -366,6 +379,16 @@ func compiled(name string, tenant bool) gen.Module {
 		ModulePath: generatedModulePath,
 		Date:       "2026_07_31",
 	}
+}
+
+// fieldsOf is what FieldsFromModel reads back off the struct a module's
+// fields generate, without writing the struct to disk first.
+func fieldsOf(m gen.Module) []gen.FactoryField {
+	out := make([]gen.FactoryField, 0, len(m.Fields))
+	for _, f := range m.Fields {
+		out = append(out, gen.FactoryField{GoName: f.GoName(), GoType: f.GoType()})
+	}
+	return out
 }
 
 // buildGeneratedViews turns the emitted markup into the Go the controller

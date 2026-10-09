@@ -188,58 +188,7 @@ import (
 // page load takes a database down.
 const {{.Unexported}}PerPage = 25
 
-// {{.ServiceType}} holds the business rules. It receives its dependencies through
-// the constructor -- explicit wiring, no container.
-//
-// Every method authorizes before it reaches the Model, and the errors it returns
-// are the ones the router answers: validation.Errors back to the form, a missing
-// row as 404, a refusal as 403{{if .UniqueFields}} and a duplicate on a unique column as 409{{end}}.
-type {{.ServiceType}} struct {
-	db     *database.DB
-	policy policies.{{.PolicyType}}
-}
-
-// New{{.ServiceType}} wires the service.
-func New{{.ServiceType}}(db *database.DB) *{{.ServiceType}} {
-	return &{{.ServiceType}}{db: db}
-}
-
-// Create walks the mandatory path: validate, Authorize, Grant, Model.
-// There is no other order that compiles.
-func (s *{{.ServiceType}}) Create(ctx context.Context, actor auth.Subject, in requests.{{.Request}}) (*models.{{.Entity}}, error) {
-	if errs := in.Validate(); errs.Any() {
-		return nil, errs
-	}
-
-	var proposed models.{{.Entity}}
-	s.fill(&proposed, in)
-	g, err := auth.Authorize(ctx, s.policy, actor, policies.{{.Entity}}Create, proposed)
-	if err != nil {
-		return nil, err
-	}
-
-	record, err := models.{{.Constructor}}(s.db).New()
-	if err != nil {
-		return nil, err
-	}
-	s.fill(record, in)
-{{- if .Tenant}}
-	// The tenant comes from the Grant, never from the request or the subject
-	// directly. The model writes the same value over the insert attributes.
-	record.TenantID = auth.Tenant(g)
-{{- end}}
-	if _, err := record.Save(ctx, g); err != nil {
-		return nil, err
-	}
-	// Guarded: the entity is a struct value, and boxing it into ` + "`" + `any` + "`" + ` allocates
-	// at the call site even though RecordEvent is a no-op on a nil Collector.
-	if col := log.FromContext(ctx); col != nil {
-		col.RecordEvent("{{.Name}}.created", record)
-	}
-	return record, nil
-}
-
-// Get returns one {{.Name}}.
+{{template "serviceStruct" .}}{{template "serviceCreate" .}}// Get returns one {{.Name}}.
 //
 // It authorizes twice: once to look at all, and once with the row that was
 // read, which is the decision about this row rather than about the action.
@@ -315,7 +264,70 @@ func (s *{{.ServiceType}}) Delete(ctx context.Context, actor auth.Subject, id st
 	return nil
 }
 
-// fill writes the request onto the record. It is the one place a field of the
+{{template "serviceFill" .}}// arandu:begin custom
+// Business rules beyond CRUD go here, and survive regeneration.
+// arandu:end custom
+`
+
+// serviceBlocks are the parts of a service that every service the generator
+// writes shares: the type and its constructor, Create, and fill.
+//
+// ` + "`aru make:module`" + ` writes them with the rest of the use cases, and
+// ` + "`aru make:service`" + ` writes them alone. One template, so the Create a
+// person meets in either file is the same method -- validate, Authorize, Grant,
+// Model -- and a correction to it reaches both.
+const serviceBlocks = `{{define "serviceStruct"}}// {{.ServiceType}} holds the business rules. It receives its dependencies through
+// the constructor -- explicit wiring, no container.
+//
+// Every method authorizes before it reaches the Model, and the errors it returns
+// are the ones the router answers: validation.Errors back to the form, a missing
+// row as 404, a refusal as 403{{if .UniqueFields}} and a duplicate on a unique column as 409{{end}}.
+type {{.ServiceType}} struct {
+	db     *database.DB
+	policy policies.{{.PolicyType}}
+}
+
+// New{{.ServiceType}} wires the service.
+func New{{.ServiceType}}(db *database.DB) *{{.ServiceType}} {
+	return &{{.ServiceType}}{db: db}
+}
+
+{{end}}{{define "serviceCreate"}}// Create walks the mandatory path: validate, Authorize, Grant, Model.
+// There is no other order that compiles.
+func (s *{{.ServiceType}}) Create(ctx context.Context, actor auth.Subject, in requests.{{.Request}}) (*models.{{.Entity}}, error) {
+	if errs := in.Validate(); errs.Any() {
+		return nil, errs
+	}
+
+	var proposed models.{{.Entity}}
+	s.fill(&proposed, in)
+	g, err := auth.Authorize(ctx, s.policy, actor, policies.{{.Entity}}Create, proposed)
+	if err != nil {
+		return nil, err
+	}
+
+	record, err := models.{{.Constructor}}(s.db).New()
+	if err != nil {
+		return nil, err
+	}
+	s.fill(record, in)
+{{- if .Tenant}}
+	// The tenant comes from the Grant, never from the request or the subject
+	// directly. The model writes the same value over the insert attributes.
+	record.TenantID = auth.Tenant(g)
+{{- end}}
+	if _, err := record.Save(ctx, g); err != nil {
+		return nil, err
+	}
+	// Guarded: the entity is a struct value, and boxing it into ` + "`" + `any` + "`" + ` allocates
+	// at the call site even though RecordEvent is a no-op on a nil Collector.
+	if col := log.FromContext(ctx); col != nil {
+		col.RecordEvent("{{.Name}}.created", record)
+	}
+	return record, nil
+}
+
+{{end}}{{define "serviceFill"}}// fill writes the request onto the record. It is the one place a field of the
 // form becomes a column, for Create and Update alike.
 func (s *{{.ServiceType}}) fill({{.Receiver}} *models.{{.Entity}}, in requests.{{.Request}}) {
 {{- range .Fields}}
@@ -327,10 +339,7 @@ func (s *{{.ServiceType}}) fill({{.Receiver}} *models.{{.Entity}}, in requests.{
 {{- end}}
 }
 
-// arandu:begin custom
-// Business rules beyond CRUD go here, and survive regeneration.
-// arandu:end custom
-`
+{{end}}`
 
 const requestTemplate = `package requests
 

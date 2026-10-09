@@ -57,7 +57,9 @@ const clientTemplate = `package clients
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/arandu-io/hesape/http/client"
@@ -73,6 +75,19 @@ type {{.Config}} struct {
 	Token string
 	// Timeout bounds each attempt. Zero leaves the client's own deadline.
 	Timeout time.Duration
+}
+
+// LogValue implements slog.LogValuer, so a config passed to a log call, or
+// dumped on the debug page, records where the client points and never the
+// token.
+func (c {{.Config}}) LogValue() slog.Value {
+	return slog.GroupValue(slog.String("base_url", c.BaseURL), slog.Duration("timeout", c.Timeout))
+}
+
+// MarshalJSON writes the same fields LogValue does, for the same reason: the
+// token stays out of anything encoded.
+func (c {{.Config}}) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]any{"base_url": c.BaseURL, "timeout": c.Timeout.String()})
 }
 
 // {{.Interface}} is what a service, a job or a listener depends on: the calls

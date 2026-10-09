@@ -67,6 +67,47 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 	}
 
 	tool := goTool(t)
+	root, from := generatedProject(t)
+
+	// Before the build, and with the network still allowed: the corpus is
+	// nothing without the libraries it names, and a machine that cannot reach
+	// them has to say so rather than report a pass.
+	ensureModules(t, tool, root)
+
+	// `go build` and `go vet`, and both are load-bearing. `go build ./...`
+	// silently skips a directory holding only _test.go files, which is exactly
+	// where the generated test lands -- measured: a generated test with a type
+	// error builds clean and fails vet.
+	for _, stage := range []struct {
+		what string
+		args []string
+	}{
+		{"go build", []string{"build", "./..."}},
+		{"go vet", []string{"vet", "./..."}},
+		// And the generated tests run. A test the generator writes is a claim
+		// about the code beside it -- that a service asks before it writes, that
+		// a resource answers its list and nothing more, that a client sends what
+		// it was configured with -- and a claim that compiles and fails is a red
+		// suite in a project nobody has touched yet.
+		{"go test", []string{"test", "-count=1", "./tests/..."}},
+	} {
+		out, err := runGo(tool, root, stage.args...)
+		if err == nil {
+			continue
+		}
+		t.Errorf("%s refuses the generated project:\n\n%s\n%s",
+			stage.what, blame(out, from), out)
+	}
+}
+
+// generatedProject writes every generator's output into one project and
+// answers with its root and, for each file, the command that wrote it.
+//
+// The compile harness builds it, and the doctor check reads it: one corpus,
+// so a generator added to one is a generator both prove things about.
+func generatedProject(t *testing.T) (string, map[string]string) {
+	t.Helper()
+
 	root := t.TempDir()
 	writeProjectSkeleton(t, root)
 
@@ -320,35 +361,7 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 		writeInto(t, filepath.Join(root, path), out)
 	}
 
-	// Before the build, and with the network still allowed: the corpus is
-	// nothing without the libraries it names, and a machine that cannot reach
-	// them has to say so rather than report a pass.
-	ensureModules(t, tool, root)
-
-	// `go build` and `go vet`, and both are load-bearing. `go build ./...`
-	// silently skips a directory holding only _test.go files, which is exactly
-	// where the generated test lands -- measured: a generated test with a type
-	// error builds clean and fails vet.
-	for _, stage := range []struct {
-		what string
-		args []string
-	}{
-		{"go build", []string{"build", "./..."}},
-		{"go vet", []string{"vet", "./..."}},
-		// And the generated tests run. A test the generator writes is a claim
-		// about the code beside it -- that a service asks before it writes, that
-		// a resource answers its list and nothing more, that a client sends what
-		// it was configured with -- and a claim that compiles and fails is a red
-		// suite in a project nobody has touched yet.
-		{"go test", []string{"test", "-count=1", "./tests/..."}},
-	} {
-		out, err := runGo(tool, root, stage.args...)
-		if err == nil {
-			continue
-		}
-		t.Errorf("%s refuses the generated project:\n\n%s\n%s",
-			stage.what, blame(out, from), out)
-	}
+	return root, from
 }
 
 // TestThePinnedTagsMatchTheSkeleton is the alarm on the constants above.
@@ -582,12 +595,12 @@ func migratedDB(t *testing.T) *database.DB {
 import (
 	"context"
 
-	"github.com/arandu-io/framework/data"
+	"github.com/arandu-io/hesape/database"
 )
 
 type Deps struct {
 	Tenant string
-	DB     *data.DB
+	DB     *database.DB
 }
 
 type Seeder interface {

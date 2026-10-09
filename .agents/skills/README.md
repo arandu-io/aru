@@ -18,11 +18,12 @@ names the situation you are in rather than the topic it covers.
 | `aru-doctor-rule` | adding, widening or removing a rule of `aru doctor` |
 | `aru-view-compiler` | changing `internal/kyse`: the parser, the generator, an escape, a directive |
 | `aru-generator` | changing what `make:*`, `generate` or `new` writes into somebody's project |
+| `aru-project-map` | changing what `aru lsp` answers about a project: the map, its kinds and edges, the navigation on it |
 
 ## Why these exist
 
 Everything in this repository writes something that somebody else then has to
-live with, and that is what makes the four ways of getting it wrong specific.
+live with, and that is what makes the five ways of getting it wrong specific.
 
 A command is a promise typed by hand: every entry of the dispatch table is in
 the help output, the ones that forward hand their arguments to a binary this one
@@ -47,6 +48,13 @@ the module's own skill, which a project keeps. A change to a template changes
 what everyone regenerates, so the output is pinned by golden files and the
 specification is pinned by a schema generated from the validator's own
 constants.
+
+The project map is a contract with an editor adapter released on its own
+schedule. Its first schema is pinned byte for byte by goldens the server wrote
+before the second existed, because an adapter built against it refuses a
+result that moved; the second lists every edge kind with what the analysis
+follows and what it does not, because an edge it cannot see looks exactly like
+an edge that is not there.
 
 ## Adding your own
 

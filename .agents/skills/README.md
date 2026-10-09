@@ -24,9 +24,10 @@ names the situation you are in rather than the topic it covers.
 Everything in this repository writes something that somebody else then has to
 live with, and that is what makes the four ways of getting it wrong specific.
 
-A command is a promise typed by hand: 39 of them are in the help output, ten
-forward to a binary this one does not control, and a name is not retractable
-once a project's scripts contain it.
+A command is a promise typed by hand: every entry of the dispatch table is in
+the help output, the ones that forward hand their arguments to a binary this one
+does not control, and a name is not retractable once a project's scripts
+contain it. `aru-command` gives the commands that count them.
 
 A doctor rule is a security check whose only failure mode is silence. It fires
 on nothing, nobody notices, and the finding it was written for ships. The suite

@@ -159,14 +159,15 @@ Every test at the root of this repository is internal, because `package main`
 has no external form.
 
 ```sh
-find . -name '*_test.go' -not -path '*/testdata/*' | wc -l   # 37 test files
-find . -name '*_test.go' -not -path '*/testdata/*' -exec cat {} + | wc -l   # 10737 lines of test
+find . -name '*_test.go' -not -path '*/testdata/*' | wc -l   # test files
+find . -name '*_test.go' -not -path '*/testdata/*' -exec cat {} + | wc -l   # lines of test
 find . -name '*.go' -not -name '*_test.go' -not -path '*/testdata/*' \
-	-not -name '*.kyse.go' -exec cat {} + | wc -l                      # 21677 of production
+	-not -name '*.kyse.go' -exec cat {} + | wc -l                      # lines of production
 ```
 
-Those three are the numbers `README.md` quotes, which is why the commands are
-here: a figure in a document nobody can re-measure from is a figure that ages
+`README.md` gives the same three commands rather than their output, and so
+does this file: the figures stood here once, and read 37 test files when the
+tree held 92. A figure in a document nobody re-measures is a figure that ages
 without anybody noticing.
 
 Three things follow from Go and are not negotiable: the file name ends in

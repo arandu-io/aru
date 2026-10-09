@@ -3350,9 +3350,9 @@ func noRetiredModuleIsImported(p *project) []Finding {
 // storage/framework/views is skipped: it is compiled from a .kyse.go, an edit
 // to it is undone by the next build, and the finding is reported at the
 // source's own import line instead. Reporting it in the generated file was a
-// false positive of the rule's first version. Which path is canonical is not decided by
-// the package: it is read, symbol by symbol, from the framework's own source at
-// the version go.mod requires (package catalog). A type the framework declares,
+// false positive of the rule's first version. Which path is canonical is not
+// decided by the package: it is read, symbol by symbol, from the framework's
+// own source at the version go.mod requires (package catalog). A type the framework declares,
 // or a function that does more than call through -- framework/http.Router,
 // framework/security.SessionStore -- is canonical where it is.
 //
@@ -3375,14 +3375,17 @@ func noRetiredModuleIsImported(p *project) []Finding {
 //
 // Limit. Local to the file: one import and the selectors on it. A dot import
 // has no selector to read and is not reported. In a view the use is a pattern
-// in markup, so a sentence that spells `security.Grant` counts as one. The catalog is read from disk
-// -- a directory replace, the vendor directory, or the module cache -- and the
+// in markup, so a sentence that spells `security.Grant` counts as one. The
+// catalog is read from disk -- a directory replace, the vendor directory, or
+// the module cache -- and the
 // doctor starts no toolchain to fetch it, so on a machine that has not
 // downloaded the required version this rule is silent; `aru imports:catalog`
 // fetches it and prints the same table.
 //
 // Correction: import the path the finding names for those symbols, and keep
 // the framework import only for what the framework declares.
+// `aru imports:catalog --fix` shows that rewrite for every file, and --apply
+// writes it.
 func importsAreCanonical(p *project) []Finding {
 	if p.catalog == nil {
 		return nil

@@ -293,18 +293,69 @@ func classify(rel string) (category, entity string) {
 // Analyze loads the project rooted at dir once and returns its findings and
 // navigable project graph for one profile.
 func Analyze(dir string, profile Profile) (Analysis, error) {
-	files, unreadable, err := parseProject(dir)
+	p, findings, err := analyze(dir, profile)
 	if err != nil {
 		return Analysis{}, err
+	}
+	return Analysis{
+		Findings: findings,
+		Graph:    buildProjectGraph(p, findings),
+	}, nil
+}
+
+// AnalyzeWithMap is Analyze, with the second schema of the map built from the
+// same load: one parse of the project answers the findings, the first schema
+// and the second.
+func AnalyzeWithMap(dir string, profile Profile) (Analysis, error) {
+	p, findings, err := analyze(dir, profile)
+	if err != nil {
+		return Analysis{}, err
+	}
+	built := buildProjectMap(p, findings)
+	return Analysis{
+		Findings: findings,
+		Graph:    buildProjectGraph(p, findings),
+		Map:      &built,
+	}, nil
+}
+
+// DeclaredProfile answers the profile a project declares in arandu.mod.toml.
+//
+// A project that declares performance among its profiles is checked against
+// it, because asking for that profile adds checks and removes none: a project
+// that says it runs on both has to pass the stricter one. A project that
+// declares nothing, or has no manifest, is conventional, and a manifest that
+// cannot be read is an error rather than a guess.
+func DeclaredProfile(dir string) (Profile, error) {
+	declared, err := manifest.Read(dir)
+	if err != nil {
+		return "", err
+	}
+	if declared == nil {
+		return Conventional, nil
+	}
+	for _, name := range declared.Profiles {
+		if Profile(strings.TrimSpace(name)) == Performance {
+			return Performance, nil
+		}
+	}
+	return Conventional, nil
+}
+
+// analyze loads the project and runs every rule against it.
+func analyze(dir string, profile Profile) (*project, []Finding, error) {
+	files, unreadable, err := parseProject(dir)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	declared, err := manifest.Read(dir)
 	if err != nil {
-		return Analysis{}, err
+		return nil, nil, err
 	}
 	views, err := parseViews(dir)
 	if err != nil {
-		return Analysis{}, err
+		return nil, nil, err
 	}
 	p := &project{
 		root: dir, profile: profile, files: files, modulePath: readModulePath(dir),
@@ -329,10 +380,7 @@ func Analyze(dir string, profile Profile) (Analysis, error) {
 		}
 		return findings[i].Line < findings[j].Line
 	})
-	return Analysis{
-		Findings: findings,
-		Graph:    buildProjectGraph(p, findings),
-	}, nil
+	return p, findings, nil
 }
 
 // Run analyzes the project rooted at dir against one profile.

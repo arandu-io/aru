@@ -20,6 +20,9 @@ import (
 type Analysis struct {
 	Findings []Finding    `json:"findings"`
 	Graph    ProjectGraph `json:"graph"`
+	// Map is the second schema of the graph. AnalyzeWithMap fills it and
+	// Analyze leaves it nil.
+	Map *ProjectMap `json:"map,omitempty"`
 }
 
 // ProjectGraph is the stable editor-facing map of an Arandu project.

@@ -14,7 +14,7 @@ import (
 
 // makePolicyUsage is the usage line of make:policy, in the dispatch table and in
 // its refusal, naming every flag the command accepts.
-const makePolicyUsage = `aru make:policy <module> [--force]`
+const makePolicyUsage = `aru make:policy <module> [--force] [--dry-run]`
 
 // makePolicy writes the policy of a module that does not have one.
 //
@@ -25,6 +25,7 @@ func makePolicy(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("make:policy", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	force := fs.Bool("force", false, "overwrite an existing policy, preserving the custom block")
+	dryRun := fs.Bool("dry-run", false, "print what would be written, and write nothing")
 
 	var name string
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
@@ -80,6 +81,9 @@ func makePolicy(args []string, stdout, stderr io.Writer) error {
 	for _, f := range files {
 		if filepath.Dir(f.Path) != filepath.Join("app", "Policies") {
 			continue
+		}
+		if *dryRun {
+			return emit("make:policy", root, []gen.File{f}, *force, true, stdout)
 		}
 		written, skipped, err := gen.Write(root, []gen.File{f}, *force)
 		if err != nil {

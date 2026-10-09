@@ -12,7 +12,7 @@ import (
 // makeControllerUsage is the usage line of make:controller, in the dispatch
 // table and in its refusal, naming every flag the command accepts.
 const makeControllerUsage = `aru make:controller <Name> [--resource | --singleton | --invokable] ` +
-	`[--parent=<resource>] [--action=<name>] [--force]`
+	`[--parent=<resource>] [--action=<name>] [--force] [--dry-run]`
 
 // makeController writes one controller.
 //
@@ -28,6 +28,7 @@ func makeController(args []string, stdout, stderr io.Writer) error {
 	parent := fs.String("parent", "", "nest the resource or singleton under this one, as the route table names it: projects")
 	action := fs.String("action", "", "add one named action on a record of the resource: publish")
 	force := fs.Bool("force", false, "overwrite an existing controller, preserving the custom block")
+	dryRun := fs.Bool("dry-run", false, "print what would be written, and write nothing")
 
 	name, args := takeName(args)
 	if err := fs.Parse(args); err != nil {
@@ -99,8 +100,11 @@ func makeController(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("make:controller: %w", err)
 	}
-	if err := emit("make:controller", root, files, *force, false, stdout); err != nil {
+	if err := emit("make:controller", root, files, *force, *dryRun, stdout); err != nil {
 		return err
+	}
+	if *dryRun {
+		return nil
 	}
 
 	fmt.Fprint(stdout, wiringController(stub, entity))

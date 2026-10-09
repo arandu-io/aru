@@ -17,13 +17,14 @@ func makeMiddleware(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("make:middleware", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	force := fs.Bool("force", false, "overwrite an existing middleware, preserving the custom block")
+	dryRun := fs.Bool("dry-run", false, "print what would be written, and write nothing")
 
 	name, args := takeName(args)
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("make:middleware: %w", err)
 	}
 	if name == "" {
-		return fmt.Errorf("usage: aru make:middleware <Name> [--force]")
+		return fmt.Errorf("usage: aru make:middleware <Name> [--force] [--dry-run]")
 	}
 	if err := checkFlatTree("make:middleware", name); err != nil {
 		return err
@@ -46,8 +47,11 @@ func makeMiddleware(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("make:middleware: %w", err)
 	}
-	if err := emit("make:middleware", root, files, *force, false, stdout); err != nil {
+	if err := emit("make:middleware", root, files, *force, *dryRun, stdout); err != nil {
 		return err
+	}
+	if *dryRun {
+		return nil
 	}
 
 	fmt.Fprint(stdout, wiringMiddleware(stub))

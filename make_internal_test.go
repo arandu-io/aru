@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -970,4 +971,59 @@ func TestTheModuleSkillRepeatsTheProjectsGates(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestEveryGeneratorPreviewsWithoutWriting: every make:* takes --dry-run,
+// lists what it would write and writes nothing. It is what lets `aru mcp`'s
+// generate tool preview any generator the same way before anything lands.
+func TestEveryGeneratorPreviewsWithoutWriting(t *testing.T) {
+	for _, c := range commands {
+		if strings.HasPrefix(c.name, "make:") && !strings.Contains(c.usage, "[--dry-run]") {
+			t.Errorf("%s does not name --dry-run in its usage line: %s", c.name, c.usage)
+		}
+	}
+
+	root := projectWithModule(t, "purchase_order")
+	t.Chdir(root)
+	before := treeOf(t, root)
+	for _, args := range [][]string{
+		{"make:controller", "Invoice", "--resource", "--dry-run"},
+		{"make:middleware", "EnsureActive", "--dry-run"},
+		{"make:request", "StoreInvoice", "--fields", "reference:string!", "--dry-run"},
+		{"make:policy", "purchase_order", "--force", "--dry-run"},
+	} {
+		code, stdout, stderr := exercise(t, args...)
+		if code != 0 {
+			t.Errorf("aru %s exited %d: %s", strings.Join(args, " "), code, stderr)
+			continue
+		}
+		if !strings.Contains(stdout, "bytes)") {
+			t.Errorf("aru %s listed nothing: %q", strings.Join(args, " "), stdout)
+		}
+	}
+	if after := treeOf(t, root); after != before {
+		t.Errorf("a dry run wrote to the project:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// treeOf lists every file under root with its size, one per line.
+func treeOf(t *testing.T, root string) string {
+	t.Helper()
+	var b strings.Builder
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, path)
+		fmt.Fprintf(&b, "%s %d\n", rel, info.Size())
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
 }

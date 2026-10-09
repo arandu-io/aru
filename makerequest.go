@@ -24,13 +24,14 @@ func makeRequest(args []string, stdout, stderr io.Writer) error {
 	fs.SetOutput(stderr)
 	fields := fs.String("fields", "", `the fields, as "name:type" separated by commas. Suffix ! for required, u for unique`)
 	force := fs.Bool("force", false, "overwrite an existing request, preserving the custom blocks")
+	dryRun := fs.Bool("dry-run", false, "print what would be written, and write nothing")
 
 	name, args := takeName(args)
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("make:request: %w", err)
 	}
 	if name == "" {
-		return fmt.Errorf("usage: aru make:request <Name> [--fields \"reference:string!,total:money!\"] [--force]")
+		return fmt.Errorf("usage: aru make:request <Name> [--fields \"reference:string!,total:money!\"] [--force] [--dry-run]")
 	}
 	if err := checkFlatTree("make:request", name); err != nil {
 		return err
@@ -74,8 +75,11 @@ func makeRequest(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("make:request: %w", err)
 	}
-	if err := emit("make:request", root, files, *force, false, stdout); err != nil {
+	if err := emit("make:request", root, files, *force, *dryRun, stdout); err != nil {
 		return err
+	}
+	if *dryRun {
+		return nil
 	}
 
 	fmt.Fprint(stdout, usageRequest(stub))

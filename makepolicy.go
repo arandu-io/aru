@@ -59,9 +59,14 @@ func makePolicy(args []string, stdout, stderr io.Writer) error {
 		return errors.New(missingEntity(spec))
 	}
 
-	// The tenant is inferred from what the repository already does, rather than
-	// asked for again: two sources of truth about one decision is how they drift.
-	spec.Tenant = repositoryUsesTenant(filepath.Join(root, "app", "Repositories", spec.RepositoryType()+".go"))
+	// The tenant is inferred from what the project already says about the
+	// entity, rather than asked for again: two sources of truth about one
+	// decision is how they drift.
+	spec.Tenant, err = entityBelongsToATenant(entity, spec.Entity(),
+		filepath.Join(root, "app", "Repositories", spec.RepositoryType()+".go"))
+	if err != nil {
+		return fmt.Errorf("make:policy: %w", err)
+	}
 
 	files, err := gen.Generate(spec)
 	if err != nil {
@@ -87,6 +92,30 @@ block, and nothing else -- that is what makes the default safe.
 		return nil
 	}
 	return fmt.Errorf("make:policy: no policy was generated")
+}
+
+// entityBelongsToATenant reports whether the policy of entity has to compare
+// the row's tenant with the subject's.
+//
+// The model answers first, because every module has one: a struct carrying
+// TenantID is a row that belongs to one tenant, and TenantID is the field the
+// policy template compares. A module the generator writes today has no
+// repository, so reading only the repository answered no for every one of
+// them, and a policy regenerated with --force lost the check it was written
+// with.
+//
+// The repository answers second, for a module written before the model was
+// the data entry point, whose queries filter by the tenant through the Grant.
+//
+// A model that cannot be read is an error rather than a no. Guessing no would
+// write the policy without the check, which is the one outcome this function
+// exists to prevent.
+func entityBelongsToATenant(modelPath, entity, repositoryPath string) (bool, error) {
+	_, tenant, err := gen.FieldsFromModel(modelPath, entity)
+	if err != nil {
+		return false, fmt.Errorf("reading whether %s belongs to a tenant: %w", entity, err)
+	}
+	return tenant || repositoryUsesTenant(repositoryPath), nil
 }
 
 // repositoryUsesTenant reports whether the repository already scopes by tenant,

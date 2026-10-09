@@ -129,7 +129,7 @@ func RenderFactory(s FactorySpec) (File, error) {
 // The model is the schema here -- it is a struct, not a class that discovers its
 // columns at runtime -- so the factory is derived from it rather than declared
 // again. Two sources of truth about one set of columns is how they drift, which
-// is the same reason make:policy reads the tenant off the repository instead of
+// is the same reason make:policy reads the tenant off this function instead of
 // asking for it a second time.
 //
 // ID, TenantID, CreatedAt, UpdatedAt and DeletedAt are skipped: the first is

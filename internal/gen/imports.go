@@ -13,6 +13,8 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 
 	"github.com/arandu-io/hesape/publish"
+
+	"github.com/arandu-io/aru/internal/skills"
 )
 
 // Merge carries the custom blocks of the file on disk into the regenerated one,
@@ -29,7 +31,14 @@ import (
 // So the import list of a merged Go file is what it uses, taken from the two
 // lists it could have come from. Anything it cannot read is returned merged and
 // untouched: a file that does not parse is the compiler's to report.
+//
+// A Markdown file is a skill, whose custom block is written in HTML comments,
+// and it is carried by the merge every skill in a project goes through, so a
+// regenerated skill and a synced one keep their blocks the same way.
 func Merge(file string, existing, generated []byte) []byte {
+	if strings.HasSuffix(file, ".md") {
+		return skills.Merge(existing, generated)
+	}
 	merged := publish.Merge(file, existing, generated)
 	if !strings.HasSuffix(file, ".go") || strings.HasSuffix(file, ".kyse.go") || bytes.Equal(merged, generated) {
 		return merged

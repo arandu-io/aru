@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+
+	"github.com/arandu-io/aru/internal/skills"
 )
 
 // File is one generated file.
@@ -60,6 +62,14 @@ func Generate(m Module) ([]File, error) {
 		content, err := render(filepath.Base(t.path), t.tmpl, m)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", t.path, err)
+		}
+		// The skill records where it came from the way every other skill in
+		// a project does, so `aru skills:sync` and the doctor can tell it from
+		// one a module handed over and leave it to the generator.
+		if filepath.Base(t.path) == skills.File {
+			if content, err = skills.Stamp(content, m.SkillSource()); err != nil {
+				return nil, fmt.Errorf("%s: %w", t.path, err)
+			}
 		}
 		out = append(out, File{Path: t.path, Content: content})
 	}

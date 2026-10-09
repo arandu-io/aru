@@ -301,6 +301,23 @@ type Module struct {
 	// default, in every project that ran it. `aru generate` fills this from the
 	// specification, where a person or a model said so out loud.
 	Permissions map[string][]string
+	// Generator is the version of aru writing the module. The module's skill
+	// records it as its source, so a reader can tell which generator wrote the
+	// text. It is a field rather than read from the build for the reason Date
+	// is: a golden file that tested the binary's version would fail on every
+	// release.
+	Generator string
+}
+
+// SkillSource is what the module's skill records as its source: aru, at the
+// version that wrote it. An empty Generator is recorded as dev, which is what a
+// build of aru reports when it was given no version.
+func (m Module) SkillSource() string {
+	version := m.Generator
+	if version == "" {
+		version = "dev"
+	}
+	return "aru@" + version
 }
 
 // Rules returns the permissions in a fixed order, for the template.

@@ -262,6 +262,18 @@ it is also `internal/doctor/testdata/clean`. Break one and you break the other.
 A description of a module written by hand stops being true at the next field;
 this one cannot, because regenerating the module regenerates it.
 
+`Generate` stamps it the way every skill a project receives is stamped:
+`internal/skills.Stamp` writes `source: aru@<version>` and the digest of the
+file under `metadata` in its frontmatter, the version coming from
+`Module.Generator` -- set from the binary's version by `make:module` and
+`generate`, and left empty in the goldens, which then read `aru@dev`. The
+template ends in a custom block between `<!-- arandu:begin custom -->` and
+`<!-- arandu:end custom -->`, and `gen.Merge` carries it through `--force` with
+`skills.Merge`, the merge `aru skills:sync` uses, rather than with the Go
+markers `publish.Merge` matches. `tests/Unit/gen/skill_test.go` proves the
+stamp, the block surviving a regeneration, and the absence of the sentences the
+template used to carry and the code never did.
+
 If you change what a module is made of, change `skillTemplate` in the same
 commit. The table of files in that template is a claim about a tree.
 

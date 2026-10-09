@@ -41,10 +41,11 @@ generator's temporary, then its package, then the package a view was calling for
 itself, and each time the build printed how many views it had compiled and
 exited 0.
 
-The generators emit an entity, a policy, a repository and four screens that a
-project keeps. A change to a template changes what everyone regenerates, so the
-output is pinned by golden files and the specification is pinned by a schema
-generated from the validator's own constants.
+The generators emit a model, a policy, a service, a controller, four screens and
+the module's own skill, which a project keeps. A change to a template changes
+what everyone regenerates, so the output is pinned by golden files and the
+specification is pinned by a schema generated from the validator's own
+constants.
 
 ## Adding your own
 

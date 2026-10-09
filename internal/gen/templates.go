@@ -674,7 +674,12 @@ func TestThe{{.Entity}}PolicyDeniesWhatItDoesNotKnow(t *testing.T) {
 //
 // It is Markdown rather than Go, and the frontmatter is the part that matters:
 // a tool reads the description to decide whether the skill is relevant, so it
-// names the situation rather than the subject.
+// names the situation rather than the subject. Generate records the generator
+// in it as the skill's source.
+//
+// The custom block at the end is where a project writes what the generator
+// cannot know, and regenerating with --force keeps it: everything else in the
+// file is the generator's to rewrite.
 const skillTemplate = `---
 name: {{ .Resource }}
 description: Work with the {{ .Entity }} module of this Arandu application. Use when the request mentions {{ .Entity | lower }}s, when a {{ .Resource }} route is involved, or when reading or changing {{ .Entity | lower }} records. Covers what the module exposes, which roles may take which action, and the rule that the Service authorizes before it reaches the Hesape Model.
@@ -683,10 +688,12 @@ license: MIT
 
 # The {{ .Entity }} module
 
-Generated from a specification. If it needs to change, change the specification
-and generate again rather than editing the files by hand -- what falls outside
-what the specification can say goes between the ` + "`" + `// arandu:begin custom` + "`" + ` and
-` + "`" + `// arandu:end custom` + "`" + ` markers, which survive regeneration.
+It is what ` + "`" + `aru make:module` + "`" + ` wrote, or ` + "`" + `aru generate` + "`" + ` from
+` + "`" + `database/specs/{{ .Name }}.yaml` + "`" + `. Running either again with ` + "`" + `--force` + "`" + ` rewrites
+every file of the module. What sits between the ` + "`" + `// arandu:begin custom` + "`" + ` and
+` + "`" + `// arandu:end custom` + "`" + ` markers of the Go, and in the custom block at the end of
+this file, is kept; every edit outside them is dropped. A change that fits no
+custom block is made in the files directly, and regenerating would drop it.
 
 ## What it is made of
 
@@ -694,8 +701,8 @@ what the specification can say goes between the ` + "`" + `// arandu:begin custo
 | --- | --- |
 | ` + "`" + `app/Models/{{ .Entity }}.go` + "`" + ` | the entity and its table, with custom blocks for settings and local scopes |
 | ` + "`" + `app/Models/{{ .Entity }}Query.go` + "`" + ` | ` + "`" + `{{ .Constructor }}` + "`" + `, the typed query and the collection, written by ` + "`" + `aru model:build` + "`" + ` and never by hand |
-| ` + "`" + `app/Policies/{{ .Entity }}Policy.go` + "`" + ` | who may do what, and the only thing that issues a Grant |
-| ` + "`" + `app/Services/{{ .Entity }}Service.go` + "`" + ` | the domain and the only consumer of the Model entry point |
+| ` + "`" + `app/Policies/{{ .Entity }}Policy.go` + "`" + ` | who may do what: the rule ` + "`" + `auth.Authorize` + "`" + ` asks before it issues a Grant |
+| ` + "`" + `app/Services/{{ .Entity }}Service.go` + "`" + ` | the domain, and the only caller of the Model entry point on a request's path |
 | ` + "`" + `app/Http/Controllers/{{ .Entity }}Controller.go` + "`" + ` | the actions the routes dispatch to |
 | ` + "`" + `app/Http/Requests/{{ .Entity }}Request.go` + "`" + ` | the input contract of create and update, with its form tags. Authorization stays in the Policy |
 | ` + "`" + `resources/views` + "`" + `, under the resource | the four screens, which share one row struct |
@@ -753,7 +760,8 @@ return ctx.RedirectRoute("{{ .RouteName "show" }}", created.ID)
   on the request. There is no session lookup in the controller.
 - **The input** is ` + "`" + `ctx.Bind` + "`" + ` into ` + "`" + `{{ .Request }}` + "`" + `: only the fields with a
   ` + "`" + `form` + "`" + ` tag are read, trimmed and converted. A new field is one line there,
-  one in the model and one in the service's ` + "`" + `fill` + "`" + `.
+  one in the model and one in the service's ` + "`" + `fill` + "`" + `, a new migration that adds
+  the column, and its input on the create and edit forms.
 - **An error is returned, never mapped.** The router answers it:
   ` + "`" + `validation.Errors` + "`" + ` goes back to the form with the messages and what was typed,
   a missing row is 404, a refusal is 403, and an error with an ` + "`" + `HTTPStatus() int` + "`" + `
@@ -774,11 +782,23 @@ allow-everything branch to delete later. Open it one action at a time, and
 {{ end }}
 ## Before calling a change finished
 
-While iterating, run ` + "`" + `go test ./...` + "`" + `. The ` + "`" + `-race` + "`" + ` run below is the closing gate,
-run once: the race detector compiles every package a second time.
+The gates, all of them, as ` + "`" + `AGENTS.md` + "`" + ` lists them. While iterating,
+` + "`" + `go test ./...` + "`" + ` is enough; the ` + "`" + `-race` + "`" + ` run is the closing gate, run once,
+because the race detector compiles every package a second time.
 
 ` + "```" + `sh
 export GOWORK=off
-aru view:build && go build ./... && go vet ./... && go test -race ./... && aru doctor
+aru model:build
+aru view:build
+gofmt -l $(find . -name '*.go' -not -path '*/testdata/*' -not -name '*.kyse.go')
+go build ./...
+go vet ./...
+go test -race ./...
+aru doctor
 ` + "```" + `
+
+<!-- arandu:begin custom -->
+What this module does that the generator cannot know -- a business rule, why a
+field exists, who to ask -- goes here, and regenerating keeps it.
+<!-- arandu:end custom -->
 `

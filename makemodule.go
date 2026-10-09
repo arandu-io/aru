@@ -68,6 +68,7 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 		Fields:     parsed,
 		Tenant:     *tenant,
 		ModulePath: modulePath,
+		Generator:  version,
 	})
 	if err != nil {
 		return fmt.Errorf("make:module: %w", err)

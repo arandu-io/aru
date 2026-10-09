@@ -166,6 +166,7 @@ func fromSpec(m spec.Module, modulePath string) gen.Module {
 		Tenant:      m.Tenant,
 		ModulePath:  modulePath,
 		Permissions: m.Permissions,
+		Generator:   version,
 	}
 }
 

@@ -238,6 +238,15 @@ that eats their work. Two things follow for any template you touch:
 seven implemented actions with seven `501`s, and the only thing that survives is
 the custom block.
 
+That is why `make:controller <Name> --action=<verb>` on a controller that
+already exists writes nothing and exits zero: it prints the method, rendered
+from the same `controllerActionTemplate` a new controller carries and with the
+receiver the file already uses, for its custom block, and the
+`ResourceAction` line for `routes/web.go`. When the file declares the method
+already, it prints only the route. `--force` keeps its meaning.
+`TestMakeControllerActionOnAnExistingControllerPrintsWhatToPaste` holds the
+three answers and that the file is unchanged byte for byte.
+
 ## What the output must keep guaranteeing
 
 The generated tree is the answer to "what does correct code look like here", and

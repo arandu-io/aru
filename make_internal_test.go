@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1064,5 +1065,61 @@ func TestMakeJobTakesItsServicesThroughItsConstructor(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "app", "Jobs", "ChargeCustomer.go")); !os.IsNotExist(err) {
 		t.Errorf("the refused job was written (%v)", err)
+	}
+}
+
+// TestMakeControllerActionOnAnExistingControllerPrintsWhatToPaste: a named
+// action asked of a controller that exists writes nothing and exits zero. It
+// used to refuse without --force, and --force regenerates the controller,
+// putting seven 501s back over the actions a module had implemented.
+func TestMakeControllerActionOnAnExistingControllerPrintsWhatToPaste(t *testing.T) {
+	root := projectWithModule(t, "purchase_order")
+	t.Chdir(root)
+	path := filepath.Join(root, "app", "Http", "Controllers", "PurchaseOrderController.go")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := exercise(t, "make:controller", "PurchaseOrder", "--action=approve")
+	if code != 0 {
+		t.Fatalf("make:controller --action on an existing controller exited %d: %s", code, stderr)
+	}
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(before, after) {
+		t.Fatal("make:controller --action changed a controller it was not asked to --force")
+	}
+	for _, want := range []string{
+		"nothing was written",
+		"// arandu:begin custom and // arandu:end custom",
+		"func (c *PurchaseOrderController) Approve(ctx *hhttp.Context) error {",
+		`_ = ctx.Param("id")`,
+		`r.ResourceAction("POST", "purchase-orders", "approve", d.PurchaseOrder.Approve)`,
+		"--force writes the controller again",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("the answer does not carry %q:\n%s", want, stdout)
+		}
+	}
+
+	// Pasted, and asked again: only the route is left to say.
+	method := stdout[strings.Index(stdout, "// Approve answers"):strings.Index(stdout, "return ctx.Status(http.StatusNotImplemented)\n}")]
+	pasted := strings.Replace(string(before), "// arandu:end custom", method+"return nil\n}\n// arandu:end custom", 1)
+	writeFile(t, path, pasted)
+	code, stdout, _ = exercise(t, "make:controller", "PurchaseOrder", "--action=approve")
+	if code != 0 || !strings.Contains(stdout, "already declares Approve") || strings.Contains(stdout, "func (c *") ||
+		!strings.Contains(stdout, `r.ResourceAction("POST", "purchase-orders", "approve", d.PurchaseOrder.Approve)`) {
+		t.Errorf("a controller that declares the action was answered with more than its route (exit %d):\n%s", code, stdout)
+	}
+
+	// --force is what it was: the controller written again from the template.
+	code, _, stderr = exercise(t, "make:controller", "PurchaseOrder", "--action=approve", "--force")
+	if code != 0 {
+		t.Fatalf("--force exited %d: %s", code, stderr)
+	}
+	forced, _ := os.ReadFile(path)
+	if !strings.Contains(string(forced), "func (c *PurchaseOrderController) Approve(ctx *hhttp.Context) error {") ||
+		!strings.Contains(string(forced), "_ fhttp.Indexer   = (*PurchaseOrderController)(nil)") {
+		t.Errorf("--force did not write the resource controller with the action:\n%s", forced)
 	}
 }

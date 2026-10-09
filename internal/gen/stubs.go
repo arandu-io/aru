@@ -186,6 +186,28 @@ func GenerateController(s Stub) ([]File, error) {
 	return []File{{Path: filepath.Join("app", "Http", "Controllers", s.Type+".go"), Content: content}}, nil
 }
 
+// RenderAction produces the named action of a resource controller on its own:
+// the method, with its doc comment, as GenerateController writes it into a new
+// controller. It is what make:controller --action prints for a controller that
+// already exists, so the method pasted into its custom block is the one a new
+// controller would have carried.
+func RenderAction(s Stub) (string, error) {
+	if err := s.Validate(); err != nil {
+		return "", err
+	}
+	if s.Kind != KindResource || s.Action == "" {
+		return "", fmt.Errorf("a named action belongs to a resource controller, and needs a name")
+	}
+	if err := s.validateController(); err != nil {
+		return "", err
+	}
+	out, err := render(s.Type+".action", controllerActionTemplate, s)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
 // GenerateMiddleware produces app/Http/Middleware/<Type>.go.
 func GenerateMiddleware(s Stub) ([]File, error) {
 	if err := s.Validate(); err != nil {
@@ -428,19 +450,7 @@ func (c *{{.Type}}) Destroy(ctx *hhttp.Context) error {
 }
 {{- if .Action}}
 
-// {{.ActionMethod}} answers POST {{.MemberPath}}/{{.Action}}: one named action on a
-// record, beyond the seven. It is registered with fhttp.Router.ResourceAction,
-// under the route name {{.RouteResource}}.{{.Action}}, behind the same guard as
-// the rest of the resource.
-//
-// It changes state, so its method is POST, PUT, PATCH or DELETE and never GET:
-// a GET that changes state is one a prefetching browser fires without anybody
-// choosing to. The transition itself is a rule of the entity, written in its
-// model, and the service is what loads the record, asks the policy and saves.
-func (c *{{.Type}}) {{.ActionMethod}}(ctx *hhttp.Context) error {
-	_ = ctx.Param("{{.MemberParam}}") // the record, for the service call that goes here
-	return ctx.Status(http.StatusNotImplemented)
-}
+` + controllerActionTemplate + `
 {{- end}}
 {{end}}{{if .IsSingleton}}
 // Compile-time proof of the three actions fhttp.Router.Singleton looks for. It
@@ -503,6 +513,23 @@ func (c *{{.Type}}) Invoke(ctx *hhttp.Context) error {
 {{- end}}
 {{- end}}
 `
+
+// controllerActionTemplate is the named action of a resource controller. It
+// is part of the controller make:controller --action writes, and rendered on
+// its own, through RenderAction, for a controller that already exists.
+const controllerActionTemplate = `// {{.ActionMethod}} answers POST {{.MemberPath}}/{{.Action}}: one named action on a
+// record, beyond the seven. It is registered with fhttp.Router.ResourceAction,
+// under the route name {{.RouteResource}}.{{.Action}}, behind the same guard as
+// the rest of the resource.
+//
+// It changes state, so its method is POST, PUT, PATCH or DELETE and never GET:
+// a GET that changes state is one a prefetching browser fires without anybody
+// choosing to. The transition itself is a rule of the entity, written in its
+// model, and the service is what loads the record, asks the policy and saves.
+func (c *{{.Type}}) {{.ActionMethod}}(ctx *hhttp.Context) error {
+	_ = ctx.Param("{{.MemberParam}}") // the record, for the service call that goes here
+	return ctx.Status(http.StatusNotImplemented)
+}`
 
 const middlewareTemplate = `package middleware
 

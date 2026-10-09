@@ -4,6 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/arandu-io/aru/internal/gen"
@@ -19,6 +22,11 @@ const makeControllerUsage = `aru make:controller <Name> [--resource | --singleto
 // It exists because somebody porting an application does not port a module:
 // they port a controller, then the next one. `aru make:module` writes twelve
 // files from an entity; this writes one file from a name.
+//
+// --action on a controller that already exists writes nothing and exits zero:
+// it prints the method and the route line to paste, because the only other
+// thing it could do is regenerate the controller over the actions already
+// written in it.
 func makeController(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("make:controller", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -96,6 +104,20 @@ func makeController(args []string, stdout, stderr io.Writer) error {
 		Action:     strings.ToLower(strings.ReplaceAll(*action, "_", "-")),
 	}
 
+	// A named action asked of a controller that already exists is printed, not
+	// written: the controller has actions somebody implemented outside its
+	// custom block, and regenerating it -- which is all --force can do --
+	// would put the seven 501s back over them.
+	path := filepath.Join(root, "app", "Http", "Controllers", stub.Type+".go")
+	if existing, err := os.ReadFile(path); err == nil && stub.Action != "" && !*force {
+		snippet, err := actionToPaste(stub, entity, existing)
+		if err != nil {
+			return fmt.Errorf("make:controller: %w", err)
+		}
+		fmt.Fprint(stdout, snippet)
+		return nil
+	}
+
 	files, err := gen.GenerateController(stub)
 	if err != nil {
 		return fmt.Errorf("make:controller: %w", err)
@@ -111,6 +133,66 @@ func makeController(args []string, stdout, stderr io.Writer) error {
 	return nil
 }
 
+// actionToPaste is what make:controller --action answers for a controller
+// that exists: the method to paste into its custom block, written with the
+// receiver the file already uses, and the ResourceAction line to paste into
+// routes/web.go. When the controller declares the method already, only the
+// route is left to say.
+func actionToPaste(s gen.Stub, m gen.Module, existing []byte) (string, error) {
+	file := filepath.ToSlash(filepath.Join("app", "Http", "Controllers", s.Type+".go"))
+	route := actionRouteLine(s, m)
+	tail := fmt.Sprintf("\n%s answers POST %s/%s, named %s.%s. Change the method to\n"+
+		"PUT, PATCH or DELETE if it fits better -- never GET, because it changes state.\n",
+		s.ActionMethod(), s.MemberPath(), s.Action, s.RouteResource(), s.Action)
+
+	declared := regexp.MustCompile(`(?m)^func \(\w+ \*` + regexp.QuoteMeta(s.Type) + `\) ` +
+		regexp.QuoteMeta(s.ActionMethod()) + `\(`)
+	if declared.Match(existing) {
+		return fmt.Sprintf(`
+%s already declares %s, so nothing was written. What is left is
+the route:
+
+  routes/web.go -- inside the custom block, on the router that registers the
+  resource
+
+      %s
+%s`, file, s.ActionMethod(), route, tail), nil
+	}
+
+	method, err := gen.RenderAction(s)
+	if err != nil {
+		return "", err
+	}
+	if receiver := regexp.MustCompile(`(?m)^func \((\w+) \*` + regexp.QuoteMeta(s.Type) + `\) `).FindSubmatch(existing); receiver != nil {
+		method = strings.Replace(method, "func (c *", "func ("+string(receiver[1])+" *", 1)
+	}
+	return fmt.Sprintf(`
+The controller exists, so nothing was written: regenerating it would put the
+generated actions back over the ones written there. The action, by hand, in
+two places:
+
+  %s -- inside the custom block at the end,
+  between // arandu:begin custom and // arandu:end custom, where a
+  regeneration keeps it
+
+%s
+
+  routes/web.go -- inside the custom block, on the router that registers the
+  resource
+
+      %s
+%s
+--force writes the controller again from the template instead, and keeps
+nothing but its custom block.
+`, file, method, route, tail), nil
+}
+
+// actionRouteLine is the line that registers a named action.
+func actionRouteLine(s gen.Stub, m gen.Module) string {
+	return fmt.Sprintf("r.ResourceAction(%q, %q, %q, d.%s.%s)",
+		"POST", s.RouteResource(), s.Action, m.Entity(), s.ActionMethod())
+}
+
 // routeLines are the lines that register a controller, one per line, written
 // for the custom block of routes/web.go.
 //
@@ -123,8 +205,7 @@ func routeLines(s gen.Stub, m gen.Module) []string {
 	case gen.KindResource:
 		lines := []string{fmt.Sprintf("r.Resource(%q, d.%s)", s.RouteResource(), m.Entity())}
 		if s.Action != "" {
-			lines = append(lines, fmt.Sprintf("r.ResourceAction(%q, %q, %q, d.%s.%s)",
-				"POST", s.RouteResource(), s.Action, m.Entity(), s.ActionMethod()))
+			lines = append(lines, actionRouteLine(s, m))
 		}
 		return lines
 	case gen.KindSingleton:

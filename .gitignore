@@ -1,4 +1,6 @@
 bin/
+# The binary `go build .` writes at the root. It entered a commit once.
+/aru
 
 # Configuracao do harness. Vive na raiz do diretorio de trabalho, nao aqui:
 # um arquivo por repositorio ja divergiu, e o hook de commit-msg em .githooks/

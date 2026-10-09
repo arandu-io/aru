@@ -862,9 +862,21 @@ func controllerMustNotReachData(p *project) []Finding {
 		if f.isTest || !onTheRequestPath {
 			continue
 		}
-		for path := range f.imports {
-			if !strings.HasSuffix(path, "/framework/data") {
+		for path, local := range f.imports {
+			// The package is named as the file imports it. framework/data is
+			// also read as `data`, the name this rule always matched, and
+			// hesape/database -- the package the bridge points at -- only by its
+			// own local name, so a value that happens to be called data in a
+			// file that imports hesape is not the package.
+			spellings := map[string]bool{}
+			switch {
+			case strings.HasSuffix(path, "/framework/data"):
+				spellings["data"] = true
+			case path != bridgeTargets[frameworkData]:
 				continue
+			}
+			if local != "_" && local != "." {
+				spellings[local] = true
 			}
 			// data.Query is the pagination type and belongs in a controller; the
 			// rest of the package does not.
@@ -874,7 +886,7 @@ func controllerMustNotReachData(p *project) []Finding {
 				if !ok {
 					return true
 				}
-				if x, ok := sel.X.(*ast.Ident); ok && x.Name == "data" && sel.Sel.Name != "Query" {
+				if x, ok := sel.X.(*ast.Ident); ok && spellings[x.Name] && sel.Sel.Name != "Query" {
 					onlyQuery = false
 					return false
 				}
@@ -2573,9 +2585,16 @@ var outboxWriters = map[importedFunction]outboxFunction{
 // something publishes: events.WithRelay carries the same Migrations. A rule that
 // knew only NewModule would fire on the more advanced of the two correct
 // wirings, which is how a tool teaches people to ignore it.
+//
+// hesape/events declares a NewModule and a WithRelay of its own, and neither
+// is here, on purpose. framework/events is a bridge everywhere except its
+// Module, which it declares rather than aliases precisely because hesape's
+// answers no Migrations: registering hesape's module runs the relay and
+// creates no table. Accepting it would silence this rule on the one project
+// where the sign-up still fails with `no such table: outbox`.
 var outboxProviders = map[importedFunction]bool{
-	{pkg: "github.com/arandu-io/framework/events", name: "NewModule"}: true,
-	{pkg: "github.com/arandu-io/framework/events", name: "WithRelay"}: true,
+	{pkg: frameworkEvents, name: "NewModule"}: true,
+	{pkg: frameworkEvents, name: "WithRelay"}: true,
 }
 
 // importedFunction resolves a package function call through the file's import
@@ -2932,9 +2951,7 @@ func resourceNotReauthorized(p *project) []Finding {
 			}
 			file, line := f.at(fn)
 
-			callsAuthorize := funcBodyContains(fn, func(name string) bool {
-				return name == "security.Authorize"
-			})
+			callsAuthorize := funcBodyContains(fn, f.isAuthorize)
 			if !callsAuthorize {
 				continue
 			}
@@ -2947,7 +2964,7 @@ func resourceNotReauthorized(p *project) []Finding {
 				}
 				name := callName(call)
 				pos := f.fset.Position(call.Pos()).Offset
-				if name == "security.Authorize" {
+				if f.isAuthorize(name) {
 					lastAuthorize = pos
 				}
 				if namesOneRow(call, name) && readsRows(p, f, fn, call) != sourceNotRows {
@@ -2967,6 +2984,17 @@ func resourceNotReauthorized(p *project) []Finding {
 		}
 	}
 	return out
+}
+
+// isAuthorize reports whether a call is the policy check: Authorize of
+// framework/security or of hesape/auth, which the first forwards to, under
+// whatever name this file imports either as.
+//
+// The spelling security.Authorize is kept as well. It is what this rule matched
+// before it read imports, and a rule that learns a second spelling must not
+// forget the first on the way.
+func (f *file) isAuthorize(called string) bool {
+	return called == "security.Authorize" || f.callsInto(called, frameworkSecurity, "Authorize")
 }
 
 // 17. What a raw interpolation writes goes to the page as markup.
@@ -3410,7 +3438,7 @@ func transactionsStayInsideOneAggregate(p *project) []Finding {
 		}
 		fields := repositoryFields(f)
 		f.functions(func(fn *ast.FuncDecl) {
-			for _, region := range transactionRegions(fn) {
+			for _, region := range transactionRegions(f, fn) {
 				touched, kind := aggregatesTouched(region, fields)
 				if len(touched) < 2 {
 					continue
@@ -3441,7 +3469,12 @@ type transactionRegion struct {
 }
 
 // transactionRegions finds the transactions a function opens.
-func transactionRegions(fn *ast.FuncDecl) []transactionRegion {
+//
+// A transaction with a literal is Transaction of framework/data or of
+// hesape/database, which the first forwards to, read through the file's
+// imports; the spelling data.Transaction, which is what this matched before it
+// read them, still counts.
+func transactionRegions(f *file, fn *ast.FuncDecl) []transactionRegion {
 	if fn.Body == nil {
 		return nil
 	}
@@ -3453,7 +3486,7 @@ func transactionRegions(fn *ast.FuncDecl) []transactionRegion {
 			return true
 		}
 		switch name := callName(call); {
-		case name == "data.Transaction":
+		case name == "data.Transaction", f.callsInto(name, frameworkData, "Transaction"):
 			// The work is the literal, whatever position it was passed in.
 			for _, arg := range call.Args {
 				lit, ok := arg.(*ast.FuncLit)

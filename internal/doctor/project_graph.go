@@ -350,25 +350,27 @@ func featureForView(name string, features map[string]string) string {
 	return ""
 }
 
+// addNativeCapabilities puts every hesape component the project imports into
+// the graph, however the import reaches it.
+//
+// A bridge import counts as the component it points at: framework/data is
+// database, and an application that has not moved its imports yet uses the
+// same components as one that has. Reading only hesape paths answered that a
+// project importing through the framework used none.
 func addNativeCapabilities(builder *graphBuilder, files []*file) {
-	const prefix = "github.com/arandu-io/hesape/"
 	for _, f := range files {
 		if f.isTest {
 			continue
 		}
 		for _, spec := range f.ast.Imports {
-			importPath := strings.Trim(spec.Path.Value, `"`)
-			if !strings.HasPrefix(importPath, prefix) {
-				continue
-			}
-			component := strings.Split(strings.TrimPrefix(importPath, prefix), "/")[0]
-			if component == "" {
+			component, native := nativeComponent(strings.Trim(spec.Path.Value, `"`))
+			if !native {
 				continue
 			}
 			position := f.fset.Position(spec.Pos())
 			builder.addNode("native-capabilities", Node{
 				ID: "native-capability:" + graphID(component), Kind: "native-capability",
-				Label: component, Detail: prefix + component, File: f.rel,
+				Label: component, Detail: hesapePrefix + component, File: f.rel,
 				Line: max(position.Line, 1), Column: max(position.Column, 1),
 			})
 		}
@@ -572,7 +574,7 @@ func kernelExpression(f *file, expression ast.Expr) bool {
 			return false
 		}
 		alias, ok := selector.X.(*ast.Ident)
-		return ok && importPathForAlias(f, alias.Name) == "github.com/arandu-io/framework/kernel"
+		return ok && reaches(importPathForAlias(f, alias.Name), frameworkKernel)
 	case *ast.ParenExpr:
 		return kernelExpression(f, value.X)
 	case *ast.UnaryExpr:
@@ -609,16 +611,30 @@ func kernelDeclaration(f *file, declaration any, identifier *ast.Ident) bool {
 	return false
 }
 
+// kernelTypes are the two spellings of the application object: the name the
+// kernel bridge keeps, and the type it is an alias of. A module registered on a
+// *foundation.Application is registered on the same value as one registered on
+// a *kernel.Kernel, and reading only the old name answered that a project
+// written against the new one registered nothing.
+var kernelTypes = map[string]string{
+	frameworkKernel:     "Kernel",
+	frameworkFoundation: "Application",
+}
+
 func kernelType(f *file, expression ast.Expr) bool {
 	if pointer, ok := expression.(*ast.StarExpr); ok {
 		expression = pointer.X
 	}
 	selector, ok := expression.(*ast.SelectorExpr)
-	if !ok || selector.Sel.Name != "Kernel" {
+	if !ok {
 		return false
 	}
 	alias, ok := selector.X.(*ast.Ident)
-	return ok && importPathForAlias(f, alias.Name) == "github.com/arandu-io/framework/kernel"
+	if !ok {
+		return false
+	}
+	name, known := kernelTypes[importPathForAlias(f, alias.Name)]
+	return known && selector.Sel.Name == name
 }
 
 func registeredImportAlias(expression ast.Expr) (string, ast.Node, bool) {

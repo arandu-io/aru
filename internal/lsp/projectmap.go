@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -255,4 +256,28 @@ func catalog(options Options) catalogResult {
 		commands[i] = command
 	}
 	return catalogResult{Directives: directives, Commands: commands}
+}
+
+// usageFlag finds the flags a usage line names: a dash or two, then a letter,
+// where a word begins.
+var usageFlag = regexp.MustCompile(`(?:^|[\s\[|(])(--?[A-Za-z][A-Za-z0-9-]*)`)
+
+// CommandFromUsage builds a catalogue entry from what a command table holds:
+// the name, the usage line and the description. The flags are the ones the
+// usage line names, in its order and each once; a bare -- that hands the rest
+// to another program names none.
+//
+// They are read from the usage line because that line is held to name every
+// flag its command parses, and a second list kept beside it would be a list
+// nothing checks.
+func CommandFromUsage(name, usage, description string) Command {
+	flags := []string{}
+	seen := map[string]bool{}
+	for _, match := range usageFlag.FindAllStringSubmatch(usage, -1) {
+		if !seen[match[1]] {
+			seen[match[1]] = true
+			flags = append(flags, match[1])
+		}
+	}
+	return Command{Name: name, Usage: usage, Description: description, Flags: flags}
 }

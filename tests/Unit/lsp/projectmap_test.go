@@ -528,3 +528,25 @@ func mustRel(t *testing.T, root, path string) string {
 	}
 	return filepath.ToSlash(rel)
 }
+
+// TestACatalogueEntryReadsItsFlagsFromTheUsageLine: the flags an entry lists
+// are the ones its usage line names, in order and once each, whatever dash
+// they take and however the value is attached -- and a bare -- names none.
+// The usage lines are the command table's own.
+func TestACatalogueEntryReadsItsFlagsFromTheUsageLine(t *testing.T) {
+	for usage, want := range map[string][]string{
+		"aru doctor [--strict] [--profile=performance] | --list":                     {"--strict", "--profile", "--list"},
+		"aru native:run [-server addr] [-dark]":                                      {"-server", "-dark"},
+		"aru serve [-- flags for the application]":                                   {},
+		"aru font:search [query] [--category serif] [--variable] [--limit 25|--all]": {"--category", "--variable", "--limit", "--all"},
+		"aru queue:retry --tenant=<id> [<id>...] [--queue=default]":                  {"--tenant", "--queue"},
+	} {
+		entry := lsp.CommandFromUsage("name", usage, "description")
+		if entry.Name != "name" || entry.Usage != usage || entry.Description != "description" {
+			t.Errorf("the entry for %q does not carry what it was given: %+v", usage, entry)
+		}
+		if !reflect.DeepEqual(entry.Flags, want) {
+			t.Errorf("%q names %v, want %v", usage, entry.Flags, want)
+		}
+	}
+}

@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"regexp"
 	"strings"
 	"text/tabwriter"
 
@@ -602,29 +601,13 @@ func list(tw *tabwriter.Writer, of []command) {
 	}
 }
 
-// usageFlag finds the flags a usage line names: a dash or two, then a letter,
-// where a word begins.
-var usageFlag = regexp.MustCompile(`(?:^|[\s\[|(])(--?[A-Za-z][A-Za-z0-9-]*)`)
-
 // commandCatalogue is the command table as the language server answers it to
-// an editor: each command's name, usage line, description and the flags its
-// usage line names.
-//
-// The flags are read from the usage line because the usage line is held to
-// name every flag a command parses, by a test that runs each one; a second
-// list here would be a list nobody checks.
+// an editor, in the table's order: each command's name, usage line,
+// description and the flags its usage line names.
 func commandCatalogue() []lsp.Command {
 	out := make([]lsp.Command, 0, len(commands))
 	for _, c := range commands {
-		flags := []string{}
-		seen := map[string]bool{}
-		for _, match := range usageFlag.FindAllStringSubmatch(c.usage, -1) {
-			if !seen[match[1]] {
-				seen[match[1]] = true
-				flags = append(flags, match[1])
-			}
-		}
-		out = append(out, lsp.Command{Name: c.name, Usage: c.usage, Description: c.desc, Flags: flags})
+		out = append(out, lsp.CommandFromUsage(c.name, c.usage, c.desc))
 	}
 	return out
 }

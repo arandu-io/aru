@@ -191,6 +191,42 @@ func Under(importPath, prefix string) (string, bool) {
 	return "", false
 }
 
+// Dir answers the directory that holds module's source for the tree rooted at
+// root, looked for in the order the toolchain resolves it: a replace naming a
+// directory, the tree's vendor directory, then the module cache at the version
+// the build selects. It answers false when the module is not required, or is
+// required and on none of them -- not yet downloaded, typically.
+//
+// It reads the disk and never starts the toolchain, so a caller that may run
+// `go mod download` does that itself and asks again.
+func (m *File) Dir(root, module string) (string, bool) {
+	if target, local := m.Replaced[module]; local {
+		dir := target
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(root, filepath.FromSlash(dir))
+		}
+		return dir, isDir(dir)
+	}
+	if dir := filepath.Join(root, "vendor", filepath.FromSlash(module)); isDir(dir) {
+		return dir, true
+	}
+	version, required := m.Pinned(module)
+	cache := Cache()
+	if !required || cache == "" {
+		return "", false
+	}
+	dir := filepath.Join(cache, filepath.FromSlash(EscapePath(module)+"@"+version))
+	return dir, isDir(dir)
+}
+
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// Cache answers the module cache directory from the environment, the way the
+// toolchain does when nothing was written with `go env -w`: GOMODCACHE, then
+// pkg/mod under the first GOPATH entry, then under the default GOPATH.
 func Cache() string {
 	if cache := os.Getenv("GOMODCACHE"); cache != "" {
 		return cache

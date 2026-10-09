@@ -40,7 +40,7 @@ compiled against is still the one it is running.
 | queues | `queue:work` `queue:listen` `queue:restart` `queue:pause` `queue:resume` `queue:clear` `queue:monitor` `queue:failed` `queue:retry` `queue:forget` `queue:flush` `queue:prune-failed` `queue:retry-batch` `queue:prune-batches` |
 | fonts | `font:add` `font:search` `font:info` `font:list` `font:remove` |
 | native application | `native:run` `native:dev` `native:build` |
-| modules, editor and inspection | `vendor:publish` `lsp` `action:list` `about` |
+| modules, editor and inspection | `vendor:publish` `lsp` `action:list` `imports:catalog` `about` |
 | everything else | `key:generate` `schedule:list` `schedule:run` `route:list` `db:seed` `model:build` `view:build` |
 
 plus `help` and `version`. The native and inspection commands, in the words of `aru help`:
@@ -53,6 +53,7 @@ plus `help` and `version`. The native and inspection commands, in the words of `
 | `vendor:publish` | show what the registered modules would publish into the project, and write it |
 | `lsp` | serve Kyse diagnostics and completion to an editor |
 | `action:list` | list the actions the source declares, with the constant and the line of each |
+| `imports:catalog` | print the import path each exported framework symbol should be named by |
 | `about` | report what the application has wired: drivers, modules and version |
 
 - **`aru make:module`** — a Model-backed entity with its policy, service,

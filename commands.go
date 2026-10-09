@@ -422,6 +422,15 @@ window.`,
 		run:   actionList,
 	},
 	{
+		// Read from the framework's source like action:list reads the
+		// project's: whether a name is an alias of a component's or the
+		// framework's own is a fact about the release go.mod requires.
+		name:  "imports:catalog",
+		usage: "aru imports:catalog [--json]",
+		desc:  "print the import path each exported framework symbol should be named by",
+		run:   importsCatalog,
+	},
+	{
 		// The inventory, next to the two commands that read a running project:
 		// route:list says what answers, trace says what one request did, and this
 		// says what the application was wired with in the first place.

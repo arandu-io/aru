@@ -1,62 +1,37 @@
 package doctor
 
 import (
-	"go/parser"
-	"go/token"
-	"io/fs"
-	"path/filepath"
-	"regexp"
-	"strings"
 	"testing"
+
+	"github.com/arandu-io/aru/internal/catalog"
 )
 
 // TestEveryBridgeIsMapped reads the bridges back out of the framework's own
 // package documentation and compares them with bridgeTargets.
 //
-// The table is written by hand, because the doctor reads the project and never
-// the framework. A bridge added to the framework and missing here is a package
-// every detector that asks bridgeTargets goes blind on; a target that moved is
-// a detector matching a package nobody imports any more. The sentence each
-// bridge carries -- what to import instead -- is the one statement both sides
-// agree to keep, so it is what this reads.
+// The table is written by hand, because the doctor's detectors ask about a
+// package and the framework is not on every machine that runs them. A bridge
+// added to the framework and missing here is a package every detector that
+// asks bridgeTargets goes blind on; a target that moved is a detector matching
+// a package nobody imports any more. The sentence each bridge carries -- what
+// to import instead -- is the one statement both sides agree to keep, and the
+// import catalog is what reads it, so this test and `aru imports:catalog` read
+// one sentence one way.
 func TestEveryBridgeIsMapped(t *testing.T) {
 	root, checkedOut := siblingCheckout("framework")
 	if !checkedOut {
 		t.Skip("framework is not checked out next to this repository")
 	}
-
-	sentence := regexp.MustCompile(`This package is a bridge\. It is removed in v1\.0\.0; import (\S+) directly\.`)
-	declared := map[string]string{}
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			if d.Name() == ".git" || d.Name() == "testdata" {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if d.Name() != "doc.go" {
-			return nil
-		}
-		parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.PackageClauseOnly|parser.ParseComments)
-		if err != nil || parsed.Doc == nil {
-			return nil
-		}
-		m := sentence.FindStringSubmatch(strings.Join(strings.Fields(parsed.Doc.Text()), " "))
-		if m == nil {
-			return nil
-		}
-		pkg, err := importPathOf(filepath.Dir(path), root)
-		if err != nil {
-			return err
-		}
-		declared[pkg] = m[1]
-		return nil
-	})
+	c, err := catalog.Read(root)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	declared := map[string]string{}
+	for _, pkg := range c.Packages {
+		if pkg.Bridge != "" {
+			declared[pkg.Path] = pkg.Bridge
+		}
 	}
 	if len(declared) == 0 {
 		t.Fatal("no bridge was found in the framework: this test stopped testing anything")

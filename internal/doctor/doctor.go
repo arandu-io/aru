@@ -147,6 +147,9 @@ type project struct {
 	// the framework. It is read once, here, and never fetched: see
 	// importsAreCanonical.
 	catalog *catalog.Catalog
+	// skills are the project's skills and what each origin on disk hands out,
+	// read once and never fetched: see skillsFollowTheirOrigin.
+	skills skillState
 	// unreadable are the .go files that did not parse, with the reason.
 	//
 	// They are carried rather than dropped because every rule below reasons over
@@ -313,6 +316,7 @@ func Analyze(dir string, profile Profile) (Analysis, error) {
 	if c, err := catalog.ForProject(dir); err == nil {
 		p.catalog = c
 	}
+	p.skills = readSkills(dir)
 
 	var findings []Finding
 	for _, rule := range rules {

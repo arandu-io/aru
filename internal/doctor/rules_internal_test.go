@@ -139,6 +139,8 @@ func emitsByRule() map[string][]string {
 			"test-is-not-run", "test-outside-the-tests-tree",
 			"package-clause-is-capitalised", "scaffolding-ships",
 		},
+		"skillsFollowTheirOrigin":            {"skills-out-of-date"},
+		"distributedSkillsArePresent":        {"skills-missing"},
 		"migrationsMustReachTheBinary":       {"migrations-not-linked"},
 		"addedColumnsMustBeNullable":         {"added-column-not-nullable"},
 		"migrationsMustBeReversible":         {"rollback-does-nothing"},

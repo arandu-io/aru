@@ -1,5 +1,21 @@
 [
   {
+    "rule": "skills-out-of-date",
+    "severity": "warning",
+    "file": ".agents/skills/example-module/SKILL.md",
+    "line": 1,
+    "message": "the skill example-module was written from hyz-is/arandu-example@v0.2.0, and hyz-is/arandu-example@v0.3.0 hands out a different one",
+    "why": "an assistant working here follows the procedure in this file, and the one the version this project pins describes has changed since: a command, a rule or a step it names may no longer be what the code does. `aru skills:sync` shows the difference, and `aru skills:sync --apply` takes it, keeping what sits between the custom markers."
+  },
+  {
+    "rule": "skills-missing",
+    "severity": "warning",
+    "file": ".agents/skills/example-policy/SKILL.md",
+    "line": 1,
+    "message": "hyz-is/arandu-example@v0.3.0 hands out the skill example-policy, and this project does not have it",
+    "why": "an assistant working here never reads the procedure it carries, and fills the gap with what it knows from other frameworks. `aru skills:sync --apply` brings it, with its source recorded so the next release can be compared against it."
+  },
+  {
     "rule": "driver-not-linked",
     "severity": "warning",
     "file": ".env.example",

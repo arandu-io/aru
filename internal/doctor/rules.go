@@ -16,6 +16,7 @@ import (
 	"github.com/arandu-io/aru/internal/kyse"
 	"github.com/arandu-io/aru/internal/manifest"
 	"github.com/arandu-io/aru/internal/modelbuild"
+	"github.com/arandu-io/aru/internal/skills"
 	"github.com/arandu-io/aru/internal/testlayout"
 )
 
@@ -67,6 +68,8 @@ var rules = []func(*project) []Finding{
 	noRetiredModuleIsImported,
 	importsAreCanonical,
 	testsAreWhereTheyCanRun,
+	skillsFollowTheirOrigin,
+	distributedSkillsArePresent,
 	migrationsMustReachTheBinary,
 	addedColumnsMustBeNullable,
 	migrationsMustBeReversible,
@@ -3429,6 +3432,137 @@ func testsAreWhereTheyCanRun(p *project) []Finding {
 			Why:     problem.Why,
 		})
 	}
+	return out
+}
+
+// 18c. A skill that came from the skeleton or from a module, behind what that
+// origin hands out at the version the project pins.
+//
+// Reason. A skill is the procedure a coding assistant follows in this project,
+// and one copied from an origin goes on describing the origin as it was when
+// it was copied: the command it names, the rule it calls a warning, the step
+// it skips. Nothing fails when the origin moves on. The assistant follows the
+// old procedure, and the code it writes is checked by the new rules.
+//
+// Scope. Every skill under .agents/skills whose name an origin hands out: the
+// skeleton at the version aru pins, once the project carries a skill that
+// names it, and every module under github.com/hyz-is/ that go.mod requires,
+// at the version it requires. What is compared is the digest the skill
+// recorded when it was written with the digest of the origin's skill now; a
+// skill with no source is compared by its own digest, because nothing else
+// says what it is a copy of.
+//
+// Severity. A warning: the project builds and runs the same either way, and
+// what is out of date is advice.
+//
+// Positive: a skill stamped from an origin at an older version whose text has
+// changed since; a copy with no source at the path of a skill an origin hands
+// out, whose text is not the origin's.
+//
+// Negative: a skill edited only between its custom markers; a skill recorded
+// at an older version whose text the origin did not change; a skill whose
+// header names another origin, and one the project wrote under a name no
+// origin hands out.
+//
+// Known false positive: a copy with no source that the project rewrote on
+// purpose, under the name an origin hands out. Renaming it ends the finding.
+//
+// Limit. The project's skills and the sources on disk: a directory replace,
+// or the module cache at the pinned version. The doctor starts no toolchain to
+// fetch a source, so for an origin this machine has not downloaded the rule is
+// silent; `aru skills:sync` downloads it and shows the difference.
+//
+// Correction: `aru skills:sync`, then `aru skills:sync --apply`. A copy with no
+// source is never touched by it, so it is moved aside first.
+func skillsFollowTheirOrigin(p *project) []Finding {
+	var out []Finding
+	p.skills.distributed(func(origin skills.Origin, skill skills.Skill) {
+		local, carried := p.skills.local[skill.Name]
+		if !carried {
+			return
+		}
+		header := skills.ParseHeader(local)
+		want := skills.Digest(skill.Content)
+		switch {
+		case header.Source == "":
+			if skills.Digest(local) == want {
+				return
+			}
+			out = append(out, Finding{
+				Rule: "skills-out-of-date", Severity: Warning,
+				File: skill.Path(), Line: 1,
+				Message: "the skill " + skill.Name + " has no source in its header and is not the one " + origin.Label() + " hands out",
+				Why: "an assistant working here follows this copy, and the procedure the version this project pins describes is a different one: " +
+					"a command, a rule or a step it names may no longer be what the code does. `aru skills:sync` leaves a skill with no source alone, " +
+					"so move this one aside and run `aru skills:sync --apply`; text of your own goes between the custom markers of the copy it writes.",
+			})
+		case origin.Names(header.Source):
+			recorded := header.Digest
+			if recorded == "" {
+				recorded = skills.Digest(local)
+			}
+			if recorded == want {
+				return
+			}
+			out = append(out, Finding{
+				Rule: "skills-out-of-date", Severity: Warning,
+				File: skill.Path(), Line: 1,
+				Message: "the skill " + skill.Name + " was written from " + header.Source + ", and " + origin.Label() + " hands out a different one",
+				Why: "an assistant working here follows the procedure in this file, and the one the version this project pins describes has changed since: " +
+					"a command, a rule or a step it names may no longer be what the code does. `aru skills:sync` shows the difference, " +
+					"and `aru skills:sync --apply` takes it, keeping what sits between the custom markers.",
+			})
+		}
+	})
+	return out
+}
+
+// 18d. A skill an origin hands out that the project does not have.
+//
+// Reason. A procedure the project never received is one no assistant working
+// here reads, and the gap is filled with what it knows from other frameworks:
+// a service container, a fillable model, an authorization check in a
+// middleware. A module added with `go get` brings its code and none of its
+// skills.
+//
+// Scope. The same origins as skills-out-of-date: the skeleton at the version
+// aru pins, once the project carries a skill that names it, and every module
+// under github.com/hyz-is/ go.mod requires. A module hands out the skills it
+// marks `audience: app` under metadata; the skeleton hands out its arandu-
+// skills.
+//
+// Severity. A warning: nothing about the build or the running application
+// changes.
+//
+// Positive: a required module marks a skill for applications and the project
+// has no skill of that name; the project carries one of the skeleton's skills
+// and not another.
+//
+// Negative: a module's skill not marked for applications, such as its release
+// procedure; a project that carries none of the skeleton's skills; a skill of
+// that name the project wrote itself, which skills-out-of-date reports when it
+// differs.
+//
+// Known false positive: a skill the project removed on purpose while keeping
+// another from the same origin.
+//
+// Limit. The same as skills-out-of-date: the sources on disk, never fetched.
+//
+// Correction: `aru skills:sync --apply`.
+func distributedSkillsArePresent(p *project) []Finding {
+	var out []Finding
+	p.skills.distributed(func(origin skills.Origin, skill skills.Skill) {
+		if _, carried := p.skills.local[skill.Name]; carried {
+			return
+		}
+		out = append(out, Finding{
+			Rule: "skills-missing", Severity: Warning,
+			File: skill.Path(), Line: 1,
+			Message: origin.Label() + " hands out the skill " + skill.Name + ", and this project does not have it",
+			Why: "an assistant working here never reads the procedure it carries, and fills the gap with what it knows from other frameworks. " +
+				"`aru skills:sync --apply` brings it, with its source recorded so the next release can be compared against it.",
+		})
+	})
 	return out
 }
 

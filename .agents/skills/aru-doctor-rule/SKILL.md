@@ -1,6 +1,6 @@
 ---
 name: aru-doctor-rule
-description: Add, widen, weaken or remove a rule of `aru doctor`, the static checker that reads an Arandu application's AST. Use when the request is to "add a doctor rule", "make doctor catch X", "why does doctor not report this", "doctor fires on correct code", "add a lint for the generated app", "change a severity", or when a named rule such as grant-not-received, tenant-from-request, sql-without-tenant-scope or view-data-is-a-map has to change. Covers where a rule goes and where it does not, the finding a rule has to produce, the four fixtures under internal/doctor/testdata, the hand-written emits map that makes a deleted rule visible, and the reason a rule with no planted failure is a rule that cannot fail.
+description: Add, widen, weaken or remove a rule of `aru doctor`, the static checker that reads an Arandu application's AST. Use when the request is to "add a doctor rule", "make doctor catch X", "why does doctor not report this", "doctor fires on correct code", "add a lint for the generated app", "change a severity", or when a named rule such as grant-not-received, tenant-from-request, sql-without-tenant-scope or view-data-is-a-map has to change. Covers where a rule goes and where it does not, the finding a rule has to produce, the five fixtures under internal/doctor/testdata, the hand-written emits map that makes a deleted rule visible, and the reason a rule with no planted failure is a rule that cannot fail.
 license: MIT
 ---
 
@@ -11,10 +11,10 @@ AST and never runs the code, so it works on a project that does not compile —
 which is exactly when someone needs to be told what is wrong.
 
 ```sh
-awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 33  rule functions
+awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 35  rule functions
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/testlayout/testlayout.go \
-	| sort -u | wc -l                                                     # 43  names a report can carry
-grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go | sort -u | wc -l    # 39  of them declared here
+	| sort -u | wc -l                                                     # 45  names a report can carry
+grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go | sort -u | wc -l    # 41  of them declared here
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/testlayout/testlayout.go \
 	| sort -u | wc -l                                                     # 4  forwarded, declared there
 ```
@@ -71,7 +71,7 @@ finds, and they stay there: whoever runs `aru doctor` is not required to run
 anything else, and a report that verified authorization and left injection to a
 second tool would be half an answer.
 
-## The four fixtures
+## The five fixtures
 
 They live in `internal/doctor/testdata`, each a whole small project.
 
@@ -81,6 +81,19 @@ They live in `internal/doctor/testdata`, each a whole small project.
 | `clean` | the shape the generator emits. It must produce no error |
 | `gaps` | the cases a rule reported wrongly once, and the near misses that must stay quiet |
 | `broken` | Go that does not parse, because the doctor has to answer honestly about a file it could not read |
+| `orm` | a model-first project with no repository anywhere, because every authorization rule was once gated on one and reported nothing here |
+
+`TestEveryRuleFiresOnAFixture` reads the first three and `clean`; `orm` has
+its own test, `TestTheModelFirstProjectIsAudited`.
+
+A rule that reads something outside the project's own tree gets that thing
+inside the fixture, where a copy of the fixture still finds it. `violations`
+and `gaps` each require a module under `github.com/hyz-is/` and replace it with
+a directory under `third_party/`, which is where the two skill rules read the
+skills that module hands out. The skeleton's half of those rules reads the
+module cache and nothing else, so no fixture can hold it: it is proved in
+`internal/doctor/skills_internal_test.go`, against a module cache the test
+writes.
 
 Measured, with a binary built from this tree and an empty `arandu.toml` added so
 the CLI accepts the fixture as a project:
@@ -88,15 +101,15 @@ the CLI accepts the fixture as a project:
 ```sh
 cp -R internal/doctor/testdata/violations /tmp/viol && touch /tmp/viol/arandu.toml
 (cd /tmp/viol && /tmp/aru-src doctor > /tmp/viol.out 2>&1); echo $?   # 1
-tail -1 /tmp/viol.out                                                 # 39 error(s), 42 warning(s)
-grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 36
+tail -1 /tmp/viol.out                                                 # 39 error(s), 44 warning(s)
+grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 38
 ```
 
 `violations` carries a `vendor/` directory holding a slice of the framework:
 the bridge packages it imports, declared the way the framework declares them.
 `import-not-canonical` decides from the framework's own source, at the version
 go.mod requires, and a vendor directory is the one place that source can sit
-inside a fixture and survive the `cp -R` above. Sixteen of the forty-two
+inside a fixture and survive the `cp -R` above. Sixteen of the forty-four
 warnings are that rule. The other fixtures require a framework version no
 module cache here holds, so the rule is silent on them -- which is its declared
 limit, not an accident.
@@ -127,19 +140,19 @@ command:
 // produce at least one finding across the fixtures.
 ```
 
-`internal/doctor/rules_internal_test.go:24`. It runs `Run` over `violations`,
+`internal/doctor/rules_internal_test.go:25`. It runs `Run` over `violations`,
 `gaps` and `broken` on the conventional profile and over `clean` on the
 performance profile, and reports by function name every rule that produced
 nothing.
 
 **2. Write the function.** It takes `*project` and returns `[]Finding`. Add it
-to the `rules` slice at `internal/doctor/rules.go:41`, in the order the report
+to the `rules` slice at `internal/doctor/rules.go:46`, in the order the report
 should read.
 
 **3. Fill in every field of the finding, and treat `Why` as the one that
 matters.**
 
-This is the shape, from `internal/doctor/rules.go:353`:
+This is the shape, from `internal/doctor/rules.go:408`:
 
 ```go
 Finding{
@@ -153,7 +166,7 @@ Finding{
 `Message` says what is wrong at that line. `Why` says what a user of the
 application would experience. A finding that only says what is forbidden gets
 suppressed; one that says what breaks gets fixed.
-`TestFindingsAreActionable` (`tests/Unit/doctor/doctor_test.go:81`) enforces
+`TestFindingsAreActionable` (`tests/Unit/doctor/doctor_test.go:91`) enforces
 this mechanically: a non-empty `File`, a non-empty `Message`, a `Why` of at
 least 40 characters, and a `Message` that does not contain the word
 "violation" — because a message that says a rule was violated instead of what
@@ -169,7 +182,7 @@ Warning is right when the reported code compiles and passes today —
 a project that is red on day zero teaches people to switch the tool off.
 
 **5. Add it to the emits map, in both directions.** `emitsByRule` at
-`internal/doctor/rules_internal_test.go:112` maps each rule function to the
+`internal/doctor/rules_internal_test.go:113` maps each rule function to the
 names it can emit. It is written by hand because one function emits several and
 the compiler cannot tell which, and it is checked both ways:
 
@@ -219,8 +232,13 @@ It parses; it does not type-check and it does not resolve constants.
   replace, `vendor/`, or the module cache -- and the doctor starts no
   toolchain to get it. On a machine that never downloaded that version the rule
   says nothing; `aru imports:catalog` fetches it and prints the same table.
+  `skills-out-of-date` and `skills-missing` have the same limit for the
+  skills a module or the skeleton hands out, and `aru skills:sync` is what
+  downloads them. The skeleton's half also waits for the project to carry one
+  skill that names the skeleton as its source: before that, a project that
+  never had those skills and one that deleted them look the same.
 - **A build tag is invisible**, so a file the compiler excludes is still read —
-  except the views, which `doctor.go:366` skips by name for exactly that reason:
+  except the views, which `doctor.go:443` skips by name for exactly that reason:
   a `.kyse.go` ends in `.go` and is not Go, and parsing one would report every
   view in the project.
 

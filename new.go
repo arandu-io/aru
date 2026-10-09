@@ -14,21 +14,25 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/arandu-io/aru/internal/skills"
 )
 
-// skeletonRepo is what `aru new` clones. It is the equivalent of
-// a project, not a library. Nobody depends on it, which is what
+// skeletonRepo is what `aru new` clones, at skills.SkeletonVersion. It is the
+// equivalent of a project, not a library. Nobody depends on it, which is what
 // lets the framework evolve without fighting the directory layout of older
 // projects.
-const (
-	skeletonRepo    = "https://github.com/arandu-io/arandu.git"
-	skeletonVersion = "v0.29.1"
-)
+//
+// The version lives with the skills because it is pinned for two readers: this
+// command clones it, and `aru skills:sync` and the doctor compare a project's
+// skills against it.
+const skeletonRepo = "https://github.com/arandu-io/arandu.git"
 
 // newProject creates a project from the skeleton.
 //
-// It clones, drops the skeleton's git history, rewrites the module path, and
-// writes a .env with a fresh key. What it does NOT do is run `go mod tidy` or
+// It clones, drops the skeleton's git history, records in each of the
+// skeleton's skills where it came from, rewrites the module path, and writes a
+// .env with a fresh key. What it does NOT do is run `go mod tidy` or
 // start anything: a command that reaches the network twice and starts a server
 // is a command that fails in three different ways.
 func newProject(args []string, stdout, stderr io.Writer) error {
@@ -63,7 +67,7 @@ func newProject(args []string, stdout, stderr io.Writer) error {
 	}
 
 	fmt.Fprintf(stdout, "fetching the skeleton\n")
-	clone := exec.Command("git", "clone", "--branch", skeletonVersion, "--single-branch", "--depth", "1", "--quiet", skeletonRepo, name)
+	clone := exec.Command("git", "clone", "--branch", skills.SkeletonVersion, "--single-branch", "--depth", "1", "--quiet", skeletonRepo, name)
 	clone.Stderr = stderr
 	if err := clone.Run(); err != nil {
 		return fmt.Errorf("cloning the skeleton: %w", err)
@@ -74,6 +78,12 @@ func newProject(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("removing the skeleton history: %w", err)
 	}
 
+	// The skills are stamped with where they came from while they are still
+	// the skeleton's bytes, so the digest each records is the digest of the
+	// release and not of anything this command changed.
+	if err := stampSkeletonSkills(name); err != nil {
+		return fmt.Errorf("stamping the skeleton's skills: %w", err)
+	}
 	if err := rewriteModulePath(name, path); err != nil {
 		return err
 	}

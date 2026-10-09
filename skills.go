@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"text/tabwriter"
 
 	"github.com/arandu-io/aru/internal/buildcache"
@@ -180,4 +182,30 @@ func count(changes []skills.Change, action skills.Action) int {
 		}
 	}
 	return n
+}
+
+// stampSkeletonSkills writes the header into the skills a new project was
+// given, so the first `aru skills:sync` and `aru doctor` know where each came
+// from and whether it was edited.
+//
+// It reads the tree the skeleton was just copied into, which is the skeleton
+// at the pinned version byte for byte. A tree without a skills directory has
+// nothing to stamp.
+func stampSkeletonSkills(dir string) error {
+	origin := skills.Skeleton()
+	found, err := origin.Read(dir)
+	if err != nil {
+		return err
+	}
+	for _, skill := range found {
+		stamped, err := skills.Stamp(skill.Content, origin.Label())
+		if err != nil {
+			return fmt.Errorf("%s: %w", skill.Path(), err)
+		}
+		path := filepath.Join(dir, filepath.FromSlash(skill.Path()))
+		if err := os.WriteFile(path, stamped, 0o644); err != nil {
+			return fmt.Errorf("writing %s: %w", skill.Path(), err)
+		}
+	}
+	return nil
 }

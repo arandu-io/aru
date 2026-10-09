@@ -205,3 +205,31 @@ func TestSkillsSyncNeedsAProject(t *testing.T) {
 		t.Errorf("a stray argument exited %d: %s", code, stderr)
 	}
 }
+
+// TestANewProjectsSkillsRecordWhereTheyCameFrom: what `aru new` copies from the
+// skeleton is stamped with the pinned release, with the digest of the bytes it
+// copied, so the first sync finds nothing to change. The example resource's
+// skill is the project's from the start and is left without a source.
+func TestANewProjectsSkillsRecordWhereTheyCameFrom(t *testing.T) {
+	dir := t.TempDir()
+	view := skeletonProcedure("arandu-view", "Run aru view:build.")
+	notes := skeletonProcedure("notes", "The example resource.")
+	writeSkill(t, dir, "arandu-view", view)
+	writeSkill(t, dir, "notes", notes)
+
+	if err := stampSkeletonSkills(dir); err != nil {
+		t.Fatal(err)
+	}
+	stamped := readSkill(t, dir, "arandu-view")
+	header := skills.ParseHeader([]byte(stamped))
+	if header.Source != "arandu-io/arandu@"+skills.SkeletonVersion || header.Digest != skills.Digest([]byte(view)) {
+		t.Errorf("the copied skill's header: %+v", header)
+	}
+	if readSkill(t, dir, "notes") != notes {
+		t.Error("the example resource's skill was stamped as the skeleton's")
+	}
+
+	if err := stampSkeletonSkills(t.TempDir()); err != nil {
+		t.Errorf("a tree without skills: %v", err)
+	}
+}

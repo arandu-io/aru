@@ -100,6 +100,33 @@ func Generate(m Module) ([]File, error) {
 	}
 	out = append(out, unit)
 
+	// The factory and the seeder, from the renderers `aru make:model --factory
+	// --seed` uses, so the rows a module seeds are built the way the rows of an
+	// entity written on its own are. The seeder goes through the factory: the
+	// module writes it, and the policy whose actions the seeder names.
+	factory, err := RenderFactory(m.FactorySpec())
+	if err != nil {
+		return nil, err
+	}
+	seeder, err := RenderSeeder(SeederSpec{Entity: m.Entity(), ModulePath: m.ModulePath, Factory: true})
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, factory, seeder)
+
+	// A tenant-scoped table gets the feature test that proves it: rows stored
+	// for one tenant, read with another's Grant, and nothing found. It is the
+	// per-table half of the skeleton's catalogue check, which asks for the
+	// claim this test is the evidence of.
+	if m.Tenant {
+		path := filepath.Join("tests", "Feature", m.Entity()+"TenantScope_test.go")
+		content, err := render(filepath.Base(path), tenantScopeTestTemplate, m)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		out = append(out, File{Path: path, Content: content})
+	}
+
 	// The views, under resources/views/<plural>/, one per action that has a
 	// screen.
 	views := filepath.Join("resources", "views", m.Resource())
@@ -209,16 +236,7 @@ func GenerateModel(m Module, parts ModelParts) ([]File, error) {
 		out = append(out, f)
 	}
 	if parts.Factory {
-		fields := make([]FactoryField, 0, len(m.Fields))
-		for _, f := range m.Fields {
-			fields = append(fields, f.Factory())
-		}
-		f, err := RenderFactory(FactorySpec{
-			Entity:       m.Entity(),
-			Tenant:       m.Tenant,
-			Fields:       fields,
-			ModelsImport: m.ModelsImport(),
-		})
+		f, err := RenderFactory(m.FactorySpec())
 		if err != nil {
 			return nil, err
 		}
@@ -285,6 +303,16 @@ func (m Module) ControllerStub(withService bool) Stub {
 		s.Service = m.ServiceType()
 	}
 	return s
+}
+
+// FactorySpec is how a module describes its factory, for `aru make:module`
+// and `aru make:model --factory` alike.
+func (m Module) FactorySpec() FactorySpec {
+	fields := make([]FactoryField, 0, len(m.Fields))
+	for _, f := range m.Fields {
+		fields = append(fields, f.Factory())
+	}
+	return FactorySpec{Entity: m.Entity(), Tenant: m.Tenant, Fields: fields, ModelsImport: m.ModelsImport()}
 }
 
 // renderModelQuery is the module's app/Models/<Entity>Query.go.

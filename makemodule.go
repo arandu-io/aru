@@ -132,7 +132,7 @@ The policy denies every action. Open what this module needs in
 app/Policies/%s.go, inside the custom block, and nothing else -- that is what
 makes the default safe.
 
-Then, by hand, because the wiring is meant to be readable -- three lines:
+Then, by hand, because the wiring is meant to be readable -- four lines:
 
   routes/web.go -- the field in Deps
 
@@ -146,6 +146,11 @@ Then, by hand, because the wiring is meant to be readable -- three lines:
   bootstrap/app.go -- in the routes.Deps literal
 
       %s: controllers.New%s(services.New%s(db)),
+
+  database/seeders/seeders.go -- in the registry, and in DatabaseSeeder's
+  list if it should run by default
+
+      %sSeeder{},
 
 They name two packages a file may not import yet:
 "github.com/arandu-io/framework/http/middleware" in routes/web.go, and
@@ -165,6 +170,7 @@ Then:
 		m.Entity(), m.Controller(),
 		m.Resource(), m.Entity(),
 		m.Entity(), m.Controller(), m.ServiceType(),
+		m.Entity(),
 		m.ModulePath,
 		tenantClaim(m),
 		m.MigrationType())

@@ -56,9 +56,13 @@ func TestGolden(t *testing.T) {
 	for _, c := range []struct {
 		name   string
 		tenant bool
+		// files is how many the module is: the twelve of every module, the
+		// factory and the seeder, and the tenant-isolation feature test only a
+		// table with a tenant column has.
+		files int
 	}{
-		{"tenant", true},
-		{"global", false},
+		{"tenant", true, 16},
+		{"global", false, 15},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			files, err := gen.Generate(spec(c.tenant))
@@ -70,8 +74,8 @@ func TestGolden(t *testing.T) {
 			// the test rather than quietly rewriting the corpus. Adding one to
 			// the generator means changing this number by hand, which is the
 			// review the number exists to force.
-			if len(files) != 13 {
-				t.Fatalf("generated %d files, want 13", len(files))
+			if len(files) != c.files {
+				t.Fatalf("generated %d files, want %d", len(files), c.files)
 			}
 
 			// The generated files name the golden files, so what this loop can

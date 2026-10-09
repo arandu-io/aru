@@ -4,7 +4,7 @@ description: Work with the PurchaseOrder module of this Arandu application. Use 
 license: MIT
 metadata:
   source: aru@dev
-  digest: sha256:997b96ba0ec87f7279ea006f37b80f6209426959e756b6128b038b581a6656ea
+  digest: sha256:6b9a925aec1ff63997056d55854ce6ae7281779f9ad160e022e2d79edde243fd
 ---
 
 # The PurchaseOrder module
@@ -28,6 +28,9 @@ custom block is made in the files directly, and regenerating would drop it.
 | `app/Http/Requests/PurchaseOrderRequest.go` | the input contract of create and update, with its form tags. Authorization stays in the Policy |
 | `resources/views`, under the resource | the four screens, which share one row struct |
 | `tests/Unit/PurchaseOrder_test.go` | that reads authorize before the Model is queried |
+| `database/factories/PurchaseOrderFactory.go` | the rows a test or a seeder builds, written through a Grant |
+| `database/seeders/PurchaseOrderSeeder.go` | the rows a deploy seeds, through the factory, safe to run twice |
+| `tests/Feature/PurchaseOrderTenantScope_test.go` | that another tenant's Grant reads none of this tenant's rows |
 
 ## Its fields
 

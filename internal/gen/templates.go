@@ -686,6 +686,63 @@ func TestThe{{.Entity}}PolicyDeniesWhatItDoesNotKnow(t *testing.T) {
 // arandu:end custom
 `
 
+// tenantScopeTestTemplate is the feature test a tenant-scoped module ships
+// with. It runs against the database the skeleton's feature suite migrates,
+// through migratedDB, and stores and reads with system Grants because there is
+// no request: what it proves is the model's scope, not the policy.
+const tenantScopeTestTemplate = `package feature_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/arandu-io/hesape/auth"
+
+	models "{{.ModelsImport}}"
+	policies "{{.PoliciesImport}}"
+	factories "{{.ModulePath}}/database/factories"
+)
+
+// Test{{.Plural}}AreScopedByTenant stores {{.Humans}} for one tenant and reads
+// them with another tenant's Grant. The rows exist and the queries run, and
+// nothing comes back: the model takes the tenant from the Grant and from
+// nowhere else, so to a second tenant the table is empty.
+//
+// It is the evidence for the line TestEveryTableWithATenantColumnIsOneThatFiltersByTenant
+// asks for: that one reads the catalogue and requires a claim for {{.Table}},
+// this one proves the claim.
+func Test{{.Plural}}AreScopedByTenant(t *testing.T) {
+	db := migratedDB(t)
+	ctx := context.Background()
+
+	stored, err := factories.{{.Constructor}}(db).Count(2).Create(ctx, auth.SystemGrant(policies.{{.Entity}}Create, "tenant-a"))
+	if err != nil {
+		t.Fatalf("storing {{.Humans}} for tenant-a: %v", err)
+	}
+
+	theirs := auth.SystemGrant(policies.{{.Entity}}List, "tenant-b")
+	found, err := models.{{.Constructor}}(db).Get(ctx, theirs)
+	if err != nil {
+		t.Fatalf("listing as tenant-b: %v", err)
+	}
+	if len(found) != 0 {
+		t.Errorf("tenant-b read %d of tenant-a's {{.Humans}}", len(found))
+	}
+	for _, row := range stored {
+		if _, err := models.{{.Constructor}}(db).FindOrFail(ctx, theirs, row.ID); err == nil {
+			t.Errorf("tenant-b found tenant-a's {{.Human}} %s by its id", row.ID)
+		}
+	}
+
+	ours, err := models.{{.Constructor}}(db).Get(ctx, auth.SystemGrant(policies.{{.Entity}}List, "tenant-a"))
+	if err != nil || len(ours) < len(stored) {
+		t.Errorf("tenant-a read %d of its %d {{.Humans}} (%v): the scope hides rows from their own tenant", len(ours), len(stored), err)
+	}
+}
+// arandu:begin custom
+// arandu:end custom
+`
+
 // skillTemplate is what an assistant reads when it meets this module.
 //
 // It is generated with the rest because the alternative is a file somebody
@@ -729,6 +786,11 @@ custom block is made in the files directly, and regenerating would drop it.
 | ` + "`" + `app/Http/Requests/{{ .Entity }}Request.go` + "`" + ` | the input contract of create and update, with its form tags. Authorization stays in the Policy |
 | ` + "`" + `resources/views` + "`" + `, under the resource | the four screens, which share one row struct |
 | ` + "`" + `tests/Unit/{{ .Entity }}_test.go` + "`" + ` | that reads authorize before the Model is queried |
+| ` + "`" + `database/factories/{{ .Entity }}Factory.go` + "`" + ` | the rows a test or a seeder builds, written through a Grant |
+| ` + "`" + `database/seeders/{{ .Entity }}Seeder.go` + "`" + ` | the rows a deploy seeds, through the factory, safe to run twice |
+{{- if .Tenant }}
+| ` + "`" + `tests/Feature/{{ .Entity }}TenantScope_test.go` + "`" + ` | that another tenant's Grant reads none of this tenant's rows |
+{{- end }}
 
 ## Its fields
 

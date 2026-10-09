@@ -547,6 +547,24 @@ require (
 type Controller struct{}
 `))
 
+	// The helper the skeleton's feature suite migrates a database with, which
+	// the tenant-isolation test a module ships calls. Here there is no
+	// application to migrate, so it skips: what the harness proves of that
+	// test is that it compiles against the module beside it.
+	writeInto(t, filepath.Join(root, "tests", "Feature", "migrate_test.go"), []byte(`package feature_test
+
+import (
+	"testing"
+
+	"github.com/arandu-io/hesape/database"
+)
+
+func migratedDB(t *testing.T) *database.DB {
+	t.Skip("the compile harness has no application to migrate")
+	return nil
+}
+`))
+
 	// The contract a generated seeder is written against: the interface it
 	// proves it satisfies, and the dependencies its signature takes -- the
 	// connection among them, which a seeder that goes through the factory

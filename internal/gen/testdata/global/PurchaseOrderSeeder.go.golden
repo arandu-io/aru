@@ -1,0 +1,51 @@
+package seeders
+
+import (
+	"context"
+
+	"github.com/arandu-io/hesape/auth"
+
+	models "example.test/project/app/Models"
+	policies "example.test/project/app/Policies"
+	factories "example.test/project/database/factories"
+)
+
+// PurchaseOrderSeeder seeds the purchase order rows this application needs to exist.
+//
+// A seeder writes, and a write needs an auth.Grant. This is one of the few
+// places auth.SystemGrant is legitimate -- there is no request and no
+// actor behind it -- and `aru doctor` allows it here
+// because of the directory this file is in, not because of what the function
+// is called. Anywhere else it is a warning that has to be answered with
+// //arandu:system-grant <reason>.
+//
+// Run must be safe to run twice. A seeder that fails on the second run cannot
+// be part of a deploy, and this one runs on every deploy that runs the first.
+type PurchaseOrderSeeder struct{}
+
+// Name is how the seeder is addressed on the command line.
+func (PurchaseOrderSeeder) Name() string { return "PurchaseOrderSeeder" }
+
+// Run creates the rows through the factory, in d.Tenant -- never a tenant this
+// file picked: a seeder that chooses its own seeds rows nobody can reach. A
+// table that already has rows is left as it is, which is what makes a second
+// run safe.
+func (PurchaseOrderSeeder) Run(ctx context.Context, d Deps) error {
+	seeded, err := models.PurchaseOrders(d.DB).Exists(ctx, auth.SystemGrant(policies.PurchaseOrderList, d.Tenant))
+	if err != nil || seeded {
+		return err
+	}
+	if _, err := factories.PurchaseOrders(d.DB).Count(10).Create(ctx, auth.SystemGrant(policies.PurchaseOrderCreate, d.Tenant)); err != nil {
+		return err
+	}
+
+	// arandu:begin custom
+	// Rows the factory's defaults do not describe go here: a fixed record, a
+	// state applied to some of them.
+	// arandu:end custom
+	return nil
+}
+
+// compile-time proof that the seeder honors the contract. A seeder that drifts
+// from the interface fails the build rather than failing when someone runs it.
+var _ Seeder = PurchaseOrderSeeder{}

@@ -77,8 +77,17 @@ The view compiler is part of this binary rather than something it downloads:
 one fewer thing to pin, verify and cache.
 
 One direct dependency: `gopkg.in/yaml.v3`, for the specification format. CI
-refuses a second one. 21,677 lines of production code and 10,737 of test,
-across 37 test files.
+refuses a second one.
+
+How large it is moves with every commit, so these are the commands rather than
+figures that would age without anybody noticing:
+
+```sh
+find . -name '*.go' -not -name '*_test.go' -not -path '*/testdata/*' \
+	-not -name '*.kyse.go' -exec cat {} + | wc -l                  # lines of production code
+find . -name '*_test.go' -not -path '*/testdata/*' -exec cat {} + | wc -l   # lines of test
+find . -name '*_test.go' -not -path '*/testdata/*' | wc -l                  # test files
+```
 
 The authentication screens are not here — `go run github.com/arandu-io/ui@latest auth`
 publishes them into your project, and they are yours to edit from the moment

@@ -1,0 +1,52 @@
+package feature_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/arandu-io/hesape/auth"
+
+	models "example.test/project/app/Models"
+	policies "example.test/project/app/Policies"
+	factories "example.test/project/database/factories"
+)
+
+// TestPurchaseOrdersAreScopedByTenant stores purchase orders for one tenant and reads
+// them with another tenant's Grant. The rows exist and the queries run, and
+// nothing comes back: the model takes the tenant from the Grant and from
+// nowhere else, so to a second tenant the table is empty.
+//
+// It is the evidence for the line TestEveryTableWithATenantColumnIsOneThatFiltersByTenant
+// asks for: that one reads the catalogue and requires a claim for purchase_orders,
+// this one proves the claim.
+func TestPurchaseOrdersAreScopedByTenant(t *testing.T) {
+	db := migratedDB(t)
+	ctx := context.Background()
+
+	stored, err := factories.PurchaseOrders(db).Count(2).Create(ctx, auth.SystemGrant(policies.PurchaseOrderCreate, "tenant-a"))
+	if err != nil {
+		t.Fatalf("storing purchase orders for tenant-a: %v", err)
+	}
+
+	theirs := auth.SystemGrant(policies.PurchaseOrderList, "tenant-b")
+	found, err := models.PurchaseOrders(db).Get(ctx, theirs)
+	if err != nil {
+		t.Fatalf("listing as tenant-b: %v", err)
+	}
+	if len(found) != 0 {
+		t.Errorf("tenant-b read %d of tenant-a's purchase orders", len(found))
+	}
+	for _, row := range stored {
+		if _, err := models.PurchaseOrders(db).FindOrFail(ctx, theirs, row.ID); err == nil {
+			t.Errorf("tenant-b found tenant-a's purchase order %s by its id", row.ID)
+		}
+	}
+
+	ours, err := models.PurchaseOrders(db).Get(ctx, auth.SystemGrant(policies.PurchaseOrderList, "tenant-a"))
+	if err != nil || len(ours) < len(stored) {
+		t.Errorf("tenant-a read %d of its %d purchase orders (%v): the scope hides rows from their own tenant", len(ours), len(stored), err)
+	}
+}
+
+// arandu:begin custom
+// arandu:end custom

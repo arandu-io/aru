@@ -63,9 +63,14 @@ func TestGolden(t *testing.T) {
 	}{
 		{"tenant", true, 16},
 		{"global", false, 15},
+		{"nested", true, 16},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			files, err := gen.Generate(spec(c.tenant))
+			m := spec(c.tenant)
+			if c.name == "nested" {
+				m.Parent = "suppliers"
+			}
+			files, err := gen.Generate(m)
 			if err != nil {
 				t.Fatalf("Generate: %v", err)
 			}

@@ -13,7 +13,7 @@ import (
 
 // makeModuleUsage is the usage line of make:module, in the dispatch table and in
 // its refusal, naming every flag the command accepts.
-const makeModuleUsage = `aru make:module <name> --fields "title:string!,amount:money" [--tenant] [--force] [--dry-run]`
+const makeModuleUsage = `aru make:module <name> --fields "title:string!,amount:money" [--tenant] [--parent=<resource>] [--force] [--dry-run]`
 
 // makeModule generates a module: Model-backed entity, policy, service, request,
 // routes, handlers and tests.
@@ -26,6 +26,7 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 	fs.SetOutput(stderr)
 	fields := fs.String("fields", "", `the fields, as "name:type" separated by commas. Suffix ! for required, u for unique`)
 	tenant := fs.Bool("tenant", false, "scope every query by the tenant in the Grant")
+	parent := fs.String("parent", "", "nest the module under this resource, as the route table names it: projects")
 	force := fs.Bool("force", false, "overwrite existing files, preserving the custom blocks")
 	dryRun := fs.Bool("dry-run", false, "print what would be written, and write nothing")
 
@@ -71,6 +72,7 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 		Fields:     parsed,
 		Tenant:     *tenant,
 		ModulePath: modulePath,
+		Parent:     strings.ToLower(strings.ReplaceAll(*parent, "_", "-")),
 		Generator:  version,
 	})
 	if err != nil {
@@ -145,7 +147,7 @@ Then, by hand, because the wiring is meant to be readable -- four lines:
 
   bootstrap/app.go -- in the routes.Deps literal
 
-      %s: controllers.New%s(services.New%s(db)),
+      %s: controllers.New%s(%s),
 
   database/seeders/seeders.go -- in the registry, and in DatabaseSeeder's
   list if it should run by default
@@ -155,7 +157,7 @@ Then, by hand, because the wiring is meant to be readable -- four lines:
 They name two packages a file may not import yet:
 "github.com/arandu-io/framework/http/middleware" in routes/web.go, and
 "%s/app/Services" in bootstrap/app.go.
-%s
+%s%s
 The migration is not one of them: %s registers itself in its own init, and
 nothing lists it. What it needs is to be linked -- something has to import
 database/migrations, or Go leaves the package, and its init, out of the binary.
@@ -168,12 +170,37 @@ Then:
 		m.Name, count,
 		m.PolicyType(),
 		m.Entity(), m.Controller(),
-		m.Resource(), m.Entity(),
-		m.Entity(), m.Controller(), m.ServiceType(),
+		m.RouteResource(), m.Entity(),
+		m.Entity(), m.Controller(), serviceConstruction(m),
 		m.Entity(),
 		m.ModulePath,
+		nestedNote(m),
 		tenantClaim(m),
 		m.MigrationType())
+}
+
+// serviceConstruction is how bootstrap/app.go builds the module's service:
+// with the connection, and for a nested module with the service its parent is
+// loaded through.
+func serviceConstruction(m gen.Module) string {
+	if m.Parent != "" {
+		return fmt.Sprintf("services.New%s(db, services.New%s(db))", m.ServiceType(), m.ParentServiceType())
+	}
+	return fmt.Sprintf("services.New%s(db)", m.ServiceType())
+}
+
+// nestedNote says what a nested module leans on, and is empty for one that
+// does not nest.
+func nestedNote(m gen.Module) string {
+	if m.Parent == "" {
+		return ""
+	}
+	return fmt.Sprintf(`
+The module nests under %[1]s. The listing, the form and the store answer at
+/%[1]s/{%[2]s}/%[3]s and the record at /%[3]s/{%[4]s}. The service loads the
+%[2]s through %[5]s.Get, under its own policy, and lists and creates by the
+one it loaded -- so %[1]s has to be a module of its own, written first.
+`, m.Parent, m.ParentParam(), m.Resource(), m.MemberParam(), m.ParentServiceType())
 }
 
 // tenantClaim is the line to paste for a module generated with --tenant, and it

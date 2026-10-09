@@ -1,0 +1,74 @@
+package models
+
+import (
+	"log/slog"
+	"time"
+
+	"github.com/arandu-io/hesape/database/model"
+)
+
+// PurchaseOrder is one row of purchase_orders.
+//
+// It embeds the model, so a row returned by a query carries the connection and
+// can be saved again. Build a new row with PurchaseOrders(db).New(): a struct
+// literal has no connection and its write methods return model.ErrUnwired.
+//
+// PurchaseOrders, PurchaseOrderQuery and PurchaseOrderCollection
+// are generated beside this file, in PurchaseOrderQuery.go, by aru model:build.
+type PurchaseOrder struct {
+	model.Model
+
+	ID            string    `db:"id"`
+	TenantID      string    `db:"tenant_id"`
+	SupplierID    string    `db:"supplier_id"`
+	Reference     string    `db:"reference"`
+	SupplierEmail string    `db:"supplier_email"`
+	Total         int64     `db:"total"`
+	Approved      bool      `db:"approved"`
+	Notes         string    `db:"notes"`
+	DeliveryDate  time.Time `db:"delivery_date"`
+	CreatedAt     time.Time `db:"created_at"`
+	UpdatedAt     time.Time `db:"updated_at"`
+}
+
+// purchaseOrderTable is the table PurchaseOrder is a row of.
+//
+// UniqueIDs makes the primary key text the model fills on insert.
+// The tenant scope is left at its tenant_id default.
+var purchaseOrderTable = model.NewTable(model.TableSpec{
+	Name:      "purchase_orders",
+	New:       func() model.Entity { return new(PurchaseOrder) },
+	UniqueIDs: true,
+	// arandu:begin custom
+	// Hidden, PerPage, Scopes, Events and the rest of model.TableSpec go here.
+	// arandu:end custom
+})
+
+// LogValue implements slog.LogValuer, so passing the whole entity to a log call
+// records the identifiers and nothing else. Add any sensitive field to the
+// custom block below and it stays out of logs, dumps and the debug page.
+func (p PurchaseOrder) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("id", p.ID),
+		slog.String("tenant", p.TenantID),
+	)
+}
+
+// arandu:begin custom
+// Local scopes are methods on *PurchaseOrderQuery, relations are registered
+// on purchaseOrderTable in an init function, and MarshalJSON, computed fields
+// and anything else about this entity go here too.
+//
+// So do the rules of the entity itself: an invariant, a derived value, a
+// transition that changes only this row's fields. They are pure -- no
+// database, no network, no Grant, and no clock read here: the time is an
+// argument -- and the service calls them between the policy and the save.
+//
+//	func (p *PurchaseOrder) Approve(at time.Time) error {
+//		if !p.ApprovedAt.IsZero() {
+//			return errors.New("this purchase order is already approved")
+//		}
+//		p.ApprovedAt = at
+//		return nil
+//	}
+// arandu:end custom

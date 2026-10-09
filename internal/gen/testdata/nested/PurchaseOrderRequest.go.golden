@@ -1,0 +1,41 @@
+package requests
+
+import (
+	"time"
+
+	"github.com/arandu-io/hesape/validation"
+)
+
+// PurchaseOrderRequest is the input contract of creation and update, which take the
+// same fields. ctx.Bind fills it through the form tags, and only those: there is
+// no mass assignment, so a key the client sends and this struct does not
+// declare goes nowhere.
+type PurchaseOrderRequest struct {
+	Reference     string    `form:"reference"`
+	SupplierEmail string    `form:"supplier_email"`
+	Total         int64     `form:"total"`
+	Approved      bool      `form:"approved"`
+	Notes         string    `form:"notes"`
+	DeliveryDate  time.Time `form:"delivery_date"`
+}
+
+// Validate reports the errors per field.
+func (r PurchaseOrderRequest) Validate() validation.Errors {
+	e := validation.Errors{}
+	validation.Required(e, "reference", r.Reference)
+	validation.MaxLen(e, "reference", r.Reference, 255)
+	validation.Required(e, "supplier_email", r.SupplierEmail)
+	validation.Email(e, "supplier_email", r.SupplierEmail)
+	validation.MaxLen(e, "supplier_email", r.SupplierEmail, 254)
+	validation.NotZero(e, "total", r.Total)
+	validation.MaxLen(e, "notes", r.Notes, 5000)
+
+	// arandu:begin custom
+	// Domain rules go here: ranges, formats, cross-field checks.
+	// arandu:end custom
+
+	return e
+}
+
+// Compile-time proof that the request honors the validation contract.
+var _ validation.Validatable = PurchaseOrderRequest{}

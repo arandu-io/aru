@@ -37,6 +37,9 @@ type {{.Entity}} struct {
 {{- if .Tenant}}
 	TenantID  string    ` + "`" + `db:"tenant_id"` + "`" + `
 {{- end}}
+{{- if .Parent}}
+	{{.ParentField}} string ` + "`" + `db:"{{.ParentColumn}}"` + "`" + `
+{{- end}}
 {{- range .Fields}}
 	{{.GoName}} {{.GoType}} ` + "`" + `db:"{{.Column}}"` + "`" + `
 {{- end}}
@@ -220,6 +223,24 @@ func (s *{{.ServiceType}}) Get(ctx context.Context, actor auth.Subject, id strin
 	return found, nil
 }
 
+{{- if .Parent}}
+// List returns one page of the {{.Table}} of one {{.ParentParam}}, newest
+// first, and where the previous and the next page are. The {{.ParentParam}} is
+// loaded under its own policy first, and the page is filtered by the one that
+// was loaded -- not by the id the path carried.
+func (s *{{.ServiceType}}) List(ctx context.Context, actor auth.Subject, {{.ParentArg}} string, page int) (models.{{.Entity}}Collection, *pagination.Page, error) {
+	parent, err := s.parents.Get(ctx, actor, {{.ParentArg}})
+	if err != nil {
+		return nil, nil, err
+	}
+	g, err := auth.Authorize(ctx, s.policy, actor, policies.{{.Entity}}List, models.{{.Entity}}{ {{- .ParentField}}: parent.ID})
+	if err != nil {
+		return nil, nil, err
+	}
+	return models.{{.Constructor}}(s.db).Where("{{.ParentColumn}}", parent.ID).Latest().OrderBy("id").
+		SimplePaginate(ctx, g, {{.Unexported}}PerPage, page, pagination.Options{})
+}
+{{- else}}
 // List returns one page of {{.Table}}, newest first, and where the
 // previous and the next page are.
 func (s *{{.ServiceType}}) List(ctx context.Context, actor auth.Subject, page int) (models.{{.Entity}}Collection, *pagination.Page, error) {
@@ -230,6 +251,7 @@ func (s *{{.ServiceType}}) List(ctx context.Context, actor auth.Subject, page in
 	return models.{{.Constructor}}(s.db).Latest().OrderBy("id").
 		SimplePaginate(ctx, g, {{.Unexported}}PerPage, page, pagination.Options{})
 }
+{{- end}}
 
 // Update changes the mutable fields.
 //
@@ -298,22 +320,40 @@ const serviceBlocks = `{{define "serviceStruct"}}// {{.ServiceType}} holds the b
 type {{.ServiceType}} struct {
 	db     *database.DB
 	policy policies.{{.PolicyType}}
+{{- if .Parent}}
+	// parents loads the {{.ParentParam}} a {{.Human}} belongs to, under the
+	// {{.ParentParam}}'s own policy: the parent in a path is where the person
+	// navigated, never whose data it is.
+	parents *{{.ParentServiceType}}
+{{- end}}
 }
 
 // New{{.ServiceType}} wires the service.
-func New{{.ServiceType}}(db *database.DB) *{{.ServiceType}} {
-	return &{{.ServiceType}}{db: db}
+func New{{.ServiceType}}(db *database.DB{{if .Parent}}, parents *{{.ParentServiceType}}{{end}}) *{{.ServiceType}} {
+	return &{{.ServiceType}}{db: db{{if .Parent}}, parents: parents{{end}}}
 }
 
 {{end}}{{define "serviceCreate"}}// Create walks the mandatory path: validate, Authorize, Grant, Model.
 // There is no other order that compiles.
-func (s *{{.ServiceType}}) Create(ctx context.Context, actor auth.Subject, in requests.{{.Request}}) (*models.{{.Entity}}, error) {
+func (s *{{.ServiceType}}) Create(ctx context.Context, actor auth.Subject, {{if .Parent}}{{.ParentArg}} string, {{end}}in requests.{{.Request}}) (*models.{{.Entity}}, error) {
 	if errs := in.Validate(); errs.Any() {
 		return nil, errs
 	}
+{{- if .Parent}}
+
+	// The {{.ParentParam}} is loaded through its own service, so one this
+	// subject may not see is a refusal here and never a row under it.
+	parent, err := s.parents.Get(ctx, actor, {{.ParentArg}})
+	if err != nil {
+		return nil, err
+	}
+{{- end}}
 
 	var proposed models.{{.Entity}}
 	s.fill(&proposed, in)
+{{- if .Parent}}
+	proposed.{{.ParentField}} = parent.ID
+{{- end}}
 	g, err := auth.Authorize(ctx, s.policy, actor, policies.{{.Entity}}Create, proposed)
 	if err != nil {
 		return nil, err
@@ -324,6 +364,9 @@ func (s *{{.ServiceType}}) Create(ctx context.Context, actor auth.Subject, in re
 		return nil, err
 	}
 	s.fill(record, in)
+{{- if .Parent}}
+	record.{{.ParentField}} = parent.ID
+{{- end}}
 {{- if .Tenant}}
 	// The tenant comes from the Grant, never from the request or the subject
 	// directly. The model writes the same value over the insert attributes.
@@ -435,7 +478,13 @@ import (
 	views "{{.ViewsImport}}"
 )
 
-// {{.Controller}} answers the seven routes of the {{.Resource}} resource.
+// {{.Controller}} answers the seven routes of the {{.RouteResource}} resource.
+{{- if .Parent}}
+//
+// It nests under {{.Parent}}, shallow: the listing, the form and the store
+// read the {{.ParentParam}} from the path, and the four that act on one record
+// read the record alone.
+{{- end}}
 //
 // It is thin on purpose: read the request, call the service, render. There is no
 // repository here and there cannot be one -- hhttp.Context carries no database
@@ -479,8 +528,13 @@ var (
 
 // Index renders the listing, one page at a time.
 func (c *{{.Controller}}) Index(ctx *hhttp.Context) error {
+{{- if .Parent}}
+	// The {{.ParentParam}} the person navigated to. The service loads it under
+	// its own policy and lists by the one it loaded.
+	parent := ctx.Param("{{.ParentParam}}")
+{{- end}}
 	who, _ := ctx.User()
-	found, page, err := c.svc.List(ctx.Ctx(), who, pagination.ResolveCurrentPage(ctx.Request.URL, ""))
+	found, page, err := c.svc.List(ctx.Ctx(), who, {{if .Parent}}parent, {{end}}pagination.ResolveCurrentPage(ctx.Request.URL, ""))
 	if err != nil {
 		return err
 	}
@@ -492,15 +546,15 @@ func (c *{{.Controller}}) Index(ctx *hhttp.Context) error {
 	return ctx.View("{{.ViewName "index"}}", views.{{.ViewData "index"}}{
 		Page: view.New(ctx, "{{.HumansTitle}}"),
 		{{.Plural}}: rows,
-		NewURL:     ctx.URL("{{.RouteName "create"}}"),
-		NextURL:    page.SetPath(ctx.URL("{{.RouteName "index"}}")).NextPageURL(),
+		NewURL:     ctx.URL("{{.RouteName "create"}}"{{if .Parent}}, parent{{end}}),
+		NextURL:    page.SetPath(ctx.URL("{{.RouteName "index"}}"{{if .Parent}}, parent{{end}})).NextPageURL(),
 	})
 }
 
 // Show renders one record.
 func (c *{{.Controller}}) Show(ctx *hhttp.Context) error {
 	who, _ := ctx.User()
-	found, err := c.svc.Get(ctx.Ctx(), who, ctx.Param("id"))
+	found, err := c.svc.Get(ctx.Ctx(), who, ctx.Param("{{.MemberParam}}"))
 	if err != nil {
 		return err
 	}
@@ -508,7 +562,7 @@ func (c *{{.Controller}}) Show(ctx *hhttp.Context) error {
 	return ctx.View("{{.ViewName "show"}}", views.{{.ViewData "show"}}{
 		Page: view.New(ctx, "{{.HumanTitle}}"),
 		{{.Entity}}: c.row(ctx, found),
-		IndexURL:  ctx.URL("{{.RouteName "index"}}"),
+		IndexURL:  ctx.URL("{{.RouteName "index"}}"{{if .Parent}}, found.{{.ParentField}}{{end}}),
 		EditURL:   ctx.URL("{{.RouteName "edit"}}", found.ID),
 		DeleteURL: ctx.URL("{{.RouteName "destroy"}}", found.ID),
 	})
@@ -517,10 +571,13 @@ func (c *{{.Controller}}) Show(ctx *hhttp.Context) error {
 // Create renders the empty form, or the rejected one: the page carries what
 // was typed and the messages, from the flash the router left.
 func (c *{{.Controller}}) Create(ctx *hhttp.Context) error {
+{{- if .Parent}}
+	parent := ctx.Param("{{.ParentParam}}")
+{{- end}}
 	return ctx.View("{{.ViewName "create"}}", views.{{.ViewData "create"}}{
 		Page: view.New(ctx, "New {{.Human}}"),
-		IndexURL: ctx.URL("{{.RouteName "index"}}"),
-		StoreURL: ctx.URL("{{.RouteName "store"}}"),
+		IndexURL: ctx.URL("{{.RouteName "index"}}"{{if .Parent}}, parent{{end}}),
+		StoreURL: ctx.URL("{{.RouteName "store"}}"{{if .Parent}}, parent{{end}}),
 	})
 }
 
@@ -531,7 +588,7 @@ func (c *{{.Controller}}) Store(ctx *hhttp.Context) error {
 		return err
 	}
 	who, _ := ctx.User()
-	created, err := c.svc.Create(ctx.Ctx(), who, in)
+	created, err := c.svc.Create(ctx.Ctx(), who, {{if .Parent}}ctx.Param("{{.ParentParam}}"), {{end}}in)
 	if err != nil {
 		return err
 	}
@@ -541,7 +598,7 @@ func (c *{{.Controller}}) Store(ctx *hhttp.Context) error {
 // Edit renders the form filled in with the stored record.
 func (c *{{.Controller}}) Edit(ctx *hhttp.Context) error {
 	who, _ := ctx.User()
-	found, err := c.svc.Get(ctx.Ctx(), who, ctx.Param("id"))
+	found, err := c.svc.Get(ctx.Ctx(), who, ctx.Param("{{.MemberParam}}"))
 	if err != nil {
 		return err
 	}
@@ -561,7 +618,7 @@ func (c *{{.Controller}}) Update(ctx *hhttp.Context) error {
 		return err
 	}
 	who, _ := ctx.User()
-	updated, err := c.svc.Update(ctx.Ctx(), who, ctx.Param("id"), in)
+	updated, err := c.svc.Update(ctx.Ctx(), who, ctx.Param("{{.MemberParam}}"), in)
 	if err != nil {
 		return err
 	}
@@ -571,10 +628,23 @@ func (c *{{.Controller}}) Update(ctx *hhttp.Context) error {
 // Destroy removes the record.
 func (c *{{.Controller}}) Destroy(ctx *hhttp.Context) error {
 	who, _ := ctx.User()
-	if err := c.svc.Delete(ctx.Ctx(), who, ctx.Param("id")); err != nil {
+{{- if .Parent}}
+	// Read first: the listing to go back to is the {{.ParentParam}}'s, and the
+	// path of a member route does not carry it.
+	found, err := c.svc.Get(ctx.Ctx(), who, ctx.Param("{{.MemberParam}}"))
+	if err != nil {
+		return err
+	}
+	if err := c.svc.Delete(ctx.Ctx(), who, found.ID); err != nil {
+		return err
+	}
+	return ctx.RedirectRoute("{{.RouteName "index"}}", found.{{.ParentField}})
+{{- else}}
+	if err := c.svc.Delete(ctx.Ctx(), who, ctx.Param("{{.MemberParam}}")); err != nil {
 		return err
 	}
 	return ctx.RedirectRoute("{{.RouteName "index"}}")
+{{- end}}
 }
 
 // row turns the entity into what the markup renders: the text a cell shows and
@@ -637,7 +707,7 @@ var (
 // authorizes each read before it asks the Model for a query. A nil handle turns
 // an accidental query-before-policy into an immediate test failure.
 func TestEvery{{.Entity}}ReadRequiresAuthorization(t *testing.T) {
-	svc := services.New{{.ServiceType}}(nil)
+	svc := services.New{{.ServiceType}}(nil{{if .Parent}}, services.New{{.ParentServiceType}}(nil){{end}})
 	ctx := context.Background()
 	var anonymous auth.Subject
 
@@ -647,7 +717,7 @@ func TestEvery{{.Entity}}ReadRequiresAuthorization(t *testing.T) {
 			return err
 		},
 		"List": func() error {
-			_, _, err := svc.List(ctx, anonymous, 1)
+			_, _, err := svc.List(ctx, anonymous, {{if .Parent}}"{{.ParentParam}}", {{end}}1)
 			return err
 		},
 		"Delete": func() error {
@@ -804,6 +874,14 @@ Grant, and its tenant never comes from a path segment, a body, a query or a head
 {{- else }}
 This module is not tenant-scoped. That was declared in the specification, so a
 query here is global on purpose rather than by omission.
+{{- end }}
+{{- if .Parent }}
+
+It nests under ` + "`" + `{{ .Parent }}` + "`" + `: the listing, the form and the store read the
+` + "`" + `{{ .ParentParam }}` + "`" + ` from the path, and the service loads it through
+` + "`" + `{{ .ParentServiceType }}.Get` + "`" + ` under its own policy before it lists or creates by
+it. The row keeps it in ` + "`" + `{{ .ParentColumn }}` + "`" + `. The parent in a path is where the
+person navigated, never whose data it is.
 {{- end }}
 
 ## Reaching a record

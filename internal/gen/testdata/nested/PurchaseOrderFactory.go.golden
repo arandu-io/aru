@@ -1,0 +1,125 @@
+// Rendered by aru model:build for models.PurchaseOrder. Everything outside the custom block is rewritten on the next build.
+
+package factories
+
+import (
+	"context"
+	"time"
+
+	"github.com/arandu-io/hesape/auth"
+	"github.com/arandu-io/hesape/database/model"
+	factory "github.com/arandu-io/hesape/database/model/factories"
+	"github.com/arandu-io/hesape/faker"
+
+	models "example.test/project/app/Models"
+)
+
+// PurchaseOrderFactory builds rows of purchase orders, for tests and for seeding.
+//
+// Make builds rows and stores nothing. Create stores them, and takes the Grant
+// every write takes: the tenant comes off it, and a factory is no way around the
+// policy that guards the table.
+//
+// Every method returns a new factory, so a factory kept in a variable is never
+// changed by a caller that adds a state to it.
+type PurchaseOrderFactory struct{ f *factory.Factory }
+
+// PurchaseOrders returns the factory of purchase orders over db, with definePurchaseOrder as
+// its default state.
+//
+//	rows, err := factories.PurchaseOrders(db).Count(10).Create(ctx, g)
+//	one, err := factories.PurchaseOrders(db).State(func(p *models.PurchaseOrder) { ... }).MakeOne()
+//
+// The values come from a seeded faker -- the same rows on every run, so a
+// failure reproduces -- and Seed asks for others. The key is left empty: the
+// model draws a fresh one for every row it stores, so two batches never share
+// one, and Make builds rows that have none yet.
+func PurchaseOrders(db model.DB) *PurchaseOrderFactory {
+	return &PurchaseOrderFactory{f: factory.New(models.PurchaseOrders(db).Base(), func(f faker.Faker, row model.Entity) {
+		*row.(*models.PurchaseOrder) = definePurchaseOrder(f)
+	})}
+}
+
+// Count returns a factory that makes n rows.
+func (x *PurchaseOrderFactory) Count(n int) *PurchaseOrderFactory {
+	return &PurchaseOrderFactory{f: x.f.Count(n)}
+}
+
+// Seed returns a factory whose values start from seed.
+func (x *PurchaseOrderFactory) Seed(seed int64) *PurchaseOrderFactory {
+	return &PurchaseOrderFactory{f: x.f.Seed(seed)}
+}
+
+// State returns a factory that applies fn to every row after the default state.
+func (x *PurchaseOrderFactory) State(fn func(*models.PurchaseOrder)) *PurchaseOrderFactory {
+	return &PurchaseOrderFactory{f: x.f.State(func(row model.Entity) { fn(row.(*models.PurchaseOrder)) })}
+}
+
+// Sequence returns a factory that cycles through states, one per row.
+func (x *PurchaseOrderFactory) Sequence(states ...func(*models.PurchaseOrder)) *PurchaseOrderFactory {
+	adapted := make([]func(model.Entity), len(states))
+	for i, state := range states {
+		adapted[i] = func(row model.Entity) { state(row.(*models.PurchaseOrder)) }
+	}
+	return &PurchaseOrderFactory{f: x.f.Sequence(adapted...)}
+}
+
+// AfterMaking returns a factory that runs fn on each row once it is built.
+func (x *PurchaseOrderFactory) AfterMaking(fn func(*models.PurchaseOrder)) *PurchaseOrderFactory {
+	return &PurchaseOrderFactory{f: x.f.AfterMaking(func(row model.Entity) { fn(row.(*models.PurchaseOrder)) })}
+}
+
+// AfterCreating returns a factory that runs fn on each row once it is stored.
+func (x *PurchaseOrderFactory) AfterCreating(fn func(context.Context, auth.Grant, *models.PurchaseOrder) error) *PurchaseOrderFactory {
+	return &PurchaseOrderFactory{f: x.f.AfterCreating(func(ctx context.Context, g auth.Grant, row model.Entity) error {
+		return fn(ctx, g, row.(*models.PurchaseOrder))
+	})}
+}
+
+// Make returns the rows without storing any of them.
+func (x *PurchaseOrderFactory) Make() (models.PurchaseOrderCollection, error) {
+	rows, err := x.f.Make()
+	return x.collection(rows), err
+}
+
+// MakeOne returns one row without storing it, whatever Count says.
+func (x *PurchaseOrderFactory) MakeOne() (*models.PurchaseOrder, error) {
+	e, err := x.f.MakeOne()
+	row, _ := e.(*models.PurchaseOrder)
+	return row, err
+}
+
+// Create stores the rows and returns them.
+func (x *PurchaseOrderFactory) Create(ctx context.Context, g auth.Grant) (models.PurchaseOrderCollection, error) {
+	rows, err := x.f.Create(ctx, g)
+	return x.collection(rows), err
+}
+
+// CreateOne stores one row and returns it, whatever Count says.
+func (x *PurchaseOrderFactory) CreateOne(ctx context.Context, g auth.Grant) (*models.PurchaseOrder, error) {
+	e, err := x.f.CreateOne(ctx, g)
+	row, _ := e.(*models.PurchaseOrder)
+	return row, err
+}
+
+// collection converts the rows the core factory returns. It is a method of
+// its own so that Create, which spends a Grant, calls nothing but the core.
+func (x *PurchaseOrderFactory) collection(rows model.Rows) models.PurchaseOrderCollection {
+	return models.PurchaseOrderCollectionOf(rows)
+}
+
+// arandu:begin custom
+// definePurchaseOrder is the default state: every row the factory makes starts here,
+// and a State changes the part a test cares about. Named states go here too.
+func definePurchaseOrder(f faker.Faker) models.PurchaseOrder {
+	return models.PurchaseOrder{
+		Reference:     f.UserName(),
+		SupplierEmail: f.Email(),
+		Total:         int64(f.Int(1, 1000)),
+		Approved:      f.Bool(),
+		Notes:         f.UserName(),
+		DeliveryDate:  f.Time(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)),
+	}
+}
+
+// arandu:end custom

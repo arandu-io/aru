@@ -301,6 +301,14 @@ type Module struct {
 	// default, in every project that ran it. `aru generate` fills this from the
 	// specification, where a person or a model said so out loud.
 	Permissions map[string][]string
+	// Parent is the resource this module nests under, as the route table
+	// names it: "projects". Empty is a top-level module.
+	//
+	// A nested module registers as "projects.tasks", reads the parent from the
+	// path of its listing, form and store, and stores the parent's id in a
+	// column of its own; its service loads the parent through the parent's
+	// service, under the parent's policy, before it lists or creates by it.
+	Parent string
 	// Generator is the version of aru writing the module. The module's skill
 	// records it as its source, so a reader can tell which generator wrote the
 	// text. It is a field rather than read from the build for the reason Date
@@ -396,7 +404,43 @@ func (m Module) Table() string {
 // file under resources/views, the other is an entry in the route table. A page
 // rendered by a route with no name still has a view name, and store, update and
 // destroy are route names with no page at all.
-func (m Module) RouteName(action string) string { return m.Resource() + "." + action }
+func (m Module) RouteName(action string) string { return m.RouteResource() + "." + action }
+
+// RouteResource is the name the route table registers the module under:
+// "purchase-orders", or "projects.tasks" when it nests.
+func (m Module) RouteResource() string {
+	if m.Parent != "" {
+		return m.Parent + "." + m.Resource()
+	}
+	return m.Resource()
+}
+
+// MemberParam is the path parameter one record is read from: "id" on a
+// top-level module, the singular of the segment on a nested one -- the names
+// the router gives them.
+func (m Module) MemberParam() string {
+	if m.Parent != "" {
+		return ResourceParameter(m.Resource())
+	}
+	return "id"
+}
+
+// ParentParam is the path parameter the parent is read from: "project".
+func (m Module) ParentParam() string { return ResourceParameter(m.Parent) }
+
+// ParentArg is the Go parameter that carries it into the service: projectID.
+func (m Module) ParentArg() string { return Module{Name: m.ParentParam()}.Unexported() + "ID" }
+
+// ParentEntity is the parent's type: Project.
+func (m Module) ParentEntity() string { return exported(m.ParentParam()) }
+
+// ParentServiceType is the service the parent is loaded through.
+func (m Module) ParentServiceType() string { return m.ParentEntity() + "Service" }
+
+// ParentColumn and ParentField are the column the parent's id is stored in,
+// and the field of the entity that holds it: project_id, ProjectID.
+func (m Module) ParentColumn() string { return m.ParentParam() + "_id" }
+func (m Module) ParentField() string  { return m.ParentEntity() + "ID" }
 
 // Resource is the resource segment: the table with dashes instead of
 // underscores. It names the URL, the route names and the view directory, so all
@@ -676,6 +720,14 @@ func (m Module) Validate() error {
 	if m.ModulePath == "" {
 		return fmt.Errorf("the project module path is required")
 	}
+	if m.Parent != "" {
+		if !isSegment(m.Parent) {
+			return fmt.Errorf("parent %q is not a route segment: lowercase letters, digits and dashes, as the route table names it (projects)", m.Parent)
+		}
+		if m.Parent == m.Resource() {
+			return fmt.Errorf("%s cannot nest under itself", m.Resource())
+		}
+	}
 
 	seen := map[string]bool{}
 	for _, f := range m.Fields {
@@ -693,6 +745,9 @@ func (m Module) Validate() error {
 		switch f.Name {
 		case "id", "tenant_id", "created_at", "updated_at":
 			return fmt.Errorf("field %q is generated for every module; do not declare it", f.Name)
+		}
+		if m.Parent != "" && f.Name == m.ParentColumn() {
+			return fmt.Errorf("field %q is the parent's id, which a module nested under %s carries already; do not declare it", f.Name, m.Parent)
 		}
 	}
 	return nil

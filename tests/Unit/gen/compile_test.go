@@ -116,6 +116,14 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 	emit("aru make:module purchase_order --tenant", func() ([]gen.File, error) { return gen.Generate(tenantModule) })
 	emit("aru make:module stock_item", func() ([]gen.File, error) { return gen.Generate(globalModule) })
 
+	// A module nested under another: its service loads the parent through
+	// the parent's service, so the parent is generated first, as the printed
+	// note asks.
+	emit("aru make:module project --tenant", func() ([]gen.File, error) { return gen.Generate(compiled("project", true)) })
+	nested := compiled("task", true)
+	nested.Parent = "projects"
+	emit("aru make:module task --tenant --parent=projects", func() ([]gen.File, error) { return gen.Generate(nested) })
+
 	// A noun whose plural is itself. The constructor cannot be the plural --
 	// a function and the type would share one name in one package -- so it is
 	// MediaRecords, and the service, the factory and the seeder have to agree.
@@ -214,7 +222,7 @@ func TestTheGeneratedModuleCompiles(t *testing.T) {
 		{name: "InvoiceController", kind: gen.KindResource},
 		{name: "SettingsController", kind: gen.KindSingleton},
 		{name: "ExportController", kind: gen.KindInvokable},
-		{name: "TaskController", kind: gen.KindResource, parent: "projects", action: "close"},
+		{name: "MilestoneController", kind: gen.KindResource, parent: "projects", action: "close"},
 	} {
 		emit("aru make:controller "+c.name+" --"+string(c.kind), func() ([]gen.File, error) {
 			return gen.GenerateController(gen.Stub{

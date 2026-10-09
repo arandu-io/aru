@@ -322,6 +322,13 @@ func TestReferencesWalkTheEdges(t *testing.T) {
 			t.Errorf("references of Show = %v, missing %s", show, want)
 		}
 	}
+	// What Show itself reaches -- the view it renders -- is written inside it,
+	// and is not a place that refers to it.
+	for _, place := range show {
+		if strings.HasPrefix(place, controller+":") && place != fmt.Sprintf("%s:%d", controller, showLine) {
+			t.Errorf("references of Show include %s, a line of its own file", place)
+		}
+	}
 	policyPlaces := placesOf(t, root, got.results["policy"])
 	for _, want := range []string{"app/Services/InvoiceService.go:", "tests/Unit/Invoice_test.go:"} {
 		if !hasPrefix(policyPlaces, want) {

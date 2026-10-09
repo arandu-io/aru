@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 )
@@ -53,6 +54,44 @@ func TestHelpAndVersionSucceed(t *testing.T) {
 	}
 	if !strings.HasPrefix(stdout, "aru ") {
 		t.Errorf("version output = %q", stdout)
+	}
+}
+
+// TestAnUnstampedBuildReportsTheModuleVersion: `go install
+// github.com/arandu-io/aru@v0.66.0` does not pass -ldflags, and the binary it
+// leaves has to answer v0.66.0 rather than dev.
+//
+// The linker's stamp still wins when there is one, because the release
+// pipeline stamps exactly what it tags; and "(devel)", which is what a test
+// binary and some working-tree builds record, is not a version.
+func TestAnUnstampedBuildReportsTheModuleVersion(t *testing.T) {
+	installed := &debug.BuildInfo{Main: debug.Module{Path: "github.com/arandu-io/aru", Version: "v0.66.0"}}
+	devel := &debug.BuildInfo{Main: debug.Module{Path: "github.com/arandu-io/aru", Version: "(devel)"}}
+	pseudo := &debug.BuildInfo{Main: debug.Module{Path: "github.com/arandu-io/aru", Version: "v0.65.1-0.20261009120000-abcdef123456"}}
+
+	for _, c := range []struct {
+		name    string
+		stamped string
+		info    *debug.BuildInfo
+		ok      bool
+		want    string
+	}{
+		{"go install at a tag", "dev", installed, true, "v0.66.0"},
+		{"the linker stamped it", "v0.66.1", installed, true, "v0.66.1"},
+		{"a working tree", "dev", devel, true, "dev"},
+		{"a commit between tags", "dev", pseudo, true, "v0.65.1-0.20261009120000-abcdef123456"},
+		{"no build information", "dev", nil, false, "dev"},
+	} {
+		if got := versionFrom(c.stamped, c.info, c.ok); got != c.want {
+			t.Errorf("%s: versionFrom = %q, want %q", c.name, got, c.want)
+		}
+	}
+
+	for _, spelling := range []string{"version", "--version", "-v"} {
+		_, stdout, _ := exercise(t, spelling)
+		if stdout != "aru "+Version()+"\n" {
+			t.Errorf("aru %s printed %q, and Version() is %q", spelling, stdout, Version())
+		}
 	}
 }
 

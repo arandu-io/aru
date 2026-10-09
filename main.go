@@ -15,10 +15,40 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 )
 
-// version is set at build time with -ldflags "-X main.version=...".
+// version is set at build time with -ldflags "-X main.version=...". A build
+// the linker did not stamp reads it from the module information the toolchain
+// embeds instead -- see versionFrom -- so it is "dev" only when neither says.
 var version = "dev"
+
+func init() {
+	info, ok := debug.ReadBuildInfo()
+	version = versionFrom(version, info, ok)
+}
+
+// versionFrom answers the version a build reports: the one the linker stamped
+// when there is one, and otherwise the main module's version as the toolchain
+// recorded it.
+//
+// The release pipeline stamps its builds; `go install github.com/arandu-io/aru@v1.2.3`
+// does not, and without the second source that binary answered "dev" although
+// the toolchain knew exactly which release it built. A build of a working tree
+// is recorded as "(devel)" or as a pseudo-version, and the second is reported
+// as it is: it says which commit the binary came from, which "dev" never did.
+func versionFrom(stamped string, info *debug.BuildInfo, ok bool) string {
+	if stamped != "" && stamped != "dev" {
+		return stamped
+	}
+	if !ok || info == nil {
+		return stamped
+	}
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		return v
+	}
+	return stamped
+}
 
 // Version is what this build reports, for the check that refuses a CLI older
 // than a project asks for.

@@ -683,3 +683,28 @@ func TestTheEventRowIsAnIdentifier(t *testing.T) {
 		}
 	}
 }
+
+// TestTheGeneratedJobSaysWhoDispatchesIt: the doc comment on Dispatch<Name> is
+// the first place a person reads who calls it. It used to describe a call
+// inside database.Transaction -- a service's write -- and a handler that takes
+// a service imports app/Services, so the service calling back into app/Jobs is
+// an import cycle. It names the listener and the scheduled task instead.
+func TestTheGeneratedJobSaysWhoDispatchesIt(t *testing.T) {
+	file, err := gen.RenderJob(gen.JobSpec{
+		Type: "SettleInvoice", EventName: "invoice.settle", ModulePath: "example.test/project",
+		Services: []string{"Invoice"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(file.Content)
+	comment := body[strings.Index(body, "// DispatchSettleInvoice enqueues"):strings.Index(body, "func DispatchSettleInvoice(")]
+	for _, want := range []string{"a listener", "Schedule()", "never dispatches it", "import cycle"} {
+		if !strings.Contains(comment, want) {
+			t.Errorf("the doc comment on DispatchSettleInvoice does not say %q:\n%s", want, comment)
+		}
+	}
+	if strings.Contains(comment, "Called inside database.Transaction") {
+		t.Errorf("the doc comment on DispatchSettleInvoice still sends the call into a service's transaction:\n%s", comment)
+	}
+}

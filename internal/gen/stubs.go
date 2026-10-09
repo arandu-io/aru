@@ -125,7 +125,7 @@ func (s Stub) validateController() error {
 	}
 	if s.Parent != "" {
 		if s.Kind != KindResource && s.Kind != KindSingleton {
-			return fmt.Errorf("a %s controller does not nest: only a resource or a singleton has a parent", s.Kind)
+			return fmt.Errorf("%s controllers do not nest: only a resource or a singleton has a parent", s.Kind)
 		}
 		if !isSegment(s.Parent) {
 			return fmt.Errorf("parent %q is not a route segment: lowercase letters, digits and dashes, as the route table names it (projects)", s.Parent)
@@ -133,7 +133,7 @@ func (s Stub) validateController() error {
 	}
 	if s.Action != "" {
 		if s.Kind != KindResource {
-			return fmt.Errorf("an action acts on a record of a resource, and a %s controller has none: ask for a resource", s.Kind)
+			return fmt.Errorf("an action acts on a record of a resource, and %s controllers have none: ask for a resource", s.Kind)
 		}
 		if !isSegment(s.Action) {
 			return fmt.Errorf("action %q is not a route segment: lowercase letters, digits and dashes (publish)", s.Action)

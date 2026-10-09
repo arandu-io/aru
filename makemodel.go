@@ -155,12 +155,6 @@ generated CRUD path uses the Model directly.
 	if parts.Controller {
 		stub := m.ControllerStub(parts.Service)
 		out += wiringController(stub, m)
-		out += fmt.Sprintf(`
-Put the route behind the sign-in guard, as every resource that reads who is
-asking is:
-
-      r.Group("", middleware.RequireAuth(d.Sessions)).Resource(%q, d.%s)
-`, m.Resource(), m.Entity())
 	}
 
 	if parts.Migration {

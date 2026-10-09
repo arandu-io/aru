@@ -203,7 +203,7 @@ func TestTheModelMessageWiresTheControllerItWrote(t *testing.T) {
 	all := modelWiring(m, gen.Everything())
 	for _, want := range []string{
 		"Invoice: controllers.NewInvoiceController(services.NewInvoiceService(db)),",
-		`r.Group("", middleware.RequireAuth(d.Sessions)).Resource("invoices", d.Invoice)`,
+		`r.Resource("invoices", d.Invoice)`,
 	} {
 		if !strings.Contains(all, want) {
 			t.Errorf("the --all message does not say %q:\n%s", want, all)

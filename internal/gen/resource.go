@@ -225,8 +225,14 @@ import (
 func TestThe{{.Type}}AnswersOnlyWhatItLists(t *testing.T) {
 	record := &models.{{.Entity}}{ID: "record-1"{{if .Tenant}}, TenantID: "tenant-a"{{end}} }
 
+	// No server and no router: ctx.JSON is called on a context over a
+	// recorder, the way the router would call it, with a plain request.
+	request, err := http.NewRequest(http.MethodGet, "/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	w := httptest.NewRecorder()
-	ctx := hhttp.NewContext(w, httptest.NewRequest(http.MethodGet, "/", nil), nil, nil)
+	ctx := hhttp.NewContext(w, request, nil, nil)
 	if err := ctx.JSON(http.StatusOK, resources.New{{.Type}}(record)); err != nil {
 		t.Fatalf("ctx.JSON: %v", err)
 	}

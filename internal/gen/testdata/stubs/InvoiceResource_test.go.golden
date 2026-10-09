@@ -21,8 +21,14 @@ import (
 func TestTheInvoiceResourceAnswersOnlyWhatItLists(t *testing.T) {
 	record := &models.Invoice{ID: "record-1", TenantID: "tenant-a"}
 
+	// No server and no router: ctx.JSON is called on a context over a
+	// recorder, the way the router would call it, with a plain request.
+	request, err := http.NewRequest(http.MethodGet, "/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	w := httptest.NewRecorder()
-	ctx := hhttp.NewContext(w, httptest.NewRequest(http.MethodGet, "/", nil), nil, nil)
+	ctx := hhttp.NewContext(w, request, nil, nil)
 	if err := ctx.JSON(http.StatusOK, resources.NewInvoiceResource(record)); err != nil {
 		t.Fatalf("ctx.JSON: %v", err)
 	}

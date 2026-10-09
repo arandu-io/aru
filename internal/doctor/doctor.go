@@ -223,6 +223,10 @@ type file struct {
 	// Invoice. Empty when the name carries no entity, as in Controller.go.
 	entity string
 	isTest bool
+	// modelTypes are the type names declared in app/Models, across the whole
+	// project: models.InvoiceStatus(v) names one of them, and converting a
+	// value to it reaches no row.
+	modelTypes map[string]bool
 }
 
 // appCategories maps a directory under app/ to the suffix its files carry, so
@@ -474,7 +478,33 @@ func parseProject(dir string) ([]*file, []unreadable, error) {
 		return nil
 	})
 	sort.Slice(skipped, func(i, j int) bool { return skipped[i].rel < skipped[j].rel })
+	types := modelTypeNames(out)
+	for _, f := range out {
+		f.modelTypes = types
+	}
 	return out, skipped, err
+}
+
+// modelTypeNames are the types the files of app/Models declare.
+func modelTypeNames(files []*file) map[string]bool {
+	out := map[string]bool{}
+	for _, f := range files {
+		if f.category != "Models" || f.isTest {
+			continue
+		}
+		for _, decl := range f.ast.Decls {
+			general, ok := decl.(*ast.GenDecl)
+			if !ok || general.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range general.Specs {
+				if typed, ok := spec.(*ast.TypeSpec); ok {
+					out[typed.Name.Name] = true
+				}
+			}
+		}
+	}
+	return out
 }
 
 // at returns the file and line of a node, for a finding.

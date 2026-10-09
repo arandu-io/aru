@@ -41,3 +41,7 @@ type Ledger struct {
 func Ledgers(conn query.Connection, grammar query.Grammar, processor query.Processor) *model.Model[Ledger] {
 	return model.NewModel[Ledger]("ledgers", conn, grammar, processor)
 }
+
+// InvoiceStatus is the typed status of an invoice. A controller converting a
+// query parameter to it reaches no row.
+type InvoiceStatus string

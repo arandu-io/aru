@@ -98,6 +98,11 @@ func callsTheModelPackage(f *file, fn *ast.FuncDecl) bool {
 		if !ok {
 			return !found
 		}
+		if f.convertsToModelType(call, names) {
+			// models.InvoiceStatus(v) is a conversion to a type of the model
+			// layer, which reaches no row; its argument is still read.
+			return !found
+		}
 		if root := rootIdentifier(call.Fun); root != "" && names[root] {
 			found = true
 			return false
@@ -105,6 +110,18 @@ func callsTheModelPackage(f *file, fn *ast.FuncDecl) bool {
 		return !found
 	})
 	return found
+}
+
+// convertsToModelType reports whether call converts one value to a type the
+// model layer declares: one argument, and the callee a type name of app/Models
+// selected on the package.
+func (f *file) convertsToModelType(call *ast.CallExpr, names map[string]bool) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || len(call.Args) != 1 {
+		return false
+	}
+	pkg, ok := selector.X.(*ast.Ident)
+	return ok && names[pkg.Name] && f.modelTypes[selector.Sel.Name]
 }
 
 // modelPackageNames answers the local names the model layer was imported under.

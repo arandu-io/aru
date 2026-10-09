@@ -317,8 +317,8 @@ window.`,
 	// what somebody porting one class at a time types on the first day.
 	{
 		name:  "make:model",
-		usage: `aru make:model <Name> --fields "reference:string!u,total:money" [--tenant] [--migration] [--factory] [--force]`,
-		desc:  "generate the entity, and the migration and factory the flags ask for",
+		usage: makeModelUsage,
+		desc:  "generate the entity, and the migration, factory, seeder, policy and request the flags ask for",
 		run:   makeModel,
 	},
 	{

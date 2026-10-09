@@ -8,6 +8,13 @@ import (
 	"github.com/arandu-io/aru/internal/gen"
 )
 
+// makeModelUsage is the usage line of make:model, in the dispatch table and in
+// both refusals below. It names every flag the command accepts, the short forms
+// beside the long ones: a flag the usage line leaves out is one nobody finds
+// without reading the source.
+const makeModelUsage = `aru make:model <Name> --fields "reference:string!u,total:money" [--tenant] ` +
+	`[-m|--migration] [-f|--factory] [-s|--seed] [--policy] [--requests] [-a|--all] [--force] [--dry-run]`
+
 // makeModel writes the entity, and the parts the flags ask for.
 //
 // It is for somebody porting forty models who wants the struct and the migration
@@ -48,8 +55,7 @@ func makeModel(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("make:model: %w", err)
 	}
 	if name == "" {
-		return fmt.Errorf("usage: aru make:model <Name> --fields %q [--tenant] [--migration] [--factory] [--force]\n%s",
-			"reference:string!u,total:money", gen.TypeList())
+		return fmt.Errorf("usage: %s\n%s", makeModelUsage, gen.TypeList())
 	}
 	if err := checkFlatTree("make:model", name); err != nil {
 		return err
@@ -73,8 +79,7 @@ func makeModel(args []string, stdout, stderr io.Writer) error {
 	// struct is the schema, so a model with no fields describes nothing.
 	parsed, err := gen.ParseFields(*fields)
 	if err != nil {
-		return fmt.Errorf("make:model: %w\nusage: aru make:model <Name> --fields %q [--tenant] [--migration] [--factory] [--force]\n%s",
-			err, "reference:string!u,total:money", gen.TypeList())
+		return fmt.Errorf("make:model: %w\nusage: %s\n%s", err, makeModelUsage, gen.TypeList())
 	}
 
 	parts := gen.ModelParts{

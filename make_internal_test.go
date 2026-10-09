@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -771,5 +772,35 @@ func TestMakeModelKeepsTheMigrationItAlreadyWrote(t *testing.T) {
 	}
 	if names[0] != "2026_07_31_000001_create_invoices_table.go" {
 		t.Errorf("the migration was renamed to %s, and a migration id is immutable", names[0])
+	}
+}
+
+// TestTheMakeModelUsageNamesEveryFlag reads the flags make:model accepts from
+// the flag set itself -- what -h prints inside the command -- and requires the
+// usage line in the dispatch table to name each one.
+//
+// The flags are declared inside the function, so nothing outside it can list
+// them, and the usage line had stopped at --force while the command went on
+// to take --seed, --policy, --requests, --all, --dry-run and three short forms.
+func TestTheMakeModelUsageNamesEveryFlag(t *testing.T) {
+	var stderr strings.Builder
+	_ = makeModel([]string{"-h"}, &strings.Builder{}, &stderr)
+
+	c, found := lookup("make:model")
+	if !found {
+		t.Fatal("make:model is not in the dispatch table")
+	}
+	declared := regexp.MustCompile(`(?m)^  -(\S+)`).FindAllStringSubmatch(stderr.String(), -1)
+	if len(declared) == 0 {
+		t.Fatalf("the flag set printed no flag, so nothing was compared:\n%s", stderr.String())
+	}
+	for _, m := range declared {
+		spelled := "--" + m[1]
+		if len(m[1]) == 1 {
+			spelled = "-" + m[1] + "|"
+		}
+		if !strings.Contains(c.usage, spelled) {
+			t.Errorf("make:model accepts -%s and its usage line does not name it as %s: %s", m[1], spelled, c.usage)
+		}
 	}
 }

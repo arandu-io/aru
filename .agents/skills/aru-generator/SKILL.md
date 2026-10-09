@@ -65,28 +65,33 @@ all three from one response. Keep that shape when you add a check.
 Every byte the generator emits is pinned.
 
 ```sh
-ls internal/gen/testdata/stubs  | wc -l      # 21  the granular commands
-ls internal/gen/testdata/tenant | wc -l      # 13
-ls internal/gen/testdata/global | wc -l      # 13
+ls internal/gen/testdata/stubs  | wc -l      # 38  the granular commands
+ls internal/gen/testdata/tenant | wc -l      # 16
+ls internal/gen/testdata/global | wc -l      # 15
+ls internal/gen/testdata/nested | wc -l      # 16
 ```
 
-`TestGolden` (`tests/Unit/gen/golden_test.go:55`) renders one fixed
-specification twice — tenant-scoped and global — and compares against those
-directories. It checks the **count** before the contents:
+`TestGolden` (`tests/Unit/gen/golden_test.go`) renders one fixed
+specification three times — tenant-scoped, global, and tenant-scoped nested
+under `suppliers` — and compares against those directories. It checks the
+**count** before the contents, and the count is written per case:
 
 ```go
-if len(files) != 13 {
-	t.Fatalf("generated %d files, want 13", len(files))
-}
+{"tenant", true, 16},
+{"global", false, 15},
+{"nested", true, 16},
 ```
+
+A module is twelve files, the factory and the seeder, and -- only when the
+table has a tenant column -- the tenant-isolation feature test.
 
 The number is written down rather than derived, so a file appearing or
 disappearing stops the test instead of quietly rewriting the corpus. Adding a
 file to `Generate` means changing that number by hand, which is the review the
 number exists to force.
 
-`TestGoldenStubs` (`tests/Unit/gen/stubs_test.go:31`) does the same for the
-twenty-one stubs the granular commands emit, and
+`TestGoldenStubs` (`tests/Unit/gen/stubs_test.go`) does the same for the
+thirty-eight files the granular commands emit, and
 `TestGeneratedCodeIsDeterministic` runs one specification twice and requires
 identical bytes — without it the golden files would be flaky rather than useful.
 
@@ -137,11 +142,20 @@ GOWORK=off go test -count=1 ./tests/Unit/gen -run TestTheGeneratorNamesEverySymb
 
 The test reads every golden file against the catalog of the framework version
 the compile harness pins, and `TestTheGeneratedModuleCompiles` builds the result
--- `make:module` in both scopes and the granular commands among them, job, event,
-listener, mail, command and middleware -- against the versions a new project
-requires. A canonical path whose symbol the pinned component does not have yet
-fails there, and the template keeps the bridge path for that symbol until it
-does.
+-- every generator's output in one project, from `generatedProject` -- against
+the versions a new project requires: the skeleton's framework and hesape, and
+`gen.MCPRelease` of the mcp module. It runs `go build`, `go vet` and then the
+generated tests themselves, so a generated test that compiles and fails is a
+failure here. A canonical path whose symbol the pinned component does not have
+yet fails there, and the template keeps the bridge path for that symbol until
+it does.
+
+`TestTheDoctorIsSilentOnTheGeneratedProject` (`tests/Unit/gen/doctor_test.go`)
+pastes the wiring over the same corpus -- every constructor named in
+bootstrap, the migrations and the connector linked from main.go -- runs the
+doctor, and fails on any error and on any warning `internal/doctor/structure.go`
+declares. A new generator is added to `generatedProject`, and both tests then
+hold it.
 
 ## The one shape of each thing
 
@@ -150,11 +164,19 @@ copies that happen to match. `GenerateModel` and `Generate` write the same
 model; the migration goes through `MigrationSpec` whichever command asked for
 it.
 
-`TestTheGranularCommandsAndMakeModuleAgree` (`stubs_test.go:232`) checks five of
+`TestTheGranularCommandsAndMakeModuleAgree` (`stubs_test.go`) checks five of
 those pairings — the page (`view.New`, and no helper, session or CSRF issuer in
 either controller), the request's fields and rules, the migration, the model
 and the unit test. If you add a template that both paths can reach, add it there
 too.
+
+`make:service` renders the same `serviceStruct`, `serviceCreate` and
+`serviceFill` blocks (`serviceBlocks` in `templates.go`) the module's service
+is made of, so the Create a person meets in either file is one method, and
+`make:model --all` writes the module's service byte for byte
+(`TestEverythingWritesTheEntityAndThePathToIt`). `make:model --controller` and
+`make:controller --resource` write the controller from one template, through
+`Module.ControllerStub`.
 
 `GenerateModel` deliberately writes no repository, and there is no
 `--repository` flag: a repository pulls a policy with it, `aru doctor` reports
@@ -162,6 +184,29 @@ too.
 everything, which pulls a service to issue the Grant. The mandatory path —
 validate, Authorize, Grant, Model — is indivisible by construction, so a
 flag offering a subset of it would offer a broken project.
+
+## The generators, one by one
+
+Each writes into the tree the implementation contract names, with a test
+beside it, and prints its wiring.
+
+| command | writes | the shape |
+| --- | --- | --- |
+| `make:module <name> [--parent=<resource>]` | the twelve files, factory, seeder, and for `--tenant` `tests/Feature/<Entity>TenantScope_test.go` | `--parent` nests: the table carries `<parent>_id`, the service takes the parent's service and loads the parent through `Get` before `Create` and `List`, the controller reads the parent on the collection routes and the record on the member routes |
+| `make:model <Name> [-c] [-a]` | the entity, and the parts asked for | `-c` is the resource controller of `make:controller --resource`; `--all` adds the service and builds the controller with it |
+| `make:service <Name>` | `app/Services/<Name>Service.go`, `tests/Unit/<Name>Service_test.go` | one `Create(ctx, actor auth.Subject, in requests.X)`: validate, Authorize, Grant, Model; refuses without the model, policy and request; `fill` copies what the request and the model share by name and type |
+| `make:resource <Name>` | `app/Http/Resources/<Name>Resource.go` and test | `ToArray` lists every db column but the tenant; a collection answers each row through it; the test writes through `ctx.JSON` and compares keys exactly |
+| `make:notification <Name> [--channels=mail,database]` | `app/Notifications/<Name>.go` and test | on `hesape/notifications`: `Key`, `Via`, `ToMail` built from lines that `messages.Mail` renders itself, `ToDatabase`, an assertion per channel |
+| `make:client <Vendor>` | `app/Clients/<Vendor>Client.go`, `<Vendor>Fake.go` and test | typed config that redacts its token, a small interface, the client over `hesape/http/client`, a fake; the test uses the fake and runs the client against a faked factory |
+| `make:mcp-tool`, `make:mcp-resource`, `make:mcp-prompt` | `app/Mcp/<Name>.go` and test | a tool calls its service's `Get` with `r.Subject()`, a resource its `List`; the tests drive them through an `mcp.Server` |
+| `make:controller <Name> [--resource\|--singleton\|--invokable] [--parent] [--action]` | one controller | `Router.Resource`, `Router.Singleton`, `Router.Invokable` with `fhttp.Invoker`; a parent's and a record's parameters named by `gen.ResourceParameter`, which is hesape's inflector; a named action for `Router.ResourceAction` |
+
+Two things about the printed routes are deliberate. A method is written as the
+string the route table already uses -- `"POST"` -- because `routes/web.go`
+imports the framework's http package under the name `http`, and it has no
+`MethodPost`. And the mcp module is never added by editing `go.mod`:
+`make:mcp-*` reads it and, when the module is not required, prints
+`go get github.com/arandu-io/mcp@` and `gen.MCPRelease`.
 
 ## The custom block
 
@@ -208,11 +253,11 @@ it is also `internal/doctor/testdata/clean`. Break one and you break the other.
 - **The generated policy denies every action**, with no allow-everything branch
   to delete later.
 - **The generated request has no `Authorize`.**
-  `TestTheGeneratedRequestHasNoAuthorize` (`stubs_test.go:399`) is the thesis of
+  `TestTheGeneratedRequestHasNoAuthorize` (`stubs_test.go`) is the thesis of
   the product in one assertion: there is one path to a yes, and a form request is
   not on it.
 - **A generated action answers 501, never 200.**
-  `TestTheGeneratedActionsDoNotAnswerSuccess` (`stubs_test.go:331`) — an empty
+  `TestTheGeneratedActionsDoNotAnswerSuccess` (`stubs_test.go`) — an empty
   action that answered 200 would look like it worked in the browser, in the logs
   and on every dashboard, which is the failure nobody debugs.
 - **The generated test file is `<Entity>_test.go`, not `<Entity>Test.go`**, in
@@ -228,7 +273,7 @@ it is also `internal/doctor/testdata/clean`. Break one and you break the other.
   KEY`; MySQL refuses it, so the first statement of the first migration failed
   in every project and nothing noticed.
 - **An altering migration adds nothing `NOT NULL`.**
-  `TestAnAlteringMigrationAddsNothingNotNull` (`stubs_test.go:417`) — a `NOT
+  `TestAnAlteringMigrationAddsNothingNotNull` (`stubs_test.go`) — a `NOT
   NULL` column added to a table with rows fails on every row already there, and
   during a rollout the previous binary does not fill it in.
 - **Validation agrees with the column.** A value that passes validation has to

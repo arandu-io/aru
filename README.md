@@ -52,7 +52,7 @@ plus `help` and `version`. The native and inspection commands, in the words of `
 | `native:build` | compile the native application for one platform |
 | `vendor:publish` | show what the registered modules would publish into the project, and write it |
 | `skills:sync` | show how the project's skills differ from the skeleton's and its modules', and bring them in step |
-| `lsp` | serve Kyse diagnostics and completion to an editor |
+| `lsp` | serve Kyse diagnostics and completion, the project map and its navigation to an editor |
 | `action:list` | list the actions the source declares, with the constant and the line of each |
 | `imports:catalog` | print the import path each exported framework symbol should be named by |
 | `about` | report what the project is configured and wired with: versions, drivers, modules |

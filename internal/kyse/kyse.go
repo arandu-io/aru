@@ -255,6 +255,20 @@ func Directives() []string {
 	return out
 }
 
+// BlockEnds maps each block directive kyse knows to the directive that closes
+// it: "if" to "endif". A directive Directives returns that is in neither the
+// keys nor the values of this map is an inline one.
+//
+// It answers a copy, so a caller listing the set cannot change what the
+// parser accepts.
+func BlockEnds() map[string]string {
+	out := make(map[string]string, len(blockDirectives))
+	for open, end := range blockDirectives {
+		out[open] = end
+	}
+	return out
+}
+
 // OutputPath says where the Go generated from a view goes: under storage,
 // mirroring the tree of the source.
 //

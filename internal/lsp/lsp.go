@@ -1,4 +1,11 @@
-// Package lsp serves Kyse language intelligence over the Language Server Protocol.
+// Package lsp serves Kyse language intelligence and the map of an Arandu
+// project over the Language Server Protocol.
+//
+// Besides the protocol's own requests it answers two of its own:
+// arandu/projectGraph, the map of the project in the schema the client names
+// (the first when it names none), and arandu/catalog, the view directives and
+// the command line this binary knows. Everything is read from the disk of the
+// project: the server never runs a generator, a migration or the project.
 package lsp
 
 import (
@@ -7,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -21,6 +29,12 @@ const maxFrameSize = 16 << 20
 // Serve reads Language Server Protocol frames from in and writes protocol
 // responses and notifications to out. Messages are processed in input order.
 func Serve(in io.Reader, out io.Writer) error {
+	return ServeWith(in, out, Options{})
+}
+
+// ServeWith is Serve, with what the starting command knows: the catalogue it
+// answers to arandu/catalog.
+func ServeWith(in io.Reader, out io.Writer, options Options) error {
 	reader := bufio.NewReader(in)
 	initialized := false
 	shutdown := false
@@ -31,6 +45,7 @@ func Serve(in io.Reader, out io.Writer) error {
 	// rather than one read from whatever directory the process was started in.
 	var workspace *project
 	documents := map[string]string{}
+	doctorFindings := &doctorState{}
 	for {
 		body, err := readFrame(reader)
 		if err == io.EOF {
@@ -123,6 +138,9 @@ func Serve(in io.Reader, out io.Writer) error {
 					workspace = newProject(root)
 				}
 			}
+			if params.InitializationOptions != nil {
+				doctorFindings.enabled = params.InitializationOptions.DoctorDiagnostics
+			}
 			initialized = true
 			result := initializeResult{
 				Capabilities: serverCapabilities{
@@ -130,10 +148,19 @@ func Serve(in io.Reader, out io.Writer) error {
 					TextDocumentSync: textDocumentSyncOptions{
 						OpenClose: true,
 						Change:    1,
+						Save:      true,
 					},
 					DefinitionProvider: true,
 					CompletionProvider: completionOptions{
 						TriggerCharacters: []string{"@", "-"},
+					},
+					ReferencesProvider:      true,
+					DocumentSymbolProvider:  true,
+					WorkspaceSymbolProvider: true,
+					Experimental: experimentalCapabilities{
+						ProjectGraphSchemas: []int{1, doctor.MapSchemaVersion},
+						Catalog:             true,
+						DoctorDiagnostics:   doctorFindings.enabled,
 					},
 				},
 			}
@@ -156,7 +183,7 @@ func Serve(in io.Reader, out io.Writer) error {
 				continue
 			}
 			documents[params.TextDocument.URI] = *params.TextDocument.Text
-			if err := publishDiagnostics(out, params.TextDocument.URI, *params.TextDocument.Text); err != nil {
+			if err := publishDiagnostics(out, params.TextDocument.URI, *params.TextDocument.Text, doctorFindings.forDocument(params.TextDocument.URI)); err != nil {
 				return err
 			}
 		case "textDocument/didChange":
@@ -179,7 +206,17 @@ func Serve(in io.Reader, out io.Writer) error {
 			}
 			text := *params.ContentChanges[len(params.ContentChanges)-1].Text
 			documents[params.TextDocument.URI] = text
-			if err := publishDiagnostics(out, params.TextDocument.URI, text); err != nil {
+			if err := publishDiagnostics(out, params.TextDocument.URI, text, doctorFindings.forDocument(params.TextDocument.URI)); err != nil {
+				return err
+			}
+		case "initialized":
+			if err := doctorFindings.refresh(out, workspace, documents); err != nil {
+				return err
+			}
+		case "textDocument/didSave":
+			// The findings are read from the disk, and a save is when the disk
+			// changes under an editor.
+			if err := doctorFindings.refresh(out, workspace, documents); err != nil {
 				return err
 			}
 		case "textDocument/didClose":
@@ -235,7 +272,12 @@ func Serve(in io.Reader, out io.Writer) error {
 				continue
 			}
 			at := position{Line: *params.Position.Line, Character: *params.Position.Character}
-			source := documents[params.TextDocument.URI]
+			source, open := documents[params.TextDocument.URI]
+			if !open {
+				// A client may ask about a document it has not opened -- a
+				// peek from a list of results -- and the disk is what it holds.
+				source = readDocument(params.TextDocument.URI)
+			}
 			// The two languages are asked different questions. A view names
 			// components, layouts and assets, and all of them resolve here; Go
 			// source is the Go language server's, and the one thing it cannot
@@ -243,6 +285,9 @@ func Serve(in io.Reader, out io.Writer) error {
 			var locations []protocolLocation
 			if goSourceDocument(params.TextDocument.URI) {
 				locations = workspace.viewDefinitionsInGoSource(source, at)
+				if len(locations) == 0 && workspace != nil {
+					locations = workspace.mapDefinitionsInGoSource(params.TextDocument.URI, source, at)
+				}
 			} else {
 				locations = workspace.definitionsFor(source, at)
 			}
@@ -263,6 +308,43 @@ func Serve(in io.Reader, out io.Writer) error {
 				}
 				continue
 			}
+			schema, err := requestedSchema(message.Params)
+			if err != nil {
+				if err := writeError(out, message.ID, -32602, err.Error()); err != nil {
+					return err
+				}
+				continue
+			}
+			if schema == doctor.MapSchemaVersion {
+				// The second schema is answered from the analysis the
+				// navigation requests share, against the profile the project
+				// declares, and the doctor's diagnostics are brought up to
+				// date from the same read.
+				analysis, err := workspace.analysis()
+				if err != nil {
+					if err := writeError(out, message.ID, -32603, "Project analysis failed: "+err.Error()); err != nil {
+						return err
+					}
+					continue
+				}
+				projectMap, err := mapForProtocol(root, *analysis.Map)
+				if err != nil {
+					if err := writeError(out, message.ID, -32603, "Project map location failed: "+err.Error()); err != nil {
+						return err
+					}
+					continue
+				}
+				if err := writeResult(out, message.ID, projectMap); err != nil {
+					return err
+				}
+				if err := doctorFindings.refresh(out, workspace, documents); err != nil {
+					return err
+				}
+				continue
+			}
+			// The first schema is computed exactly as it always was, on the
+			// conventional profile and from a fresh read, so the bytes a
+			// client built against it parses do not move.
 			analysis, err := doctor.Analyze(root, doctor.Conventional)
 			if err != nil {
 				if err := writeError(out, message.ID, -32603, "Project analysis failed: "+err.Error()); err != nil {
@@ -280,6 +362,50 @@ func Serve(in io.Reader, out io.Writer) error {
 			if err := writeResult(out, message.ID, graph); err != nil {
 				return err
 			}
+		case "arandu/catalog":
+			if err := writeResult(out, message.ID, catalog(options)); err != nil {
+				return err
+			}
+		case "textDocument/references":
+			var params referenceParams
+			if !decodeObjectParams(message.Params, &params) ||
+				!validCompletionParams(completionParams{TextDocument: params.TextDocument, Position: params.Position}) {
+				if err := writeError(out, message.ID, -32602, "Invalid params"); err != nil {
+					return err
+				}
+				continue
+			}
+			at := position{Line: *params.Position.Line, Character: *params.Position.Character}
+			include := params.Context != nil && params.Context.IncludeDeclaration
+			source, open := documents[params.TextDocument.URI]
+			if !open {
+				source = readDocument(params.TextDocument.URI)
+			}
+			if err := writeResult(out, message.ID, workspace.referencesAt(params.TextDocument.URI, source, at, include)); err != nil {
+				return err
+			}
+		case "textDocument/documentSymbol":
+			var params documentSymbolParams
+			if !decodeObjectParams(message.Params, &params) || params.TextDocument == nil || params.TextDocument.URI == "" {
+				if err := writeError(out, message.ID, -32602, "Invalid params"); err != nil {
+					return err
+				}
+				continue
+			}
+			if err := writeResult(out, message.ID, workspace.documentSymbols(params.TextDocument.URI)); err != nil {
+				return err
+			}
+		case "workspace/symbol":
+			var params workspaceSymbolParams
+			if !decodeObjectParams(message.Params, &params) || params.Query == nil {
+				if err := writeError(out, message.ID, -32602, "Invalid params"); err != nil {
+					return err
+				}
+				continue
+			}
+			if err := writeResult(out, message.ID, workspace.workspaceSymbols(*params.Query)); err != nil {
+				return err
+			}
 		default:
 			if isRequest {
 				if err := writeError(out, message.ID, -32601, "Method not found"); err != nil {
@@ -292,7 +418,8 @@ func Serve(in io.Reader, out io.Writer) error {
 
 func requestOnlyMethod(method string) bool {
 	switch method {
-	case "initialize", "shutdown", "textDocument/completion", "textDocument/definition", "arandu/projectGraph":
+	case "initialize", "shutdown", "textDocument/completion", "textDocument/definition", "arandu/projectGraph",
+		"arandu/catalog", "textDocument/references", "textDocument/documentSymbol", "workspace/symbol":
 		return true
 	default:
 		return false
@@ -388,7 +515,8 @@ type initializeResult struct {
 }
 
 type initializeParams struct {
-	RootURI string `json:"rootUri"`
+	RootURI               string                 `json:"rootUri"`
+	InitializationOptions *initializationOptions `json:"initializationOptions"`
 }
 
 type serverCapabilities struct {
@@ -397,8 +525,24 @@ type serverCapabilities struct {
 	// DefinitionProvider is what makes go-to-definition appear in an editor.
 	// A client registers the feature from this alone, so the whole of what
 	// the adapter has to do about it is nothing.
-	DefinitionProvider bool              `json:"definitionProvider"`
-	CompletionProvider completionOptions `json:"completionProvider"`
+	DefinitionProvider      bool                     `json:"definitionProvider"`
+	CompletionProvider      completionOptions        `json:"completionProvider"`
+	ReferencesProvider      bool                     `json:"referencesProvider"`
+	DocumentSymbolProvider  bool                     `json:"documentSymbolProvider"`
+	WorkspaceSymbolProvider bool                     `json:"workspaceSymbolProvider"`
+	Experimental            experimentalCapabilities `json:"experimental"`
+}
+
+// experimentalCapabilities are the requests of this server outside the
+// protocol, so a client can tell what it may ask before it asks.
+type experimentalCapabilities struct {
+	// ProjectGraphSchemas are the schemas arandu/projectGraph answers.
+	ProjectGraphSchemas []int `json:"aranduProjectGraphSchemas"`
+	// Catalog reports that arandu/catalog is answered.
+	Catalog bool `json:"aranduCatalog"`
+	// DoctorDiagnostics reports whether the doctor's findings are being
+	// published, which a client asks for in its initializationOptions.
+	DoctorDiagnostics bool `json:"aranduDoctorDiagnostics"`
 }
 
 // protocolLocation is one place an editor can open, in the protocol's
@@ -411,6 +555,9 @@ type protocolLocation struct {
 type textDocumentSyncOptions struct {
 	OpenClose bool `json:"openClose"`
 	Change    int  `json:"change"`
+	// Save asks the client for didSave, which is when the doctor's findings
+	// are read again.
+	Save bool `json:"save"`
 }
 
 type completionOptions struct {
@@ -479,7 +626,11 @@ type diagnostic struct {
 	Range    protocolRange `json:"range"`
 	Severity int           `json:"severity"`
 	Source   string        `json:"source"`
-	Message  string        `json:"message"`
+	// Code is the doctor rule a finding carries, and CodeDescription where
+	// that rule is documented. The view compiler's diagnostics carry neither.
+	Code            string           `json:"code,omitempty"`
+	CodeDescription *codeDescription `json:"codeDescription,omitempty"`
+	Message         string           `json:"message"`
 }
 
 type protocolRange struct {
@@ -492,8 +643,18 @@ type position struct {
 	Character int `json:"character"`
 }
 
-func publishDiagnostics(out io.Writer, uri, source string) error {
-	diagnostics := diagnosticsFor(uri, source)
+// publishDiagnostics publishes what the view compiler says about a document,
+// with the doctor's findings for it when there are any: a client replaces a
+// document's diagnostics with each publication, so the two sources go out
+// together or one erases the other.
+func publishDiagnostics(out io.Writer, uri, source string, doctorFindings []diagnostic) error {
+	return writeDiagnostics(out, uri, append(diagnosticsFor(uri, source), doctorFindings...))
+}
+
+func writeDiagnostics(out io.Writer, uri string, diagnostics []diagnostic) error {
+	if diagnostics == nil {
+		diagnostics = []diagnostic{}
+	}
 	return writeFrame(out, notification{
 		JSONRPC: "2.0",
 		Method:  "textDocument/publishDiagnostics",
@@ -502,6 +663,19 @@ func publishDiagnostics(out io.Writer, uri, source string) error {
 			Diagnostics: diagnostics,
 		},
 	})
+}
+
+// readDocument reads a document the client has not opened, from the disk.
+func readDocument(uri string) string {
+	path, err := pathFromFileURI(uri, nativeFilePathStyle())
+	if err != nil {
+		return ""
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(body)
 }
 
 // goSourceDocument reports whether a document is Go the compiler reads.

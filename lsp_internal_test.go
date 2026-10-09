@@ -94,3 +94,46 @@ func readLSPTestFrames(t *testing.T, data []byte) [][]byte {
 		messages = append(messages, body)
 	}
 }
+
+// TestTheCatalogueIsTheCommandTable: what the language server answers an
+// editor is the table, one entry per command in its order, with the flags its
+// usage line names and nothing the usage line does not.
+func TestTheCatalogueIsTheCommandTable(t *testing.T) {
+	catalogue := commandCatalogue()
+	if len(catalogue) != len(commands) {
+		t.Fatalf("the catalogue holds %d commands, the table %d", len(catalogue), len(commands))
+	}
+	for i, entry := range catalogue {
+		if entry.Name != commands[i].name || entry.Usage != commands[i].usage || entry.Description != commands[i].desc {
+			t.Errorf("entry %d is %+v, the table says %s", i, entry, commands[i].name)
+		}
+		for _, flag := range entry.Flags {
+			if !strings.Contains(entry.Usage, flag) {
+				t.Errorf("%s lists %s, which its usage line does not name", entry.Name, flag)
+			}
+		}
+	}
+	for name, want := range map[string][]string{
+		"doctor":      {"--strict", "--profile", "--list"},
+		"native:run":  {"-server", "-dark"},
+		"serve":       {},
+		"font:search": {"--category", "--variable", "--limit", "--all"},
+	} {
+		found := false
+		for _, entry := range catalogue {
+			if entry.Name != name {
+				continue
+			}
+			found = true
+			if strings.Join(entry.Flags, " ") != strings.Join(want, " ") {
+				t.Errorf("%s has flags %v, want %v", name, entry.Flags, want)
+			}
+		}
+		if !found {
+			t.Errorf("%s is not in the catalogue", name)
+		}
+	}
+	if lspCommands == nil {
+		t.Fatal("runLSP has no catalogue to hand the server")
+	}
+}

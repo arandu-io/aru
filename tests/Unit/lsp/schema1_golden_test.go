@@ -18,7 +18,8 @@ var updateSchemaOneGolden = flag.Bool("update-schema-one-golden", false, "rewrit
 
 // TestProjectGraphWithoutAVersionIsSchemaOneByteForByte pins what a client
 // that names no schema receives: the exact bytes of the result, for three
-// shapes of request that say nothing about a version.
+// shapes of request that say nothing about a version and the one that names
+// the first.
 //
 // The goldens were written by the server before schema 2 existed, and they
 // are what an editor adapter built against schema 1 parses. A result that
@@ -36,6 +37,8 @@ func TestProjectGraphWithoutAVersionIsSchemaOneByteForByte(t *testing.T) {
 			"absent": ``,
 			"null":   `,"params":null`,
 			"empty":  `,"params":{}`,
+			// Naming the first schema is the same request as naming none.
+			"one": `,"params":{"schemaVersion":1}`,
 		} {
 			t.Run(fixture+"/"+name, func(t *testing.T) {
 				got := projectGraphResult(t, root, params)

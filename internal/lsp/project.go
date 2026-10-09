@@ -38,6 +38,11 @@ type project struct {
 	// that changed instead of the whole tree.
 	assetStamps  map[string]fileStamp
 	assetsByFile map[string][]registeredAsset
+
+	// analyzed is the last doctor analysis of the tree, with the map the
+	// navigation requests walk. It is revalidated by a stamp of every file
+	// the analysis reads.
+	analyzed *analysisCache
 }
 
 func newProject(root string) *project {

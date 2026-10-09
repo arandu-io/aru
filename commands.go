@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/arandu-io/aru/internal/gen"
+	"github.com/arandu-io/aru/internal/lsp"
 )
 
 // command is one CLI entry. The list is a slice, not a map: the order of the
@@ -254,7 +256,7 @@ window.`,
 	{
 		name:  "lsp",
 		usage: "aru lsp",
-		desc:  "serve Kyse diagnostics and completion to an editor",
+		desc:  "serve Kyse diagnostics and completion, the project map and its navigation to an editor",
 		run:   runLSP,
 	},
 	{
@@ -599,3 +601,37 @@ func list(tw *tabwriter.Writer, of []command) {
 		fmt.Fprintf(tw, "  %s\t%s\n", c.name, c.desc)
 	}
 }
+
+// usageFlag finds the flags a usage line names: a dash or two, then a letter,
+// where a word begins.
+var usageFlag = regexp.MustCompile(`(?:^|[\s\[|(])(--?[A-Za-z][A-Za-z0-9-]*)`)
+
+// commandCatalogue is the command table as the language server answers it to
+// an editor: each command's name, usage line, description and the flags its
+// usage line names.
+//
+// The flags are read from the usage line because the usage line is held to
+// name every flag a command parses, by a test that runs each one; a second
+// list here would be a list nobody checks.
+func commandCatalogue() []lsp.Command {
+	out := make([]lsp.Command, 0, len(commands))
+	for _, c := range commands {
+		flags := []string{}
+		seen := map[string]bool{}
+		for _, match := range usageFlag.FindAllStringSubmatch(c.usage, -1) {
+			if !seen[match[1]] {
+				seen[match[1]] = true
+				flags = append(flags, match[1])
+			}
+		}
+		out = append(out, lsp.Command{Name: c.name, Usage: c.usage, Description: c.desc, Flags: flags})
+	}
+	return out
+}
+
+// lspCommands is how runLSP reaches the table. It is assigned in init because
+// runLSP is an entry of the table, and a function the table's initializer
+// refers to cannot refer to the table in turn.
+var lspCommands func() []lsp.Command
+
+func init() { lspCommands = commandCatalogue }

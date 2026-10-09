@@ -58,9 +58,12 @@ Tests that hold it:
   recipes the decision names exist; no card teaches a bridge import; the
   webhook recipe stores an event for a listener and dispatches no job; the
   job recipe dispatches from a listener or a scheduled task and the service
-  card forbids importing `app/Jobs`; the event, listener and job cards name
-  the skeleton's examples, and every example a card names exists in the
-  pinned skeleton (`TestEveryExampleIsAFileOfThePinnedSkeleton`).
+  card forbids importing `app/Jobs`; the job card's `calledBy` names the
+  worker, a listener and a scheduled task, and no clause of any card or
+  recipe has a service dispatch a job
+  (`TestNoCardOrRecipeHasAServiceDispatchAJob`); the event, listener and
+  job cards name the skeleton's examples, and every example a card names
+  exists in the pinned skeleton (`TestEveryExampleIsAFileOfThePinnedSkeleton`).
 - `TestTheGeneratedModuleCompiles` (`tests/Unit/gen`) builds the job recipe
   written out: the listener that dispatches `SettlePurchaseOrder`, whose
   handler takes services, after the approval service stored its event.

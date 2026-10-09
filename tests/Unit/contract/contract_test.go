@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -180,6 +181,127 @@ func TestTheJobRecipeDispatchesFromWhereTheQueueIs(t *testing.T) {
 	if !strings.Contains(strings.Join(listener.Steps, "\n"), "listeners.Each") {
 		t.Errorf("the listener recipe does not say where the listener goes:\n%s", strings.Join(listener.Steps, "\n"))
 	}
+}
+
+// TestNoCardOrRecipeHasAServiceDispatchAJob: the job card's calledBy names
+// the worker, a listener and a scheduled task, and no text of any card or
+// recipe has a service dispatch a job, in any sentence. The recipe and the
+// service card were corrected once, and the job card is read by the same
+// tools, so a single "called by a service" left on it taught the import cycle
+// back.
+func TestNoCardOrRecipeHasAServiceDispatchAJob(t *testing.T) {
+	job, ok := contract.Lookup("job")
+	if !ok {
+		t.Fatal("no job card")
+	}
+	for _, entry := range job.CalledBy {
+		if strings.Contains(strings.ToLower(entry), "service") {
+			t.Errorf("the job card is called by %q, and a service that dispatches a job taking services is an import cycle", entry)
+		}
+	}
+	callers := strings.Join(job.CalledBy, "\n")
+	for _, want := range []string{"registerHandlers", "a listener", "Schedule()"} {
+		if !strings.Contains(callers, want) {
+			t.Errorf("the job card's calledBy does not name %q:\n%s", want, callers)
+		}
+	}
+
+	seen := map[string]bool{}
+	check := func(where, kind, text string) {
+		for _, who := range dispatchers(text, kind) {
+			seen[who] = true
+			if !allowedDispatcher[who] {
+				t.Errorf("%s has a %s dispatch a job: %q", where, who, text)
+			}
+		}
+	}
+	for _, c := range contract.Cards() {
+		for _, text := range c.CalledBy {
+			check("the "+c.Kind+" card's calledBy", "", text)
+		}
+		for _, text := range c.May {
+			check("the "+c.Kind+" card's may", c.Kind, text)
+		}
+		check("the "+c.Kind+" card's errors", c.Kind, c.Errors)
+	}
+	for _, r := range contract.Recipes() {
+		for _, step := range r.Steps {
+			check("the "+r.Name+" recipe", "", step)
+		}
+	}
+	// The scan has to recognise the dispatches the contract does teach, or a
+	// reader that finds no dispatch at all would pass on any text.
+	for _, who := range []string{"listener", "schedule"} {
+		if !seen[who] {
+			t.Errorf("the scan found no dispatch by a %s, and the contract teaches one: it reads nothing", who)
+		}
+	}
+}
+
+// TestTheDispatchReaderNamesWhoDispatches pins the reader the test above
+// relies on to the sentences the contract carried and carries.
+func TestTheDispatchReaderNamesWhoDispatches(t *testing.T) {
+	for _, c := range []struct{ kind, text, want string }{
+		{"service", "6. record an event or dispatch a job", "service"},
+		{"", "dispatch it from the service with the Grant it already holds", "service"},
+		{"", "work that follows a write: the service stores an event, and a listener built with the queue dispatches the job after the commit", "listener"},
+		{"", "work on a clock: a task in the Schedule() of app/Providers/AppServiceProvider.go dispatches it, with the queue the provider holds", "schedule"},
+		{"listener", "dispatch a job, with the queue it was built with", "listener"},
+		{"", "the service never dispatches the job: app/Jobs imports app/Services", ""},
+		{"", "the controller answers 2xx; the service dispatches no job", ""},
+		{"", "Dispatch<Name>: a listener once the write has committed", ""},
+		{"controller", "call a service", ""},
+	} {
+		got := strings.Join(dispatchers(c.text, c.kind), ",")
+		if got != c.want {
+			t.Errorf("%q (card %q) is a dispatch by %q, want %q", c.text, c.kind, got, c.want)
+		}
+	}
+}
+
+// allowedDispatcher is who holds the queue: a listener built with it, or a
+// task in a provider's Schedule().
+var allowedDispatcher = map[string]bool{"listener": true, "task": true, "schedule": true}
+
+var (
+	clauseBreak  = regexp.MustCompile(`; |: |, and |, or | -- `)
+	dispatchVerb = regexp.MustCompile(`\b(dispatch|dispatches|dispatched|dispatching|enqueue|enqueues)\b`)
+	agent        = regexp.MustCompile(`\b(service|listener|task|schedule|controller|command|worker|middleware|model|repository|policy|client|request)s?\b`)
+	fromAgent    = regexp.MustCompile(`^\s+(?:it|a job|the job)\s+from\s+(?:the|a)\s+(\w+)`)
+	jobObject    = regexp.MustCompile(`^\s+(a |the )?(job|it)\b`)
+)
+
+// dispatchers answers who each affirmative "dispatch a job" clause of text
+// has dispatching it: the last kind of code named before the verb, the one
+// after "from the", or kind -- the card the text belongs to -- when the clause
+// names nobody. A negated clause ("never dispatches", "dispatches no job") and
+// a Dispatch<Name> identifier are not a dispatch.
+func dispatchers(text, kind string) []string {
+	var out []string
+	for _, clause := range clauseBreak.Split(text, -1) {
+		loc := dispatchVerb.FindStringIndex(clause)
+		if loc == nil {
+			continue
+		}
+		before, after := strings.ToLower(clause[:loc[0]]), strings.ToLower(clause[loc[1]:])
+		if !jobObject.MatchString(after) {
+			continue
+		}
+		if strings.Contains(before, "never") || strings.Contains(before, " not ") {
+			continue
+		}
+		who := kind
+		if names := agent.FindAllStringSubmatch(before, -1); len(names) > 0 {
+			who = names[len(names)-1][1]
+		} else if m := fromAgent.FindStringSubmatch(after); m != nil {
+			who = strings.TrimSuffix(m[1], "s")
+		}
+		if who == "" {
+			who = "caller the text does not name"
+		}
+		out = append(out, who)
+	}
+	return out
 }
 
 // TestTheEventListenerAndJobCardsNameTheirExample: the skeleton carries one of

@@ -1681,9 +1681,43 @@ func unquoted(lit *ast.BasicLit) string {
 }
 
 // 9. A type with a secret in it needs to refuse to serialize itself, or the
-// first Dump publishes it on the debug page.
+// first log line that carries it publishes the secret.
+//
+// Reason. slog, fmt and observability.Dump print every field of a value, and
+// json.Marshal writes every exported one. A type holding a password or a token
+// that reaches one of them leaks it, and only the type can promise it never
+// does: LogValue and MarshalJSON on it hold for every caller.
+//
+// Scope. Struct types under app/, tests excluded, with a field whose name
+// carries a sensitive word (sensitiveWords, matched as a whole word, singular
+// or plural) and whose type can hold one -- a number, a boolean or a time
+// cannot. The type is reported only when a value of it reaches a log or JSON
+// sink somewhere in the project's own code (sinkReaches).
+//
+// Severity. A warning.
+//
+// Positive: Charge{Password, APIToken} handed to slog.Info.
+//
+// Negative: the same type that nothing logs or encodes; a type with LogValue
+// or MarshalJSON; a type only encoded to JSON whose sensitive fields are all
+// tagged json:"-".
+//
+// Formerly false: MaxTokens int and TargetTokens int, a count of a language
+// model's tokens; Module.documented and Doc.Undocumented, which merely
+// contain the letters of "document". The rule read the field name alone.
+//
+// Known false positive: an identifier named like the type -- charge for
+// Charge -- whose real type is another one, handed to a sink.
+//
+// Limit. The function, for what a value is: a name the signature or a
+// composite literal types, or a name that is the type's own in lower case. A
+// value reached through another type's field, returned from a call, or passed
+// to a helper that logs it is not followed.
+//
+// Correction: add LogValue() slog.Value and MarshalJSON to the type, or tag
+// the field json:"-" when JSON is the only sink.
 func sensitiveFieldNeedsRedaction(p *project) []Finding {
-	sensitive := []string{"password", "secret", "token", "document", "apikey", "api_key", "creditcard", "cpf", "cnpj"}
+	byType, byName := sinkReaches(p)
 
 	var out []Finding
 	for _, f := range p.files {
@@ -1700,12 +1734,16 @@ func sensitiveFieldNeedsRedaction(p *project) []Finding {
 			}
 
 			var found string
+			allHidden := true
 			for _, field := range st.Fields.List {
+				if cannotHoldASecret(field.Type) {
+					continue
+				}
 				for _, n := range field.Names {
-					lower := strings.ToLower(n.Name)
-					for _, s := range sensitive {
-						if strings.Contains(lower, s) {
-							found = n.Name
+					if sensitiveName(n.Name) {
+						found = n.Name
+						if !hiddenFromJSON(field) {
+							allHidden = false
 						}
 					}
 				}
@@ -1713,12 +1751,27 @@ func sensitiveFieldNeedsRedaction(p *project) []Finding {
 			if found == "" || hasRedaction(p.files, f.dir, ts.Name.Name) {
 				return
 			}
+
+			reaches := append(append([]sinkReach(nil), byType[f.dir+"."+ts.Name.Name]...), byName[strings.ToLower(ts.Name.Name)]...)
+			var reach *sinkReach
+			for i := range reaches {
+				if reaches[i].kind == jsonSink && allHidden {
+					continue
+				}
+				reach = &reaches[i]
+				break
+			}
+			if reach == nil {
+				return
+			}
 			file, line := f.at(ts)
 			out = append(out, Finding{
 				Rule: "sensitive-field-not-redacted", Severity: Warning,
 				File: file, Line: line,
-				Message: ts.Name.Name + " holds " + found + " and does not redact itself",
-				Why:     "one observability.Dump or one log line publishes it on the debug page. Add LogValue() slog.Value and MarshalJSON to the type, so no caller has to remember.",
+				Message: ts.Name.Name + " holds " + found + ", does not redact itself, and reaches " + reach.call +
+					" at " + reach.file + ":" + strconv.Itoa(reach.line),
+				Why: "that call prints every field the value has, so the secret is in the log line or the document it writes. " +
+					"Add LogValue() slog.Value and MarshalJSON to the type, so no caller has to remember; a field tagged json:\"-\" is enough when JSON is the only sink.",
 			})
 		})
 	}

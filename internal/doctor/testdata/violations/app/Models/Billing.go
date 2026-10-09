@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"log/slog"
+	"time"
+)
 
 // Charge is the entity, and it holds a secret with no redaction: one
 // observability.Dump publishes the token on the debug page.
@@ -18,3 +21,7 @@ type Charge struct {
 func (c Charge) Overdue(due time.Time) bool { return time.Now().After(due) }
 
 // arandu:end custom
+
+// logSettled hands the whole charge to a log line, which prints the password
+// and the token with it.
+func logSettled(c Charge) { slog.Info("charge settled", "charge", c) }

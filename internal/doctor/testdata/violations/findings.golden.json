@@ -347,15 +347,15 @@
     "rule": "sensitive-field-not-redacted",
     "severity": "warning",
     "file": "app/Models/Billing.go",
-    "line": 7,
-    "message": "Charge holds APIToken and does not redact itself",
-    "why": "one observability.Dump or one log line publishes it on the debug page. Add LogValue() slog.Value and MarshalJSON to the type, so no caller has to remember."
+    "line": 10,
+    "message": "Charge holds APIToken, does not redact itself, and reaches slog.Info at app/Models/Billing.go:27",
+    "why": "that call prints every field the value has, so the secret is in the log line or the document it writes. Add LogValue() slog.Value and MarshalJSON to the type, so no caller has to remember; a field tagged json:\"-\" is enough when JSON is the only sink."
   },
   {
     "rule": "model-rule-touches-io",
     "severity": "warning",
     "file": "app/Models/Billing.go",
-    "line": 18,
+    "line": 21,
     "message": "Charge.Overdue is an entity rule and reaches time.Now",
     "why": "a rule of the entity changes only the fields of the row; one that reaches the database or the network is a service hiding in the model, and one that reads the clock cannot be tested against a date. Take the time as a parameter and let the service read, write and call."
   },

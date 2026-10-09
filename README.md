@@ -40,7 +40,7 @@ compiled against is still the one it is running.
 | queues | `queue:work` `queue:listen` `queue:restart` `queue:pause` `queue:resume` `queue:clear` `queue:monitor` `queue:failed` `queue:retry` `queue:forget` `queue:flush` `queue:prune-failed` `queue:retry-batch` `queue:prune-batches` |
 | fonts | `font:add` `font:search` `font:info` `font:list` `font:remove` |
 | native application | `native:run` `native:dev` `native:build` |
-| modules, editor and inspection | `vendor:publish` `skills:sync` `lsp` `action:list` `imports:catalog` `about` |
+| modules, editor, assistant and inspection | `vendor:publish` `skills:sync` `lsp` `mcp` `action:list` `imports:catalog` `about` |
 | everything else | `key:generate` `schedule:list` `schedule:run` `route:list` `db:seed` `model:build` `view:build` |
 
 plus `help` and `version`. The native and inspection commands, in the words of `aru help`:
@@ -53,8 +53,9 @@ plus `help` and `version`. The native and inspection commands, in the words of `
 | `vendor:publish` | show what the registered modules would publish into the project, and write it |
 | `skills:sync` | show how the project's skills differ from the skeleton's and its modules', and bring them in step |
 | `lsp` | serve Kyse diagnostics and completion, the project map and its navigation to an editor |
+| `mcp` | serve the doctor, the project map, the implementation contract and the generators to an assistant over MCP |
 | `action:list` | list the actions the source declares, with the constant and the line of each |
-| `imports:catalog` | print the import path each exported framework symbol should be named by |
+| `imports:catalog` | print the import path each exported framework symbol should be named by, or rewrite the project's imports to it |
 | `about` | report what the project is configured and wired with: versions, drivers, modules |
 
 - **`aru make:module`** — a Model-backed entity with its policy, service,

@@ -5,18 +5,19 @@ not for somebody using it: what a user needs is in `aru help`, and every command
 explains itself there.
 
 It is one Go module with a short list of direct dependencies -- the budget
-section below prints it -- and four things live inside it that share almost no
+section below prints it -- and five things live inside it that share almost no
 code:
 
 | | where | what it is |
 | --- | --- | --- |
-| the commands | the root package `main` | 70 entries in one slice, 23 of which forward to the project's own binary |
+| the commands | the root package `main` | 71 entries in one slice, 23 of which forward to the project's own binary |
 | the view compiler | `internal/kyse` | a `.kyse.go` becomes Go, and the Go it writes has to compile |
 | the language server | `internal/lsp` and `lsp.go` | `aru lsp` serves Kyse diagnostics and completion, the project map and its navigation over standard input and output |
+| the assistant server | `mcp.go` and `internal/contract` | `aru mcp` serves the doctor, the map, the implementation contract (one embedded file the doctor and the module skill also read) and the generators over MCP on standard input and output |
 | the checker | `internal/doctor` | 54 rule functions reading a project's parsed AST, emitting 60 rule names of their own and 4 borrowed from `internal/testlayout` |
 
 ```sh
-grep -c '^\t\tname:' commands.go                                      # 70
+grep -c '^\t\tname:' commands.go                                      # 71
 grep -c 'run:   delegate(' commands.go                                # 23
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/doctor/structure.go \
 	internal/testlayout/testlayout.go | sort -u | wc -l           # 64

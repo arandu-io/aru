@@ -5,11 +5,13 @@ import (
 	"go/ast"
 	"go/token"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/arandu-io/aru/internal/gen"
 	"github.com/arandu-io/aru/internal/gomod"
 )
 
@@ -71,6 +73,11 @@ type graphArtifact struct {
 	node    Node
 	group   string
 	feature string
+	// joinsOnly is set for a file that belongs to a feature and cannot open
+	// one: what a generator wrote from another file is part of that file's
+	// feature, and naming a feature after it would list the generator's output
+	// beside the entity it was written from.
+	joinsOnly bool
 }
 
 type graphBuilder struct {
@@ -193,7 +200,7 @@ type featurePlace struct {
 func collectFeatures(artifacts []graphArtifact) map[string]featurePlace {
 	features := map[string]featurePlace{}
 	for _, artifact := range artifacts {
-		if artifact.feature == "" {
+		if artifact.feature == "" || artifact.joinsOnly {
 			continue
 		}
 		key := strings.ToLower(artifact.feature)
@@ -261,6 +268,10 @@ func graphArtifactForFile(f *file) (graphArtifact, bool) {
 			artifact.group, artifact.node.Kind = "http", "request"
 		case "Models":
 			artifact.group, artifact.node.Kind = "database", "model"
+			if source, generated := generatedQuerySource(f); generated {
+				_, artifact.feature = classify(path.Join(f.dir, source))
+				artifact.joinsOnly = true
+			}
 		case "Repositories":
 			artifact.group, artifact.node.Kind = "database", "repository"
 		case "Jobs":
@@ -311,6 +322,25 @@ func graphArtifactForFile(f *file) (graphArtifact, bool) {
 	}
 	artifact.node.ID = artifact.node.Kind + ":" + graphID(f.rel)
 	return artifact, true
+}
+
+// generatedQuerySource answers the entity file a query file was generated
+// from, and false for a file aru model:build did not write.
+//
+// NoteQuery.go is what model:build writes from Note.go, and taking its name
+// for an entity put a feature called NoteQuery beside Note in every project.
+// The first line decides, the same line model:build reads before it removes
+// a file of its own, so a file somebody wrote by hand and named like one is
+// still read as theirs.
+func generatedQuerySource(f *file) (string, bool) {
+	if len(f.ast.Comments) == 0 || len(f.ast.Comments[0].List) == 0 {
+		return "", false
+	}
+	first := f.ast.Comments[0].List[0]
+	if f.fset.Position(first.Pos()).Line != 1 {
+		return "", false
+	}
+	return gen.GeneratedQuerySource([]byte(first.Text))
 }
 
 func firstDeclarationPosition(f *file) (int, int) {

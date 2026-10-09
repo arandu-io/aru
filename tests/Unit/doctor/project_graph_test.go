@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/arandu-io/aru/internal/doctor"
+	"github.com/arandu-io/aru/internal/gen"
 )
 
 var updateFindingsGolden = flag.Bool("update-findings-golden", false, "rewrite the Doctor findings compatibility golden")
@@ -656,4 +657,75 @@ func sortedEdges(edges []doctor.Edge) bool {
 		}
 	}
 	return true
+}
+
+// TestAGeneratedQueryFileOpensNoFeature: the file aru model:build writes
+// beside an entity is part of that entity's feature, and never a feature of
+// its own.
+//
+// NoteQuery.go sits in app/Models, and the graph named a feature after every
+// file there, so each entity arrived twice -- Note, and NoteQuery beside it --
+// and a query file generated from another entity's file, as RecoveryCodeQuery
+// is from TwoFactor.go, opened a third. The header model:build writes on the
+// first line is what says whose file it is; a file without one is somebody's
+// own, whatever it is called.
+func TestAGeneratedQueryFileOpensNoFeature(t *testing.T) {
+	root := generatedProject(t)
+	writeFile(t, filepath.Join(root, "app", "Models", "LineItemQuery.go"),
+		gen.QueryHeader("PurchaseOrder.go")+"\n\npackage models\n\ntype LineItemQuery struct{}\n")
+	writeFile(t, filepath.Join(root, "app", "Models", "RefundQuery.go"),
+		gen.QueryHeader("Refund.go")+"\n\npackage models\n\ntype RefundQuery struct{}\n")
+	writeFile(t, filepath.Join(root, "app", "Models", "ReportQuery.go"),
+		"package models\n\n// ReportQuery is written by hand.\ntype ReportQuery struct{}\n")
+
+	analysis, err := doctor.Analyze(root, doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	features := map[string]doctor.Node{}
+	byFile := map[string]doctor.Node{}
+	for _, node := range analysis.Graph.Nodes {
+		switch node.Kind {
+		case "feature":
+			features[node.Label] = node
+		case "model":
+			byFile[node.File] = node
+		}
+	}
+	for _, generated := range []string{"PurchaseOrderQuery", "LineItemQuery", "RefundQuery", "Refund"} {
+		if _, found := features[generated]; found {
+			t.Errorf("a feature is named %s, after a file model:build generated", generated)
+		}
+	}
+	if _, found := features["ReportQuery"]; !found {
+		t.Error("a file written by hand and named like a query file lost its feature")
+	}
+	entity, found := features["PurchaseOrder"]
+	if !found {
+		t.Fatalf("the entity has no feature: %v", features)
+	}
+	if entity.File != "app/Models/PurchaseOrder.go" {
+		t.Errorf("the PurchaseOrder feature points at %s, want the entity's own file", entity.File)
+	}
+
+	contains := map[string]bool{}
+	for _, edge := range analysis.Graph.Edges {
+		if edge.From == entity.ID {
+			contains[edge.To] = true
+		}
+	}
+	for _, file := range []string{"app/Models/PurchaseOrderQuery.go", "app/Models/LineItemQuery.go"} {
+		node, listed := byFile[file]
+		if !listed {
+			t.Errorf("%s is not in the graph at all", file)
+			continue
+		}
+		if !contains[node.ID] {
+			t.Errorf("%s is not part of the PurchaseOrder feature it was generated for", file)
+		}
+	}
+	if _, listed := byFile["app/Models/RefundQuery.go"]; !listed {
+		t.Error("an orphaned query file vanished from the graph instead of being listed under no feature")
+	}
 }

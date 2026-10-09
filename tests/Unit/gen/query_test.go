@@ -243,12 +243,21 @@ func handsBackRows(fn *ast.FuncDecl) bool {
 	return false
 }
 
-// TestTheHesapeReleaseIsTheOneThisModuleRequires: the release the printed
-// instructions tell a project to take is the one go.mod pins, so the generated
-// code a project receives is the code this module compiled and tested. A
-// constant that stayed behind would send every project that follows it to an
-// older release than the one checked here, and nothing else would notice.
-func TestTheHesapeReleaseIsTheOneThisModuleRequires(t *testing.T) {
+// TestTheHesapeReleaseIsTheOneTheGeneratedCodeIsCompiledAgainst: the release
+// the printed instructions tell a project to take is the one the compile
+// harness builds the generated code with, which is the one a new project
+// requires. A constant that stayed behind would send every project that
+// follows it to an older release than the one checked here, and nothing else
+// would notice.
+//
+// This module's own require may be older -- it builds the generator, not the
+// generated code -- but never older than the model core the templates write
+// for, which is what tests.ModelCore already refuses.
+func TestTheHesapeReleaseIsTheOneTheGeneratedCodeIsCompiledAgainst(t *testing.T) {
+	if want := published["github.com/arandu-io/hesape"]; gen.HesapeRelease != want {
+		t.Errorf("gen.HesapeRelease is %s and the compile harness builds against %s: move the constant with the pin",
+			gen.HesapeRelease, want)
+	}
 	body, err := os.ReadFile(filepath.Join(tests.Root(t), "go.mod"))
 	if err != nil {
 		t.Fatal(err)
@@ -257,8 +266,9 @@ func TestTheHesapeReleaseIsTheOneThisModuleRequires(t *testing.T) {
 	if !ok {
 		t.Fatal("go.mod does not require github.com/arandu-io/hesape")
 	}
-	if gen.HesapeRelease != pinned {
-		t.Errorf("gen.HesapeRelease is %s and go.mod requires %s: move the constant with the require", gen.HesapeRelease, pinned)
+	if gomod.Less(gen.HesapeRelease, pinned) {
+		t.Errorf("gen.HesapeRelease %s is below the %s this module requires: a project would be told to take an older release than aru builds with",
+			gen.HesapeRelease, pinned)
 	}
 	if gomod.Less(gen.HesapeRelease, gen.ModelCoreRelease) {
 		t.Errorf("gen.HesapeRelease %s is below gen.ModelCoreRelease %s, the oldest release the generated code compiles with",

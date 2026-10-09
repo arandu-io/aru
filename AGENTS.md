@@ -4,8 +4,9 @@
 not for somebody using it: what a user needs is in `aru help`, and every command
 explains itself there.
 
-It is one Go module with two direct third-party dependencies, and four things
-live inside it that share almost no code:
+It is one Go module with a short list of direct dependencies -- the budget
+section below prints it -- and four things live inside it that share almost no
+code:
 
 | | where | what it is |
 | --- | --- | --- |
@@ -106,17 +107,15 @@ files.
 ## The dependency budget
 
 ```sh
+GOWORK=off go list -m -f '{{if not .Indirect}}{{if not .Main}}{{.Path}}{{end}}{{end}}' all | grep .
 GOWORK=off go list -deps -f '{{if .Module}}{{if not .Standard}}{{.Module.Path}}{{end}}{{end}}' ./... | sort -u
-# github.com/arandu-io/aru
-# github.com/arandu-io/hesape
-# github.com/evanw/esbuild
-# golang.org/x/sys
-# gopkg.in/yaml.v3
 ```
 
-Three direct dependencies: Hesape, YAML and esbuild. The allow-list in
-`.github/workflows/ci.yml` also names esbuild's transitive x/sys dependency.
-It runs that query and fails a pull request that adds anything else.
+The first prints the direct dependencies, the second every module the build
+links. This file states neither as a number: it said "three" while `go.mod`
+required eight, because the packager brought five at once and nobody re-read
+the sentence. The allow-list in `.github/workflows/ci.yml` runs the second
+query and fails a pull request that adds anything else.
 There is no CLI framework here: `flag` from the standard library, and a slice of
 structs for the dispatch table.
 

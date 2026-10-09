@@ -14,16 +14,21 @@ import (
 // so the commands that write them refuse it.
 const ModelCoreRelease = "v0.47.0"
 
-// HesapeRelease is the hesape release this module requires, which is the one
+// HesapeRelease is the hesape release a new project requires, which is the one
 // everything here writes is compiled and tested against, and the one the
 // instructions printed to a user tell them to take.
+//
+// It is the skeleton's and not this module's own require: the generated code
+// lives in a project, and a project receives the hesape its skeleton pins. This
+// module may build against an older one, as long as it is not older than
+// ModelCoreRelease.
 //
 // It is never below ModelCoreRelease, and the two are kept apart because they
 // answer different questions: ModelCoreRelease is the oldest release a project
 // may stay on without being refused, and a project that has to move anyway
 // should move to the release the generated code was last compiled with rather
 // than to the first one that would have compiled it.
-const HesapeRelease = "v0.48.0"
+const HesapeRelease = "v0.50.1"
 
 // QueryHeaderPrefix opens every file `aru model:build` writes beside an entity.
 //

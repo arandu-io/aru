@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/arandu-io/aru/internal/gen"
+	"github.com/arandu-io/aru/internal/gomod"
 	"github.com/arandu-io/aru/internal/kyse"
 	"github.com/arandu-io/aru/tests"
 )
@@ -32,8 +33,8 @@ import (
 // The cost is that these three lines go stale the day the skeleton moves, and
 // that is what TestThePinnedTagsMatchTheSkeleton answers.
 var published = map[string]string{
-	"github.com/arandu-io/framework": "v0.50.2",
-	"github.com/arandu-io/hesape":    "v0.48.0",
+	"github.com/arandu-io/framework": "v0.51.0",
+	"github.com/arandu-io/hesape":    "v0.50.1",
 	"github.com/arandu-io/kyse":      "v0.30.0",
 }
 
@@ -46,7 +47,7 @@ const generatedModulePath = "example.test/project"
 // a person. Keeping the literal here makes the generator harness compare its
 // dependency graph with the independently published project rather than with a
 // sibling checkout that a build agent does not have.
-const publishedSkeletonModule = "github.com/arandu-io/arandu@v0.29.1"
+const publishedSkeletonModule = "github.com/arandu-io/arandu@v0.30.0"
 
 // TestTheGeneratedModuleCompiles hands every generator's output to the Go
 // compiler.
@@ -432,7 +433,10 @@ func writeProjectSkeleton(t *testing.T, root string) {
 	hesape, hesapeDir := tests.ModelCore(t, listed, listErr)
 	modules := make([]string, 0, len(published))
 	for path, version := range published {
-		if path == "github.com/arandu-io/hesape" {
+		// The newer of the two: the published tag is what a project receives,
+		// and a hesape this module builds against that is newer still is the
+		// one the templates were last changed for.
+		if path == "github.com/arandu-io/hesape" && gomod.Less(version, hesape) {
 			version = hesape
 		}
 		modules = append(modules, "\t"+path+" "+version)
@@ -452,25 +456,12 @@ require (
 )
 `+replace))
 
-	// The base type every generated controller embeds. It answers a failed
-	// validation and reports whether one passed, which is what the generated
-	// Store and Update call.
+	// The base type every generated controller embeds, as the skeleton
+	// declares it: empty. A rejected form is answered by the router, so the
+	// base carries nothing a generated action calls.
 	writeInto(t, filepath.Join(root, "app", "Http", "Controllers", "Controller.go"), []byte(`package controllers
 
-import (
-	"net/http"
-
-	fhttp "github.com/arandu-io/framework/http"
-	"github.com/arandu-io/framework/validation"
-)
-
 type Controller struct{}
-
-func (Controller) Invalid(ctx *fhttp.Context, view string, data any) error {
-	return ctx.Fragment(http.StatusUnprocessableEntity, view, data)
-}
-
-func (Controller) Validated(errs validation.Errors) bool { return len(errs) == 0 }
 `))
 
 	// The contract a generated seeder is written against: the interface it

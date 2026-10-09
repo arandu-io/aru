@@ -77,8 +77,13 @@ plus `help` and `version`. The native and inspection commands, in the words of `
 The view compiler is part of this binary rather than something it downloads:
 one fewer thing to pin, verify and cache.
 
-One direct dependency: `gopkg.in/yaml.v3`, for the specification format. CI
-refuses a second one.
+The direct dependencies are what `go.mod` requires without `// indirect`, and
+CI refuses one it does not already allow. This prints them rather than a number
+that would age:
+
+```sh
+GOWORK=off go list -m -f '{{if not .Indirect}}{{if not .Main}}{{.Path}}{{end}}{{end}}' all | grep .
+```
 
 How large it is moves with every commit, so these are the commands rather than
 figures that would age without anybody noticing:

@@ -12,16 +12,19 @@
 #                              what a Grant is
 #
 #   internal/doctor/rules.go   the check is about the generated application,
-#                              whatever its topic. That includes checks a
-#                              linter also knows, such as SQL assembled by
-#                              hand: whoever runs `aru doctor` is not required
-#                              to run anything else, and a framework that
-#                              verified authorization and left injection to a
-#                              second tool would have shipped half an answer
+#   internal/doctor/structure.go
+#                              whatever its topic -- structure.go for a warning
+#                              about where code lives, rules.go for the rest.
+#                              That includes checks a linter also knows, such
+#                              as SQL assembled by hand: whoever runs
+#                              `aru doctor` is not required to run anything
+#                              else, and a framework that verified
+#                              authorization and left injection to a second
+#                              tool would have shipped half an answer
 #
 # What must not happen: a rule here that matches Grant, tenant_id or a policy
 # by regexp. It would be a second and weaker copy of one that already exists in
-# internal/doctor/rules.go, decided by spelling instead of by position in the
+# internal/doctor, decided by spelling instead of by position in the
 # architecture -- and the copy is the one that goes stale.
 #
 # testdata/ needs no exclusion. `go` never matches a testdata directory from

@@ -212,6 +212,9 @@ func TestTheRefusalRepeatsTheDispatchTable(t *testing.T) {
 		"make:middleware", "make:request", "make:factory", "make:seeder",
 		"make:job", "make:mail", "make:command", "make:listener", "make:event",
 		"make:enum", "make:policy", "make:test",
+		// Added after v0.62, with the contract's generators.
+		"make:service", "make:resource", "make:notification", "make:client",
+		"make:mcp-tool", "make:mcp-resource", "make:mcp-prompt",
 	} {
 		c, found := lookup(name)
 		if !found {
@@ -224,6 +227,36 @@ func TestTheRefusalRepeatsTheDispatchTable(t *testing.T) {
 		}
 		if !strings.Contains(stderr, c.usage) {
 			t.Errorf("%s refuses with a usage line of its own:\n  table: %q\n  said:  %q", name, c.usage, stderr)
+		}
+	}
+}
+
+// TestTheCommandsAddedSinceV062RefuseWhatTheyDoNotTake: skills:sync,
+// imports:catalog and mcp take no positional argument, and each says so naming
+// it -- or, for mcp, repeating the usage line --; an unknown flag is refused
+// by the flag package with the flags the command does take. Each is reached
+// inside a project, because skills:sync and mcp look for one.
+func TestTheCommandsAddedSinceV062RefuseWhatTheyDoNotTake(t *testing.T) {
+	insideAProject(t)
+
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"skills:sync", "extra"}, `"extra" is not an argument this command takes`},
+		{[]string{"skills:sync", "--nope"}, "-apply"},
+		{[]string{"imports:catalog", "extra"}, `"extra" is not an argument this command takes`},
+		{[]string{"imports:catalog", "--nope"}, "-fix"},
+		{[]string{"imports:catalog", "--apply"}, "--apply writes what --fix shows"},
+		{[]string{"imports:catalog", "--fix", "--json"}, "pick one"},
+		{[]string{"mcp", "extra"}, "usage: aru mcp"},
+	} {
+		code, _, stderr := exercise(t, c.args...)
+		if code == 0 {
+			t.Errorf("aru %s exited 0", strings.Join(c.args, " "))
+		}
+		if !strings.Contains(stderr, c.want) {
+			t.Errorf("aru %s does not say %q: %q", strings.Join(c.args, " "), c.want, stderr)
 		}
 	}
 }

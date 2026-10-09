@@ -342,7 +342,9 @@ keep true, and a project with twenty modules carried twenty of them.
 `TestMakeModuleWritesNoSkillOfItsOwn` (`make_internal_test.go`) holds it, and
 the per-case counts of `TestGolden` would stop a file coming back. A skill a
 project wrote about one of its modules is the project's, under its own name:
-nothing here writes or rewrites it.
+nothing here writes or rewrites it. One a project kept from an older aru still
+records `source: aru@<version>`, and `aru doctor` reports it as
+`generated-skill-retired` until it is deleted or its source line goes.
 
 ## Wiring is printed, never performed
 

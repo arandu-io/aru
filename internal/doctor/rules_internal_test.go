@@ -142,6 +142,7 @@ func emitsByRule() map[string][]string {
 		},
 		"skillsFollowTheirOrigin":            {"skills-out-of-date"},
 		"distributedSkillsArePresent":        {"skills-missing"},
+		"generatedSkillsAreRetired":          {"generated-skill-retired"},
 		"migrationsMustReachTheBinary":       {"migrations-not-linked"},
 		"addedColumnsMustBeNullable":         {"added-column-not-nullable"},
 		"migrationsMustBeReversible":         {"rollback-does-nothing"},

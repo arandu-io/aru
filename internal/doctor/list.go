@@ -105,6 +105,7 @@ var catalogue = []RuleInfo{
 	{Name: "scaffolding-ships", Severities: warningOnly},
 	{Name: "skills-out-of-date", Severities: warningOnly},
 	{Name: "skills-missing", Severities: warningOnly},
+	{Name: "generated-skill-retired", Severities: warningOnly},
 	{Name: "migrations-not-linked", Severities: warningOnly},
 	{Name: "added-column-not-nullable", Severities: warningOnly},
 	{Name: "rollback-does-nothing", Severities: warningOnly},

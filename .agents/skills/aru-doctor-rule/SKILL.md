@@ -11,11 +11,11 @@ AST and never runs the code, so it works on a project that does not compile —
 which is exactly when someone needs to be told what is wrong.
 
 ```sh
-awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 55  rule functions
+awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 56  rule functions
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/doctor/structure.go \
-	internal/testlayout/testlayout.go | sort -u | wc -l                   # 65  names a report can carry
+	internal/testlayout/testlayout.go | sort -u | wc -l                   # 66  names a report can carry
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/doctor/structure.go \
-	| sort -u | wc -l                                                     # 61  of them declared here
+	| sort -u | wc -l                                                     # 62  of them declared here
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/testlayout/testlayout.go \
 	| sort -u | wc -l                                                     # 4  forwarded, declared there
 ```
@@ -111,15 +111,15 @@ the CLI accepts the fixture as a project:
 ```sh
 cp -R internal/doctor/testdata/violations /tmp/viol && touch /tmp/viol/arandu.toml
 (cd /tmp/viol && /tmp/aru-src doctor > /tmp/viol.out 2>&1); echo $?   # 1
-tail -1 /tmp/viol.out                                                 # 39 error(s), 69 warning(s)
-grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 58
+tail -1 /tmp/viol.out                                                 # 39 error(s), 70 warning(s)
+grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 59
 ```
 
 `violations` carries a `vendor/` directory holding a slice of the framework:
 the bridge packages it imports, declared the way the framework declares them.
 `import-not-canonical` decides from the framework's own source, at the version
 go.mod requires, and a vendor directory is the one place that source can sit
-inside a fixture and survive the `cp -R` above. Sixteen of the sixty-nine
+inside a fixture and survive the `cp -R` above. Sixteen of the seventy
 warnings are that rule. The other fixtures require a framework version no
 module cache here holds, so the rule is silent on them -- which is its declared
 limit, not an accident.
@@ -281,6 +281,19 @@ verifies), limit (function-local) and fix, and
 `tests/Unit/doctor/csrf_test.go` holds eleven cases. `violations` plants the
 unverified webhook; `gaps` holds the verified one, a read under the prefix, and
 the paths the framework does not exempt.
+
+## The retired generated skill
+
+`generated-skill-retired` is a warning in `rules.go`, beside the two skill
+rules. `make:module` used to write `.agents/skills/<resource>/SKILL.md` with
+`source: aru@<version>` under metadata, and no longer does; no origin hands
+out a skill of that name, so `skills-out-of-date` never compared it, and the
+file a project kept goes on describing the module as it was generated. The rule
+reads every local skill's header with `skills.ParseHeader`, reports the one
+whose source is `aru@<version>` on its source line, and says the two ways out:
+delete it, or keep it as the project's own by removing the source and digest
+lines. `tests/Unit/doctor/generated_skill_test.go` holds seven cases;
+`violations` plants one and `gaps` holds a source that only begins with `aru`.
 
 ## Profile rules
 

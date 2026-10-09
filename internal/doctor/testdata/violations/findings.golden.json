@@ -16,6 +16,14 @@
     "why": "an assistant working here never reads the procedure it carries, and fills the gap with what it knows from other frameworks. `aru skills:sync --apply` brings it, with its source recorded so the next release can be compared against it."
   },
   {
+    "rule": "generated-skill-retired",
+    "severity": "warning",
+    "file": ".agents/skills/invoices/SKILL.md",
+    "line": 6,
+    "message": "the skill invoices was written by make:module (aru@v0.66.0), and aru no longer writes or updates a skill per module",
+    "why": "an assistant working here follows this file, which describes the module as the generator saw it when it ran, and nothing compares it with the code since. Delete it -- the skeleton's skills cover a model, a policy, a service and a controller by kind -- or keep it as a skill of the project's own by removing the source and digest lines under metadata."
+  },
+  {
     "rule": "driver-not-linked",
     "severity": "warning",
     "file": ".env.example",

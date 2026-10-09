@@ -71,6 +71,7 @@ var rules = []func(*project) []Finding{
 	testsAreWhereTheyCanRun,
 	skillsFollowTheirOrigin,
 	distributedSkillsArePresent,
+	generatedSkillsAreRetired,
 	migrationsMustReachTheBinary,
 	addedColumnsMustBeNullable,
 	migrationsMustBeReversible,
@@ -3902,6 +3903,74 @@ func distributedSkillsArePresent(p *project) []Finding {
 		})
 	})
 	return out
+}
+
+// 18e. A skill make:module wrote, which no generator writes or updates any more.
+//
+// Reason. make:module and aru generate used to write
+// .agents/skills/<resource>/SKILL.md beside the module, stamped with the aru
+// that wrote it, and stopped: the skeleton's skills describe a model, a
+// policy, a service, a controller and a screen by kind, for every module at
+// once. The file a project kept describes the module as the generator saw it
+// on the day it ran, and nothing compares it with the code since -- no origin
+// hands out a skill of that name, so skills-out-of-date cannot see it, and the
+// generator that would have rewritten it no longer does.
+//
+// Scope. Every SKILL.md under .agents/skills whose header records a source of
+// aru, at any version: `source: aru@v0.66.0` under metadata.
+//
+// Severity. A warning: nothing about the build or the running application
+// changes, and what is stale is advice.
+//
+// Positive: a skill whose metadata source is aru@<version>.
+//
+// Negative: a skill with no source, which is the project's own; a skill whose
+// source names a module or the skeleton, which skills-out-of-date compares;
+// a source whose repository only begins with aru.
+//
+// Known false positive: none known. A project that hand-edited the generated
+// skill and keeps it on purpose is reported until the source line goes.
+//
+// Limit. The header, read as skills.ParseHeader reads it: a source written
+// outside the metadata block is not seen.
+//
+// Correction: delete the directory, or keep the skill as the project's own by
+// removing the source and digest lines under metadata.
+func generatedSkillsAreRetired(p *project) []Finding {
+	names := make([]string, 0, len(p.skills.local))
+	for name := range p.skills.local {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var out []Finding
+	for _, name := range names {
+		content := p.skills.local[name]
+		source := skills.ParseHeader(content).Source
+		if repository, _, versioned := strings.Cut(source, "@"); !versioned || repository != "aru" {
+			continue
+		}
+		out = append(out, Finding{
+			Rule: "generated-skill-retired", Severity: Warning,
+			File: skills.Skill{Name: name}.Path(), Line: sourceLine(content),
+			Message: "the skill " + name + " was written by make:module (" + source + "), and aru no longer writes or updates a skill per module",
+			Why: "an assistant working here follows this file, which describes the module as the generator saw it when it ran, and nothing " +
+				"compares it with the code since. Delete it -- the skeleton's skills cover a model, a policy, a service and a controller by kind -- " +
+				"or keep it as a skill of the project's own by removing the source and digest lines under metadata.",
+		})
+	}
+	return out
+}
+
+// sourceLine is the 1-based line of a skill's metadata source, or 1 when the
+// line is not found as written.
+func sourceLine(content []byte) int {
+	for i, line := range strings.Split(string(content), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "source:") {
+			return i + 1
+		}
+	}
+	return 1
 }
 
 // 19. The performance profile is asked for and the project says it does not run

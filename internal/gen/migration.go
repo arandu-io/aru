@@ -72,11 +72,13 @@ func (s MigrationSpec) Validate() error {
 // MigrationSpec is how a module describes its own create-table migration.
 //
 // A nested module's table carries the parent's id first, required: every row
-// belongs to one parent, and the service sets it from the parent it loaded.
+// belongs to one parent, and the service sets it from the parent it loaded. The
+// column has the type of the parent's key, so a text key is stored as text and
+// a UUID column as a UUID column, and the two compare on every engine.
 func (m Module) MigrationSpec() MigrationSpec {
 	fields := m.Fields
 	if m.Parent != "" {
-		fields = append([]Field{{Name: m.ParentColumn(), Type: TypeUUID, Required: true}}, m.Fields...)
+		fields = append([]Field{{Name: m.ParentColumn(), Type: m.ParentKeyType(), Required: true}}, m.Fields...)
 	}
 	return MigrationSpec{
 		ID:     m.MigrationID(),

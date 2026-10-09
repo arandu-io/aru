@@ -64,10 +64,7 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("make:module: %w", err)
 	}
 
-	// The migration id comes from resolveMigrationID, which is where every
-	// command that writes a module's migration gets it: the next free sequence
-	// of today, or the id this module's migration already has.
-	spec, err := resolveMigrationID(root, gen.Module{
+	module := gen.Module{
 		Name:       name,
 		Fields:     parsed,
 		Tenant:     *tenant,
@@ -75,7 +72,20 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 		Parent:     strings.ToLower(strings.ReplaceAll(*parent, "_", "-")),
 		Generator:  version,
 		Gates:      gen.ProjectGates(root),
-	})
+	}
+	// A nested table stores the parent's id in a column of the type the
+	// parent's key has, read off the parent's model and migration rather than
+	// assumed: a text key in a UUID column is a write Postgres refuses.
+	if module.Parent != "" {
+		if module.ParentKey, err = gen.ParentKeyOf(root, module); err != nil {
+			return fmt.Errorf("make:module: %w", err)
+		}
+	}
+
+	// The migration id comes from resolveMigrationID, which is where every
+	// command that writes a module's migration gets it: the next free sequence
+	// of today, or the id this module's migration already has.
+	spec, err := resolveMigrationID(root, module)
 	if err != nil {
 		return fmt.Errorf("make:module: %w", err)
 	}

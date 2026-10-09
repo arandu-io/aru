@@ -35,7 +35,20 @@ func (PurchaseOrderSeeder) Run(ctx context.Context, d Deps) error {
 	if err != nil || seeded {
 		return err
 	}
-	if _, err := factories.PurchaseOrders(d.DB).Count(10).Create(ctx, auth.SystemGrant(policies.PurchaseOrderCreate, d.Tenant)); err != nil {
+
+	// Each purchase order belongs to one supplier, so the rows are seeded under
+	// one the tenant already has, or under one the supplier factory makes --
+	// never under a key nobody stored.
+	parent, err := models.Suppliers(d.DB).First(ctx, auth.SystemGrant(policies.SupplierList, d.Tenant))
+	if err != nil {
+		return err
+	}
+	if parent == nil {
+		if parent, err = factories.Suppliers(d.DB).CreateOne(ctx, auth.SystemGrant(policies.SupplierCreate, d.Tenant)); err != nil {
+			return err
+		}
+	}
+	if _, err := factories.PurchaseOrders(d.DB).ForSupplier(parent.ID).Count(10).Create(ctx, auth.SystemGrant(policies.PurchaseOrderCreate, d.Tenant)); err != nil {
 		return err
 	}
 

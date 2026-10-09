@@ -311,6 +311,13 @@ type Module struct {
 	// column of its own; its service loads the parent through the parent's
 	// service, under the parent's policy, before it lists or creates by it.
 	Parent string
+	// ParentKey is the column type of the parent's key, as the parent's model
+	// and its migration declare it: TypeString for a text key, TypeUUID for a
+	// UUID column. The nested table stores the parent's id in a column of the
+	// same type, so the two compare on every engine. Empty is TypeString, the
+	// key every module this generator writes has; ParentKeyOf reads it off the
+	// project.
+	ParentKey Type
 	// Generator is the version of aru writing the module. The module's skill
 	// records it as its source, so a reader can tell which generator wrote the
 	// text. It is a field rather than read from the build for the reason Date
@@ -488,6 +495,22 @@ func (m Module) ParentServiceType() string { return m.ParentEntity() + "Service"
 // and the field of the entity that holds it: project_id, ProjectID.
 func (m Module) ParentColumn() string { return m.ParentParam() + "_id" }
 func (m Module) ParentField() string  { return m.ParentEntity() + "ID" }
+
+// ParentKeyType is the column type the parent's id is stored in: ParentKey,
+// or TypeString when it was not read.
+func (m Module) ParentKeyType() Type {
+	if m.ParentKey == "" {
+		return TypeString
+	}
+	return m.ParentKey
+}
+
+// ParentConstructor is where a query on the parent and its factory start:
+// Projects.
+func (m Module) ParentConstructor() string { return Constructor(m.ParentEntity()) }
+
+// ParentHuman is the parent in a sentence: "project".
+func (m Module) ParentHuman() string { return strings.ReplaceAll(m.ParentParam(), "_", " ") }
 
 // Resource is the resource segment: the table with dashes instead of
 // underscores. It names the URL, the route names and the view directory, so all
@@ -773,6 +796,9 @@ func (m Module) Validate() error {
 		}
 		if m.Parent == m.Resource() {
 			return fmt.Errorf("%s cannot nest under itself", m.Resource())
+		}
+		if t := m.ParentKeyType(); types[t].Go != "string" {
+			return fmt.Errorf("the key of %s is %s: a nested module reads the parent from the path as text and loads it through %s.Get, so it nests under a parent keyed by text", m.Parent, t, m.ParentServiceType())
 		}
 	}
 

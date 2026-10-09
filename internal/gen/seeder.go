@@ -22,7 +22,23 @@ type SeederSpec struct {
 	// empty seeder, which compiles in any project and seeds nothing until it
 	// is written.
 	Factory bool
+	// Parent is the entity every row belongs to, for a module nested under
+	// one; nil for a top-level entity. The seeder writes its rows under one
+	// parent the tenant already has, or one the parent's factory makes, and
+	// never under a key nobody stored.
+	Parent *SeederParent
 }
+
+// SeederParent is the parent a nested entity's rows are seeded under.
+type SeederParent struct {
+	// Entity is the parent's type: Project.
+	Entity string
+	// Human is the parent in a sentence: "project".
+	Human string
+}
+
+// Constructor is where the parent's query and its factory start: Projects.
+func (p SeederParent) Constructor() string { return Constructor(p.Entity) }
 
 // ModelsImport, PoliciesImport and FactoriesImport are the project packages a
 // seeder that goes through the factory imports.
@@ -118,9 +134,28 @@ func ({{.Type}}) Run(ctx context.Context, d Deps) error {
 	if err != nil || seeded {
 		return err
 	}
+{{- with .Parent}}
+
+	// Each {{$.Human}} belongs to one {{.Human}}, so the rows are seeded under
+	// one the tenant already has, or under one the {{.Human}} factory makes --
+	// never under a key nobody stored.
+	parent, err := models.{{.Constructor}}(d.DB).First(ctx, auth.SystemGrant(policies.{{.Entity}}List, d.Tenant))
+	if err != nil {
+		return err
+	}
+	if parent == nil {
+		if parent, err = factories.{{.Constructor}}(d.DB).CreateOne(ctx, auth.SystemGrant(policies.{{.Entity}}Create, d.Tenant)); err != nil {
+			return err
+		}
+	}
+	if _, err := factories.{{$.Constructor}}(d.DB).For{{.Entity}}(parent.ID).Count(10).Create(ctx, auth.SystemGrant(policies.{{$.Entity}}Create, d.Tenant)); err != nil {
+		return err
+	}
+{{- else}}
 	if _, err := factories.{{.Constructor}}(d.DB).Count(10).Create(ctx, auth.SystemGrant(policies.{{.Entity}}Create, d.Tenant)); err != nil {
 		return err
 	}
+{{- end}}
 
 	// arandu:begin custom
 	// Rows the factory's defaults do not describe go here: a fixed record, a

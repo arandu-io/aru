@@ -23,7 +23,13 @@ func TestPurchaseOrdersAreScopedByTenant(t *testing.T) {
 	db := migratedDB(t)
 	ctx := context.Background()
 
-	stored, err := factories.PurchaseOrders(db).Count(2).Create(ctx, auth.SystemGrant(policies.PurchaseOrderCreate, "tenant-a"))
+	// Each purchase order belongs to one supplier, so the rows are stored
+	// under one that is stored too.
+	parent, err := factories.Suppliers(db).CreateOne(ctx, auth.SystemGrant(policies.SupplierCreate, "tenant-a"))
+	if err != nil {
+		t.Fatalf("storing the supplier for tenant-a: %v", err)
+	}
+	stored, err := factories.PurchaseOrders(db).ForSupplier(parent.ID).Count(2).Create(ctx, auth.SystemGrant(policies.PurchaseOrderCreate, "tenant-a"))
 	if err != nil {
 		t.Fatalf("storing purchase orders for tenant-a: %v", err)
 	}

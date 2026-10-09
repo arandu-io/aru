@@ -65,6 +65,23 @@ type FactorySpec struct {
 	Tenant       bool
 	Fields       []FactoryField
 	ModelsImport string
+	// Parent is the entity every row belongs to, for a module nested under
+	// one; nil for a top-level entity. The default state names no parent, and
+	// the factory gains the state that names one.
+	Parent *FactoryParent
+}
+
+// FactoryParent is what the factory of a nested entity knows about the parent:
+// the field the parent's id goes in, and the names of the state that fills it.
+type FactoryParent struct {
+	// Entity is the parent's type: Project.
+	Entity string
+	// Field is the child's field holding the parent's id: ProjectID.
+	Field string
+	// Arg is the parameter the state takes the id as: projectID.
+	Arg string
+	// Human is the parent in a sentence: "project".
+	Human string
 }
 
 // Constructor is the function the factory is reached by, in database/factories,
@@ -342,5 +359,16 @@ func define{{.Entity}}(f faker.Faker) models.{{.Entity}} {
 {{- end}}
 	}
 }
+{{- with .Parent}}
+
+// For{{.Entity}} returns a factory whose rows belong to the {{.Human}} with this id.
+//
+// The default state names no {{.Human}}: a row belongs to one that is stored, so
+// the caller hands the id of one it loaded or created, and the factory never
+// draws a key nobody stored.
+func (x *{{$.Type}}) For{{.Entity}}({{.Arg}} string) *{{$.Type}} {
+	return x.State(func(row *models.{{$.Entity}}) { row.{{.Field}} = {{.Arg}} })
+}
+{{- end}}
 // arandu:end custom
 `

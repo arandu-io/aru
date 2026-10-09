@@ -784,8 +784,17 @@ import (
 func Test{{.Plural}}AreScopedByTenant(t *testing.T) {
 	db := migratedDB(t)
 	ctx := context.Background()
-
+{{if .Parent}}
+	// Each {{.Human}} belongs to one {{.ParentHuman}}, so the rows are stored
+	// under one that is stored too.
+	parent, err := factories.{{.ParentConstructor}}(db).CreateOne(ctx, auth.SystemGrant(policies.{{.ParentEntity}}Create, "tenant-a"))
+	if err != nil {
+		t.Fatalf("storing the {{.ParentHuman}} for tenant-a: %v", err)
+	}
+	stored, err := factories.{{.Constructor}}(db).For{{.ParentEntity}}(parent.ID).Count(2).Create(ctx, auth.SystemGrant(policies.{{.Entity}}Create, "tenant-a"))
+{{- else}}
 	stored, err := factories.{{.Constructor}}(db).Count(2).Create(ctx, auth.SystemGrant(policies.{{.Entity}}Create, "tenant-a"))
+{{- end}}
 	if err != nil {
 		t.Fatalf("storing {{.Humans}} for tenant-a: %v", err)
 	}

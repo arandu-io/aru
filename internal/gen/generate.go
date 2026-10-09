@@ -108,7 +108,7 @@ func Generate(m Module) ([]File, error) {
 	if err != nil {
 		return nil, err
 	}
-	seeder, err := RenderSeeder(SeederSpec{Entity: m.Entity(), ModulePath: m.ModulePath, Factory: true})
+	seeder, err := RenderSeeder(m.SeederSpec())
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +312,21 @@ func (m Module) FactorySpec() FactorySpec {
 	for _, f := range m.Fields {
 		fields = append(fields, f.Factory())
 	}
-	return FactorySpec{Entity: m.Entity(), Tenant: m.Tenant, Fields: fields, ModelsImport: m.ModelsImport()}
+	spec := FactorySpec{Entity: m.Entity(), Tenant: m.Tenant, Fields: fields, ModelsImport: m.ModelsImport()}
+	if m.Parent != "" {
+		spec.Parent = &FactoryParent{Entity: m.ParentEntity(), Field: m.ParentField(), Arg: m.ParentArg(), Human: m.ParentHuman()}
+	}
+	return spec
+}
+
+// SeederSpec is how a module describes its seeder: through the factory, and
+// for a nested module under one parent the seeder loads or makes.
+func (m Module) SeederSpec() SeederSpec {
+	spec := SeederSpec{Entity: m.Entity(), ModulePath: m.ModulePath, Factory: true}
+	if m.Parent != "" {
+		spec.Parent = &SeederParent{Entity: m.ParentEntity(), Human: m.ParentHuman()}
+	}
+	return spec
 }
 
 // renderModelQuery is the module's app/Models/<Entity>Query.go.

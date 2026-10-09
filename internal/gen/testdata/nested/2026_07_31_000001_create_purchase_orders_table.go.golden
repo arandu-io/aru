@@ -49,7 +49,7 @@ func (CreatePurchaseOrdersTable) Up(ctx context.Context, conn migrations.Connect
 	return conn.Schema().Create(ctx, "purchase_orders", func(table *schema.Blueprint) {
 		table.String("id").Primary()
 		table.String("tenant_id")
-		table.UUID("supplier_id")
+		table.String("supplier_id")
 		table.String("reference")
 		table.String("supplier_email")
 		table.BigInteger("total")

@@ -122,4 +122,13 @@ func definePurchaseOrder(f faker.Faker) models.PurchaseOrder {
 	}
 }
 
+// ForSupplier returns a factory whose rows belong to the supplier with this id.
+//
+// The default state names no supplier: a row belongs to one that is stored, so
+// the caller hands the id of one it loaded or created, and the factory never
+// draws a key nobody stored.
+func (x *PurchaseOrderFactory) ForSupplier(supplierID string) *PurchaseOrderFactory {
+	return x.State(func(row *models.PurchaseOrder) { row.SupplierID = supplierID })
+}
+
 // arandu:end custom

@@ -65,6 +65,7 @@ var rules = []func(*project) []Finding{
 	resourceNotReauthorized,
 	rawOutputIsAComponent,
 	noRetiredModuleIsImported,
+	importsAreCanonical,
 	testsAreWhereTheyCanRun,
 	migrationsMustReachTheBinary,
 	addedColumnsMustBeNullable,
@@ -3253,6 +3254,124 @@ func noRetiredModuleIsImported(p *project) []Finding {
 					"The proxy still serves the old module, so nothing breaks today -- which is why this is worth saying now: " +
 					"the project stays on a copy nobody maintains, and every fix and every new driver lands on the other one. " +
 					"Import " + moved + " instead.",
+			})
+		}
+	}
+	return out
+}
+
+// 18a. A symbol imported through a path that is not its own.
+//
+// Reason. The framework keeps bridge packages -- old import paths whose
+// symbols are aliases of a component's -- so that an application written
+// against them goes on compiling, and each says in its documentation that it is
+// removed in v1.0.0. A file that names hesape/auth's Grant as
+// framework/security.Grant compiles today and stops compiling that day, and in
+// the meantime the project spells one type two ways, file by file.
+//
+// Scope. Every Go file of the project, tests included, and every selector on
+// an import of a framework package. Which path is canonical is not decided by
+// the package: it is read, symbol by symbol, from the framework's own source at
+// the version go.mod requires (package catalog). A type the framework declares,
+// or a function that does more than call through -- framework/http.Router,
+// framework/security.SessionStore -- is canonical where it is.
+//
+// Severity. A warning, and it stays one until the bridges are removed: the
+// code it reports compiles and runs correctly today.
+//
+// Positive: `import "github.com/arandu-io/framework/security"` used for
+// security.Grant, which is an alias of hesape/auth.Grant. One finding per file
+// and import, at the import, naming every symbol and where it lives.
+//
+// Negative: the same import used only for security.SessionStore, which the
+// framework declares; an import of the component itself; a package the
+// catalog did not read.
+//
+// Known false positive: a function that calls through to a component whose
+// signature names only component types is reported as moved even when the
+// component's function returns a narrower type -- an interface on the bridge,
+// the concrete type behind it in the component. The call keeps compiling in
+// every position an interface value is accepted.
+//
+// Limit. Local to the file: one import and the selectors on it. A dot import
+// has no selector to read and is not reported. The catalog is read from disk
+// -- a directory replace, the vendor directory, or the module cache -- and the
+// doctor starts no toolchain to fetch it, so on a machine that has not
+// downloaded the required version this rule is silent; `aru imports:catalog`
+// fetches it and prints the same table.
+//
+// Correction: import the path the finding names for those symbols, and keep
+// the framework import only for what the framework declares.
+func importsAreCanonical(p *project) []Finding {
+	if p.catalog == nil {
+		return nil
+	}
+	var out []Finding
+	for _, f := range p.files {
+		for _, imp := range f.ast.Imports {
+			pkg := strings.Trim(imp.Path.Value, `"`)
+			if !p.catalog.Covers(pkg) {
+				continue
+			}
+			local, named := f.imports[pkg]
+			if !named || local == "_" || local == "." {
+				continue
+			}
+
+			moved := map[string][]string{}
+			var stays []string
+			seen := map[string]bool{}
+			ast.Inspect(f.ast, func(n ast.Node) bool {
+				sel, ok := n.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				id, ok := sel.X.(*ast.Ident)
+				// An identifier the parser resolved is a local value that
+				// shadows the import, not the package.
+				if !ok || id.Name != local || id.Obj != nil || seen[sel.Sel.Name] {
+					return true
+				}
+				symbol, known := p.catalog.Lookup(pkg, sel.Sel.Name)
+				if !known {
+					return true
+				}
+				seen[sel.Sel.Name] = true
+				if !symbol.Moved() {
+					stays = append(stays, symbol.Name)
+					return true
+				}
+				spelled := symbol.Name
+				if symbol.CanonicalName != symbol.Name {
+					spelled += " (" + symbol.CanonicalName + " there)"
+				}
+				moved[symbol.Canonical] = append(moved[symbol.Canonical], spelled)
+				return true
+			})
+			if len(moved) == 0 {
+				continue
+			}
+
+			targets := make([]string, 0, len(moved))
+			for target := range moved {
+				targets = append(targets, target)
+			}
+			sort.Strings(targets)
+			var parts []string
+			for _, target := range targets {
+				parts = append(parts, strings.Join(moved[target], ", ")+" from "+target)
+			}
+			keep := "Nothing else is used from it, so the import goes."
+			if len(stays) > 0 {
+				keep = "Keep it for " + strings.Join(stays, ", ") + ", which the framework declares itself."
+			}
+			out = append(out, Finding{
+				Rule: "import-not-canonical", Severity: Warning,
+				File: f.rel, Line: f.line(imp),
+				Message: "this file names " + strings.Join(parts, "; ") + " through " + pkg,
+				Why: "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: " +
+					"the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. " +
+					"Import the path above for them. " + keep + " `aru imports:catalog` prints every symbol's path for the version go.mod requires.",
 			})
 		}
 	}

@@ -31,6 +31,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/arandu-io/aru/internal/catalog"
 	"github.com/arandu-io/aru/internal/kyse"
 	"github.com/arandu-io/aru/internal/manifest"
 )
@@ -141,6 +142,11 @@ type project struct {
 	// the compiler away from the markup -- so they are kept as text, and the
 	// rules that read them are looking at markup, not at syntax.
 	views []view
+	// catalog is the import catalog of the framework version go.mod requires,
+	// or nil when its source is not on disk or the project does not require
+	// the framework. It is read once, here, and never fetched: see
+	// importsAreCanonical.
+	catalog *catalog.Catalog
 	// unreadable are the .go files that did not parse, with the reason.
 	//
 	// They are carried rather than dropped because every rule below reasons over
@@ -300,6 +306,12 @@ func Analyze(dir string, profile Profile) (Analysis, error) {
 	p := &project{
 		root: dir, profile: profile, files: files, modulePath: readModulePath(dir),
 		manifest: declared, env: readEnvExample(dir), views: views, unreadable: unreadable,
+	}
+	// A catalog that cannot be read is a rule that has nothing to say, never a
+	// failure of the whole report: the doctor runs on a project mid-edit, and
+	// one whose module cache is empty is the normal case on a fresh machine.
+	if c, err := catalog.ForProject(dir); err == nil {
+		p.catalog = c
 	}
 
 	var findings []Finding

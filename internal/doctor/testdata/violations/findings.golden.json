@@ -24,6 +24,14 @@
     "why": "the binary stops at boot with \"QUEUE_CONNECTION asks for redis and no connector for it is linked into this binary\" in every environment configured from this file, the first being the .env a fresh checkout copies from it. Add it: `go get github.com/arandu-io/hesape/queue/connectors/redis`, and blank-import it in bootstrap/app.go, next to the other connectors: `_ \"github.com/arandu-io/hesape/queue/connectors/redis\"`."
   },
   {
+    "rule": "import-not-canonical",
+    "severity": "warning",
+    "file": "app/Http/Controllers/Auth/LoginController.go",
+    "line": 4,
+    "message": "this file names Context from github.com/arandu-io/hesape/http through github.com/arandu-io/framework/http",
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+  },
+  {
     "rule": "session-not-rotated",
     "severity": "error",
     "file": "app/Http/Controllers/Auth/LoginController.go",
@@ -46,6 +54,30 @@
     "line": 1,
     "message": "this controller imports example.test/p/app/Repositories",
     "why": "the Grant a repository requires would have to be issued here, which is the request authorizing itself. Call app/Services instead: it validates, calls security.Authorize, and only then reaches the repository."
+  },
+  {
+    "rule": "import-not-canonical",
+    "severity": "warning",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 6,
+    "message": "this file names Wrap, DialectSQLite from github.com/arandu-io/hesape/database through github.com/arandu-io/framework/data",
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+  },
+  {
+    "rule": "import-not-canonical",
+    "severity": "warning",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 7,
+    "message": "this file names Context from github.com/arandu-io/hesape/http through github.com/arandu-io/framework/http",
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+  },
+  {
+    "rule": "import-not-canonical",
+    "severity": "warning",
+    "file": "app/Http/Controllers/BillingController.go",
+    "line": 9,
+    "message": "this file names SystemGrant from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
   },
   {
     "rule": "view-data-is-a-map",
@@ -152,6 +184,14 @@
     "why": "it is the one way past a policy, and its call sites are the audit. If this is a request path, the Grant should come from security.Authorize instead. If the escape is deliberate, write `//arandu:system-grant \u003creason\u003e` on the line, so the reason is read in review rather than inferred from the function name."
   },
   {
+    "rule": "import-not-canonical",
+    "severity": "warning",
+    "file": "app/Http/Requests/ChargeRequest.go",
+    "line": 4,
+    "message": "this file names MustCompile, Rules from github.com/arandu-io/hesape/validation through github.com/arandu-io/framework/validation",
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+  },
+  {
     "rule": "enum-rule-not-derived",
     "severity": "error",
     "file": "app/Http/Requests/ChargeRequest.go",
@@ -200,12 +240,28 @@
     "why": "this file is generated from the entities of the project, and what is on disk is not what they generate. A build compiles what is on disk, so the application would run against the query of an entity that is not the one in the source. aru build and aru dev run model:build first; a pipeline that calls go build directly has to run it too, or check with aru model:build --check."
   },
   {
+    "rule": "import-not-canonical",
+    "severity": "warning",
+    "file": "app/Policies/ChargePolicy.go",
+    "line": 7,
+    "message": "this file names Subject, Action from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+  },
+  {
     "rule": "policy-never-opened",
     "severity": "warning",
     "file": "app/Policies/ChargePolicy.go",
     "line": 17,
     "message": "the policy of Charge denies every action",
     "why": "this is how `aru make:policy` generates it, on purpose. Open what the application needs inside the custom block -- until then every request that reaches this entity is refused."
+  },
+  {
+    "rule": "import-not-canonical",
+    "severity": "warning",
+    "file": "app/Reporting/InvoiceRepo.go",
+    "line": 6,
+    "message": "this file names DB from github.com/arandu-io/hesape/database through github.com/arandu-io/framework/data",
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
   },
   {
     "rule": "grant-not-received",
@@ -222,6 +278,22 @@
     "line": 22,
     "message": "the SELECT in All reaches invoices and does not filter by tenant_id",
     "why": "other statements on invoices in this project scope it by tenant, so the table has the column and this one reaches every customer's rows -- reading them, or writing them. Add `AND tenant_id = ?` to the WHERE and pass data.Tenant(g), which is the only source of a tenant for SQL. If this statement is meant to cross tenants, write `//arandu:system-grant \u003creason\u003e` on the line, so the reason is read in review."
+  },
+  {
+    "rule": "import-not-canonical",
+    "severity": "warning",
+    "file": "app/Repositories/BillingRepository.go",
+    "line": 7,
+    "message": "this file names Tenant from github.com/arandu-io/hesape/auth; DB from github.com/arandu-io/hesape/database through github.com/arandu-io/framework/data",
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+  },
+  {
+    "rule": "import-not-canonical",
+    "severity": "warning",
+    "file": "app/Repositories/BillingRepository.go",
+    "line": 8,
+    "message": "this file names Grant, SystemGrant from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
   },
   {
     "rule": "repository-without-policy",
@@ -272,6 +344,22 @@
     "why": "it returns the zero Grant, which fails Check -- so this call site is dead code. A system grant with no tenant would read across every customer, which is why it does not exist."
   },
   {
+    "rule": "import-not-canonical",
+    "severity": "warning",
+    "file": "app/Repositories/SearchRepository.go",
+    "line": 6,
+    "message": "this file names Tenant from github.com/arandu-io/hesape/auth; DB from github.com/arandu-io/hesape/database through github.com/arandu-io/framework/data",
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+  },
+  {
+    "rule": "import-not-canonical",
+    "severity": "warning",
+    "file": "app/Repositories/SearchRepository.go",
+    "line": 7,
+    "message": "this file names Grant from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+  },
+  {
     "rule": "repository-without-policy",
     "severity": "error",
     "file": "app/Repositories/SearchRepository.go",
@@ -288,6 +376,14 @@
     "why": "a value the caller supplied reaches the statement as text, which is injection with one more step than fmt.Sprintf. Use a ? placeholder and pass it as an argument. A column or table NAME cannot be a placeholder -- pick it from an allowlist first, and concatenate the allowlisted value, which is what `aru make:module` emits."
   },
   {
+    "rule": "import-not-canonical",
+    "severity": "warning",
+    "file": "app/Services/AliasedGrantService.go",
+    "line": 4,
+    "message": "this file names Grant from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+  },
+  {
     "rule": "system-grant-outside-scope",
     "severity": "warning",
     "file": "app/Services/AliasedGrantService.go",
@@ -302,6 +398,14 @@
     "line": 25,
     "message": "GrantFor with an empty tenant",
     "why": "it returns the zero Grant, which fails Check -- so this call site is dead code. A system grant with no tenant would read across every customer, which is why it does not exist."
+  },
+  {
+    "rule": "import-not-canonical",
+    "severity": "warning",
+    "file": "app/Services/BillingService.go",
+    "line": 6,
+    "message": "this file names Policy, Subject, Authorize from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
   },
   {
     "rule": "resource-not-reauthorized",
@@ -336,6 +440,14 @@
     "why": "a test beside the code is a claim that it reads something the package does not export, which is the one reason Go leaves no choice about. Name it _internal_test.go if that is true, and move it under tests/ if it is not -- otherwise every listing of the package is doubled by files nobody opens on purpose."
   },
   {
+    "rule": "import-not-canonical",
+    "severity": "warning",
+    "file": "app/Services/JobGrantService.go",
+    "line": 5,
+    "message": "this file names Grant from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+  },
+  {
     "rule": "system-grant-outside-scope",
     "severity": "warning",
     "file": "app/Services/JobGrantService.go",
@@ -352,12 +464,28 @@
     "why": "it returns the zero Grant, which fails Check -- so this call site is dead code. A system grant with no tenant would read across every customer, which is why it does not exist."
   },
   {
+    "rule": "import-not-canonical",
+    "severity": "warning",
+    "file": "app/Services/LedgerService.go",
+    "line": 4,
+    "message": "this file names Grant from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+  },
+  {
     "rule": "scaffolding-ships",
     "severity": "warning",
     "file": "app/Services/LedgerService.go",
     "line": 6,
     "message": "this file imports example.test/p/tests/Helpers, which is test scaffolding",
     "why": "it is built to be linked into a test binary: it calls t.Fatal, reads fixtures and pulls in the testing package. Imported from a file the compiler puts in the application, all of that is inside what gets deployed. Move the helper into a package that ships, or call it only from a test."
+  },
+  {
+    "rule": "import-not-canonical",
+    "severity": "warning",
+    "file": "app/Services/PermissionService.go",
+    "line": 7,
+    "message": "this file names Grant, Action from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
   },
   {
     "rule": "action-not-a-constant",

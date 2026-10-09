@@ -1,0 +1,7 @@
+# github.com/arandu-io/framework v0.10.0
+## explicit; go 1.25.0
+github.com/arandu-io/framework/data
+github.com/arandu-io/framework/http
+github.com/arandu-io/framework/jobs
+github.com/arandu-io/framework/security
+github.com/arandu-io/framework/validation

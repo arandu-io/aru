@@ -11,10 +11,10 @@ AST and never runs the code, so it works on a project that does not compile —
 which is exactly when someone needs to be told what is wrong.
 
 ```sh
-awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 32  rule functions
+awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 33  rule functions
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/testlayout/testlayout.go \
-	| sort -u | wc -l                                                     # 42  names a report can carry
-grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go | sort -u | wc -l    # 38  of them declared here
+	| sort -u | wc -l                                                     # 43  names a report can carry
+grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go | sort -u | wc -l    # 39  of them declared here
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/testlayout/testlayout.go \
 	| sort -u | wc -l                                                     # 4  forwarded, declared there
 ```
@@ -88,9 +88,18 @@ the CLI accepts the fixture as a project:
 ```sh
 cp -R internal/doctor/testdata/violations /tmp/viol && touch /tmp/viol/arandu.toml
 (cd /tmp/viol && /tmp/aru-src doctor > /tmp/viol.out 2>&1); echo $?   # 1
-tail -1 /tmp/viol.out                                                 # 35 error(s), 26 warning(s)
-grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 33
+tail -1 /tmp/viol.out                                                 # 39 error(s), 42 warning(s)
+grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 36
 ```
+
+`violations` carries a `vendor/` directory holding a slice of the framework:
+the bridge packages it imports, declared the way the framework declares them.
+`import-not-canonical` decides from the framework's own source, at the version
+go.mod requires, and a vendor directory is the one place that source can sit
+inside a fixture and survive the `cp -R` above. Sixteen of the forty-two
+warnings are that rule. The other fixtures require a framework version no
+module cache here holds, so the rule is silent on them -- which is its declared
+limit, not an accident.
 
 ```sh
 cp -R internal/doctor/testdata/clean /tmp/clean && touch /tmp/clean/arandu.toml
@@ -205,6 +214,11 @@ It parses; it does not type-check and it does not resolve constants.
   in their own doc comments. A clean report means no unscoped statement was
   *found*.
 - **Partition keys are not checked**, because nothing in the code declares one.
+- **The framework is read from disk, never fetched.** `import-not-canonical`
+  needs the framework's source at the version go.mod requires -- a directory
+  replace, `vendor/`, or the module cache -- and the doctor starts no
+  toolchain to get it. On a machine that never downloaded that version the rule
+  says nothing; `aru imports:catalog` fetches it and prints the same table.
 - **A build tag is invisible**, so a file the compiler excludes is still read —
   except the views, which `doctor.go:366` skips by name for exactly that reason:
   a `.kyse.go` ends in `.go` and is not Go, and parsing one would report every

@@ -433,10 +433,11 @@ window.`,
 	{
 		// The inventory, next to the two commands that read a running project:
 		// route:list says what answers, trace says what one request did, and this
-		// says what the application was wired with in the first place.
+		// says what the application is configured and wired with -- read from
+		// the tree, because no project's binary answers it.
 		name:  "about",
 		usage: "aru about [--only=<section>]",
-		desc:  "report what the application has wired: drivers, modules and version",
+		desc:  "report what the project is configured and wired with: versions, drivers, modules",
 		run:   about,
 	},
 	{

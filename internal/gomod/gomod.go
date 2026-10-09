@@ -21,7 +21,9 @@ import (
 // File is the part of a go.mod this server reads: what the tree is
 // called, what it requires, and what it replaces.
 type File struct {
-	Path     string
+	Path string
+	// Go is the version the go directive names, or empty without one.
+	Go       string
 	Versions map[string]string
 	// Replaced maps a module to the directory that replaces it.
 	Replaced map[string]string
@@ -71,6 +73,10 @@ func (m *File) record(keyword, rest string) {
 	case "module":
 		if len(fields) >= 1 {
 			m.Path = fields[0]
+		}
+	case "go":
+		if len(fields) >= 1 {
+			m.Go = fields[0]
 		}
 	case "require":
 		if len(fields) >= 2 {

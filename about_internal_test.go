@@ -3,9 +3,9 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -51,8 +51,12 @@ func aboutPayload(t *testing.T) string {
 
 func renderAbout(t *testing.T, payload, only string) (string, error) {
 	t.Helper()
+	var report aboutReport
+	if err := json.Unmarshal([]byte(payload), &report); err != nil {
+		t.Fatalf("the sample report does not decode: %v", err)
+	}
 	var out strings.Builder
-	err := printAbout(&out, []byte(payload), only)
+	err := printAbout(&out, report, only)
 	return out.String(), err
 }
 
@@ -222,13 +226,10 @@ func TestAnUnknownSectionNamesTheOnesThatExist(t *testing.T) {
 	}
 }
 
-// TestGarbageFromTheProjectIsNotAPanic: an older project answers this
-// subcommand with something else entirely, and a stack trace would be a worse
-// answer than a sentence.
-func TestGarbageFromTheProjectIsNotAPanic(t *testing.T) {
-	if _, err := renderAbout(t, "unknown command: about\n", ""); err == nil {
-		t.Fatal("a line of prose was accepted as a report")
-	}
+// TestAnEmptyReportIsRefused: a report with nothing in it printed as if it
+// said something is the one output that cannot be told apart from a project
+// with nothing wired.
+func TestAnEmptyReportIsRefused(t *testing.T) {
 	if _, err := renderAbout(t, `{"Sections": []}`, ""); err == nil {
 		t.Fatal("an empty report was printed as if it said something")
 	}
@@ -239,8 +240,8 @@ func TestGarbageFromTheProjectIsNotAPanic(t *testing.T) {
 // them, and a report narrowed by nothing looks exactly like a report narrowed
 // by what was typed.
 //
-// Every refusal here happens before the project is compiled, which is why they
-// can be asserted from an empty directory.
+// Every refusal here happens before the project is read, which is why they can
+// be asserted from an empty directory.
 func TestAboutRefusesArgumentsItDoesNotUnderstand(t *testing.T) {
 	t.Chdir(t.TempDir())
 
@@ -279,75 +280,99 @@ func TestAboutRefusesArgumentsItDoesNotUnderstand(t *testing.T) {
 	}
 }
 
-// TestTheReportComesFromTheProjectBinary runs a project that answers this
-// subcommand, and reads what reaches the terminal.
+// TestTheReportIsReadFromTheProject builds the report from a project on disk,
+// the way every existing project is read: nothing in it answers a subcommand,
+// and the inventory still comes back.
 //
-// It is the half no payload can prove: that the subcommand handed over is
-// "about", that the project is handed no arguments of its own, and that the
-// report is read off standard output rather than mixed with whatever the build
-// wrote to standard error.
-//
-// Three files, because projectRoot requires all three together, and no go
-// directive: a version above the local toolchain would send `go run` looking
-// for another one before it reached this.
-func TestTheReportComesFromTheProjectBinary(t *testing.T) {
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skip("go is not on PATH, so nothing could be delegated")
-	}
-
-	root := t.TempDir()
-	main := "package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n\t\"strings\"\n)\n\n" +
-		"const payload = `" + aboutPayload(t) + "`\n\n" +
-		"func main() {\n" +
-		"\tif got := strings.Join(os.Args[1:], \" \"); got != \"about\" {\n" +
-		"\t\tfmt.Fprintf(os.Stderr, \"the project binary was called with %q\\n\", got)\n" +
-		"\t\tos.Exit(1)\n" +
-		"\t}\n" +
-		"\tfmt.Fprintln(os.Stderr, \"a line the build wrote\")\n" +
-		"\tfmt.Println(payload)\n" +
-		"}\n"
-
-	for name, body := range map[string]string{
-		"go.mod":      "module example.test/about\n",
-		"arandu.toml": "name = \"about\"\n",
-		"main.go":     main,
-	} {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+// The environment is pinned for each setting the report reads, so a variable
+// the machine running the test exports cannot change the answer -- and one of
+// them is set on purpose, because the environment winning over .env is the
+// precedence the boot applies and the report has to agree with it.
+func TestTheReportIsReadFromTheProject(t *testing.T) {
+	for _, s := range append(append([]aboutSetting{}, aboutEnvironment...), aboutDrivers...) {
+		t.Setenv(s.name, "")
+		if err := os.Unsetenv(s.name); err != nil {
 			t.Fatal(err)
 		}
 	}
+	t.Setenv("CACHE_STORE", "memory")
 
-	// The workspace is switched off for the child. This repository sits inside
-	// one, and a temporary directory is not a module of it, so `go run` would
-	// refuse before it ever compiled anything.
-	t.Setenv("GOWORK", "off")
+	root := t.TempDir()
+	for name, body := range map[string]string{
+		"go.mod": "module example.test/about\n\ngo 1.26.0\n\nrequire (\n" +
+			"\tgithub.com/arandu-io/framework v0.50.2\n\tgithub.com/arandu-io/hesape v0.48.0\n\tgithub.com/arandu-io/kyse v0.30.0\n)\n",
+		"arandu.toml": "name = \"about\"\n",
+		"main.go":     "package main\n\nfunc main() {}\n",
+		".env": "APP_NAME=Acme\nAPP_ENV=local\nAPP_URL=http://127.0.0.1:8080\nAPP_KEY=" + sampleKey() + "\n" +
+			"DATABASE_URL=postgres://user:hunter2@127.0.0.1:5432/acme\nCACHE_STORE=redis\nQUEUE_CONNECTION=database\n",
+		"bootstrap/app.go": `package bootstrap
+
+import (
+	"github.com/arandu-io/framework/foundation"
+	"github.com/arandu-io/hesape/cache"
+
+	audit "example.org/community/audit"
+)
+
+var _ cache.Store
+
+func Boot(app *foundation.Application) {
+	app.Register(
+		audit.NewModule(),
+	)
+}
+`,
+	} {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	t.Chdir(root)
 
 	code, stdout, stderr := exercise(t, "about")
 	if code != 0 {
 		t.Fatalf("about exited %d inside a project: %s", code, stderr)
 	}
-	for _, want := range []string{"Environment", "Drivers", "postgres", "Modules", "invoice", redacted} {
+	for _, want := range []string{
+		"Environment", "Acme", "local", "http://127.0.0.1:8080", redacted,
+		"Versions", "example.test/about", "1.26.0", "v0.50.2", "v0.48.0", "v0.30.0",
+		"Drivers", "pgsql", "database", notSet,
+		"Modules", "example.org/community/audit", "registered in bootstrap, bootstrap/app.go:14",
+		"Components", "cache",
+	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("the report does not show %q:\n%s", want, stdout)
 		}
 	}
-	if strings.Contains(stdout, sampleKey()) {
-		t.Errorf("the application key reached the terminal:\n%s", stdout)
+	for _, leak := range []string{sampleKey(), "hunter2", "postgres://"} {
+		if strings.Contains(stdout, leak) {
+			t.Errorf("the report printed %q, which is a credential or carries one:\n%s", leak, stdout)
+		}
 	}
-	// What the project wrote to standard error stays out of the report, so
-	// `aru about > report.txt` collects the inventory and nothing else.
-	if strings.Contains(stdout, "a line the build wrote") {
-		t.Errorf("standard error was folded into the report:\n%s", stdout)
+	if cache := rowOf(stdout, "Cache"); !strings.Contains(cache, "memory") {
+		t.Errorf("CACHE_STORE is exported as memory and .env says redis, and the report shows %q: "+
+			"the environment wins at boot", cache)
 	}
 
-	// The section filter over the real handover, so the flag is proved on the
-	// path people use rather than only against a payload.
 	code, stdout, stderr = exercise(t, "about", "--only=drivers")
 	if code != 0 {
 		t.Fatalf("about --only=drivers exited %d: %s", code, stderr)
 	}
-	if !strings.Contains(stdout, "postgres") || strings.Contains(stdout, "invoice") {
+	if !strings.Contains(stdout, "pgsql") || strings.Contains(stdout, "Acme") || strings.Contains(stdout, "audit") {
 		t.Errorf("--only=drivers did not restrict the report:\n%s", stdout)
 	}
+}
+
+// rowOf is the line of a report whose first field is label.
+func rowOf(report, label string) string {
+	for _, line := range strings.Split(report, "\n") {
+		if fields := strings.Fields(line); len(fields) > 0 && fields[0] == label {
+			return line
+		}
+	}
+	return ""
 }

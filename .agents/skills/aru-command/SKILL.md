@@ -24,8 +24,9 @@ registered?**
 
 - **No** — it runs here. `key:generate`, `new`, every `make:*`, `generate`,
   `schema`, `doctor`, `build`, `model:build`, `view:build`, `lsp`, `action:list`,
-  `imports:catalog`, `trace`, the five `font:*` and the three `native:*`
-  commands need nothing the project registered.
+  `imports:catalog`, `about`, `trace`, the five `font:*` and the three
+  `native:*` commands need nothing the project registered -- or, for `about`,
+  read what it registered from the source, the way the doctor does.
 - **Yes** — it forwards. Modules are wired explicitly in `bootstrap/app.go`,
   with no container and no plugin loading, so a separately compiled binary
   cannot know them. `delegate("migrate")` runs `go run . migrate` in the

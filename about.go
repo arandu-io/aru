@@ -1,47 +1,194 @@
 package main
 
 import (
-	"bytes"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
+
+	"github.com/arandu-io/aru/internal/doctor"
+	"github.com/arandu-io/aru/internal/gomod"
 )
 
 // redacted is what a secret prints as. The word rather than a row of asterisks:
 // asterisks read as a value whose length is being shown.
 const redacted = "[redacted]"
 
-// about prints the inventory of what the application has wired: its name,
-// environment and URL, the driver chosen for each component, the registered
-// modules, and the version.
+// about prints the inventory of what the application is configured with: its
+// name, environment and URL, the versions it builds against, the driver each
+// setting names, and the modules and components its source wires in.
 //
-// The application is the only thing that knows any of it. The drivers are
-// typed structs compiled into the project and the module list is built by
-// explicit registration, so a separately compiled CLI cannot read either: this
-// command runs the project's own binary and renders what it answers.
+// It reads the project and never runs it. The answer used to come from the
+// project's binary, through a subcommand no project's dispatch has ever
+// answered -- the skeleton's switch has no case for it -- so the command failed
+// in every application that exists. Teaching the skeleton would reach only the
+// projects generated after the lesson: bootstrap/console.go belongs to the
+// project, and nothing here edits it. Everything the report holds is on disk
+// instead: go.mod, the environment and .env read the way the boot reads them,
+// and the registrations the doctor's project graph already finds.
 //
-// The arguments are read before the project is compiled, so a mistyped flag is
-// answered in the time it takes to type it rather than after a build.
+// What that costs is said in the report rather than hidden. A setting is shown
+// as the environment and .env give it; a default the project's own config
+// applies to an unset variable is not something a reader of the tree can know,
+// and the report says "not set" rather than guessing it.
 func about(args []string, stdout, stderr io.Writer) error {
 	only, err := aboutSection(args, stderr)
 	if err != nil {
 		return err
 	}
-
-	// The project binary is handed no arguments at all, and --only selects from
-	// what it answered. A subcommand that took a flag would have to refuse the
-	// ones it did not recognise, and it cannot: the flag was typed here, so this
-	// is where it is understood or rejected.
-	var payload bytes.Buffer
-	if err := delegate("about")(nil, &payload, stderr); err != nil {
+	root, err := projectRoot()
+	if err != nil {
 		return err
 	}
-	return printAbout(stdout, payload.Bytes(), only)
+	report, err := readAbout(root)
+	if err != nil {
+		return err
+	}
+	return printAbout(stdout, report, only)
+}
+
+// The variables each section reads, with the label they are shown under. The names are the ones the boot reads: APP_* by the framework's
+// configuration, DATABASE_URL by its database loader, and the driver settings
+// by the skeleton's config/ files, under the spelling .env.example documents.
+var (
+	aboutEnvironment = []aboutSetting{
+		{"Application Name", "APP_NAME"},
+		{"Environment", "APP_ENV"},
+		{"URL", "APP_URL"},
+		{"Application Key", "APP_KEY"},
+	}
+	aboutDrivers = []aboutSetting{
+		{"Database", "DATABASE_URL"},
+		{"Cache", "CACHE_STORE"},
+		{"Session", "SESSION_DRIVER"},
+		{"Queue", "QUEUE_CONNECTION"},
+		{"Mail", "MAIL_MAILER"},
+		{"Filesystem", "FILESYSTEM_DISK"},
+	}
+	// aboutModules are the modules whose version is worth a line: the three
+	// the skeleton requires and every project builds on.
+	aboutModules = []aboutSetting{
+		{"framework", "github.com/arandu-io/framework"},
+		{"hesape", "github.com/arandu-io/hesape"},
+		{"kyse", "github.com/arandu-io/kyse"},
+	}
+)
+
+type aboutSetting struct{ label, name string }
+
+// notSet is what an unset setting prints as. It says what is known -- nothing
+// sets it -- and where the answer is instead.
+const notSet = "not set: the application's default applies"
+
+// readAbout builds the report for the project at root.
+func readAbout(root string) (aboutReport, error) {
+	body, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return aboutReport{}, fmt.Errorf("about: %w", err)
+	}
+	mod := gomod.Parse(string(body))
+	dotenv := doctor.EnvFile(filepath.Join(root, ".env"))
+
+	// The environment first and .env for what it leaves undefined, which is
+	// the precedence the boot applies: a variable exported as the empty string
+	// is a decision, and the file does not overrule it.
+	setting := func(name string) (string, bool) {
+		if value, defined := os.LookupEnv(name); defined {
+			return value, true
+		}
+		value, defined := dotenv[name]
+		return value, defined
+	}
+
+	environment := aboutSectionPayload{Name: "Environment"}
+	for _, s := range aboutEnvironment {
+		value, defined := setting(s.name)
+		entry := aboutEntry{Name: s.label, Value: value, Secret: s.name == "APP_KEY"}
+		if !defined && !entry.Secret {
+			entry.Value = notSet
+		}
+		environment.Entries = append(environment.Entries, entry)
+	}
+
+	versions := aboutSectionPayload{Name: "Versions", Entries: []aboutEntry{
+		{Name: "Module", Value: mod.Path},
+		{Name: "Go", Value: mod.Go},
+		{Name: "aru", Value: version},
+	}}
+	for _, m := range aboutModules {
+		v, required := mod.Versions[m.name]
+		if !required {
+			continue
+		}
+		if dir, replaced := mod.Replaced[m.name]; replaced {
+			v = "replaced by " + dir
+		} else if pinned, ok := mod.Pinned(m.name); ok {
+			v = pinned
+		}
+		versions.Entries = append(versions.Entries, aboutEntry{Name: m.label, Value: v})
+	}
+
+	drivers := aboutSectionPayload{Name: "Drivers"}
+	for _, s := range aboutDrivers {
+		value, defined := setting(s.name)
+		switch {
+		case !defined || strings.TrimSpace(value) == "":
+			value = notSet
+		case s.name == "DATABASE_URL":
+			value = databaseShown(value)
+		}
+		drivers.Entries = append(drivers.Entries, aboutEntry{Name: s.label, Value: value})
+	}
+
+	report := aboutReport{Sections: []aboutSectionPayload{environment, versions, drivers}}
+
+	analysis, err := doctor.Analyze(root, doctor.Conventional)
+	if err != nil {
+		return aboutReport{}, fmt.Errorf("about: %w", err)
+	}
+	modules := aboutSectionPayload{Name: "Modules"}
+	components := aboutSectionPayload{Name: "Components"}
+	for _, node := range analysis.Graph.Nodes {
+		switch node.Kind {
+		case "community-module":
+			// "Registered in bootstrap" or "Required in go.mod", then where.
+			where := node.File + ":" + strconv.Itoa(node.Line)
+			if detail := node.Detail; detail != "" {
+				where = strings.ToLower(detail[:1]) + detail[1:] + ", " + where
+			}
+			modules.Entries = append(modules.Entries, aboutEntry{Name: node.Label, Value: where})
+		case "native-capability":
+			components.Entries = append(components.Entries, aboutEntry{Name: node.Label, Value: node.Detail})
+		}
+	}
+	for _, section := range []aboutSectionPayload{modules, components} {
+		sort.Slice(section.Entries, func(i, j int) bool { return section.Entries[i].Name < section.Entries[j].Name })
+		if len(section.Entries) > 0 {
+			report.Sections = append(report.Sections, section)
+		}
+	}
+	return report, nil
+}
+
+// databaseShown is what a DATABASE_URL prints as: the engine it selects, and
+// never the URL, which carries the password. A scheme no connector speaks is
+// named as it was written, because the boot refuses it in those words.
+func databaseShown(raw string) string {
+	if dialect := doctor.DatabaseDialect(raw); dialect != "" {
+		return dialect
+	}
+	scheme, _, found := strings.Cut(strings.TrimSpace(raw), "://")
+	if !found || scheme == "" {
+		return "a URL with no scheme"
+	}
+	return scheme + ", which no connector speaks"
 }
 
 // aboutSection reads the arguments and answers which section was asked for, or
@@ -79,42 +226,30 @@ func aboutSection(args []string, stderr io.Writer) (string, error) {
 	return name, nil
 }
 
-// aboutReport is what the project binary answers with: the sections, in the
-// order they are meant to be read.
-//
-// The shape is declared here rather than shared with the framework, for the
-// same reason the trace payloads are: the CLI and the application are separate
-// programs built at different times, and a shared type would make their
-// versions have to match.
+// aboutReport is the inventory, in the order it is meant to be read.
 type aboutReport struct {
-	Sections []aboutSectionPayload `json:"Sections"`
+	Sections []aboutSectionPayload
 }
 
 // aboutSectionPayload is one group of the report, with the label --only takes.
 type aboutSectionPayload struct {
-	Name    string       `json:"Name"`
-	Entries []aboutEntry `json:"Entries"`
+	Name    string
+	Entries []aboutEntry
 }
 
 // aboutEntry is one line of a section: a label, and what is wired behind it.
 //
-// Secret marks a value that must not reach the terminal. It travels in the
-// payload because the application is what knows which of its settings are
-// credentials; the CLI would otherwise have to guess for every one of them.
+// Secret marks a value that must not reach the terminal.
 type aboutEntry struct {
-	Name   string `json:"Name"`
-	Value  string `json:"Value"`
-	Secret bool   `json:"Secret"`
+	Name   string
+	Value  string
+	Secret bool
 }
 
 // printAbout renders the report, restricted to only when it is not empty.
-func printAbout(w io.Writer, payload []byte, only string) error {
-	var report aboutReport
-	if err := json.Unmarshal(payload, &report); err != nil {
-		return fmt.Errorf("about: the application answered something unexpected: %w", err)
-	}
+func printAbout(w io.Writer, report aboutReport, only string) error {
 	if len(report.Sections) == 0 {
-		return errors.New("about: the application reported no sections")
+		return errors.New("about: the report has no sections")
 	}
 
 	sections := report.Sections
@@ -125,8 +260,9 @@ func printAbout(w io.Writer, payload []byte, only string) error {
 				sections = append(sections, s)
 			}
 		}
-		// The names come from the report rather than from a list kept here, so
-		// a section the application grows later is offered on the day it exists.
+		// The names come from the report rather than from a second list, so a
+		// section left out because nothing was found in it -- Modules on a
+		// project that registers none -- is not offered either.
 		if len(sections) == 0 {
 			names := make([]string, 0, len(report.Sections))
 			for _, s := range report.Sections {
@@ -159,8 +295,8 @@ func printAbout(w io.Writer, payload []byte, only string) error {
 // fail in completely different ways and neither answer leaks anything.
 //
 // The shape check is not a second rule, it is the floor under the first: the
-// payload declares what is secret, and an application that forgets to declare
-// the one credential every project has still cannot print it here.
+// report marks what is secret, and a key that reaches a value nobody marked
+// still cannot print here.
 func aboutValue(e aboutEntry) string {
 	if strings.TrimSpace(e.Value) == "" {
 		if e.Secret {

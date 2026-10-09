@@ -54,7 +54,7 @@ plus `help` and `version`. The native and inspection commands, in the words of `
 | `lsp` | serve Kyse diagnostics and completion to an editor |
 | `action:list` | list the actions the source declares, with the constant and the line of each |
 | `imports:catalog` | print the import path each exported framework symbol should be named by |
-| `about` | report what the application has wired: drivers, modules and version |
+| `about` | report what the project is configured and wired with: versions, drivers, modules |
 
 - **`aru make:module`** — a Model-backed entity with its policy, service,
   request, controller, migration and four screens, compiling and tested from

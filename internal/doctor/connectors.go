@@ -103,7 +103,34 @@ type envSetting struct {
 // keeps: it never overwrites a variable that is already set, and the first line
 // is what set it.
 func readEnvExample(dir string) map[string]envSetting {
-	body, err := os.ReadFile(filepath.Join(dir, envExample))
+	return readEnvFile(filepath.Join(dir, envExample))
+}
+
+// EnvFile answers what one file in the format of .env sets, by name, read the
+// way readEnvExample reads .env.example, or nil when there is no such file.
+//
+// It is how `aru about` reads a project's .env: one reader of the format, so
+// the configuration the report shows and the one this package checks cannot
+// be two readings of one file.
+func EnvFile(path string) map[string]string {
+	settings := readEnvFile(path)
+	if settings == nil {
+		return nil
+	}
+	out := make(map[string]string, len(settings))
+	for name, s := range settings {
+		out[name] = s.value
+	}
+	return out
+}
+
+// DatabaseDialect answers the engine a DATABASE_URL selects -- sqlite, pgsql
+// or mysql -- or empty when no connector speaks its scheme. The URL itself
+// carries credentials, and the dialect is the part of it that can be shown.
+func DatabaseDialect(raw string) string { return databaseDialect(raw) }
+
+func readEnvFile(path string) map[string]envSetting {
+	body, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}

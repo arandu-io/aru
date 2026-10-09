@@ -24,10 +24,10 @@ func TestViewFixturesUseTheNativeRuntime(t *testing.T) {
 		{name: "clean", files: []string{
 			"main.go",
 			"resources/views/invoices/index.go",
-			"resources/views/invoices/row.go",
+			"resources/views/partials/invoice-row.go",
 			"resources/views/layouts/app.go",
 			"storage/framework/views/invoices/index.go",
-			"storage/framework/views/invoices/row.go",
+			"storage/framework/views/partials/invoice-row.go",
 			"storage/framework/views/layouts/app.go",
 		}},
 		{name: "gaps", files: []string{

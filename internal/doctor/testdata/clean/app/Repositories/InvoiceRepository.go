@@ -184,3 +184,17 @@ func (r *InvoiceRepository) Note(ctx context.Context, g security.Grant, id, text
 }
 
 // arandu:end custom
+
+// Overdue is a read of the invoices held by a var rather than declared, which
+// is a function the rule reading the WHERE clause has to read and has to read
+// correctly. It lives in the repository, where a statement belongs.
+//
+// The tenant comes off the Grant and reaches the predicate, so this one is the
+// control: it is the fix the rule asks for, written in the shape that used to be
+// invisible to it. Reporting it would mean the widening fires on correct code.
+var Overdue = func(ctx context.Context, db *data.DB, g security.Grant) error {
+	_, err := db.QueryContext(ctx,
+		`SELECT id, total FROM invoices WHERE tenant_id = ? AND due_at < ?`,
+		data.Tenant(g), "2026-01-01")
+	return err
+}

@@ -55,5 +55,5 @@ func (c InvoiceController) Show(ctx *http.Context) error {
 	if err != nil {
 		return err
 	}
-	return ctx.Fragment(200, "invoices.row", views.InvoiceRowData{Invoice: found})
+	return ctx.Fragment(200, "partials.invoice-row", views.InvoiceRowData{Invoice: found})
 }

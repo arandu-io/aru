@@ -492,8 +492,8 @@ window.`,
 		// project's: whether a name is an alias of a component's or the
 		// framework's own is a fact about the release go.mod requires.
 		name:  "imports:catalog",
-		usage: "aru imports:catalog [--json]",
-		desc:  "print the import path each exported framework symbol should be named by",
+		usage: "aru imports:catalog [--json] | --fix [--apply]",
+		desc:  "print the import path each exported framework symbol should be named by, or rewrite the project's imports to it",
 		run:   importsCatalog,
 	},
 	{

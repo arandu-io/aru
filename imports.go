@@ -5,9 +5,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/arandu-io/aru/internal/catalog"
+	"github.com/arandu-io/aru/internal/skills"
 )
 
 // importsCatalog prints, for every exported symbol of the framework the module
@@ -29,11 +34,19 @@ func importsCatalog(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("imports:catalog", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	asJSON := flags.Bool("json", false, "print the catalog as JSON")
+	fix := flags.Bool("fix", false, "show how each file would name the symbols a bridge only re-exports by their canonical path")
+	apply := flags.Bool("apply", false, "with --fix, write the rewritten files")
 	if err := flags.Parse(args); err != nil {
 		return fmt.Errorf("imports:catalog: %w", err)
 	}
 	if flags.NArg() > 0 {
 		return fmt.Errorf("imports:catalog: %q is not an argument this command takes", flags.Arg(0))
+	}
+	if *apply && !*fix {
+		return fmt.Errorf("imports:catalog: --apply writes what --fix shows, and means nothing without it")
+	}
+	if *fix && *asJSON {
+		return fmt.Errorf("imports:catalog: --fix prints a diff, not JSON; pick one")
 	}
 
 	root, err := moduleRoot()
@@ -45,6 +58,9 @@ func importsCatalog(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("imports:catalog: %w", err)
 	}
 
+	if *fix {
+		return fixImports(root, c, *apply, stdout)
+	}
 	if *asJSON {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
@@ -83,6 +99,83 @@ func printCatalog(w io.Writer, c *catalog.Catalog) error {
 		if err := tw.Flush(); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// fixImports rewrites the imports of every Go source and view of the module
+// at root so that a symbol a bridge only re-exports is named by its canonical
+// path, and prints the diff of each file. It writes only when apply is set.
+//
+// The Go view:build writes under storage/framework/views is left alone: the
+// next build writes it again from the .kyse.go, which is rewritten instead.
+// vendor, testdata, bin and node_modules are not the project's sources.
+func fixImports(root string, c *catalog.Catalog, apply bool, stdout io.Writer) error {
+	var changed []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, path)
+		rel = filepath.ToSlash(rel)
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "vendor", "node_modules", "testdata", "bin":
+				return filepath.SkipDir
+			}
+			if rel == "storage/framework/views" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		before, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var after []byte
+		var moved bool
+		if strings.HasSuffix(path, ".kyse.go") {
+			text, ok := c.RewriteView(string(before))
+			after, moved = []byte(text), ok
+		} else {
+			after, moved, err = c.Rewrite(path, before)
+			if err != nil {
+				// A file that does not parse is the compiler's report, and
+				// rewriting around it would hide which file it is.
+				return fmt.Errorf("imports:catalog: %s: %w", rel, err)
+			}
+		}
+		if !moved {
+			return nil
+		}
+		changed = append(changed, rel)
+		if apply {
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(path, after, info.Mode().Perm()); err != nil {
+				return err
+			}
+			fmt.Fprintln(stdout, "rewrote", rel)
+			return nil
+		}
+		fmt.Fprint(stdout, skills.Diff(rel, before, after))
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	switch {
+	case len(changed) == 0:
+		fmt.Fprintln(stdout, "every import already names its symbols by their canonical path")
+	case apply:
+		fmt.Fprintf(stdout, "%d file(s) rewritten\n", len(changed))
+	default:
+		fmt.Fprintf(stdout, "%d file(s) would change. Run with --fix --apply to write them.\n", len(changed))
 	}
 	return nil
 }

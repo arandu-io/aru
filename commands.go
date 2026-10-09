@@ -232,6 +232,17 @@ window.`,
 		run:   delegate("vendor:publish"),
 	},
 	{
+		// It runs here rather than forwarding, unlike vendor:publish beside it:
+		// where a skill comes from is the skeleton this binary pins and the
+		// modules go.mod requires, and both are read off the disk without
+		// asking the application anything.
+		name:  "skills:sync",
+		usage: "aru skills:sync [--apply] [--force]",
+		desc:  "show how the project's skills differ from the skeleton's and its modules', and bring them in step",
+		help:  skillsSyncHelp,
+		run:   skillsSync,
+	},
+	{
 		name:  "dev",
 		usage: "aru dev [-- flags for the application]",
 		desc:  "build the views, run the application, and restart it on every change",

@@ -1,6 +1,6 @@
 ---
 name: aru-command
-description: Add, rename or change a command of the aru CLI, its flags, or what `aru help` prints. Use when the request is to "add a command", "add a flag to aru", "make aru do X", "rename this subcommand", "wire up make:something", "why does aru say unknown command", or when a new verb has to find a place in the 62-entry dispatch table. Covers the slice in commands.go and why it is not a map, the one signature every command has, why the positional name is taken before the flags are parsed, when a command runs in this binary and when it forwards to the project's own, the wiring a generator prints rather than performs, and the tests that fail on a command added wrong.
+description: Add, rename or change a command of the aru CLI, its flags, or what `aru help` prints. Use when the request is to "add a command", "add a flag to aru", "make aru do X", "rename this subcommand", "wire up make:something", "why does aru say unknown command", or when a new verb has to find a place in the dispatch table. Covers the slice in commands.go and why it is not a map, the one signature every command has, why the positional name is taken before the flags are parsed, when a command runs in this binary and when it forwards to the project's own, the wiring a generator prints rather than performs, and the tests that fail on a command added wrong.
 license: MIT
 ---
 
@@ -11,7 +11,7 @@ command is in its entry: the name a person types, the usage line, the one-line
 description `aru help` prints, and the function that runs it.
 
 ```sh
-grep -c '^\t\tname:' commands.go        # 62
+grep -c '^\t\tname:' commands.go        # 63
 ```
 
 It is a slice and not a map on purpose. The order of `aru help` is part of the
@@ -24,9 +24,12 @@ registered?**
 
 - **No** — it runs here. `key:generate`, `new`, every `make:*`, `generate`,
   `schema`, `doctor`, `build`, `model:build`, `view:build`, `lsp`, `action:list`,
-  `imports:catalog`, `about`, `trace`, the five `font:*` and the three
-  `native:*` commands need nothing the project registered -- or, for `about`,
-  read what it registered from the source, the way the doctor does.
+  `imports:catalog`, `skills:sync`, `about`, `trace`, the five `font:*` and the
+  three `native:*` commands need nothing the project registered -- or, for
+  `about`, read what it registered from the source, the way the doctor does.
+  `skills:sync` sits beside `vendor:publish` in the table and does not forward
+  like it: where a skill comes from is the skeleton this binary pins and the
+  modules go.mod requires, both read off the disk.
 - **Yes** — it forwards. Modules are wired explicitly in `bootstrap/app.go`,
   with no container and no plugin loading, so a separately compiled binary
   cannot know them. `delegate("migrate")` runs `go run . migrate` in the
@@ -147,13 +150,13 @@ belongs to the application.
 These already exist; you do not write them for a new command, you make them
 pass.
 
-- **`TestEveryCommandIsImplemented`** (`main_internal_test.go:126`) runs every
+- **`TestEveryCommandIsImplemented`** (`main_internal_test.go:127`) runs every
   entry in the slice with no arguments and fails if the output contains
   `not implemented`. A command that is a stub is caught the moment it is listed.
-- **`TestCommandNamesAreUnique`** (`main_internal_test.go:471`) guards the
+- **`TestCommandNamesAreUnique`** (`main_internal_test.go:559`) guards the
   dispatch table itself: `lookup` returns the first match, so a duplicate name
   silently disables the second.
-- **`TestUsageIsSober`** (`main_internal_test.go:35`) reads `aru help` and fails
+- **`TestUsageIsSober`** (`main_internal_test.go:36`) reads `aru help` and fails
   on `!`, `🚀`, `✨` or `🎉`. The tone rule is checked at the one place users
   read it.
 - **`TestEveryCommandAnswersHelp`** (`flags_internal_test.go`) runs every entry

@@ -124,6 +124,11 @@ warnings are that rule. The other fixtures require a framework version no
 module cache here holds, so the rule is silent on them -- which is its declared
 limit, not an accident.
 
+The rule reads views too. The Go `view:build` writes under
+`storage/framework/views` is skipped, because the next build rewrites it, and a
+`.kyse.go` source is read as text: its import lines and every `local.Name` below
+them. The finding lands on the source's own import line.
+
 ```sh
 cp -R internal/doctor/testdata/clean /tmp/clean && touch /tmp/clean/arandu.toml
 (cd /tmp/clean && /tmp/aru-src doctor); echo $?                       # 1 warning(s), no errors — 0

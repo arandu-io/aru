@@ -3345,7 +3345,12 @@ func noRetiredModuleIsImported(p *project) []Finding {
 // the meantime the project spells one type two ways, file by file.
 //
 // Scope. Every Go file of the project, tests included, and every selector on
-// an import of a framework package. Which path is canonical is not decided by
+// an import of a framework package; and every view source, whose import lines
+// and `local.Name` uses are read as text. The Go view:build writes under
+// storage/framework/views is skipped: it is compiled from a .kyse.go, an edit
+// to it is undone by the next build, and the finding is reported at the
+// source's own import line instead. Reporting it in the generated file was a
+// false positive of the rule's first version. Which path is canonical is not decided by
 // the package: it is read, symbol by symbol, from the framework's own source at
 // the version go.mod requires (package catalog). A type the framework declares,
 // or a function that does more than call through -- framework/http.Router,
@@ -3369,7 +3374,8 @@ func noRetiredModuleIsImported(p *project) []Finding {
 // every position an interface value is accepted.
 //
 // Limit. Local to the file: one import and the selectors on it. A dot import
-// has no selector to read and is not reported. The catalog is read from disk
+// has no selector to read and is not reported. In a view the use is a pattern
+// in markup, so a sentence that spells `security.Grant` counts as one. The catalog is read from disk
 // -- a directory replace, the vendor directory, or the module cache -- and the
 // doctor starts no toolchain to fetch it, so on a machine that has not
 // downloaded the required version this rule is silent; `aru imports:catalog`
@@ -3383,6 +3389,12 @@ func importsAreCanonical(p *project) []Finding {
 	}
 	var out []Finding
 	for _, f := range p.files {
+		// The Go view:build writes is compiled from a .kyse.go, and the import
+		// a finding names has to be changed there: an edit here is undone by
+		// the next build. The sources are read below.
+		if strings.HasPrefix(f.rel, generatedViewsDir) {
+			continue
+		}
 		for _, imp := range f.ast.Imports {
 			pkg := strings.Trim(imp.Path.Value, `"`)
 			if !p.catalog.Covers(pkg) {
@@ -3392,10 +3404,7 @@ func importsAreCanonical(p *project) []Finding {
 			if !named || local == "_" || local == "." {
 				continue
 			}
-
-			moved := map[string][]string{}
-			var stays []string
-			seen := map[string]bool{}
+			var names []string
 			ast.Inspect(f.ast, func(n ast.Node) bool {
 				sel, ok := n.(*ast.SelectorExpr)
 				if !ok {
@@ -3404,50 +3413,166 @@ func importsAreCanonical(p *project) []Finding {
 				id, ok := sel.X.(*ast.Ident)
 				// An identifier the parser resolved is a local value that
 				// shadows the import, not the package.
-				if !ok || id.Name != local || id.Obj != nil || seen[sel.Sel.Name] {
-					return true
+				if ok && id.Name == local && id.Obj == nil {
+					names = append(names, sel.Sel.Name)
 				}
-				symbol, known := p.catalog.Lookup(pkg, sel.Sel.Name)
-				if !known {
-					return true
-				}
-				seen[sel.Sel.Name] = true
-				if !symbol.Moved() {
-					stays = append(stays, symbol.Name)
-					return true
-				}
-				spelled := symbol.Name
-				if symbol.CanonicalName != symbol.Name {
-					spelled += " (" + symbol.CanonicalName + " there)"
-				}
-				moved[symbol.Canonical] = append(moved[symbol.Canonical], spelled)
 				return true
 			})
-			if len(moved) == 0 {
+			if finding, ok := canonicalFinding(p, pkg, names); ok {
+				finding.File, finding.Line = f.rel, f.line(imp)
+				out = append(out, finding)
+			}
+		}
+	}
+	for _, v := range p.views {
+		for _, imp := range viewImports(v) {
+			if !p.catalog.Covers(imp.path) || imp.local == "_" || imp.local == "." {
 				continue
 			}
+			if finding, ok := canonicalFinding(p, imp.path, viewSelectors(v, imp)); ok {
+				finding.File, finding.Line = v.rel, imp.line
+				out = append(out, finding)
+			}
+		}
+	}
+	return out
+}
 
-			targets := make([]string, 0, len(moved))
-			for target := range moved {
-				targets = append(targets, target)
+// generatedViewsDir is where view:build writes the Go it compiles views into.
+const generatedViewsDir = "storage/framework/views/"
+
+// canonicalFinding is the import-not-canonical finding about one import of a
+// framework package, given the names selected on it in order of use, or false
+// when none of them has moved. File and Line are the caller's to fill.
+func canonicalFinding(p *project, pkg string, names []string) (Finding, bool) {
+	moved := map[string][]string{}
+	var stays []string
+	seen := map[string]bool{}
+	for _, name := range names {
+		if seen[name] {
+			continue
+		}
+		symbol, known := p.catalog.Lookup(pkg, name)
+		if !known {
+			continue
+		}
+		seen[name] = true
+		if !symbol.Moved() {
+			stays = append(stays, symbol.Name)
+			continue
+		}
+		spelled := symbol.Name
+		if symbol.CanonicalName != symbol.Name {
+			spelled += " (" + symbol.CanonicalName + " there)"
+		}
+		moved[symbol.Canonical] = append(moved[symbol.Canonical], spelled)
+	}
+	if len(moved) == 0 {
+		return Finding{}, false
+	}
+
+	targets := make([]string, 0, len(moved))
+	for target := range moved {
+		targets = append(targets, target)
+	}
+	sort.Strings(targets)
+	var parts []string
+	for _, target := range targets {
+		parts = append(parts, strings.Join(moved[target], ", ")+" from "+target)
+	}
+	keep := "Nothing else is used from it, so the import goes."
+	if len(stays) > 0 {
+		keep = "Keep it for " + strings.Join(stays, ", ") + ", which the framework declares itself."
+	}
+	return Finding{
+		Rule: "import-not-canonical", Severity: Warning,
+		Message: "this file names " + strings.Join(parts, "; ") + " through " + pkg,
+		Why: "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: " +
+			"the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. " +
+			"Import the path above for them. " + keep + " `aru imports:catalog` prints every symbol's path for the version go.mod requires.",
+	}, true
+}
+
+// viewImport is one import line of a .kyse.go source.
+type viewImport struct {
+	local string
+	path  string
+	// line is 1-indexed, in the source.
+	line int
+}
+
+// viewImports reads the import lines of a view: `import x "path"` on one line,
+// or the lines of an `import ( … )` block, above the first directive.
+//
+// They are read as lines rather than through kyse.Parse because the position
+// is the point -- a finding about an import is reported at that import -- and
+// the parser keeps the text of an import and not its line.
+func viewImports(v view) []viewImport {
+	var out []viewImport
+	lines := strings.Split(v.body, "\n")
+	inBlock := false
+	for i, raw := range lines {
+		line := strings.TrimSpace(raw)
+		switch {
+		case inBlock && line == ")":
+			inBlock = false
+		case inBlock:
+			if imp, ok := parseImportSpec(line, i+1); ok {
+				out = append(out, imp)
 			}
-			sort.Strings(targets)
-			var parts []string
-			for _, target := range targets {
-				parts = append(parts, strings.Join(moved[target], ", ")+" from "+target)
+		case line == "import (":
+			inBlock = true
+		case strings.HasPrefix(line, "import "):
+			if imp, ok := parseImportSpec(strings.TrimPrefix(line, "import "), i+1); ok {
+				out = append(out, imp)
 			}
-			keep := "Nothing else is used from it, so the import goes."
-			if len(stays) > 0 {
-				keep = "Keep it for " + strings.Join(stays, ", ") + ", which the framework declares itself."
-			}
-			out = append(out, Finding{
-				Rule: "import-not-canonical", Severity: Warning,
-				File: f.rel, Line: f.line(imp),
-				Message: "this file names " + strings.Join(parts, "; ") + " through " + pkg,
-				Why: "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: " +
-					"the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. " +
-					"Import the path above for them. " + keep + " `aru imports:catalog` prints every symbol's path for the version go.mod requires.",
-			})
+		case strings.HasPrefix(line, "@"):
+			return out
+		}
+	}
+	return out
+}
+
+// parseImportSpec reads `name "path"` or `"path"`, with a trailing comment
+// allowed.
+func parseImportSpec(spec string, line int) (viewImport, bool) {
+	if i := strings.Index(spec, "//"); i >= 0 {
+		spec = strings.TrimSpace(spec[:i])
+	}
+	fields := strings.Fields(spec)
+	var local, quoted string
+	switch len(fields) {
+	case 1:
+		quoted = fields[0]
+	case 2:
+		local, quoted = fields[0], fields[1]
+	default:
+		return viewImport{}, false
+	}
+	path, err := strconv.Unquote(quoted)
+	if err != nil || path == "" {
+		return viewImport{}, false
+	}
+	if local == "" {
+		local = path[strings.LastIndex(path, "/")+1:]
+	}
+	return viewImport{local: local, path: path, line: line}, true
+}
+
+// viewSelectors are the names selected on an import in a view's text, below
+// its import lines: in an @go block, an interpolation or a directive alike.
+// The text is not Go, so this reads `local.Name` as a pattern; a sentence of
+// markup that happens to spell one is read as a use too.
+func viewSelectors(v view, imp viewImport) []string {
+	lines := strings.Split(v.body, "\n")
+	if imp.line < len(lines) {
+		lines = lines[imp.line:]
+	}
+	pattern := regexp.MustCompile(`(?:^|[^\w.])` + regexp.QuoteMeta(imp.local) + `\.([A-Z][\w]*)`)
+	var out []string
+	for _, line := range lines {
+		for _, m := range pattern.FindAllStringSubmatch(line, -1) {
+			out = append(out, m[1])
 		}
 	}
 	return out

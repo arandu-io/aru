@@ -10,6 +10,10 @@ import (
 	"github.com/arandu-io/aru/internal/gen"
 )
 
+// makeSeederUsage is the usage line of make:seeder, in the dispatch table and in
+// its refusal, naming every flag the command accepts.
+const makeSeederUsage = `aru make:seeder <Name> [--force] [--dry-run]`
+
 // makeSeeder writes one seeder into database/seeders.
 //
 // DatabaseSeeder is the entry point, the others are called by it, and a name on
@@ -25,7 +29,7 @@ func makeSeeder(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("make:seeder: %w", err)
 	}
 	if name == "" {
-		return fmt.Errorf("usage: aru make:seeder <Name> [--force]")
+		return fmt.Errorf("usage: %s", makeSeederUsage)
 	}
 	if err := checkFlatTree("make:seeder", name); err != nil {
 		return err

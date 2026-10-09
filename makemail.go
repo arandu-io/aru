@@ -8,6 +8,10 @@ import (
 	"github.com/arandu-io/aru/internal/gen"
 )
 
+// makeMailUsage is the usage line of make:mail, in the dispatch table and in
+// its refusal, naming every flag the command accepts.
+const makeMailUsage = `aru make:mail <Name> [--subject "Welcome"] [--fields "name:string,link:string"] [--force] [--dry-run]`
+
 // makeMail writes one mailable and the two views it renders.
 //
 // A mailable is an Envelope and a Content and nothing else. There is no
@@ -31,7 +35,7 @@ func makeMail(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("make:mail: %w", err)
 	}
 	if name == "" {
-		return fmt.Errorf(`usage: aru make:mail <Name> [--subject "Welcome"] [--fields "name:string,link:string"] [--force]`)
+		return fmt.Errorf("usage: %s", makeMailUsage)
 	}
 	if err := checkFlatTree("make:mail", name); err != nil {
 		return err

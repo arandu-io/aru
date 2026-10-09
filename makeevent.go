@@ -8,6 +8,10 @@ import (
 	"github.com/arandu-io/aru/internal/gen"
 )
 
+// makeEventUsage is the usage line of make:event, in the dispatch table and in
+// its refusal, naming every flag the command accepts.
+const makeEventUsage = `aru make:event <Name> --aggregate=invoice [--event-name=invoice.paid] [--fields "..."] [--force] [--dry-run]`
+
 // makeEvent writes one domain event.
 //
 // It writes a domain event, and there is no broadcast hook: there is no
@@ -28,7 +32,7 @@ func makeEvent(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("make:event: %w", err)
 	}
 	if name == "" {
-		return fmt.Errorf(`usage: aru make:event <Name> --aggregate=invoice [--event-name=invoice.paid] [--fields "..."]`)
+		return fmt.Errorf("usage: %s", makeEventUsage)
 	}
 	if err := checkFlatTree("make:event", name); err != nil {
 		return err

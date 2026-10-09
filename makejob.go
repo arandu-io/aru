@@ -8,6 +8,10 @@ import (
 	"github.com/arandu-io/aru/internal/gen"
 )
 
+// makeJobUsage is the usage line of make:job, in the dispatch table and in
+// its refusal, naming every flag the command accepts.
+const makeJobUsage = `aru make:job <Name> [--event-name=invoice.send] [--fields "invoice_id:uuid"] [--force] [--dry-run]`
+
 // makeJob writes one background job.
 //
 // It writes a background job. There is no --sync: one queue, and a synchronous
@@ -27,7 +31,7 @@ func makeJob(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("make:job: %w", err)
 	}
 	if name == "" {
-		return fmt.Errorf(`usage: aru make:job <Name> [--event-name=invoice.send] [--fields "invoice_id:uuid"] [--force]`)
+		return fmt.Errorf("usage: %s", makeJobUsage)
 	}
 	if err := checkFlatTree("make:job", name); err != nil {
 		return err

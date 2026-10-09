@@ -15,6 +15,10 @@ import (
 // the key on insert.
 var uniqueIDs = regexp.MustCompile(`\bUniqueIDs:\s*true\b`)
 
+// makeFactoryUsage is the usage line of make:factory, in the dispatch table and in
+// its refusal, naming every flag the command accepts.
+const makeFactoryUsage = `aru make:factory <Name> [--force] [--dry-run]`
+
 // makeFactory writes the factory of an entity that already exists.
 //
 // There is no --model flag: the fields are read off app/Models, because in Go
@@ -31,7 +35,7 @@ func makeFactory(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("make:factory: %w", err)
 	}
 	if name == "" {
-		return fmt.Errorf("usage: aru make:factory <Name> [--force]")
+		return fmt.Errorf("usage: %s", makeFactoryUsage)
 	}
 	if err := checkFlatTree("make:factory", name); err != nil {
 		return err

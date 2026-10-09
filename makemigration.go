@@ -18,6 +18,10 @@ import (
 	"github.com/arandu-io/aru/internal/gen"
 )
 
+// makeMigrationUsage is the usage line of make:migration, in the dispatch table and in
+// its refusal, naming every flag the command accepts.
+const makeMigrationUsage = `aru make:migration <name> [--create=<table> | --table=<table>] --fields "status:string,paid_at:timestamp" [--tenant] [--force] [--dry-run]`
+
 // makeMigration writes one migration.
 //
 // It writes one migration, with one difference from the usual shape that is not
@@ -39,7 +43,7 @@ func makeMigration(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("make:migration: %w", err)
 	}
 	if name == "" {
-		return fmt.Errorf("usage: aru make:migration <name> [--create=<table> | --table=<table>] --fields \"status:string,paid_at:timestamp\"")
+		return fmt.Errorf("usage: %s", makeMigrationUsage)
 	}
 	// The argument names the file here, not a class, so it is not normalized: it
 	// is written in snake_case.

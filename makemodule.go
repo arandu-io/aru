@@ -11,6 +11,10 @@ import (
 	"github.com/arandu-io/aru/internal/gen"
 )
 
+// makeModuleUsage is the usage line of make:module, in the dispatch table and in
+// its refusal, naming every flag the command accepts.
+const makeModuleUsage = `aru make:module <name> --fields "title:string!,amount:money" [--tenant] [--force] [--dry-run]`
+
 // makeModule generates a module: Model-backed entity, policy, service, request,
 // routes, handlers and tests.
 //
@@ -37,8 +41,7 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 	}
 	if name == "" {
 		if fs.NArg() == 0 {
-			return fmt.Errorf("usage: aru make:module <name> --fields %q [--tenant] [--force]\n%s",
-				"title:string!,amount:money", gen.TypeList())
+			return fmt.Errorf("usage: %s\n%s", makeModuleUsage, gen.TypeList())
 		}
 		name = fs.Arg(0)
 	}

@@ -12,6 +12,10 @@ import (
 	"github.com/arandu-io/aru/internal/gen"
 )
 
+// makePolicyUsage is the usage line of make:policy, in the dispatch table and in
+// its refusal, naming every flag the command accepts.
+const makePolicyUsage = `aru make:policy <module> [--force]`
+
 // makePolicy writes the policy of a module that does not have one.
 //
 // It exists for the module written before the generator, and for the one whose
@@ -30,7 +34,7 @@ func makePolicy(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("make:policy: %w", err)
 	}
 	if name == "" {
-		return fmt.Errorf("usage: aru make:policy <module>")
+		return fmt.Errorf("usage: %s", makePolicyUsage)
 	}
 
 	root, err := projectRoot()

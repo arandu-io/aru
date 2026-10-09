@@ -804,3 +804,74 @@ func TestTheMakeModelUsageNamesEveryFlag(t *testing.T) {
 		}
 	}
 }
+
+// flagsWithoutAFlagSet are the commands this binary does not parse with a
+// flag.FlagSet it can show: the ones that forward to the project's own binary,
+// whose flags belong to the application; serve and dev, which hand everything
+// after -- to it; the two that take no flag at all; and the font family, which
+// reads its arguments with its own loop because a family name is several words
+// on either side of the flags.
+//
+// It is written out rather than inferred, and the test below holds it to what
+// it says: a command named here that starts showing a flag set fails, so this
+// list cannot become the place a new flag hides from the check.
+var flagsWithoutAFlagSet = map[string]string{
+	"key:generate": "takes no argument",
+	"lsp":          "takes no argument",
+	"serve":        "forwards what follows -- to the application",
+	"dev":          "forwards what follows -- to the application",
+	"font:add":     "reads its own arguments",
+	"font:search":  "reads its own arguments",
+	"font:info":    "reads its own arguments",
+	"font:list":    "reads its own arguments",
+	"font:remove":  "reads its own arguments",
+
+	"migrate": "forwards", "migrate:rollback": "forwards", "migrate:status": "forwards",
+	"migrate:fresh": "forwards", "schedule:list": "forwards", "schedule:run": "forwards",
+	"queue:work": "forwards", "queue:listen": "forwards", "queue:restart": "forwards",
+	"queue:pause": "forwards", "queue:resume": "forwards", "queue:clear": "forwards",
+	"queue:monitor": "forwards", "queue:failed": "forwards", "queue:retry": "forwards",
+	"queue:forget": "forwards", "queue:flush": "forwards", "queue:prune-failed": "forwards",
+	"queue:retry-batch": "forwards", "queue:prune-batches": "forwards", "route:list": "forwards",
+	"db:seed": "forwards", "vendor:publish": "forwards",
+}
+
+// TestEveryUsageLineNamesEveryFlag reads each command's flag set and requires
+// its usage line to name every flag in it.
+//
+// The flag set is read the way a person meets it: the command is run with a
+// flag it does not define, and the flag package answers by listing every flag
+// it does. That is the set the command parses, whatever its source spells, so a
+// flag added to a FlagSet and forgotten in commands.go fails here -- which is
+// how fourteen usage lines came to leave out --dry-run, --force, --tenant,
+// --secret and the rest.
+func TestEveryUsageLineNamesEveryFlag(t *testing.T) {
+	t.Chdir(t.TempDir())
+	listed := regexp.MustCompile(`(?m)^\s+-([A-Za-z0-9-]+)`)
+
+	for _, c := range commands {
+		_, _, stderr := exercise(t, c.name, "--not-a-flag-of-any-command")
+		shown := strings.Contains(stderr, "flag provided but not defined")
+
+		if reason, exempt := flagsWithoutAFlagSet[c.name]; exempt {
+			if shown {
+				t.Errorf("%s is listed as having no flag set (%s), and it parses one: take it off the list", c.name, reason)
+			}
+			continue
+		}
+		if !shown {
+			t.Errorf("%s showed no flag set for an undefined flag, and it is not listed as having none:\n%s", c.name, stderr)
+			continue
+		}
+		for _, m := range listed.FindAllStringSubmatch(stderr, -1) {
+			name := m[1]
+			if name == "not-a-flag-of-any-command" {
+				continue
+			}
+			named := regexp.MustCompile(`(^|[\s\[|(])--?` + regexp.QuoteMeta(name) + `($|[\s\]|=)])`)
+			if !named.MatchString(c.usage) {
+				t.Errorf("%s accepts -%s and its usage line does not name it:\n  %s", c.name, name, c.usage)
+			}
+		}
+	}
+}

@@ -8,6 +8,10 @@ import (
 	"github.com/arandu-io/aru/internal/gen"
 )
 
+// makeEnumUsage is the usage line of make:enum, in the dispatch table and in
+// its refusal, naming every flag the command accepts.
+const makeEnumUsage = `aru make:enum <Name> --values draft,sent,paid,void [--int] [--force] [--dry-run]`
+
 // makeEnum writes one enum.
 //
 // It carries the one inversion of behaviour in the whole granular family:
@@ -27,7 +31,7 @@ func makeEnum(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("make:enum: %w", err)
 	}
 	if name == "" {
-		return fmt.Errorf(`usage: aru make:enum <Name> --values draft,sent,paid,void [--int] [--force]`)
+		return fmt.Errorf("usage: %s", makeEnumUsage)
 	}
 	if err := checkFlatTree("make:enum", name); err != nil {
 		return err

@@ -8,6 +8,10 @@ import (
 	"github.com/arandu-io/aru/internal/gen"
 )
 
+// makeCommandUsage is the usage line of make:command, in the dispatch table and in
+// its refusal, naming every flag the command accepts.
+const makeCommandUsage = `aru make:command <Name> [--signature=invoice:close] [--description="..."] [--force] [--dry-run]`
+
 // makeCommand writes one console command.
 //
 // What differs from the usual shape is how the command becomes reachable.
@@ -32,7 +36,7 @@ func makeCommand(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("make:command: %w", err)
 	}
 	if name == "" {
-		return fmt.Errorf(`usage: aru make:command <Name> [--signature=invoice:close] [--description="..."] [--force]`)
+		return fmt.Errorf("usage: %s", makeCommandUsage)
 	}
 	if err := checkFlatTree("make:command", name); err != nil {
 		return err

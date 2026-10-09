@@ -8,6 +8,10 @@ import (
 	"github.com/arandu-io/aru/internal/gen"
 )
 
+// makeListenerUsage is the usage line of make:listener, in the dispatch table and in
+// its refusal, naming every flag the command accepts.
+const makeListenerUsage = `aru make:listener <Name> [--event=invoice.paid] [--force] [--dry-run]`
+
 // makeListener writes one event listener.
 //
 // The shape differs from the usual one where the delivery does. In process, an
@@ -30,7 +34,7 @@ func makeListener(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("make:listener: %w", err)
 	}
 	if name == "" {
-		return fmt.Errorf(`usage: aru make:listener <Name> [--event=invoice.paid] [--force]`)
+		return fmt.Errorf("usage: %s", makeListenerUsage)
 	}
 	if err := checkFlatTree("make:listener", name); err != nil {
 		return err

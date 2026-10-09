@@ -92,7 +92,7 @@ jobs:
       # means when it is a command rather than a sentence.
       - name: dependency budget
         run: |
-          allowed="gopkg.in/yaml.v3 github.com/arandu-io/hesape github.com/evanw/esbuild golang.org/x/sys"
+          allowed="gopkg.in/yaml.v3 github.com/arandu-io/hesape github.com/arandu-io/mcp github.com/evanw/esbuild golang.org/x/sys"
           allowed="$allowed golang.org/x/image golang.org/x/sync golang.org/x/tools golang.org/x/text golang.org/x/mod github.com/akavel/rsrc"
           extra=""
           # What the binary carries, not what go.sum mentions: `go list -m all`

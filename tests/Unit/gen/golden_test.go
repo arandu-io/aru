@@ -58,12 +58,13 @@ func TestGolden(t *testing.T) {
 		tenant bool
 		// files is how many the module is: the twelve of every module, the
 		// factory and the seeder, and the tenant-isolation feature test only a
-		// table with a tenant column has.
+		// table with a tenant column has. None of them is a skill: the
+		// skeleton's families describe a module by kind.
 		files int
 	}{
-		{"tenant", true, 16},
-		{"global", false, 15},
-		{"nested", true, 16},
+		{"tenant", true, 15},
+		{"global", false, 14},
+		{"nested", true, 15},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			m := spec(c.tenant)

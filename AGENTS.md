@@ -13,7 +13,7 @@ code:
 | the commands | the root package `main` | 71 entries in one slice, 23 of which forward to the project's own binary |
 | the view compiler | `internal/kyse` | a `.kyse.go` becomes Go, and the Go it writes has to compile |
 | the language server | `internal/lsp` and `lsp.go` | `aru lsp` serves Kyse diagnostics and completion, the project map and its navigation over standard input and output |
-| the assistant server | `mcp.go` and `internal/contract` | `aru mcp` serves the doctor, the map, the implementation contract (one embedded file the doctor and the module skill also read) and the generators over MCP on standard input and output |
+| the assistant server | `mcp.go` and `internal/contract` | `aru mcp` serves the doctor, the map, the implementation contract (one embedded file the doctor also reads) and the generators over MCP on standard input and output |
 | the checker | `internal/doctor` | 54 rule functions reading a project's parsed AST, emitting 60 rule names of their own and 4 borrowed from `internal/testlayout` |
 
 ```sh

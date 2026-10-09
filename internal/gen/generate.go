@@ -11,8 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
-
-	"github.com/arandu-io/aru/internal/skills"
 )
 
 // File is one generated file.
@@ -45,31 +43,10 @@ func Generate(m Module) ([]File, error) {
 		{filepath.Join("app", "Policies", m.Entity()+"Policy.go"), policyTemplate},
 		{filepath.Join("app", "Services", m.Entity()+"Service.go"), serviceTemplate + serviceBlocks},
 		{filepath.Join("app", "Http", "Requests", m.Entity()+"Request.go"), requestTemplate + requestRulesTemplate},
-		// The skill an assistant reads when it meets this module.
-		//
-		// It is generated with the rest rather than written afterwards, and that
-		// is the point: a description of a module written by hand stops being
-		// true at the next field. This one is rendered from the same
-		// specification the Go was rendered from, so the two cannot disagree,
-		// and regenerating the module regenerates what says what it is.
-		//
-		// .agents/skills is the path the coding assistants read from -- Cursor,
-		// Codex, Cline, Copilot, Gemini CLI and the rest all look there -- so
-		// the file is read by whatever the project is being written with, and
-		// there is one directory rather than a file per vendor.
-		{filepath.Join(".agents", "skills", m.Resource(), "SKILL.md"), skillTemplate},
 	} {
 		content, err := render(filepath.Base(t.path), t.tmpl, m)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", t.path, err)
-		}
-		// The skill records where it came from the way every other skill in
-		// a project does, so `aru skills:sync` and the doctor can tell it from
-		// one a module handed over and leave it to the generator.
-		if filepath.Base(t.path) == skills.File {
-			if content, err = skills.Stamp(content, m.SkillSource()); err != nil {
-				return nil, fmt.Errorf("%s: %w", t.path, err)
-			}
 		}
 		out = append(out, File{Path: t.path, Content: content})
 	}

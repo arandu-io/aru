@@ -70,8 +70,6 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 		Tenant:     *tenant,
 		ModulePath: modulePath,
 		Parent:     strings.ToLower(strings.ReplaceAll(*parent, "_", "-")),
-		Generator:  version,
-		Gates:      gen.ProjectGates(root),
 	}
 	// A nested table stores the parent's id in a column of the type the
 	// parent's key has, read off the parent's model and migration rather than

@@ -80,7 +80,7 @@ func generate(args []string, stdout, stderr io.Writer) error {
 	// The module is built once and reused, rather than converted again where it
 	// is needed. Converting twice read the clock twice, which is how the wiring
 	// message ends up naming a migration the run did not write.
-	target, err := resolveMigrationID(root, fromSpec(module, modulePath, gen.ProjectGates(root)))
+	target, err := resolveMigrationID(root, fromSpec(module, modulePath))
 	if err != nil {
 		return fmt.Errorf("generate: %w", err)
 	}
@@ -149,7 +149,7 @@ func generate(args []string, stdout, stderr io.Writer) error {
 // The date and the sequence are left zero for resolveMigrationID to fill in. A
 // conversion that read the clock would name the migration file, and it would
 // name it differently on every call.
-func fromSpec(m spec.Module, modulePath, gates string) gen.Module {
+func fromSpec(m spec.Module, modulePath string) gen.Module {
 	fields := make([]gen.Field, 0, len(m.Fields))
 	for _, f := range m.Fields {
 		fields = append(fields, gen.Field{
@@ -166,8 +166,6 @@ func fromSpec(m spec.Module, modulePath, gates string) gen.Module {
 		Tenant:      m.Tenant,
 		ModulePath:  modulePath,
 		Permissions: m.Permissions,
-		Generator:   version,
-		Gates:       gates,
 	}
 }
 

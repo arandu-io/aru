@@ -44,8 +44,9 @@ generator's temporary, then its package, then the package a view was calling for
 itself, and each time the build printed how many views it had compiled and
 exited 0.
 
-The generators emit a model, a policy, a service, a controller, four screens and
-the module's own skill, which a project keeps. A change to a template changes
+The generators emit a model, a policy, a service, a controller and four screens,
+which a project keeps, and no skill: the skeleton's families describe a module
+by kind. A change to a template changes
 what everyone regenerates, so the output is pinned by golden files and the
 specification is pinned by a schema generated from the validator's own
 constants.

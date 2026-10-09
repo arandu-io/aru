@@ -60,7 +60,9 @@ plus `help` and `version`. The native and inspection commands, in the words of `
 
 - **`aru make:module`** — a Model-backed entity with its policy, service,
   request, controller, migration and four screens, compiling and tested from
-  the moment it lands.
+  the moment it lands. It writes no skill: the skeleton's skill families
+  describe a module by kind, and a second description per module would be one
+  more thing to keep true.
 - **`aru generate`** — the same output, from a written specification: the
   model writes the spec, never the Go.
 - **`aru doctor`** — 64 named rules read the AST of a project, without

@@ -3,9 +3,9 @@
 // signature, what it may and may not call, which generator writes it and
 // which doctor rules verify it; and the recipes a feature is built by.
 //
-// It is one embedded file read by three callers -- `aru mcp`, the doctor and
-// the skill make:module writes -- so the three answer the same question the
-// same way. A copy of the table in any of them would be the second answer.
+// It is one embedded file read by two callers -- `aru mcp` and the doctor --
+// so the two answer the same question the same way. A copy of the table in
+// either would be the second answer.
 package contract
 
 import (

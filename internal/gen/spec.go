@@ -12,8 +12,6 @@ import (
 	"sort"
 	"strings"
 	"unicode"
-
-	"github.com/arandu-io/aru/internal/contract"
 )
 
 // Type is a field type. The set is closed by decision, not by omission: a
@@ -318,68 +316,6 @@ type Module struct {
 	// key every module this generator writes has; ParentKeyOf reads it off the
 	// project.
 	ParentKey Type
-	// Generator is the version of aru writing the module. The module's skill
-	// records it as its source, so a reader can tell which generator wrote the
-	// text. It is a field rather than read from the build for the reason Date
-	// is: a golden file that tested the binary's version would fail on every
-	// release.
-	Generator string
-	// Gates is the gate block of the project's AGENTS.md, as ProjectGates
-	// reads it, without its fences. The module's skill repeats it, so the
-	// project states its gates once; empty is the block this generator knows.
-	Gates string
-}
-
-// defaultGates is the gate block a module's skill carries when the project's
-// AGENTS.md declares none.
-const defaultGates = `export GOWORK=off
-aru model:build
-aru view:build
-gofmt -l $(find . -name '*.go' -not -path '*/testdata/*' -not -name '*.kyse.go')
-go build ./...
-go vet ./...
-go test -race ./...
-aru doctor`
-
-// moduleCards are the kinds of code a module is made of, in the order its
-// skill lists them.
-var moduleCards = []string{"model", "policy", "request", "service", "controller", "view"}
-
-// ContractCards are the contract's sheets of what the module is made of, read
-// from package contract so the skill and `aru mcp` say the same thing. The
-// entity in each path is this module's; a view path keeps its placeholders,
-// because the resource's name between slashes reads as a URL to anybody
-// copying from the skill.
-func (m Module) ContractCards() []contract.Card {
-	names := strings.NewReplacer("<Entity>", m.Entity())
-	out := make([]contract.Card, 0, len(moduleCards))
-	for _, kind := range moduleCards {
-		if card, ok := contract.Lookup(kind); ok {
-			card.Path = names.Replace(card.Path)
-			out = append(out, card)
-		}
-	}
-	return out
-}
-
-// GateBlock is the block of commands the module's skill lists as its gates:
-// the project's, or defaultGates when the project declares none.
-func (m Module) GateBlock() string {
-	if m.Gates != "" {
-		return m.Gates
-	}
-	return defaultGates
-}
-
-// SkillSource is what the module's skill records as its source: aru, at the
-// version that wrote it. An empty Generator is recorded as dev, which is what a
-// build of aru reports when it was given no version.
-func (m Module) SkillSource() string {
-	version := m.Generator
-	if version == "" {
-		version = "dev"
-	}
-	return "aru@" + version
 }
 
 // Rules returns the permissions in a fixed order, for the template.

@@ -66,9 +66,9 @@ Every byte the generator emits is pinned.
 
 ```sh
 ls internal/gen/testdata/stubs  | wc -l      # 38  the granular commands
-ls internal/gen/testdata/tenant | wc -l      # 16
-ls internal/gen/testdata/global | wc -l      # 15
-ls internal/gen/testdata/nested | wc -l      # 16
+ls internal/gen/testdata/tenant | wc -l      # 15
+ls internal/gen/testdata/global | wc -l      # 14
+ls internal/gen/testdata/nested | wc -l      # 15
 ```
 
 `TestGolden` (`tests/Unit/gen/golden_test.go`) renders one fixed
@@ -77,9 +77,9 @@ under `suppliers` — and compares against those directories. It checks the
 **count** before the contents, and the count is written per case:
 
 ```go
-{"tenant", true, 16},
-{"global", false, 15},
-{"nested", true, 16},
+{"tenant", true, 15},
+{"global", false, 14},
+{"nested", true, 15},
 ```
 
 A module is twelve files, the factory and the seeder, and -- only when the
@@ -300,35 +300,19 @@ it is also `internal/doctor/testdata/clean`. Break one and you break the other.
   `hx-headers`: the layout's `<body>` already sends the token on every htmx
   request.
 
-## The generated module carries its own skill
+## The generated module carries no skill
 
-`Generate` writes `.agents/skills/<resource>/SKILL.md`
-(`internal/gen/generate.go:60`), rendered from the same specification as the Go.
-A description of a module written by hand stops being true at the next field;
-this one cannot, because regenerating the module regenerates it.
+`make:module` and `aru generate` write code and nothing under `.agents/`. They
+used to write `.agents/skills/<resource>/SKILL.md`, rendered from the
+specification, and it repeated what the skeleton's skill families already say
+about a model, a policy, a service, a controller and a screen -- by kind, for
+every module at once. A second description per module is a second thing to
+keep true, and a project with twenty modules carried twenty of them.
 
-`Generate` stamps it the way every skill a project receives is stamped:
-`internal/skills.Stamp` writes `source: aru@<version>` and the digest of the
-file under `metadata` in its frontmatter, the version coming from
-`Module.Generator` -- set from the binary's version by `make:module` and
-`generate`, and left empty in the goldens, which then read `aru@dev`. The
-template ends in a custom block between `<!-- arandu:begin custom -->` and
-`<!-- arandu:end custom -->`, and `gen.Merge` carries it through `--force` with
-`skills.Merge`, the merge `aru skills:sync` uses, rather than with the Go
-markers `publish.Merge` matches. `tests/Unit/gen/skill_test.go` proves the
-stamp, the block surviving a regeneration, and the absence of the sentences the
-template used to carry and the code never did.
-
-Its gate block is the project's, not the template's: `gen.ProjectGates` reads
-the first fenced block of the project's `AGENTS.md` that opens with
-`export GOWORK=off`, `make:module` and `generate` put it in `Module.Gates`, and
-the template prints `Module.GateBlock()`. Only a project with no such block gets
-the generator's own (`defaultGates` in `internal/gen/spec.go`), so a project
-states its gates once. `TestTheModuleSkillRepeatsTheProjectsGates` holds the
-three cases.
-
-If you change what a module is made of, change `skillTemplate` in the same
-commit. The table of files in that template is a claim about a tree.
+`TestMakeModuleWritesNoSkillOfItsOwn` (`make_internal_test.go`) holds it, and
+the per-case counts of `TestGolden` would stop a file coming back. A skill a
+project wrote about one of its modules is the project's, under its own name:
+nothing here writes or rewrites it.
 
 ## Wiring is printed, never performed
 

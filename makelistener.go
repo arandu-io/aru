@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/arandu-io/aru/internal/gen"
 )
@@ -61,7 +62,33 @@ func makeListener(args []string, stdout, stderr io.Writer) error {
 		return nil
 	}
 
-	fmt.Fprintf(stdout, `
+	list, found := gen.FindListenerList(root, modulePath)
+	fmt.Fprint(stdout, wiringListener(spec, list, found))
+	return nil
+}
+
+// wiringListener is where the listener that was just written goes.
+//
+// The relay takes one Publisher. When bootstrap/app.go already builds it with
+// a listeners.Each list, the listener is one more element of that list, and
+// the answer names the line the list opens on. Only a bootstrap without one is
+// told to build a relay around this listener -- printed for a list, that line
+// replaces the Publisher, and pasting it drops every listener the list held.
+func wiringListener(spec gen.Listener, list gen.ListenerList, found bool) string {
+	var b strings.Builder
+	if found {
+		fmt.Fprintf(&b, `
+Wire it in bootstrap/app.go. The relay hands every committed event to each
+listener in the %s.Each list it is built with, at bootstrap/app.go:%d.
+Add it to that list:
+
+    %s
+
+A collaborator the listener needs is a parameter of New%s and a field of
+the listener, passed there from what Build has already made.
+`, list.Package, list.Line, list.Entry(spec), spec.Type())
+	} else {
+		fmt.Fprintf(&b, `
 Wire it in bootstrap/app.go, where the events module is registered. The listener
 is the Publisher a Relay hands events to, and the Relay is what the module runs:
 
@@ -72,10 +99,12 @@ is the Publisher a Relay hands events to, and the Relay is what the module runs:
 and, in the k.Register(...) list, in place of events.NewModule():
 
     events.WithRelay(relay),
-
+`, spec.ModulePath, spec.Type())
+	}
+	b.WriteString(`
 The relay calls it after the write commits, never inside the transaction that
 wrote it. Delivery is at-least-once, so what it does has to be safe to do twice --
 the doc comment on Publish says where that goes.
-`, modulePath, spec.Type())
-	return nil
+`)
+	return b.String()
 }

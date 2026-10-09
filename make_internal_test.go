@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1197,5 +1200,107 @@ func TestMakeFactoryStatesTheParentsTheModelNames(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "ForNote(noteID)") {
 		t.Errorf("the message does not name the state that fills NoteID:\n%s", out.String())
+	}
+}
+
+// TestTheListenerWiringAddsToTheListTheRelayHolds: the relay takes one
+// Publisher, and a bootstrap that builds it with listeners.Each has chosen the
+// list. make:listener then answers with one more element of that list, at the
+// line it opens on, and pasted there the bootstrap still parses and the list
+// keeps what it held. Only a bootstrap with no list is told to build a relay
+// around the new listener: printed beside a list, that line replaces the
+// Publisher, and pasting it drops every listener the list held.
+func TestTheListenerWiringAddsToTheListTheRelayHolds(t *testing.T) {
+	bootstrap := func(alias, publisher string) string {
+		return `package bootstrap
+
+import (
+	"github.com/arandu-io/framework/events"
+	"github.com/arandu-io/hesape/database"
+
+	` + alias + ` "example.test/project/app/Listeners"
+)
+
+func relay(db *database.DB) *events.Relay {
+	return events.NewRelay(events.NewOutbox(db), ` + publisher + `, events.RelayOptions{})
+}
+`
+	}
+	for _, c := range []struct {
+		name, alias, publisher string
+		list                   bool
+		line                   int
+	}{
+		{"a list, imported under the package name", "listeners", "listeners.Each{\n\t\tlisteners.NewEventLog(),\n\t}", true, 11},
+		{"a list, imported under an alias", "appListeners", "appListeners.Each{\n\t\tappListeners.NewEventLog(),\n\t}", true, 11},
+		{"one listener and no list", "listeners", "listeners.NewEventLog()", false, 0},
+		{"no bootstrap at all", "", "", false, 0},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := bareProject(t)
+			path := filepath.Join(root, "bootstrap", "app.go")
+			if c.publisher != "" {
+				writeFile(t, path, bootstrap(c.alias, c.publisher))
+			}
+			t.Chdir(root)
+			code, stdout, stderr := exercise(t, "make:listener", "NotifyAccounting", "--event=invoice.paid")
+			if code != 0 {
+				t.Fatalf("make:listener exited %d: %s", code, stderr)
+			}
+
+			if !c.list {
+				for _, want := range []string{
+					`listeners "example.test/project/app/Listeners"`,
+					"relay := events.NewRelay(events.NewOutbox(db), listeners.NewNotifyAccounting(), events.RelayOptions{})",
+					"events.WithRelay(relay),",
+				} {
+					if !strings.Contains(stdout, want) {
+						t.Errorf("with no list in bootstrap the wiring does not say %q:\n%s", want, stdout)
+					}
+				}
+				if strings.Contains(stdout, ".Each") {
+					t.Errorf("with no list in bootstrap the wiring names one:\n%s", stdout)
+				}
+				return
+			}
+
+			entry := c.alias + ".NewNotifyAccounting(),"
+			for _, want := range []string{"    " + entry + "\n", c.alias + ".Each list", fmt.Sprintf("bootstrap/app.go:%d.", c.line)} {
+				if !strings.Contains(stdout, want) {
+					t.Errorf("the wiring does not say %q:\n%s", want, stdout)
+				}
+			}
+			for _, stale := range []string{"events.NewRelay(", "in place of events.NewModule()", "events.WithRelay("} {
+				if strings.Contains(stdout, stale) {
+					t.Errorf("a bootstrap with a list is told %q, which replaces the Publisher:\n%s", stale, stdout)
+				}
+			}
+
+			// Pasted as the first element of the list, the way the line it names
+			// opens it.
+			before, _ := os.ReadFile(path)
+			opening := c.alias + ".Each{\n"
+			pasted := strings.Replace(string(before), opening, opening+"\t\t"+entry+"\n", 1)
+			file, err := parser.ParseFile(token.NewFileSet(), path, pasted, parser.SkipObjectResolution)
+			if err != nil {
+				t.Fatalf("the bootstrap does not parse with the printed line pasted: %v\n%s", err, pasted)
+			}
+			var elements []string
+			ast.Inspect(file, func(n ast.Node) bool {
+				if lit, ok := n.(*ast.CompositeLit); ok {
+					for _, e := range lit.Elts {
+						if call, ok := e.(*ast.CallExpr); ok {
+							if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+								elements = append(elements, sel.Sel.Name)
+							}
+						}
+					}
+				}
+				return true
+			})
+			if strings.Join(elements, ",") != "NewNotifyAccounting,NewEventLog" {
+				t.Errorf("the list holds %v once the line is pasted, want the new listener beside the one it held", elements)
+			}
+		})
 	}
 }

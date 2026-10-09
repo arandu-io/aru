@@ -2,7 +2,11 @@ package gen
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -148,3 +152,73 @@ func ({{ .Receiver }} *{{ .Type }}) Publish(ctx context.Context, e events.Stored
 	// arandu:end custom
 }
 `
+
+// ListenerList is the list of listeners bootstrap/app.go builds its relay
+// with: the composite literal of the Each type app/Listeners declares.
+type ListenerList struct {
+	// Package is the name bootstrap/app.go refers to app/Listeners by.
+	Package string
+	// Line is the line of bootstrap/app.go the literal opens on.
+	Line int
+}
+
+// Entry is the line a listener adds to the list: its constructor, called, and
+// the comma a composite literal written one element per line needs.
+func (l ListenerList) Entry(listener Listener) string {
+	return l.Package + ".New" + listener.Type() + "(),"
+}
+
+// FindListenerList reads bootstrap/app.go under root and answers the Each
+// literal the relay is built with, when the file has one.
+//
+// The relay takes one Publisher, and a project whose bootstrap wraps its
+// listeners in Each has already chosen that list as the Publisher. A new
+// listener is one more element of it: printing a relay built around the new
+// listener alone would tell the person to replace the Publisher, and pasting
+// that drops every listener the list held.
+//
+// The package is read off the import of <modulePath>/app/Listeners, under its
+// alias when it has one, so the literal is matched by what it refers to rather
+// than by a spelling. A file that does not parse, or has no such literal,
+// answers false.
+func FindListenerList(root, modulePath string) (ListenerList, bool) {
+	path := filepath.Join(root, "bootstrap", "app.go")
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+	if err != nil {
+		return ListenerList{}, false
+	}
+	pkg := ""
+	for _, imp := range file.Imports {
+		if p, err := strconv.Unquote(imp.Path.Value); err != nil || p != modulePath+"/app/Listeners" {
+			continue
+		}
+		pkg = "listeners"
+		if imp.Name != nil {
+			pkg = imp.Name.Name
+		}
+	}
+	if pkg == "" || pkg == "_" || pkg == "." {
+		return ListenerList{}, false
+	}
+	var found ListenerList
+	ast.Inspect(file, func(n ast.Node) bool {
+		if found.Line != 0 {
+			return false
+		}
+		lit, ok := n.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		sel, ok := lit.Type.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Each" {
+			return true
+		}
+		if x, ok := sel.X.(*ast.Ident); ok && x.Name == pkg {
+			found = ListenerList{Package: pkg, Line: fset.Position(lit.Pos()).Line}
+			return false
+		}
+		return true
+	})
+	return found, found.Line != 0
+}

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -231,5 +233,45 @@ func TestANewProjectsSkillsRecordWhereTheyCameFrom(t *testing.T) {
 
 	if err := stampSkeletonSkills(t.TempDir()); err != nil {
 		t.Errorf("a tree without skills: %v", err)
+	}
+}
+
+// TestNewStampsTheSkillsItCopies runs `aru new` against a git that writes a
+// skeleton with two skills, and reads what landed: the stamping above is only
+// worth something if the command calls it.
+//
+// The git is a shell script, so the test runs where a shell does.
+func TestNewStampsTheSkillsItCopies(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in for git is a shell script")
+	}
+	root := t.TempDir()
+	t.Chdir(root)
+	view := skeletonProcedure("arandu-view", "Run aru view:build.")
+	notes := skeletonProcedure("notes", "The example resource.")
+
+	bin := filepath.Join(root, "bin")
+	script := "#!/bin/sh\nfor last; do :; done\n" +
+		"mkdir -p \"$last/.agents/skills/arandu-view\" \"$last/.agents/skills/notes\"\n" +
+		"printf 'APP_KEY=\\n' > \"$last/.env.example\"\n" +
+		"cat > \"$last/.agents/skills/arandu-view/SKILL.md\" <<'SKILL'\n" + view + "SKILL\n" +
+		"cat > \"$last/.agents/skills/notes/SKILL.md\" <<'SKILL'\n" + notes + "SKILL\n"
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	if err := newProject([]string{"my-app"}, io.Discard, io.Discard); err != nil {
+		t.Fatalf("aru new: %v", err)
+	}
+	header := skills.ParseHeader([]byte(readSkill(t, "my-app", "arandu-view")))
+	if header.Source != "arandu-io/arandu@"+skills.SkeletonVersion || header.Digest != skills.Digest([]byte(view)) {
+		t.Errorf("aru new left the skeleton's skill without its source: %+v", header)
+	}
+	if readSkill(t, "my-app", "notes") != notes {
+		t.Error("aru new stamped the example resource's skill")
 	}
 }

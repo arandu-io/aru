@@ -52,7 +52,11 @@ func ServiceFields(model, request []FactoryField) []Field {
 		if t != f.GoType || kind == "" {
 			continue
 		}
-		out = append(out, Field{Name: Normalize(f.GoName), Type: kind})
+		field := Field{Name: Normalize(f.GoName), Type: kind}
+		if field.GoName() != f.GoName {
+			field.goName = f.GoName
+		}
+		out = append(out, field)
 	}
 	return out
 }

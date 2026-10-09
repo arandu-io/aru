@@ -157,6 +157,16 @@ doctor, and fails on any error and on any warning `internal/doctor/structure.go`
 declares. A new generator is added to `generatedProject`, and both tests then
 hold it.
 
+## One inflector for a field name
+
+`Field.GoName` is the only place a column becomes a Go field, and it keeps an
+initialism whole: `user_id` is `UserID`, `api_url` is `APIURL`, from the list
+golint reads (`initialisms` in `internal/gen/spec.go`). The model, the request,
+the job and the event name a field through it, so a payload and the row it came
+from carry one name. `ServiceFields` reads names back off structs, where two
+initialisms in a row do not survive snake case, and keeps the name it read.
+`tests/Unit/gen/fieldname_test.go` holds the three.
+
 ## The one shape of each thing
 
 `make:module` and the granular commands render the **same templates**, not two

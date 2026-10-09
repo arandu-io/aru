@@ -81,10 +81,49 @@ type Field struct {
 	Type     Type
 	Required bool
 	Unique   bool
+
+	// goName is the Go identifier of a field read back off a struct, when the
+	// column name does not spell it: APIURL normalizes to apiurl, and apiurl
+	// would name a field Apiurl. Empty for every field a specification writes.
+	goName string
 }
 
-// GoName is the exported Go identifier: "full_name" becomes "FullName".
-func (f Field) GoName() string { return exported(f.Name) }
+// GoName is the exported Go identifier, with an initialism kept whole the way
+// Go spells it: "full_name" becomes "FullName", "user_id" UserID and "api_url"
+// APIURL. It is the one inflector of a field name: the model, the request, the
+// job and the event all name a field through it, so the four agree.
+func (f Field) GoName() string {
+	if f.goName != "" {
+		return f.goName
+	}
+	return GoFieldName(f.Name)
+}
+
+// GoFieldName is the exported Go identifier of a snake_case name, word by
+// word, with every word that is an initialism written in capitals.
+func GoFieldName(name string) string {
+	var b strings.Builder
+	for _, word := range strings.FieldsFunc(name, func(r rune) bool { return r == '_' || r == '-' }) {
+		if upper := strings.ToUpper(word); initialisms[upper] {
+			b.WriteString(upper)
+			continue
+		}
+		b.WriteString(exported(word))
+	}
+	return b.String()
+}
+
+// initialisms are the words Go writes in capitals wherever they fall in a name:
+// the list golint and staticcheck read a field name against.
+var initialisms = map[string]bool{
+	"ACL": true, "API": true, "ASCII": true, "CPU": true, "CSS": true, "DNS": true,
+	"EOF": true, "GUID": true, "HTML": true, "HTTP": true, "HTTPS": true, "ID": true,
+	"IP": true, "JSON": true, "LHS": true, "QPS": true, "RAM": true, "RHS": true,
+	"RPC": true, "SLA": true, "SMTP": true, "SQL": true, "SSH": true, "TCP": true,
+	"TLS": true, "TTL": true, "UDP": true, "UI": true, "UID": true, "UUID": true,
+	"URI": true, "URL": true, "UTF8": true, "VM": true, "XML": true, "XMPP": true,
+	"XSRF": true, "XSS": true,
+}
 
 // GoType is the Go type.
 func (f Field) GoType() string { return types[f.Type].Go }

@@ -21,7 +21,7 @@ const SendInvoiceName = "invoice.send"
 // ids: a payload that says "look it up" is a payload that reads a row which has
 // already changed by the time the worker gets there.
 type SendInvoice struct {
-	InvoiceId string `json:"invoice_id"`
+	InvoiceID string `json:"invoice_id"`
 	Amount    int64  `json:"amount"`
 }
 

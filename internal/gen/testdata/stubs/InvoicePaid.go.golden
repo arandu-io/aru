@@ -15,7 +15,7 @@ const InvoicePaidName = "invoice.paid"
 // Facts that were true when it happened, serialized as JSON. An event that says
 // "look it up" is an event that reads a row which has already changed.
 type InvoicePaid struct {
-	InvoiceId string `json:"invoice_id"`
+	InvoiceID string `json:"invoice_id"`
 	Amount    int64  `json:"amount"`
 }
 

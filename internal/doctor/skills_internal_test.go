@@ -133,6 +133,24 @@ func TestAProjectThatCarriesNoneOfTheSkeletonsSkillsIsNotAskedForThem(t *testing
 	}
 }
 
+// TestTheNearMissesInGapsStayQuiet reads the module the gaps fixture requires
+// and demands silence about every skill it hands out: one recorded at an older
+// version whose text did not change, one edited only inside its custom block,
+// one whose header names another origin, the module's release procedure that
+// is not for an application, and a skill of the project's own.
+//
+// The origin is asserted first. A rule that read no origin is silent too, and
+// that silence would pass here for the right one.
+func TestTheNearMissesInGapsStayQuiet(t *testing.T) {
+	state := readSkills("testdata/gaps")
+	if len(state.received) != 1 || len(state.received[0].Skills) != 3 {
+		t.Fatalf("the gaps fixture's module was not read as one origin handing out three skills: %+v", state.received)
+	}
+	if got := skillFindings(t, "testdata/gaps"); len(got) != 0 {
+		t.Errorf("a near miss was reported:\n  %s", strings.Join(got, "\n  "))
+	}
+}
+
 // TestTheSkillRulesAreSilentWithoutTheSource: the doctor never downloads, so a
 // stamped project on a machine whose cache does not hold the pinned skeleton
 // is a project these rules say nothing about.

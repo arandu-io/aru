@@ -1,0 +1,458 @@
+{
+  "cards": [
+    {
+      "kind": "controller",
+      "title": "Resource controller",
+      "path": "app/Http/Controllers/<Entity>Controller.go",
+      "imports": [
+        {"path": "github.com/arandu-io/hesape/http", "names": ["Context"]},
+        {"path": "github.com/arandu-io/framework/http", "names": ["Indexer", "Creator", "Storer", "Shower", "Editor", "Updater", "Destroyer", "Router"]}
+      ],
+      "signature": "type <Entity>Controller struct{ Controller; svc *services.<Entity>Service }\nfunc New<Entity>Controller(svc *services.<Entity>Service) *<Entity>Controller\nfunc (c *<Entity>Controller) Index(ctx *hhttp.Context) error  // and Show, Create, Store, Edit, Update, Destroy\nvar _ fhttp.Indexer = (*<Entity>Controller)(nil)  // one assertion per action",
+      "calledBy": ["the router"],
+      "may": ["ctx.User()", "ctx.Bind", "ctx.View", "ctx.Fragment", "ctx.URL", "ctx.RedirectRoute", "return the service's error"],
+      "mayNot": ["load the session", "reach a model", "reach a repository", "reach a client", "call Validate()", "write JSON by hand", "redirect to a literal path"],
+      "errors": "returned, never mapped: the router answers validation.Errors, a missing row, a refusal and an HTTPStatus() error",
+      "generators": ["make:module", "make:controller --resource"],
+      "custom": "a custom block for actions of its own",
+      "example": "app/Http/Controllers/NoteController.go",
+      "verifiedBy": ["handler-reaches-data", "handler-reaches-the-model", "controller-reaches-repository", "input-read-by-hand", "validate-called-by-controller", "json-written-by-hand", "invalid-form-answered-by-hand", "session-loaded-in-controller", "redirect-to-literal-path", "controller-too-many-actions", "operation-chosen-by-form-field", "fragment-without-partial"]
+    },
+    {
+      "kind": "invokable-controller",
+      "title": "Single-action controller",
+      "path": "app/Http/Controllers/<Name>Controller.go",
+      "imports": [{"path": "github.com/arandu-io/hesape/http", "names": ["Context"]}],
+      "signature": "func (c *<Name>Controller) Invoke(ctx *hhttp.Context) error\n// routes/web.go: r.Invokable(\"POST\", \"/exports\", c)",
+      "calledBy": ["the router"],
+      "may": ["what a resource controller may"],
+      "mayNot": ["what a resource controller may not"],
+      "errors": "returned; the router maps it",
+      "generators": ["make:controller --invokable"],
+      "example": "",
+      "verifiedBy": ["handler-reaches-data", "handler-reaches-the-model"]
+    },
+    {
+      "kind": "request",
+      "title": "Request",
+      "path": "app/Http/Requests/<Entity>Request.go",
+      "imports": [{"path": "github.com/arandu-io/hesape/validation", "names": ["Errors", "Validatable"]}],
+      "signature": "type <Entity>Request struct{ Title string `form:\"title\"` }\nfunc (r <Entity>Request) Validate() validation.Errors\nvar _ validation.Validatable = <Entity>Request{}",
+      "calledBy": ["the controller fills it with ctx.Bind", "the service calls Validate"],
+      "may": ["check its own fields"],
+      "mayNot": ["authorize", "reach the database", "be validated by the controller"],
+      "errors": "validation.Errors, returned by the service; the router answers the form",
+      "generators": ["make:request", "make:module"],
+      "custom": "a custom block for rules",
+      "example": "app/Http/Requests/NoteRequest.go",
+      "verifiedBy": ["validate-called-by-controller", "helper-reimplemented"]
+    },
+    {
+      "kind": "service",
+      "title": "Service",
+      "path": "app/Services/<Entity>Service.go",
+      "imports": [
+        {"path": "github.com/arandu-io/hesape/auth", "names": ["Subject", "Authorize", "Grant"]},
+        {"path": "github.com/arandu-io/hesape/database", "names": ["DB"]}
+      ],
+      "signature": "func New<Entity>Service(db *database.DB) *<Entity>Service  // plus the clients it uses\nfunc (s *<Entity>Service) Create(ctx context.Context, actor auth.Subject, in requests.<Entity>Request) (*models.<Entity>, error)\nfunc (s *<Entity>Service) Get(ctx context.Context, actor auth.Subject, id string) (*models.<Entity>, error)",
+      "calledBy": ["controller", "job", "listener", "command", "MCP tool"],
+      "may": ["1. Validate the request", "2. load the row with the read Grant", "3. auth.Authorize", "4. apply the entity rule", "5. persist with the Grant", "6. record an event or dispatch a job"],
+      "mayNot": ["take an HTTP type", "live in a subpackage", "start a goroutine of its own"],
+      "errors": "returned to the caller; a refusal is an error, never an empty result",
+      "generators": ["make:module", "make:service"],
+      "custom": "custom blocks for use cases of its own",
+      "example": "app/Services/NoteService.go",
+      "verifiedBy": ["grant-not-received", "grant-not-checked", "grant-check-discarded", "resource-not-reauthorized", "service-takes-http", "service-subpackage", "service-file-too-large", "raw-sql-outside-repository", "subject-built-by-hand", "generated-not-wired"]
+    },
+    {
+      "kind": "policy",
+      "title": "Policy",
+      "path": "app/Policies/<Entity>Policy.go",
+      "imports": [{"path": "github.com/arandu-io/hesape/auth", "names": ["Policy", "Subject", "Action"]}],
+      "signature": "const <Entity>View auth.Action = \"<entity>.view\"  // and List, Create, Update, Delete\nfunc (<Entity>Policy) Can(ctx context.Context, s auth.Subject, a auth.Action, x models.<Entity>) error\nvar _ auth.Policy[models.<Entity>] = <Entity>Policy{}",
+      "calledBy": ["auth.Authorize, from the service"],
+      "may": ["compare the tenant first", "read the subject's actions", "deny by default"],
+      "mayNot": ["be skipped on a read", "reach the database"],
+      "errors": "a refusal error; the router answers 403",
+      "generators": ["make:policy", "make:module"],
+      "custom": "a custom block for rules",
+      "example": "app/Policies/NotePolicy.go",
+      "verifiedBy": ["policy-never-opened", "repository-without-policy", "action-not-a-constant", "permission-not-declared", "permission-not-used"]
+    },
+    {
+      "kind": "model",
+      "title": "Model",
+      "path": "app/Models/<Entity>.go",
+      "imports": [{"path": "github.com/arandu-io/hesape/database/model", "names": ["Model", "NewTable", "TableSpec"]}],
+      "signature": "type <Entity> struct{ model.Model; Title string `db:\"title\"` }\nvar <entity>Table = model.NewTable(model.TableSpec{...})\n// <Entity>Query.go beside it is written by aru model:build and never edited",
+      "calledBy": ["the service", "a repository"],
+      "may": ["hold the entity's rules and transitions in its custom block", "declare relations with Table.Relate in init()", "declare query scopes as methods on *<Entity>Query in its custom block"],
+      "mayNot": ["reach the database, the network or the clock from a rule", "take a Grant in a rule"],
+      "errors": "a rule returns an error the service hands back",
+      "generators": ["make:model", "model:build", "make:module"],
+      "custom": "the custom block of <Entity>.go; <Entity>Query.go has none",
+      "example": "app/Models/Note.go",
+      "verifiedBy": ["model-query-stale", "model-core-outside-models", "model-rule-touches-io", "sensitive-field-not-redacted"]
+    },
+    {
+      "kind": "repository",
+      "title": "Repository: report, read model, complex query",
+      "path": "app/Repositories/<Name>Repository.go",
+      "imports": [{"path": "github.com/arandu-io/hesape/auth", "names": ["Grant"]}],
+      "signature": "func (r *<Name>Repository) Monthly(ctx context.Context, g auth.Grant, ...) (..., error)",
+      "calledBy": ["the service"],
+      "may": ["run SQL scoped by data.Tenant(g)"],
+      "mayNot": ["exist for plain CRUD", "skip the Grant on a read"],
+      "errors": "returned to the service",
+      "generators": [],
+      "example": "",
+      "verifiedBy": ["grant-not-received", "grant-not-checked", "sql-without-tenant-scope", "sql-built-with-sprintf", "sql-built-by-concatenation", "repository-without-policy"]
+    },
+    {
+      "kind": "client",
+      "title": "Client of an external system",
+      "path": "app/Clients/<Vendor>Client.go and app/Clients/<Vendor>Fake.go",
+      "imports": [{"path": "github.com/arandu-io/hesape/http/client", "names": ["Factory", "PendingRequest"]}],
+      "signature": "type <Vendor>Config struct{ BaseURL string; APIKey string }  // with LogValue and MarshalJSON\ntype <Vendor> interface{ Status(ctx context.Context) (<Vendor>Status, error) }\nfunc New<Vendor>Client(config <Vendor>Config, http *client.Factory) *<Vendor>Client\nvar _ <Vendor> = (*<Vendor>Fake)(nil)",
+      "calledBy": ["service", "job", "listener"],
+      "may": ["reach the network through hesape/http/client only"],
+      "mayNot": ["reach a model", "take a Grant", "read the session"],
+      "errors": "returned to the service",
+      "generators": ["make:client"],
+      "example": "app/Clients/NewsletterClient.go",
+      "verifiedBy": ["client-outside-clients", "sensitive-field-not-redacted"]
+    },
+    {
+      "kind": "job",
+      "title": "Job",
+      "path": "app/Jobs/<Name>.go",
+      "imports": [
+        {"path": "github.com/arandu-io/hesape/queue", "names": ["Queue", "Handler"]},
+        {"path": "github.com/arandu-io/hesape/queue/jobs", "names": ["Job"]},
+        {"path": "github.com/arandu-io/hesape/auth", "names": ["Grant"]}
+      ],
+      "signature": "func Dispatch<Name>(ctx context.Context, q hqueue.Queue, g auth.Grant, in <Name>) error\nfunc (h *<Name>Handler) Handle(ctx context.Context, g auth.Grant, j *hjobs.Job) error\nvar _ hqueue.Handler = (*<Name>Handler)(nil)",
+      "calledBy": ["the worker, from the handler catalogue"],
+      "may": ["call a service", "retry by returning an error"],
+      "mayNot": ["start a goroutine in a constructor or in Boot", "call a controller"],
+      "errors": "returned; the queue retries and then records the failure",
+      "generators": ["make:job"],
+      "example": "",
+      "verifiedBy": ["system-grant-without-tenant", "system-grant-outside-scope"]
+    },
+    {
+      "kind": "event",
+      "title": "Domain event",
+      "path": "app/Events/<Name>.go",
+      "imports": [{"path": "github.com/arandu-io/hesape/events", "names": ["Event"]}],
+      "signature": "func (e <Name>) Event(aggregateID string) hevents.Event",
+      "calledBy": ["the service, in the write that caused it"],
+      "may": ["carry the fields a listener needs"],
+      "mayNot": ["be published outside the outbox"],
+      "errors": "none of its own",
+      "generators": ["make:event"],
+      "example": "",
+      "verifiedBy": ["outbox-not-registered"]
+    },
+    {
+      "kind": "listener",
+      "title": "Listener",
+      "path": "app/Listeners/<Name>.go",
+      "imports": [{"path": "github.com/arandu-io/hesape/events", "names": ["Stored"]}],
+      "signature": "func (n *<Name>) Publish(ctx context.Context, e events.Stored) error",
+      "calledBy": ["the outbox"],
+      "may": ["call a service", "dispatch a job"],
+      "mayNot": ["call another controller"],
+      "errors": "returned; the outbox delivers again",
+      "generators": ["make:listener"],
+      "example": "",
+      "verifiedBy": ["outbox-not-registered"]
+    },
+    {
+      "kind": "mail",
+      "title": "Mailable",
+      "path": "app/Mail/<Name>.go, with resources/views/mail/<name>.kyse.go and <name>-text.kyse.go",
+      "imports": [{"path": "github.com/arandu-io/framework/mail", "names": ["Envelope", "Content"]}],
+      "signature": "func (m <Name>) Envelope() mail.Envelope\nfunc (m <Name>) Content() mail.Content",
+      "calledBy": ["a service, a job or a listener"],
+      "may": ["render its two views"],
+      "mayNot": ["reach a model"],
+      "errors": "returned by the mailer",
+      "generators": ["make:mail"],
+      "example": "",
+      "verifiedBy": ["view-does-not-exist"]
+    },
+    {
+      "kind": "notification",
+      "title": "Notification",
+      "path": "app/Notifications/<Name>.go",
+      "imports": [
+        {"path": "github.com/arandu-io/hesape/notifications", "names": ["Key", "Notifiable", "ChannelName"]},
+        {"path": "github.com/arandu-io/hesape/notifications/messages", "names": ["Mail", "Database"]}
+      ],
+      "signature": "func (n <Name>) Key() hnotifications.Key\nfunc (n <Name>) Via(to hnotifications.Notifiable) []hnotifications.ChannelName\nfunc (n <Name>) ToMail(to hnotifications.Notifiable) messages.Mail",
+      "calledBy": ["a service, a job or a listener"],
+      "may": ["say which channels it travels by and what each sends"],
+      "mayNot": ["reach a model"],
+      "errors": "returned by the sender",
+      "generators": ["make:notification"],
+      "example": "app/Notifications/NotePublished.go",
+      "verifiedBy": []
+    },
+    {
+      "kind": "command",
+      "title": "Console command",
+      "path": "app/Console/Commands/<Name>.go, registered in routes/console.go",
+      "imports": [],
+      "signature": "func New<Name>() *<Name>\nfunc (c *<Name>) Run(ctx context.Context, args []string) error",
+      "calledBy": ["the console"],
+      "may": ["call a service"],
+      "mayNot": ["put logic in bootstrap/"],
+      "errors": "returned; the console prints it and exits non-zero",
+      "generators": ["make:command"],
+      "example": "",
+      "verifiedBy": []
+    },
+    {
+      "kind": "middleware",
+      "title": "Middleware",
+      "path": "app/Http/Middleware/<Name>.go",
+      "imports": [{"path": "github.com/arandu-io/framework/http", "names": ["Middleware"]}],
+      "signature": "func <Name>() fhttp.Middleware",
+      "calledBy": ["the router, on a group, a route or the global pipeline"],
+      "may": ["read and set request state", "refuse a request"],
+      "mayNot": ["hold domain logic"],
+      "errors": "an HTTP error",
+      "generators": ["make:middleware"],
+      "example": "",
+      "verifiedBy": []
+    },
+    {
+      "kind": "migration",
+      "title": "Migration",
+      "path": "database/migrations/<id>_<name>.go",
+      "imports": [
+        {"path": "github.com/arandu-io/hesape/database/migrations", "names": ["BaseMigration", "Register"]},
+        {"path": "github.com/arandu-io/hesape/database/schema", "names": []}
+      ],
+      "signature": "type Create<Table>Table struct{ migrations.BaseMigration }\nfunc init() { migrations.Register(Create<Table>Table{}) }\nfunc (Create<Table>Table) Up(ctx context.Context, conn migrations.Connection) error",
+      "calledBy": ["aru migrate, as a pipeline step, never at boot"],
+      "may": ["change the schema compatibly with the running release"],
+      "mayNot": ["add a NOT NULL column without a default", "run at process start"],
+      "errors": "returned; the batch stops",
+      "generators": ["make:migration", "make:model -m", "make:module"],
+      "example": "database/migrations/",
+      "verifiedBy": ["migrations-not-linked", "added-column-not-nullable", "rollback-does-nothing"]
+    },
+    {
+      "kind": "factory",
+      "title": "Factory",
+      "path": "database/factories/<Entity>Factory.go",
+      "imports": [{"path": "github.com/arandu-io/hesape/database/model/factories", "names": ["Factory"]}],
+      "signature": "func <Entities>(db model.DB) *<Entity>Factory",
+      "calledBy": ["tests and seeders"],
+      "may": ["build rows through a Grant"],
+      "mayNot": ["ship in the application binary"],
+      "errors": "returned",
+      "generators": ["make:factory", "make:model -f", "make:module"],
+      "example": "database/factories/",
+      "verifiedBy": ["model-query-stale"]
+    },
+    {
+      "kind": "seeder",
+      "title": "Seeder",
+      "path": "database/seeders/<Entity>Seeder.go",
+      "imports": [{"path": "github.com/arandu-io/hesape/auth", "names": ["Grant"]}],
+      "signature": "func (<Entity>Seeder) Name() string\nfunc (<Entity>Seeder) Run(ctx context.Context, d Deps) error",
+      "calledBy": ["aru db:seed"],
+      "may": ["build rows through the factory", "run twice safely"],
+      "mayNot": ["skip the policy"],
+      "errors": "returned",
+      "generators": ["make:seeder", "make:model -s", "make:module"],
+      "example": "database/seeders/",
+      "verifiedBy": []
+    },
+    {
+      "kind": "enum",
+      "title": "Enum",
+      "path": "app/Enums/<Name>.go",
+      "imports": [],
+      "signature": "type <Name> string\nfunc <Name>Values() []<Name>\nfunc (v <Name>) Valid() bool  // with Scan and Value for the column",
+      "calledBy": ["anything"],
+      "may": ["declare a closed set of values"],
+      "mayNot": ["be repeated as a rule string"],
+      "errors": "Scan refuses a value outside the set",
+      "generators": ["make:enum"],
+      "example": "",
+      "verifiedBy": ["enum-rule-not-derived"]
+    },
+    {
+      "kind": "resource",
+      "title": "JSON Resource",
+      "path": "app/Http/Resources/<Entity>Resource.go",
+      "imports": [{"path": "github.com/arandu-io/hesape/http", "names": ["JsonResource"]}],
+      "signature": "func New<Entity>Resource(record *models.<Entity>) <Entity>Resource\nfunc (r <Entity>Resource) ToArray() map[string]any\nvar _ hhttp.JsonResource = <Entity>Resource{}",
+      "calledBy": ["the controller, with ctx.JSON"],
+      "may": ["list the fields an answer carries"],
+      "mayNot": ["encode the entity whole"],
+      "errors": "an API error is problem+json, written by the adapter",
+      "generators": ["make:resource"],
+      "example": "app/Http/Resources/NoteResource.go",
+      "verifiedBy": ["json-written-by-hand"]
+    },
+    {
+      "kind": "view",
+      "title": "Page",
+      "path": "resources/views/<area>/<action>.kyse.go",
+      "imports": [{"path": "github.com/arandu-io/hesape/view", "names": ["Page"]}],
+      "signature": "//go:build kyse\n@extends('layouts.app')\n@go\ntype <X>Data struct{ hview.Page; ... }\n@endgo",
+      "calledBy": ["the controller, with ctx.View"],
+      "may": ["read its typed data", "compose components imported from github.com/arandu-io/kyse/components"],
+      "mayNot": ["take a map as data", "keep state in the browser"],
+      "errors": "a compile error from aru view:build",
+      "generators": ["make:module"],
+      "example": "resources/views/notes/",
+      "verifiedBy": ["view-data-is-a-map", "view-does-not-exist", "view-keeps-state-in-the-browser", "raw-output-is-not-a-component", "html-template-in-app"]
+    },
+    {
+      "kind": "fragment",
+      "title": "HTMX fragment",
+      "path": "resources/views/partials/<name>.kyse.go",
+      "imports": [],
+      "signature": "//go:build kyse\n// no @extends",
+      "calledBy": ["the controller, with ctx.Fragment"],
+      "may": ["render one piece of a page"],
+      "mayNot": ["depend on HX-Boosted"],
+      "errors": "a compile error from aru view:build",
+      "generators": [],
+      "example": "",
+      "verifiedBy": ["fragment-without-partial"]
+    },
+    {
+      "kind": "mcp-tool",
+      "title": "MCP tool of the application",
+      "path": "app/Mcp/<Name>.go",
+      "imports": [{"path": "github.com/arandu-io/mcp", "names": ["Request", "Response", "Schema", "Tool"]}],
+      "signature": "func New<Name>(svc *services.<Entity>Service) <Name>\nfunc (<Name>) Name() string\nfunc (<Name>) Description() string\nfunc (<Name>) Schema() mcp.Schema\nfunc (t <Name>) Handle(ctx context.Context, r mcp.Request) (mcp.Response, error)  // calls the service with r.Subject()",
+      "calledBy": ["the mcp server mounted in routes/web.go"],
+      "may": ["call a service as r.Subject()"],
+      "mayNot": ["reach a model", "reach a client"],
+      "errors": "returned; the server answers it as a failure the model reads",
+      "generators": ["make:mcp-tool", "make:mcp-resource", "make:mcp-prompt"],
+      "example": "",
+      "verifiedBy": ["handler-reaches-data"]
+    },
+    {
+      "kind": "webhook",
+      "title": "Received webhook",
+      "path": "app/Http/Controllers/<Vendor>WebhookController.go",
+      "imports": [{"path": "github.com/arandu-io/hesape/webhook", "names": []}],
+      "signature": "func (c *<Vendor>WebhookController) Store(ctx *hhttp.Context) error",
+      "calledBy": ["the router"],
+      "may": ["1. verify the signature with hesape/webhook", "2. record the delivery", "3. dispatch a job", "4. answer 2xx"],
+      "mayNot": ["process the payload in the request"],
+      "errors": "a bad signature is refused before anything is recorded",
+      "generators": ["make:controller", "make:job"],
+      "example": "",
+      "verifiedBy": ["handler-reaches-data"]
+    }
+  ],
+  "recipes": [
+    {
+      "name": "crud",
+      "title": "CRUD of an entity",
+      "steps": [
+        "aru make:module <name> --fields \"title:string!,amount:money\" --tenant",
+        "paste the wiring it printed into bootstrap/app.go and routes/web.go",
+        "aru model:build, aru view:build",
+        "run the project's gates"
+      ],
+      "cards": ["migration", "model", "factory", "seeder", "policy", "request", "service", "controller", "view"]
+    },
+    {
+      "name": "action",
+      "title": "An action outside CRUD (publish, close)",
+      "steps": [
+        "write the transition as a rule of the entity, in the model's custom block",
+        "add a use case to the service: load with the read Grant, authorize, apply the rule, persist",
+        "add the action as a method of the resource's controller",
+        "register it: aru make:controller <Entity> --action=<name> prints r.ResourceAction(\"POST\", ...)"
+      ],
+      "cards": ["model", "service", "controller", "policy"]
+    },
+    {
+      "name": "invokable",
+      "title": "A single-action controller",
+      "steps": ["aru make:controller <Name> --invokable", "register it with r.Invokable"],
+      "cards": ["invokable-controller", "service"]
+    },
+    {
+      "name": "nested",
+      "title": "A resource nested under another",
+      "steps": [
+        "aru make:module <name> --fields \"...\" --parent=<resource>",
+        "register it with r.Resource(\"projects.tasks\", c), shallow by default",
+        "the service loads the parent through the parent's policy and filters the child by it"
+      ],
+      "cards": ["service", "controller", "policy", "model"]
+    },
+    {
+      "name": "report",
+      "title": "A report or read model",
+      "steps": ["write app/Repositories/<Name>Repository.go, every method taking the Grant", "call it from a service that authorizes first"],
+      "cards": ["repository", "service", "policy"]
+    },
+    {
+      "name": "job",
+      "title": "Background work",
+      "steps": [
+        "aru make:job <Name> --fields \"invoice_id:uuid\"",
+        "register the handler in the handler catalogue the worker reads",
+        "dispatch it from the service with the Grant it already holds",
+        "schedule it in routes/console.go when it runs on a clock"
+      ],
+      "cards": ["job", "service"]
+    },
+    {
+      "name": "command",
+      "title": "A console command",
+      "steps": ["aru make:command <Name> --signature=invoice:close", "register it in routes/console.go"],
+      "cards": ["command", "service"]
+    },
+    {
+      "name": "listener",
+      "title": "Reacting to a fact",
+      "steps": ["aru make:event <Name> --aggregate=<entity>", "aru make:listener <Name> --event=<entity>.<fact>", "record the event in the service's write; the outbox delivers it"],
+      "cards": ["event", "listener", "service"]
+    },
+    {
+      "name": "webhook",
+      "title": "A received webhook",
+      "steps": [
+        "a controller verifies the signature with hesape/webhook",
+        "it records the delivery",
+        "it dispatches a job (aru make:job)",
+        "it answers 2xx; the job does the processing"
+      ],
+      "cards": ["webhook", "job", "service"]
+    },
+    {
+      "name": "integration",
+      "title": "An external system",
+      "steps": [
+        "aru make:client <Vendor>: config, interface, client, fake and test",
+        "hand the client to the service's constructor in bootstrap/app.go",
+        "tests use the fake; the service never sees the network",
+        "a client more than one project needs becomes an hyz-is/arandu-* module"
+      ],
+      "cards": ["client", "service"]
+    },
+    {
+      "name": "mcp",
+      "title": "Exposing the application to an assistant",
+      "steps": ["aru make:mcp-tool <Name> --service=<Entity>", "add the tool to the server mounted in routes/web.go"],
+      "cards": ["mcp-tool", "service"]
+    }
+  ]
+}

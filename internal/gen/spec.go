@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/arandu-io/aru/internal/contract"
 )
 
 // Type is a field type. The set is closed by decision, not by omission: a
@@ -331,6 +333,27 @@ go build ./...
 go vet ./...
 go test -race ./...
 aru doctor`
+
+// moduleCards are the kinds of code a module is made of, in the order its
+// skill lists them.
+var moduleCards = []string{"model", "policy", "request", "service", "controller", "view"}
+
+// ContractCards are the contract's sheets of what the module is made of, read
+// from package contract so the skill and `aru mcp` say the same thing. The
+// entity in each path is this module's; a view path keeps its placeholders,
+// because the resource's name between slashes reads as a URL to anybody
+// copying from the skill.
+func (m Module) ContractCards() []contract.Card {
+	names := strings.NewReplacer("<Entity>", m.Entity())
+	out := make([]contract.Card, 0, len(moduleCards))
+	for _, kind := range moduleCards {
+		if card, ok := contract.Lookup(kind); ok {
+			card.Path = names.Replace(card.Path)
+			out = append(out, card)
+		}
+	}
+	return out
+}
 
 // GateBlock is the block of commands the module's skill lists as its gates:
 // the project's, or defaultGates when the project declares none.

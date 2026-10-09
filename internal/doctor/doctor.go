@@ -32,6 +32,7 @@ import (
 	"strings"
 
 	"github.com/arandu-io/aru/internal/catalog"
+	"github.com/arandu-io/aru/internal/contract"
 	"github.com/arandu-io/aru/internal/kyse"
 	"github.com/arandu-io/aru/internal/manifest"
 )
@@ -99,6 +100,11 @@ type Finding struct {
 	// Why explains the consequence, not the rule. A finding that only says what
 	// is forbidden gets suppressed; one that says what breaks gets fixed.
 	Why string
+	// Contract is the kind of code the rule verifies, as the implementation
+	// contract names it (package contract), or empty when the rule verifies
+	// none. It is how a reader of the finding reaches the shape the code
+	// should have: `aru mcp`'s where_does_it_go answers that card.
+	Contract string
 }
 
 func (f Finding) String() string {
@@ -372,6 +378,11 @@ func analyze(dir string, profile Profile) (*project, []Finding, error) {
 	var findings []Finding
 	for _, rule := range rules {
 		findings = append(findings, rule(p)...)
+	}
+	for i := range findings {
+		if card, ok := contract.ForRule(findings[i].Rule); ok {
+			findings[i].Contract = card.Kind
+		}
 	}
 
 	sort.SliceStable(findings, func(i, j int) bool {

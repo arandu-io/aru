@@ -942,6 +942,14 @@ return ctx.RedirectRoute("{{ .RouteName "show" }}", created.ID)
 allow-everything branch to delete later. Open it one action at a time, and
 ` + "`" + `aru doctor` + "`" + ` reports ` + "`" + `policy-never-opened` + "`" + ` as a warning until you do.
 {{ end }}
+## Where its code goes
+
+The implementation contract, as ` + "`" + `aru mcp` + "`" + ` answers it with ` + "`" + `where_does_it_go` + "`" + `:
+
+| kind | file | never | checked by |
+| --- | --- | --- | --- |
+{{ range .ContractCards }}| {{ .Title }} | ` + "`" + `{{ .Path }}` + "`" + ` | {{ join .MayNot "; " }} | {{ if .VerifiedBy }}` + "`" + `{{ join .VerifiedBy "` + "`" + `, ` + "`" + `" }}` + "`" + `{{ end }} |
+{{ end }}
 ## Before calling a change finished
 
 The gates, all of them, as ` + "`" + `AGENTS.md` + "`" + ` lists them. While iterating,

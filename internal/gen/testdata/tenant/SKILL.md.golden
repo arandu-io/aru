@@ -4,7 +4,7 @@ description: Work with the PurchaseOrder module of this Arandu application. Use 
 license: MIT
 metadata:
   source: aru@dev
-  digest: sha256:6b9a925aec1ff63997056d55854ce6ae7281779f9ad160e022e2d79edde243fd
+  digest: sha256:5bffa77af0d2b5b41c22e3b46923956159561960662a91fea968de6db9f25bc1
 ---
 
 # The PurchaseOrder module
@@ -102,6 +102,19 @@ return ctx.RedirectRoute("purchase-orders.show", created.ID)
 Nothing yet. The generated policy denies every action, with no
 allow-everything branch to delete later. Open it one action at a time, and
 `aru doctor` reports `policy-never-opened` as a warning until you do.
+
+## Where its code goes
+
+The implementation contract, as `aru mcp` answers it with `where_does_it_go`:
+
+| kind | file | never | checked by |
+| --- | --- | --- | --- |
+| Model | `app/Models/PurchaseOrder.go` | reach the database, the network or the clock from a rule; take a Grant in a rule | `model-query-stale`, `model-core-outside-models`, `model-rule-touches-io`, `sensitive-field-not-redacted` |
+| Policy | `app/Policies/PurchaseOrderPolicy.go` | be skipped on a read; reach the database | `policy-never-opened`, `repository-without-policy`, `action-not-a-constant`, `permission-not-declared`, `permission-not-used` |
+| Request | `app/Http/Requests/PurchaseOrderRequest.go` | authorize; reach the database; be validated by the controller | `validate-called-by-controller`, `helper-reimplemented` |
+| Service | `app/Services/PurchaseOrderService.go` | take an HTTP type; live in a subpackage; start a goroutine of its own | `grant-not-received`, `grant-not-checked`, `grant-check-discarded`, `resource-not-reauthorized`, `service-takes-http`, `service-subpackage`, `service-file-too-large`, `raw-sql-outside-repository`, `subject-built-by-hand`, `generated-not-wired` |
+| Resource controller | `app/Http/Controllers/PurchaseOrderController.go` | load the session; reach a model; reach a repository; reach a client; call Validate(); write JSON by hand; redirect to a literal path | `handler-reaches-data`, `handler-reaches-the-model`, `controller-reaches-repository`, `input-read-by-hand`, `validate-called-by-controller`, `json-written-by-hand`, `invalid-form-answered-by-hand`, `session-loaded-in-controller`, `redirect-to-literal-path`, `controller-too-many-actions`, `operation-chosen-by-form-field`, `fragment-without-partial` |
+| Page | `resources/views/<area>/<action>.kyse.go` | take a map as data; keep state in the browser | `view-data-is-a-map`, `view-does-not-exist`, `view-keeps-state-in-the-browser`, `raw-output-is-not-a-component`, `html-template-in-app` |
 
 ## Before calling a change finished
 

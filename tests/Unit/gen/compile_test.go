@@ -323,10 +323,28 @@ func generatedProject(t *testing.T) (string, map[string]string) {
 			Services: []string{"PurchaseOrder", "StockItem"},
 		})
 	})
-	one("aru make:event PurchaseOrderApproved", func() (gen.File, error) {
+	approved := gen.EventSpec{
+		Type: "PurchaseOrderApproved", Aggregate: "purchase_order", EventName: "purchase_order.approved",
+		ModulePath: generatedModulePath, Fields: payload,
+	}
+	one("aru make:event PurchaseOrderApproved", func() (gen.File, error) { return gen.RenderEvent(approved) })
+	// What make:event prints, pasted into a service the way it says: the
+	// imports, the outbox field and its value, and the store beside the write
+	// of the row it names. A snippet that names a package or a variable the
+	// service does not have is the one a person cannot paste.
+	one("the wiring aru make:event PurchaseOrderApproved prints", func() (gen.File, error) {
+		return gen.File{Path: "app/Services/PurchaseOrderApprovalService.go", Content: eventWiringPasted(approved)}, nil
+	})
+	// Payload fields named like the parts of the record the outbox stores. Only
+	// a field named like the type's own method is refused, and these compile.
+	one("aru make:event DeliveryReported --aggregate=newsletter_delivery", func() (gen.File, error) {
 		return gen.RenderEvent(gen.EventSpec{
-			Type: "PurchaseOrderApproved", Aggregate: "purchase_order", EventName: "purchase_order.approved",
-			ModulePath: generatedModulePath, Fields: payload,
+			Type: "DeliveryReported", Aggregate: "newsletter_delivery", EventName: "newsletter_delivery.reported",
+			ModulePath: generatedModulePath, Fields: []gen.Field{
+				{Name: "kind", Type: gen.TypeString}, {Name: "name", Type: gen.TypeString},
+				{Name: "aggregate", Type: gen.TypeString}, {Name: "aggregate_id", Type: gen.TypeString},
+				{Name: "payload", Type: gen.TypeString},
+			},
 		})
 	})
 	emit("aru make:listener NotifyBuyer --event=purchase_order.approved", func() ([]gen.File, error) {
@@ -471,6 +489,41 @@ func fieldsOf(m gen.Module) []gen.FactoryField {
 // It runs the same compiler the CLI runs and derives the name and the data type
 // the same way, because a view compiled under another name is a view the
 // controller cannot render -- and that is a failure no compiler reports.
+// eventWiringPasted is a service made of what make:event prints and nothing
+// the printed lines leave to the person but the two names the sentence under
+// them states: the row, loaded and authorized, and the service's database
+// field. The pieces are gen's, the ones the command prints.
+func eventWiringPasted(spec gen.EventSpec) []byte {
+	var b strings.Builder
+	b.WriteString("package services\n\nimport (\n\t\"context\"\n\n\t\"github.com/arandu-io/hesape/auth\"\n")
+	for _, line := range spec.StoreImports() {
+		b.WriteString("\t" + line + "\n")
+	}
+	b.WriteString("\tmodels \"" + generatedModulePath + "/app/Models\"\n")
+	b.WriteString("\tpolicies \"" + generatedModulePath + "/app/Policies\"\n)\n\n")
+	fmt.Fprintf(&b, `// PurchaseOrderApprovalService approves purchase orders.
+type PurchaseOrderApprovalService struct {
+	db *database.DB
+	%s
+}
+
+// NewPurchaseOrderApprovalService wires the service.
+func NewPurchaseOrderApprovalService(db *database.DB) *PurchaseOrderApprovalService {
+	return &PurchaseOrderApprovalService{db: db, %s}
+}
+
+// Approve stores the row and the event, in one transaction.
+func (s *PurchaseOrderApprovalService) Approve(ctx context.Context, g auth.Grant, %s *models.PurchaseOrder) error {
+	if err := g.Check(policies.PurchaseOrderUpdate); err != nil {
+		return err
+	}
+%s
+	return err
+}
+`, gen.EventOutboxField, strings.TrimSuffix(gen.EventOutboxValue, ","), spec.Row(), "\t"+strings.ReplaceAll(spec.StoreSnippet(), "\n", "\n\t"))
+	return []byte(b.String())
+}
+
 func buildGeneratedViews(t *testing.T, root string, from map[string]string) map[string][]byte {
 	t.Helper()
 

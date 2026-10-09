@@ -1123,3 +1123,36 @@ func TestMakeControllerActionOnAnExistingControllerPrintsWhatToPaste(t *testing.
 		t.Errorf("--force did not write the resource controller with the action:\n%s", forced)
 	}
 }
+
+// TestTheEventWiringNamesWhatCompiles. make:event prints code a service
+// pastes, and every name in it is one Go accepts there: the row as a Go
+// variable rather than the aggregate as written, the package the transaction
+// helper really lives in, and the store the generated event's doc comment and
+// the compile harness carry. The words it used to print -- data.Transaction,
+// newsletter_delivery.PullEvents() -- named a package the service does not
+// import and a variable no Go file can declare.
+func TestTheEventWiringNamesWhatCompiles(t *testing.T) {
+	spec := gen.EventSpec{
+		Type: "DeliveryReported", Aggregate: "newsletter_delivery", EventName: "newsletter_delivery.reported",
+		ModulePath: "example.test/project",
+	}
+	message := wiringEvent(spec)
+	for _, want := range []string{
+		`appevents "example.test/project/app/Events"`,
+		`frameevents "github.com/arandu-io/framework/events"`,
+		"outbox *events.Outbox",
+		"outbox: frameevents.NewOutbox(db),",
+		indentLines(spec.StoreSnippet()),
+		"newsletterDelivery is the row the event happened to",
+		"aru make:listener <Name> --event=newsletter_delivery.reported",
+	} {
+		if !strings.Contains(message, want) {
+			t.Errorf("the wiring does not say %q:\n%s", want, message)
+		}
+	}
+	for _, stale := range []string{"data.Transaction", "PullEvents", "newsletter_delivery.Save", "newsletter_delivery.ID", "events.Recorder"} {
+		if strings.Contains(message, stale) {
+			t.Errorf("the wiring still says %q:\n%s", stale, message)
+		}
+	}
+}

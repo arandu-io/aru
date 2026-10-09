@@ -75,7 +75,8 @@ func structuralRules(t *testing.T) map[string]bool {
 
 // writeWiring writes the files the generators print lines for and never
 // write: main.go, the project's arandu.toml, bootstrap/app.go naming every
-// constructor of a controller and a service, and routes/web.go.
+// constructor of a controller and a service and registering the events module,
+// and routes/web.go.
 func writeWiring(t *testing.T, root string) {
 	t.Helper()
 
@@ -116,6 +117,7 @@ func writeWiring(t *testing.T, root string) {
 package bootstrap
 
 import (
+	frameevents "github.com/arandu-io/framework/events"
 `+strings.Join(aliases, "\n")+`
 )
 
@@ -124,6 +126,10 @@ import (
 var Constructors = []any{
 	`+strings.Join(refs, ",\n\t")+`,
 }
+
+// Modules registers the outbox table, as the skeleton does, because what
+// make:event prints stores events in it.
+var Modules = []any{frameevents.NewModule()}
 `))
 	writeInto(t, filepath.Join(root, "routes", "web.go"), []byte(`// Package routes is the route table.
 package routes

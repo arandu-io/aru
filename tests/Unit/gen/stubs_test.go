@@ -616,3 +616,70 @@ func TestNormalizeAcceptsBothSpellings(t *testing.T) {
 		}
 	}
 }
+
+// TestAnEventFieldNamedLikeItsMethodIsRefused. The generated type declares the
+// method Event, so a payload field named event would be a field and a method
+// of one name on one type, and the file would not compile. The refusal names
+// the clash and a name to use instead; a field named like any other part of the
+// record the outbox stores compiles, and the compile harness builds one.
+func TestAnEventFieldNamedLikeItsMethodIsRefused(t *testing.T) {
+	_, err := gen.RenderEvent(gen.EventSpec{
+		Type: "DeliveryReported", Aggregate: "newsletter_delivery", EventName: "newsletter_delivery.reported",
+		ModulePath: "example.test/project",
+		Fields:     []gen.Field{{Name: "digest", Type: gen.TypeString}, {Name: "event", Type: gen.TypeString}},
+	})
+	if err == nil {
+		t.Fatal("an event with a field named event was generated, and it does not compile")
+	}
+	for _, want := range []string{`field "event"`, "Go field Event", "method", "kind"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q: %v", want, err)
+		}
+	}
+
+	if _, err := gen.RenderEvent(gen.EventSpec{
+		Type: "DeliveryReported", Aggregate: "newsletter_delivery", EventName: "newsletter_delivery.reported",
+		ModulePath: "example.test/project",
+		Fields: []gen.Field{
+			{Name: "kind", Type: gen.TypeString}, {Name: "name", Type: gen.TypeString},
+			{Name: "aggregate", Type: gen.TypeString}, {Name: "payload", Type: gen.TypeString},
+		},
+	}); err != nil {
+		t.Errorf("fields that clash with no method were refused: %v", err)
+	}
+}
+
+// TestTheEventRowIsAnIdentifier. The row the event's doc comment and the
+// printed wiring store beside is a variable a person pastes, so it is the
+// aggregate as a Go name, never the aggregate as written.
+func TestTheEventRowIsAnIdentifier(t *testing.T) {
+	for aggregate, want := range map[string]string{
+		"invoice":             "invoice",
+		"newsletter_delivery": "newsletterDelivery",
+		"type":                "typeRow",
+		"events":              "eventsRow",
+		"s":                   "sRow",
+	} {
+		spec := gen.EventSpec{Type: "Happened", Aggregate: aggregate}
+		if got := spec.Row(); got != want {
+			t.Errorf("the row of %q is %q, want %q", aggregate, got, want)
+		}
+	}
+
+	spec := gen.EventSpec{
+		Type: "DeliveryReported", Aggregate: "newsletter_delivery", EventName: "newsletter_delivery.reported",
+		ModulePath: "example.test/project",
+	}
+	file, err := gen.RenderEvent(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(file.Content), spec.StoreComment()) {
+		t.Errorf("the doc comment does not carry the store the wiring prints:\n%s", file.Content)
+	}
+	for _, stale := range []string{"newsletter_delivery.Record", "newsletter_delivery.ID", "PullEvents", "data.Transaction"} {
+		if strings.Contains(string(file.Content), stale) {
+			t.Errorf("the event still says %q:\n%s", stale, file.Content)
+		}
+	}
+}

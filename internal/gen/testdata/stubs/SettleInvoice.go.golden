@@ -6,26 +6,27 @@ import (
 	"github.com/arandu-io/hesape/auth"
 	hqueue "github.com/arandu-io/hesape/queue"
 	hjobs "github.com/arandu-io/hesape/queue/jobs"
+
+	services "example.test/project/app/Services"
 )
 
-// SendInvoiceName routes the job to its handler.
+// SettleInvoiceName routes the job to its handler.
 //
 // A constant rather than a literal at both ends: a typo in the push enqueues
 // work nothing drains, and the worker parks it with "no handler registered"
 // instead of failing where the mistake is.
-const SendInvoiceName = "invoice.send"
+const SettleInvoiceName = "invoice.settle"
 
-// SendInvoice is what the job carries.
+// SettleInvoice is what the job carries.
 //
 // These are the arguments the job was created with, as a struct. Keep it to facts and
 // ids: a payload that says "look it up" is a payload that reads a row which has
 // already changed by the time the worker gets there.
-type SendInvoice struct {
-	InvoiceId string `json:"invoice_id"`
-	Amount    int64  `json:"amount"`
+type SettleInvoice struct {
+	Amount int64 `json:"amount"`
 }
 
-// DispatchSendInvoice enqueues the job.
+// DispatchSettleInvoice enqueues the job.
 //
 // The Grant is explicit, and hjobs.New is the only constructor, so every job in
 // the system carries the tenant, an id and the Grant that authorized it -- there
@@ -35,38 +36,42 @@ type SendInvoice struct {
 // transaction as the row that produced it. That is the outbox guarantee applied
 // to work instead of to an event, and it is the reason the default queue is a
 // table and not Redis.
-func DispatchSendInvoice(ctx context.Context, q hqueue.Queue, g auth.Grant, in SendInvoice) error {
-	j, err := hjobs.New(g, hjobs.DefaultQueue, SendInvoiceName, in)
+func DispatchSettleInvoice(ctx context.Context, q hqueue.Queue, g auth.Grant, in SettleInvoice) error {
+	j, err := hjobs.New(g, hjobs.DefaultQueue, SettleInvoiceName, in)
 	if err != nil {
 		return err
 	}
 	return q.Push(ctx, g, j)
 }
 
-// SendInvoiceHandler is what `aru queue:work` runs.
+// SettleInvoiceHandler is what `aru queue:work` runs.
 //
 // Its collaborators arrive through the constructor -- there is no container, and
 // a handler that built its own service would be a handler no test can pin.
-type SendInvoiceHandler struct {
+type SettleInvoiceHandler struct {
+	// invoices is the InvoiceService this job calls.
+	invoices *services.InvoiceService
+	// purchaseOrders is the PurchaseOrderService this job calls.
+	purchaseOrders *services.PurchaseOrderService
 	// arandu:begin custom
 	// Anything else the handler keeps goes here. A service is a parameter of
-	// NewSendInvoiceHandler instead, so registerHandlers is where it comes from.
+	// NewSettleInvoiceHandler instead, so registerHandlers is where it comes from.
 	// arandu:end custom
 }
 
-// NewSendInvoiceHandler wires the handler with the services it calls.
+// NewSettleInvoiceHandler wires the handler with the services it calls.
 //
 // registerHandlers, in bootstrap/background.go, calls it with the services the
 // App it receives already holds -- the ones bootstrap.Build made at boot, the
 // same a request reaches -- and the handler never builds one of its own. A
 // service the job needs later is one more parameter here and one more field
 // above: regenerate with --services, or add both by hand.
-func NewSendInvoiceHandler() *SendInvoiceHandler {
-	return &SendInvoiceHandler{}
+func NewSettleInvoiceHandler(invoices *services.InvoiceService, purchaseOrders *services.PurchaseOrderService) *SettleInvoiceHandler {
+	return &SettleInvoiceHandler{invoices: invoices, purchaseOrders: purchaseOrders}
 }
 
 // Compile-time proof that the worker can register it.
-var _ hqueue.Handler = (*SendInvoiceHandler)(nil)
+var _ hqueue.Handler = (*SettleInvoiceHandler)(nil)
 
 // Handle does the work.
 //
@@ -81,8 +86,8 @@ var _ hqueue.Handler = (*SendInvoiceHandler)(nil)
 // process can die between doing the work and acknowledging it, and no queue
 // anywhere solves that. j.UUID is stable across retries and is the key to
 // deduplicate on.
-func (h *SendInvoiceHandler) Handle(ctx context.Context, g auth.Grant, j *hjobs.Job) error {
-	var in SendInvoice
+func (h *SettleInvoiceHandler) Handle(ctx context.Context, g auth.Grant, j *hjobs.Job) error {
+	var in SettleInvoice
 	if err := j.Decode(&in); err != nil {
 		return err
 	}

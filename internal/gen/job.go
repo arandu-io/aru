@@ -22,8 +22,56 @@ type JobSpec struct {
 	EventName string
 	// Fields are the payload's columns, from the closed set of types.
 	Fields []Field
-	// ModulePath is the project's module path, for the import the command prints.
+	// ModulePath is the project's module path, for the import the command
+	// prints and for app/Services when the handler takes a service.
 	ModulePath string
+	// Services are the entities whose services the handler calls: "Note"
+	// takes a *services.NoteService. Each one is a field of the handler and a
+	// parameter of its constructor, so the dependencies are declared where the
+	// handler is built and nowhere else.
+	Services []string
+}
+
+// JobService is one service the handler takes.
+type JobService struct {
+	// Type is the service's type: NoteService.
+	Type string
+	// Field is the handler's field and the constructor's parameter: notes.
+	Field string
+	// AppField is the field of the App bootstrap.Build returns that holds the
+	// built service: Notes.
+	AppField string
+}
+
+// String is the parameter as the constructor declares it: notes *services.NoteService.
+func (s JobService) String() string { return s.Field + " *services." + s.Type }
+
+// Deps are the services the handler takes, in the order they were named.
+func (s JobSpec) Deps() []JobService {
+	out := make([]JobService, 0, len(s.Services))
+	for _, entity := range s.Services {
+		m := Module{Name: Normalize(entity)}
+		plural := m.Plural()
+		out = append(out, JobService{
+			Type:     m.ServiceType(),
+			Field:    strings.ToLower(plural[:1]) + plural[1:],
+			AppField: plural,
+		})
+	}
+	return out
+}
+
+// ServicesImport is the package the services come from.
+func (s JobSpec) ServicesImport() string { return s.ModulePath + "/app/Services" }
+
+// Constructor is how registerHandlers builds the handler, from the App it
+// receives: appjobs.NewSendInvoiceHandler(app.Invoices).
+func (s JobSpec) Constructor() string {
+	args := make([]string, 0, len(s.Services))
+	for _, d := range s.Deps() {
+		args = append(args, "app."+d.AppField)
+	}
+	return "appjobs.New" + s.Handler() + "(" + strings.Join(args, ", ") + ")"
 }
 
 // Handler is the type that runs the work.
@@ -42,6 +90,19 @@ func (s JobSpec) Validate() error {
 	}
 	if s.EventName == "" {
 		return fmt.Errorf("a job with no name cannot be routed to a handler")
+	}
+	if len(s.Services) > 0 && s.ModulePath == "" {
+		return errModulePath
+	}
+	taken := map[string]bool{}
+	for _, entity := range s.Services {
+		if !IsExportedIdentifier(Exported(entity)) {
+			return fmt.Errorf("service %q is not an entity name: --services=Note,Invoice", entity)
+		}
+		if taken[Exported(entity)] {
+			return fmt.Errorf("service %q named twice", entity)
+		}
+		taken[Exported(entity)] = true
 	}
 	seen := map[string]bool{}
 	for _, f := range s.Fields {
@@ -99,6 +160,10 @@ import (
 	"github.com/arandu-io/hesape/auth"
 	hqueue "github.com/arandu-io/hesape/queue"
 	hjobs "github.com/arandu-io/hesape/queue/jobs"
+{{- if .Services}}
+
+	services "{{.ServicesImport}}"
+{{- end}}
 )
 
 // {{.Const}} routes the job to its handler.
@@ -142,15 +207,25 @@ func Dispatch{{.Type}}(ctx context.Context, q hqueue.Queue, g auth.Grant, in {{.
 // Its collaborators arrive through the constructor -- there is no container, and
 // a handler that built its own service would be a handler no test can pin.
 type {{.Handler}} struct {
+{{- range .Deps}}
+	// {{.Field}} is the {{.Type}} this job calls.
+	{{.String}}
+{{- end}}
 	// arandu:begin custom
-	// The services this job needs. Add the fields here and the parameters to
-	// New{{.Handler}} below; bootstrap already built them.
+	// Anything else the handler keeps goes here. A service is a parameter of
+	// New{{.Handler}} instead, so registerHandlers is where it comes from.
 	// arandu:end custom
 }
 
-// New{{.Handler}} wires the handler.
-func New{{.Handler}}() *{{.Handler}} {
-	return &{{.Handler}}{}
+// New{{.Handler}} wires the handler with the services it calls.
+//
+// registerHandlers, in bootstrap/background.go, calls it with the services the
+// App it receives already holds -- the ones bootstrap.Build made at boot, the
+// same a request reaches -- and the handler never builds one of its own. A
+// service the job needs later is one more parameter here and one more field
+// above: regenerate with --services, or add both by hand.
+func New{{.Handler}}({{range $i, $d := .Deps}}{{if $i}}, {{end}}{{$d.String}}{{end}}) *{{.Handler}} {
+	return &{{.Handler}}{ {{- range $i, $d := .Deps}}{{if $i}}, {{end}}{{$d.Field}}: {{$d.Field}}{{end}}}
 }
 
 // Compile-time proof that the worker can register it.

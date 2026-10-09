@@ -91,6 +91,13 @@ func TestGoldenStubs(t *testing.T) {
 				Fields: []gen.Field{{Name: "invoice_id", Type: gen.TypeUUID}, {Name: "amount", Type: gen.TypeMoney}},
 			})
 		}},
+		{"SettleInvoice.go", func() (gen.File, error) {
+			return gen.RenderJob(gen.JobSpec{
+				Type: "SettleInvoice", EventName: "invoice.settle", ModulePath: "example.test/project",
+				Fields:   []gen.Field{{Name: "amount", Type: gen.TypeMoney}},
+				Services: []string{"Invoice", "PurchaseOrder"},
+			})
+		}},
 		{"InvoicePaid.go", func() (gen.File, error) {
 			return gen.RenderEvent(gen.EventSpec{
 				Type: "InvoicePaid", Aggregate: "invoice", EventName: "invoice.paid", ModulePath: "example.test/project",

@@ -1004,3 +1004,65 @@ func treeOf(t *testing.T, root string) string {
 	}
 	return b.String()
 }
+
+// TestMakeJobTakesItsServicesThroughItsConstructor: a handler's services are
+// parameters of its constructor, and registerHandlers passes them from the App
+// bootstrap.Build returned. The printed wiring used to build the handler with
+// nothing and say nothing about where a service would come from, so the first
+// handler that needed one was wired by guessing.
+func TestMakeJobTakesItsServicesThroughItsConstructor(t *testing.T) {
+	root := projectWithModule(t, "purchase_order")
+	t.Chdir(root)
+
+	code, stdout, stderr := exercise(t, "make:job", "SettlePurchaseOrder", "--services=PurchaseOrder")
+	if code != 0 {
+		t.Fatalf("make:job exited %d: %s", code, stderr)
+	}
+	body, err := os.ReadFile(filepath.Join(root, "app", "Jobs", "SettlePurchaseOrder.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`services "example.test/project/app/Services"`,
+		"purchaseOrders *services.PurchaseOrderService",
+		"func NewSettlePurchaseOrderHandler(purchaseOrders *services.PurchaseOrderService) *SettlePurchaseOrderHandler {",
+		"return &SettlePurchaseOrderHandler{purchaseOrders: purchaseOrders}",
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("the handler does not carry %q:\n%s", want, body)
+		}
+	}
+	for _, want := range []string{
+		"bootstrap/background.go -- in registerHandlers",
+		"w.Handle(appjobs.SettlePurchaseOrderName, appjobs.NewSettlePurchaseOrderHandler(app.PurchaseOrders))",
+		"PurchaseOrders *services.PurchaseOrderService",
+		"PurchaseOrders: purchaseOrders,",
+		"registerHandlers passes them from app",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("the wiring does not say %q:\n%s", want, stdout)
+		}
+	}
+
+	code, stdout, stderr = exercise(t, "make:job", "SendReminder")
+	if code != 0 {
+		t.Fatalf("make:job exited %d: %s", code, stderr)
+	}
+	for _, want := range []string{
+		"appjobs.NewSendReminderHandler())",
+		"--services=<Entity>",
+		"registerHandlers passes it",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("the wiring of a handler with no service does not say %q:\n%s", want, stdout)
+		}
+	}
+
+	code, _, stderr = exercise(t, "make:job", "ChargeCustomer", "--services=Customer")
+	if code == 0 || !strings.Contains(stderr, "app/Services/CustomerService.go does not exist") {
+		t.Errorf("a service the application does not build was accepted (exit %d): %s", code, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(root, "app", "Jobs", "ChargeCustomer.go")); !os.IsNotExist(err) {
+		t.Errorf("the refused job was written (%v)", err)
+	}
+}

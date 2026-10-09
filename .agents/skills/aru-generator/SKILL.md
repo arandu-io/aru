@@ -65,7 +65,7 @@ all three from one response. Keep that shape when you add a check.
 Every byte the generator emits is pinned.
 
 ```sh
-ls internal/gen/testdata/stubs  | wc -l      # 38  the granular commands
+ls internal/gen/testdata/stubs  | wc -l      # 39  the granular commands
 ls internal/gen/testdata/tenant | wc -l      # 15
 ls internal/gen/testdata/global | wc -l      # 14
 ls internal/gen/testdata/nested | wc -l      # 15
@@ -91,7 +91,7 @@ file to `Generate` means changing that number by hand, which is the review the
 number exists to force.
 
 `TestGoldenStubs` (`tests/Unit/gen/stubs_test.go`) does the same for the
-thirty-eight files the granular commands emit, and
+thirty-nine files the granular commands emit, and
 `TestGeneratedCodeIsDeterministic` runs one specification twice and requires
 identical bytes — without it the golden files would be flaky rather than useful.
 
@@ -199,6 +199,7 @@ beside it, and prints its wiring.
 | `make:notification <Name> [--channels=mail,database]` | `app/Notifications/<Name>.go` and test | on `hesape/notifications`: `Key`, `Via`, `ToMail` built from lines that `messages.Mail` renders itself, `ToDatabase`, an assertion per channel |
 | `make:client <Vendor>` | `app/Clients/<Vendor>Client.go`, `<Vendor>Fake.go` and test | typed config that redacts its token, a small interface, the client over `hesape/http/client`, a fake; the test uses the fake and runs the client against a faked factory |
 | `make:mcp-tool`, `make:mcp-resource`, `make:mcp-prompt` | `app/Mcp/<Name>.go` and test | a tool calls its service's `Get` with `r.Subject()`, a resource its `List`; the tests drive them through an `mcp.Server` |
+| `make:job <Name> [--fields] [--services=<Entity>,...]` | `app/Jobs/<Name>.go` | the payload, `Dispatch<Name>` through `hjobs.New` with the Grant, and the handler: each service named is a field and a parameter of `New<Name>Handler`, and the printed line registers it in `registerHandlers` with the services from `app`, the App `bootstrap.Build` returned; `--services` refuses an entity with no `app/Services/<Entity>Service.go` |
 | `make:controller <Name> [--resource\|--singleton\|--invokable] [--parent] [--action]` | one controller | `Router.Resource`, `Router.Singleton`, `Router.Invokable` with `fhttp.Invoker`; a parent's and a record's parameters named by `gen.ResourceParameter`, which is hesape's inflector; a named action for `Router.ResourceAction` |
 
 Two things about the printed routes are deliberate. A method is written as the

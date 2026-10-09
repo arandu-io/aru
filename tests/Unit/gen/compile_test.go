@@ -316,10 +316,11 @@ func generatedProject(t *testing.T) (string, map[string]string) {
 		{Name: "amount", Type: gen.TypeMoney},
 		{Name: "due_at", Type: gen.TypeTimestamp},
 	}
-	one("aru make:job SettlePurchaseOrder", func() (gen.File, error) {
+	one("aru make:job SettlePurchaseOrder --services=PurchaseOrder,StockItem", func() (gen.File, error) {
 		return gen.RenderJob(gen.JobSpec{
 			Type: "SettlePurchaseOrder", EventName: "purchase-order.settle",
 			ModulePath: generatedModulePath, Fields: payload,
+			Services: []string{"PurchaseOrder", "StockItem"},
 		})
 	})
 	one("aru make:event PurchaseOrderApproved", func() (gen.File, error) {

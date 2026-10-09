@@ -57,8 +57,8 @@
       ],
       "signature": "func New<Entity>Service(db *database.DB) *<Entity>Service  // plus the clients it uses\nfunc (s *<Entity>Service) Create(ctx context.Context, actor auth.Subject, in requests.<Entity>Request) (*models.<Entity>, error)\nfunc (s *<Entity>Service) Get(ctx context.Context, actor auth.Subject, id string) (*models.<Entity>, error)",
       "calledBy": ["controller", "job", "listener", "command", "MCP tool"],
-      "may": ["1. Validate the request", "2. load the row with the read Grant", "3. auth.Authorize", "4. apply the entity rule", "5. persist with the Grant", "6. record an event or dispatch a job"],
-      "mayNot": ["take an HTTP type", "live in a subpackage", "start a goroutine of its own"],
+      "may": ["1. Validate the request", "2. load the row with the read Grant", "3. auth.Authorize", "4. apply the entity rule", "5. persist with the Grant", "6. store an event with outbox.Store inside the write's database.Transaction; a listener dispatches the job after the commit"],
+      "mayNot": ["take an HTTP type", "live in a subpackage", "start a goroutine of its own", "import app/Jobs: a job whose handler takes a service imports app/Services, so the service importing app/Jobs back is an import cycle"],
       "errors": "returned to the caller; a refusal is an error, never an empty result",
       "generators": ["make:module", "make:service"],
       "custom": "custom blocks for use cases of its own",
@@ -133,12 +133,12 @@
         {"path": "github.com/arandu-io/hesape/auth", "names": ["Grant"]}
       ],
       "signature": "func Dispatch<Name>(ctx context.Context, q hqueue.Queue, g auth.Grant, in <Name>) error\nfunc (h *<Name>Handler) Handle(ctx context.Context, g auth.Grant, j *hjobs.Job) error\nvar _ hqueue.Handler = (*<Name>Handler)(nil)",
-      "calledBy": ["the worker, from the handler catalogue"],
+      "calledBy": ["the worker, from registerHandlers in bootstrap/background.go", "Dispatch<Name>: a listener once the write that recorded the event has committed, or a task in a provider's Schedule()"],
       "may": ["call a service", "retry by returning an error"],
       "mayNot": ["start a goroutine in a constructor or in Boot", "call a controller"],
       "errors": "returned; the queue retries and then records the failure",
       "generators": ["make:job"],
-      "example": "",
+      "example": "app/Jobs/SendNotesDigest.go",
       "verifiedBy": ["system-grant-without-tenant", "system-grant-outside-scope"]
     },
     {
@@ -152,7 +152,7 @@
       "mayNot": ["be published outside the outbox"],
       "errors": "none of its own",
       "generators": ["make:event"],
-      "example": "",
+      "example": "app/Events/NotePublished.go",
       "verifiedBy": ["outbox-not-registered"]
     },
     {
@@ -162,11 +162,11 @@
       "imports": [{"path": "github.com/arandu-io/hesape/events", "names": ["Stored"]}],
       "signature": "func (n *<Name>) Publish(ctx context.Context, e events.Stored) error",
       "calledBy": ["the outbox"],
-      "may": ["call a service", "dispatch a job"],
+      "may": ["call a service", "dispatch a job, with the queue it was built with and auth.SystemGrant(<action>, e.TenantID) under an //arandu:system-grant reason"],
       "mayNot": ["call another controller"],
       "errors": "returned; the outbox delivers again",
       "generators": ["make:listener"],
-      "example": "",
+      "example": "app/Listeners/NotifyNoteAuthor.go",
       "verifiedBy": ["outbox-not-registered"]
     },
     {
@@ -415,12 +415,13 @@
       "name": "job",
       "title": "Background work",
       "steps": [
-        "aru make:job <Name> --fields \"invoice_id:uuid\"",
-        "register the handler in the handler catalogue the worker reads",
-        "dispatch it from the service with the Grant it already holds",
-        "schedule it in routes/console.go when it runs on a clock"
+        "aru make:job <Name> --fields \"invoice_id:uuid\" --services=<Entity>: the handler takes the services it calls through its constructor",
+        "register the handler in registerHandlers, in bootstrap/background.go, with the services from app, as make:job prints",
+        "work that follows a write: the service stores an event with outbox.Store inside the write's database.Transaction (aru make:event prints it), and a listener built with the queue dispatches the job after the commit, under auth.SystemGrant(<action>, e.TenantID) with an //arandu:system-grant reason (aru make:listener, added to listeners.Each in bootstrap/app.go)",
+        "work on a clock: a task in the Schedule() of app/Providers/AppServiceProvider.go dispatches it, with the queue the provider holds (WithQueue) and the Grant the scheduler issues for the task's Action",
+        "the service never dispatches the job: app/Jobs imports app/Services once a handler takes a service, and a service importing app/Jobs back is an import cycle"
       ],
-      "cards": ["job", "service"]
+      "cards": ["job", "event", "listener", "service"]
     },
     {
       "name": "command",
@@ -431,7 +432,7 @@
     {
       "name": "listener",
       "title": "Reacting to a fact",
-      "steps": ["aru make:event <Name> --aggregate=<entity>", "aru make:listener <Name> --event=<entity>.<fact>", "record the event in the service's write; the outbox delivers it"],
+      "steps": ["aru make:event <Name> --aggregate=<entity>", "aru make:listener <Name> --event=<entity>.<fact>: add it to listeners.Each in bootstrap/app.go, as it prints", "store the event with outbox.Store inside the service's database.Transaction, as make:event prints; the relay delivers it after the commit"],
       "cards": ["event", "listener", "service"]
     },
     {

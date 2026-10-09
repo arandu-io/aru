@@ -1,11 +1,16 @@
 package contract_test
 
 import (
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/arandu-io/aru/internal/contract"
 	"github.com/arandu-io/aru/internal/doctor"
+	"github.com/arandu-io/aru/internal/skills"
 	"github.com/arandu-io/aru/tests"
 )
 
@@ -123,4 +128,129 @@ func TestTheWebhookRecipeStoresAnEventAndDispatchesNoJob(t *testing.T) {
 	if verified, _ := contract.ForRule("csrf-exempt-without-signature"); verified.Kind != "webhook" {
 		t.Errorf("csrf-exempt-without-signature verifies the card %q, want webhook", verified.Kind)
 	}
+}
+
+// TestTheJobRecipeDispatchesFromWhereTheQueueIs: a job is dispatched by a
+// listener after the write commits, or by a scheduled task, and never by the
+// service. A job whose handler takes a service imports app/Services, so a
+// service that dispatched it would import app/Jobs back -- an import cycle,
+// and the skeleton's SendNotesDigest takes NoteService. The recipe used to say
+// "dispatch it from the service" and the service card "record an event or
+// dispatch a job", which taught code that does not compile once any job takes
+// a service.
+func TestTheJobRecipeDispatchesFromWhereTheQueueIs(t *testing.T) {
+	r, ok := contract.RecipeNamed("job")
+	if !ok {
+		t.Fatal("no job recipe")
+	}
+	steps := strings.Join(r.Steps, "\n")
+	for _, want := range []string{
+		"aru make:job", "--services=", "registerHandlers", "bootstrap/background.go",
+		"outbox.Store", "database.Transaction", "aru make:listener", "listeners.Each",
+		"auth.SystemGrant(<action>, e.TenantID)", "//arandu:system-grant",
+		"Schedule()", "app/Providers/AppServiceProvider.go", "import cycle",
+	} {
+		if !strings.Contains(steps, want) {
+			t.Errorf("the job recipe does not say %q:\n%s", want, steps)
+		}
+	}
+	for _, stale := range []string{"from the service with", "routes/console.go", "handler catalogue"} {
+		if strings.Contains(steps, stale) {
+			t.Errorf("the job recipe still says %q:\n%s", stale, steps)
+		}
+	}
+	if strings.Join(r.Cards, ",") != "job,event,listener,service" {
+		t.Errorf("the job recipe touches %v, want job, event, listener and service", r.Cards)
+	}
+
+	service, _ := contract.Lookup("service")
+	for _, step := range service.May {
+		if strings.Contains(step, "dispatch a job") || strings.Contains(step, "or dispatch") {
+			t.Errorf("the service card may %q, and a service that dispatches a job taking services is an import cycle", step)
+		}
+	}
+	if may := strings.Join(service.May, "\n"); !strings.Contains(may, "outbox.Store") || !strings.Contains(may, "a listener dispatches the job") {
+		t.Errorf("the service card does not say how its write leads to a job:\n%s", may)
+	}
+	if mayNot := strings.Join(service.MayNot, "\n"); !strings.Contains(mayNot, "import app/Jobs") {
+		t.Errorf("the service card does not forbid importing app/Jobs:\n%s", mayNot)
+	}
+
+	listener, _ := contract.RecipeNamed("listener")
+	if !strings.Contains(strings.Join(listener.Steps, "\n"), "listeners.Each") {
+		t.Errorf("the listener recipe does not say where the listener goes:\n%s", strings.Join(listener.Steps, "\n"))
+	}
+}
+
+// TestTheEventListenerAndJobCardsNameTheirExample: the skeleton carries one of
+// each, and a card that names none leaves a model writing the shape from the
+// signature alone.
+func TestTheEventListenerAndJobCardsNameTheirExample(t *testing.T) {
+	for kind, want := range map[string]string{
+		"event":    "app/Events/NotePublished.go",
+		"listener": "app/Listeners/NotifyNoteAuthor.go",
+		"job":      "app/Jobs/SendNotesDigest.go",
+	} {
+		card, ok := contract.Lookup(kind)
+		if !ok {
+			t.Errorf("no %s card", kind)
+			continue
+		}
+		if card.Example != want {
+			t.Errorf("the %s card names the example %q, want %q", kind, card.Example, want)
+		}
+	}
+}
+
+// TestEveryExampleIsAFileOfThePinnedSkeleton: a card's example is a path in
+// the skeleton release `aru new` creates projects from, read from that
+// release in the module cache rather than from a checkout beside this one. A
+// path ending in a slash is a directory; any other is a file. An example the
+// skeleton renamed or removed would send the reader to nothing.
+func TestEveryExampleIsAFileOfThePinnedSkeleton(t *testing.T) {
+	dir := pinnedSkeleton(t)
+	named := 0
+	for _, c := range contract.Cards() {
+		if c.Example == "" {
+			continue
+		}
+		named++
+		info, err := os.Stat(filepath.Join(dir, filepath.FromSlash(c.Example)))
+		switch {
+		case err != nil:
+			t.Errorf("the %s card names %s, which %s@%s does not have", c.Kind, c.Example, skills.SkeletonModule, skills.SkeletonVersion)
+		case strings.HasSuffix(c.Example, "/") != info.IsDir():
+			t.Errorf("the %s card names %s, and in the skeleton it is a directory: %v", c.Kind, c.Example, info.IsDir())
+		}
+	}
+	if named == 0 {
+		t.Fatal("no card names an example, so nothing was checked")
+	}
+}
+
+// pinnedSkeleton answers the directory of the skeleton release in the module
+// cache, downloading it when it is not there. Off CI a machine that cannot
+// reach it skips, as the compile harness does; on CI it fails.
+func pinnedSkeleton(t *testing.T) string {
+	t.Helper()
+	unavailable := func(format string, args ...any) {
+		t.Helper()
+		if os.Getenv("CI") != "" {
+			t.Fatalf(format, args...)
+		}
+		t.Skipf(format, args...)
+	}
+	tool, err := exec.LookPath("go")
+	if err != nil {
+		unavailable("the Go toolchain is unavailable: %v", err)
+	}
+	module := skills.SkeletonModule + "@" + skills.SkeletonVersion
+	cmd := exec.Command(tool, "mod", "download", "-json", module)
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOTOOLCHAIN=local")
+	out, err := cmd.Output()
+	var downloaded struct{ Dir, Error string }
+	if jsonErr := json.Unmarshal(out, &downloaded); jsonErr != nil || err != nil || downloaded.Error != "" || downloaded.Dir == "" {
+		unavailable("%s could not be downloaded: %v %s\n%s", module, err, downloaded.Error, out)
+	}
+	return downloaded.Dir
 }

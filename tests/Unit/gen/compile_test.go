@@ -371,6 +371,15 @@ func generatedProject(t *testing.T) (string, map[string]string) {
 	emit("aru make:listener RecordEverything", func() ([]gen.File, error) {
 		return gen.GenerateListener(gen.Listener{Name: "RecordEverything", ModulePath: generatedModulePath})
 	})
+	// The job recipe, written out: the approval service above stores
+	// PurchaseOrderApproved, and a listener built with the queue dispatches
+	// SettlePurchaseOrder once that write commits. The job's handler takes the
+	// purchase order's service, so app/Jobs imports app/Services; the
+	// listener importing app/Jobs is what compiles, where the service doing it
+	// would be an import cycle.
+	one("the job recipe: a listener dispatches SettlePurchaseOrder", func() (gen.File, error) {
+		return gen.File{Path: "app/Listeners/SettleApprovedPurchaseOrder.go", Content: []byte(jobDispatchingListener)}, nil
+	})
 	emit("aru make:mail OrderConfirmation", func() ([]gen.File, error) {
 		return gen.RenderMail(gen.MailSpec{
 			Type: "OrderConfirmation", ModulePath: generatedModulePath, Subject: "Your order",
@@ -817,3 +826,55 @@ func writeInto(t *testing.T, path string, content []byte) {
 		t.Fatal(err)
 	}
 }
+
+// jobDispatchingListener is what the job recipe of the implementation
+// contract says to write for work that follows a write: a listener that holds
+// the queue, answers the event the service stored, and dispatches the job
+// under a Grant rebuilt from the tenant sealed into the outbox row.
+const jobDispatchingListener = `package listeners
+
+import (
+	"context"
+
+	"github.com/arandu-io/hesape/auth"
+	"github.com/arandu-io/hesape/events"
+	hqueue "github.com/arandu-io/hesape/queue"
+
+	appjobs "` + generatedModulePath + `/app/Jobs"
+	policies "` + generatedModulePath + `/app/Policies"
+)
+
+// SettleApprovedPurchaseOrder dispatches the settlement of a purchase order
+// once its approval has committed.
+type SettleApprovedPurchaseOrder struct {
+	queue hqueue.Queue
+}
+
+// NewSettleApprovedPurchaseOrder returns the listener over the queue
+// bootstrap/app.go opened.
+func NewSettleApprovedPurchaseOrder(queue hqueue.Queue) *SettleApprovedPurchaseOrder {
+	return &SettleApprovedPurchaseOrder{queue: queue}
+}
+
+var _ events.Publisher = (*SettleApprovedPurchaseOrder)(nil)
+
+// Publish dispatches the job for an approval, and ignores every other event.
+func (l *SettleApprovedPurchaseOrder) Publish(ctx context.Context, e events.Stored) error {
+	if e.Name != "purchase_order.approved" {
+		return nil
+	}
+	var approved struct {
+		Amount int64 ` + "`json:\"amount\"`" + `
+	}
+	if err := e.Decode(&approved); err != nil {
+		return err
+	}
+
+	//arandu:system-grant the relay delivers a committed event with no request and no subject; the Grant is rebuilt from the tenant sealed into the outbox row, to settle this purchase order and nothing else
+	g := auth.SystemGrant(policies.PurchaseOrderUpdate, e.TenantID)
+	return appjobs.DispatchSettlePurchaseOrder(ctx, l.queue, g, appjobs.SettlePurchaseOrder{
+		PurchaseOrderID: e.AggregateID,
+		Amount:          approved.Amount,
+	})
+}
+`

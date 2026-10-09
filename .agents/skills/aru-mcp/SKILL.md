@@ -42,16 +42,28 @@ grep -c '"name":' internal/contract/contract.json   # recipes
 `feature_recipe` answer from it, and the doctor attaches the card its rule
 verifies to each finding (`Finding.Contract`). Change a card there and both
 move; never copy a card's text into either. A recipe step that names a
-generator is one a person runs, and the code it leads to has to compile: the
-webhook recipe stores an event that a listener handles, because a service
-that dispatched a job would import `app/Jobs`, which imports `app/Services`
-as soon as a handler takes a service.
+generator is one a person runs, and the code it leads to has to compile. No
+service dispatches a job: `app/Jobs` imports `app/Services` as soon as a
+handler takes a service, so a service importing `app/Jobs` back is an import
+cycle. The service stores an event in the outbox inside its transaction, and
+a listener built with the queue dispatches the job after the commit (the
+job recipe and item 6 of the service card; in the webhook recipe the listener
+does the work itself), and work on a clock is dispatched by a task in the
+provider's `Schedule()`. A card's `example` is a path of the skeleton release
+`aru new` pins, read from the module cache.
 
 Tests that hold it:
 
 - `tests/Unit/contract`: every rule a card names is a doctor rule; the six
   recipes the decision names exist; no card teaches a bridge import; the
-  webhook recipe stores an event for a listener and dispatches no job.
+  webhook recipe stores an event for a listener and dispatches no job; the
+  job recipe dispatches from a listener or a scheduled task and the service
+  card forbids importing `app/Jobs`; the event, listener and job cards name
+  the skeleton's examples, and every example a card names exists in the
+  pinned skeleton (`TestEveryExampleIsAFileOfThePinnedSkeleton`).
+- `TestTheGeneratedModuleCompiles` (`tests/Unit/gen`) builds the job recipe
+  written out: the listener that dispatches `SettlePurchaseOrder`, whose
+  handler takes services, after the approval service stored its event.
 - `TestEveryGeneratorACardNamesIsACommand`: every generator a card or a
   recipe names is a command of this binary.
 

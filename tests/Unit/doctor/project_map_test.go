@@ -1,6 +1,7 @@
 package doctor_test
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -476,5 +477,67 @@ func TestTheCleanFixtureRoutesThroughAControllerParameter(t *testing.T) {
 			sort.Strings(have)
 			t.Errorf("missing %s; have %s", want, strconv.Quote(strings.Join(have, "; ")))
 		}
+	}
+}
+
+// scopedRoutes registers routes through variables that share a name across
+// scopes, and through a controller held in a local variable. A router's prefix
+// and a controller's type are read from the declaration the identifier
+// denotes, not from the last variable spelled the same way.
+const scopedRoutes = `package routes
+
+import (
+	"github.com/arandu-io/framework/http"
+	"github.com/arandu-io/framework/security"
+
+	controllers "example.test/project/app/Http/Controllers"
+)
+
+type Deps struct {
+	Invoice  *controllers.InvoiceController
+	Settings *controllers.SettingsController
+	Sessions *security.SessionStore
+}
+
+func Web(r *http.Router, d Deps) {
+	app := r.Group("/app")
+	{
+		app := app.Group("/admin")
+		app.Get("/stats", d.Invoice.Index).Name("admin.stats")
+	}
+	app.Get("/home", d.Invoice.Index).Name("home")
+
+	app = app.Group("/v2")
+	app.Get("/later", d.Invoice.Index).Name("later")
+
+	settings := d.Settings
+	r.Singleton("settings", settings)
+}
+`
+
+func TestARouteIsReadThroughTheVariableItsNameDenotes(t *testing.T) {
+	root := tests.MapProject(t)
+	if err := os.WriteFile(filepath.Join(root, "routes", "web.go"), []byte(scopedRoutes), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := mapOf(t, root)
+	var got []string
+	for _, node := range m.Nodes {
+		if node.Kind == "route" {
+			got = append(got, node.Method+" "+node.Pattern+" "+node.Name)
+		}
+	}
+	sort.Strings(got)
+	want := []string{
+		"GET /app/admin/stats admin.stats",
+		"GET /app/home home",
+		"GET /app/v2/later later",
+		"GET /settings settings.show",
+		"GET /settings/edit settings.edit",
+		"PATCH /settings settings.update",
+		"PUT /settings settings.update",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("routes:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }

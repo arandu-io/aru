@@ -76,9 +76,26 @@ func TestNewSaysWhatPostgresTakes(t *testing.T) {
 // --initial-branch does.
 const gitInitFailsEnv = "ARU_TEST_GIT_INIT_FAILS"
 
+// gitCloneFailsEnv makes the fake git refuse `clone`, the way a tag missing
+// from the remote does.
+const gitCloneFailsEnv = "ARU_TEST_GIT_CLONE_FAILS"
+
+// cloneNoise is what a real clone of a release tag at depth one writes to
+// stderr when it succeeds, --quiet or not.
+const cloneNoise = "warning: refs/tags/v0.34.1 0afcdc1cd66f2de06aa1d9b1ca64d882ba56f09e is not a commit!\n" +
+	"Note: switching to 'e799a20156710f59c25eac22a45e84a756695274'.\n\n" +
+	"You are in 'detached HEAD' state. You can look around, make experimental\n"
+
+// skeletonGitignore is the part of the skeleton's .gitignore around the rule
+// for its binary, as the fake clone writes it.
+const skeletonGitignore = "# Build output.\nbin/\n\n" +
+	"# `go build .` from the root drops the binary here, named after the module.\n" +
+	"#\n# It is NOT \"/app\".\n/arandu\n\n# Local module resolution.\ngo.work\n"
+
 // recordGitInvocation is the fake git: it appends its arguments to trace, one
 // invocation per line, and answers the three commands `aru new` runs. A clone
-// writes the one file the rest of the command reads; rev-parse answers as git
+// writes the two files the rest of the command reads and the stderr a real
+// clone writes, or fails when gitCloneFailsEnv is set; rev-parse answers as git
 // does outside any repository; init succeeds unless gitInitFailsEnv is set.
 func recordGitInvocation(trace string, args []string) {
 	f, err := os.OpenFile(trace, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
@@ -106,13 +123,20 @@ func recordGitInvocation(trace string, args []string) {
 		return
 	case args[0] != "clone":
 		os.Exit(2)
+	case os.Getenv(gitCloneFailsEnv) != "":
+		os.Stderr.WriteString("warning: Could not find remote branch v0.34.1 to clone.\nfatal: Remote branch v0.34.1 not found in upstream origin\n")
+		os.Exit(128)
 	}
+	os.Stderr.WriteString(cloneNoise)
 	destination := args[len(args)-1]
 	if err := os.MkdirAll(destination, 0o755); err != nil {
 		os.Exit(2)
 	}
 	env := "APP_KEY=\n"
 	if err := os.WriteFile(filepath.Join(destination, ".env.example"), []byte(env), 0o600); err != nil {
+		os.Exit(2)
+	}
+	if err := os.WriteFile(filepath.Join(destination, ".gitignore"), []byte(skeletonGitignore), 0o600); err != nil {
 		os.Exit(2)
 	}
 }
@@ -392,5 +416,151 @@ func TestRewriteModulePathLeavesTheProjectGofmtClean(t *testing.T) {
 	}
 	if want := "module kuaa.io/app\n\ngo 1.26.0\n"; string(mod) != want {
 		t.Errorf("go.mod after the rename:\n%s\nwant:\n%s", mod, want)
+	}
+}
+
+// TestNewKeepsASuccessfulClonesNoiseFromThePerson pins that the clone's own
+// bookkeeping -- the annotated tag that "is not a commit", the detached HEAD
+// advice -- does not reach somebody whose project was created, about a .git
+// that is removed a moment later.
+func TestNewKeepsASuccessfulClonesNoiseFromThePerson(t *testing.T) {
+	fakeGit(t)
+	var stderr strings.Builder
+	if err := newProject([]string{"my-app"}, io.Discard, &stderr); err != nil {
+		t.Fatalf("aru new: %v", err)
+	}
+	for _, noise := range []string{"is not a commit", "detached HEAD", "switching to"} {
+		if strings.Contains(stderr.String(), noise) {
+			t.Errorf("a successful clone printed %q:\n%s", noise, stderr.String())
+		}
+	}
+}
+
+// TestNewShowsAFailedClonesOwnWords pins the other half: when the clone fails,
+// what git said about why is what the person needs, and all of it reaches them.
+func TestNewShowsAFailedClonesOwnWords(t *testing.T) {
+	fakeGit(t)
+	t.Setenv(gitCloneFailsEnv, "1")
+	var stderr strings.Builder
+	err := newProject([]string{"my-app"}, io.Discard, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "cloning the skeleton") {
+		t.Fatalf("aru new over a failed clone: %v", err)
+	}
+	for _, line := range []string{
+		"warning: Could not find remote branch v0.34.1 to clone.",
+		"fatal: Remote branch v0.34.1 not found in upstream origin",
+	} {
+		if !strings.Contains(stderr.String(), line) {
+			t.Errorf("stderr does not say %q:\n%s", line, stderr.String())
+		}
+	}
+}
+
+// TestNewIgnoresTheBinaryGoBuildDrops pins that the first `go build .` in a new
+// project leaves nothing untracked. The skeleton ignores /arandu, which is the
+// binary only for a project named after the skeleton; the binary is named
+// after the module, so the rule is rewritten under the comment that explains
+// it, and everything around it is left as the skeleton wrote it.
+func TestNewIgnoresTheBinaryGoBuildDrops(t *testing.T) {
+	for _, c := range []struct {
+		args []string
+		dir  string
+		rule string
+	}{
+		{[]string{"my-app"}, "my-app", "/my-app"},
+		{[]string{"my-app", "--module", "example.com/acme/shop"}, "my-app", "/shop"},
+		{[]string{"my-app", "--module", "example.com/acme/shop/v2"}, "my-app", "/shop"},
+	} {
+		t.Run(strings.Join(c.args, " "), func(t *testing.T) {
+			fakeGit(t)
+			if err := newProject(c.args, io.Discard, io.Discard); err != nil {
+				t.Fatalf("aru new: %v", err)
+			}
+			got, err := os.ReadFile(filepath.Join(c.dir, ".gitignore"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := strings.Replace(skeletonGitignore, "\n/arandu\n", "\n"+c.rule+"\n", 1)
+			if string(got) != want {
+				t.Errorf(".gitignore:\n%s\nwant:\n%s", got, want)
+			}
+		})
+	}
+}
+
+func TestIgnoreBinaryWritesTheRuleOnceWhereverTheFileLacksIt(t *testing.T) {
+	const rule = "# `go build .` from the root drops the binary here, named after the module.\n/shop\n"
+	for _, c := range []struct {
+		what, before, want string
+	}{
+		{"no .gitignore", "", rule},
+		{"no rule", ".env\nbin/", ".env\nbin/\n\n" + rule},
+		{"the rule already there", ".env\n/shop\n", ".env\n/shop\n"},
+		{"the skeleton's own rule", "bin/\n/arandu\ngo.work\n", "bin/\n/shop\ngo.work\n"},
+	} {
+		t.Run(c.what, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, ".gitignore")
+			if c.before != "" {
+				if err := os.WriteFile(path, []byte(c.before), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for range 2 {
+				if err := ignoreBinary(dir, "example.com/shop"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != c.want {
+				t.Errorf(".gitignore:\n%q\nwant:\n%q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestBinaryNameIsWhatGoBuildWrites holds binaryName to the go command's rule:
+// the last element of the path, unless it is a major version suffix.
+func TestBinaryNameIsWhatGoBuildWrites(t *testing.T) {
+	for path, want := range map[string]string{
+		"my-app":                   "my-app",
+		"example.com/acme/shop":    "shop",
+		"example.com/acme/shop/v2": "shop",
+		"example.com/acme/shop/v1": "v1",
+		"example.com/acme/shop/v0": "v0",
+		"example.com/acme/v02":     "v02",
+		"example.com/acme/v2x":     "v2x",
+		"v2":                       "v2",
+		"example.com/v3":           "example.com",
+	} {
+		if got := binaryName(path); got != want {
+			t.Errorf("binaryName(%q) = %q, want %q", path, got, want)
+		}
+	}
+}
+
+// TestTheBinaryRuleIgnoresTheBinaryAndNothingElse asks git itself: the rule
+// written for my-app ignores the file go build drops at the root, and not a
+// directory of the same name further down.
+func TestTheBinaryRuleIgnoresTheBinaryAndNothingElse(t *testing.T) {
+	realGit(t)
+	dir := t.TempDir()
+	if out, err := gitOutput(t, dir, "init", "--quiet"); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(skeletonGitignore), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ignoreBinary(dir, "my-app"); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := gitOutput(t, dir, "check-ignore", "--no-index", "my-app"); err != nil {
+		t.Errorf("git does not ignore ./my-app: %v: %s", err, out)
+	}
+	if out, err := gitOutput(t, dir, "check-ignore", "--no-index", "app/my-app"); err == nil {
+		t.Errorf("git ignores app/my-app: %s", out)
 	}
 }

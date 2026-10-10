@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	_ "embed"
 	"encoding/base64"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/arandu-io/aru/internal/skills"
@@ -31,8 +33,9 @@ const skeletonRepo = "https://github.com/arandu-io/arandu.git"
 // newProject creates a project from the skeleton.
 //
 // It clones, drops the skeleton's git history, records in each of the
-// skeleton's skills where it came from, rewrites the module path, writes a
-// .env with a fresh key, and starts an empty git repository on main. What it
+// skeleton's skills where it came from, rewrites the module path, ignores the
+// project's binary, writes a .env with a fresh key, and starts an empty git
+// repository on main. What it
 // does NOT do is commit, run `go mod tidy` or
 // start anything: a command that reaches the network twice and starts a server
 // is a command that fails in three different ways.
@@ -68,10 +71,8 @@ func newProject(args []string, stdout, stderr io.Writer) error {
 	}
 
 	fmt.Fprintf(stdout, "fetching the skeleton\n")
-	clone := exec.Command("git", "clone", "--branch", skills.SkeletonVersion, "--single-branch", "--depth", "1", "--quiet", skeletonRepo, name)
-	clone.Stderr = stderr
-	if err := clone.Run(); err != nil {
-		return fmt.Errorf("cloning the skeleton: %w", err)
+	if err := cloneSkeleton(name, stderr); err != nil {
+		return err
 	}
 
 	// The skeleton's history is not the project's history. The project gets a
@@ -90,6 +91,9 @@ func newProject(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	if err := dropRetractions(name); err != nil {
+		return err
+	}
+	if err := ignoreBinary(name, path); err != nil {
 		return err
 	}
 	if err := writeEnv(name); err != nil {
@@ -123,6 +127,97 @@ func newProject(args []string, stdout, stderr io.Writer) error {
 
 	fmt.Fprint(stdout, createdMessage(name, path))
 	return nil
+}
+
+// cloneSkeleton clones the skeleton release into dir.
+//
+// What git writes to stderr reaches the person only when the clone fails.
+// Cloning a release tag at depth one succeeds with two messages that describe
+// git's own bookkeeping rather than anything to act on -- the annotated tag "is
+// not a commit", and the advice about a detached HEAD -- and the .git they
+// talk about is removed right after. --quiet silences neither. On failure the
+// whole of it is written out, since that is where git says why.
+func cloneSkeleton(dir string, stderr io.Writer) error {
+	var output bytes.Buffer
+	clone := exec.Command("git", "clone", "--branch", skills.SkeletonVersion, "--single-branch", "--depth", "1", "--quiet", skeletonRepo, dir)
+	clone.Stderr = &output
+	if err := clone.Run(); err != nil {
+		_, _ = stderr.Write(output.Bytes())
+		return fmt.Errorf("cloning the skeleton: %w", err)
+	}
+	return nil
+}
+
+// skeletonBinaryRule is the line of the skeleton's .gitignore that ignores the
+// binary `go build .` drops at the root of the skeleton itself.
+const skeletonBinaryRule = "/arandu"
+
+// ignoreBinary makes the project's .gitignore ignore the binary `go build .`
+// drops at its root.
+//
+// The skeleton's file says where that rule goes and writes it for the
+// skeleton's own name, so in a project called anything else the binary showed
+// up as an untracked file the first time it was built. The rule is rewritten in
+// place, under the comment that explains it, and appended with that comment
+// when a .gitignore does not carry it.
+func ignoreBinary(dir, modulePath string) error {
+	rule := "/" + binaryName(modulePath)
+	path := filepath.Join(dir, ".gitignore")
+	content, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("reading .gitignore: %w", err)
+	}
+	lines := strings.Split(string(content), "\n")
+	if slices.Contains(lines, rule) {
+		return nil
+	}
+	var updated string
+	if at := slices.Index(lines, skeletonBinaryRule); at >= 0 {
+		lines[at] = rule
+		updated = strings.Join(lines, "\n")
+	} else {
+		updated = strings.TrimRight(string(content), "\n")
+		if updated != "" {
+			updated += "\n\n"
+		}
+		updated += "# `go build .` from the root drops the binary here, named after the module.\n" + rule + "\n"
+	}
+	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+		return fmt.Errorf("writing .gitignore: %w", err)
+	}
+	return nil
+}
+
+// binaryName is the file `go build .` writes for the package at modulePath:
+// its last element, or the one before it when the last is a major version
+// suffix, so example.com/shop/v2 builds ./shop.
+func binaryName(modulePath string) string {
+	parent, elem := cutLastElement(modulePath)
+	if parent != "" && isMajorVersion(elem) {
+		_, elem = cutLastElement(parent)
+	}
+	return elem
+}
+
+func cutLastElement(p string) (parent, elem string) {
+	if at := strings.LastIndex(p, "/"); at >= 0 {
+		return p[:at], p[at+1:]
+	}
+	return "", p
+}
+
+// isMajorVersion reports whether elem is a major version suffix: v2 and up,
+// with no leading zero.
+func isMajorVersion(elem string) bool {
+	if len(elem) < 2 || elem[0] != 'v' || elem[1] == '0' || elem == "v1" {
+		return false
+	}
+	for _, c := range elem[1:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // initRepository makes dir a git repository with no commits, on the branch

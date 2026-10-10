@@ -523,6 +523,9 @@ type generator struct {
 	// published are the plain package names this file binds for the view's own
 	// code, in the order they are written. See republishedPackages.
 	published []string
+	// directiveLine is the last line refused for a directive written after
+	// markup, so a line carrying @if and @endif is answered once.
+	directiveLine int
 }
 
 // temp names a value that lives for one statement of the generated file.
@@ -1039,6 +1042,7 @@ func (g *generator) node(n Node) {
 		if n.Body == "" {
 			return
 		}
+		g.directiveAfterMarkup(n)
 		fmt.Fprintf(&g.out, "\tif %s == nil { _, %s = %s.WriteString(%s, %s) }\n",
 			varErr, varErr, pkgIO, varWriter, strconv.Quote(n.Body))
 		// The markup this node writes is what moves the position of the next
@@ -1065,6 +1069,73 @@ func (g *generator) node(n Node) {
 
 	case Directive:
 		g.directive(n)
+	}
+}
+
+// directiveAfterMarkup refuses a directive kyse knows that a line of markup
+// carries after its start.
+//
+// The parser reads a directive only at the start of a line, so one written
+// after markup arrives here as text, and the page would print it: an anchor
+// rendered as `<a href="/" @if(.Target != "")target="">`, with the condition
+// never evaluated and the attribute always written. The line is refused
+// rather than read, because a directive that takes a whole line is the one
+// way kyse has of writing it, inside a tag as well as between tags.
+//
+// Text is still text where a person writes about a directive rather than
+// using one, and the position decides which it is:
+//
+//   - inside a tag, outside a value, nothing is prose, so any directive is
+//     refused -- `<button @attributes>`, `"@endif>`;
+//   - a directive with arguments, `@if(.Ready)`, is refused wherever the page
+//     shows or runs it -- the body of an element, a value, a script;
+//   - a directive without them in the body of an element is refused when it
+//     touches a tag, as in `<form>@csrf<button>`, and left alone in a
+//     sentence, as in "write @csrf in every form";
+//   - an HTML comment is prose throughout, so `<!-- One @yield, ... -->`
+//     stays what it is.
+//
+// An @ that does not begin a name kyse knows -- an address, a CSS at-rule, a
+// decorator in a code sample -- is never read at all.
+func (g *generator) directiveAfterMarkup(n Node) {
+	if g.directiveLine == n.Line {
+		return
+	}
+	for from := 0; from < len(n.Body); {
+		at := strings.IndexByte(n.Body[from:], '@')
+		if at < 0 {
+			return
+		}
+		at += from
+		from = at + 1
+
+		name, _, end, args, ok := directiveAt(n.Body, at)
+		if !ok {
+			continue
+		}
+		probe := g.scan
+		probe.feed(n.Body[:at])
+
+		refused := false
+		switch probe.state {
+		case stateComment, stateMarkupDecl:
+		case stateTagName, stateBeforeAttrName, stateAttrName, stateAfterAttrName, stateBeforeAttrValue, stateAttrValueUnquoted:
+			refused = true
+		case stateText, stateTagOpen:
+			refused = args || at > 0 && n.Body[at-1] == '>' || end < len(n.Body) && n.Body[end] == '<'
+		default:
+			refused = args
+		}
+		if !refused {
+			continue
+		}
+
+		g.directiveLine = n.Line
+		g.refuse(n.Line, fmt.Sprintf("@%s follows markup on its line, so the page would print it as text", name),
+			"a directive is read only at the start of a line, inside a tag as well as between tags, and markup goes on the lines around it:\n"+
+				spacedForm(g.file.sourceLine(n.Line, n.Body))+"\n"+
+				"    To show the characters themselves, write the @ as &#64;.")
+		return
 	}
 }
 

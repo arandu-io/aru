@@ -396,6 +396,15 @@ var pathologicalViews = []string{
 	"//go:build kyse\n\npackage views\n\n@if(.Ok\n@endif\n",
 	"//go:build kyse\n\npackage views\n\n@\n@@\n",
 
+	// A directive glued to the markup around it: after markup on its line,
+	// with markup after it at the start of one, a closing directive with the
+	// tag's end after it, and one after markup that leaves its block open.
+	"//go:build kyse\n\npackage views\n\n<a href=\"/\" @if(.T != \"\")target=\"{{ .T }}\"@endif>x</a>\n",
+	"//go:build kyse\n\npackage views\n\n<a href=\"/\"\n@if(.T != \")\")target=\"x\"\n@endif\n>x</a>\n",
+	"//go:build kyse\n\npackage views\n\n<a href=\"/\"\n@if(.T != \"\")\ntarget=\"x\"\n@endif>x</a>\n",
+	"//go:build kyse\n\npackage views\n\n<a href=\"/\"\n@if(.T != \"\")\ntarget=\"x\"@endif>x</a>\n",
+	"//go:build kyse\n\npackage views\n\n<form>@csrf<button>Go</button></form>\n@csrf<button>Go</button>\n@endif>\n",
+
 	// Two layouts, and markup outside a section in a view that extends one.
 	"//go:build kyse\n\npackage views\n\n@extends('a')\n@extends('b')\n<p>outside</p>\n",
 

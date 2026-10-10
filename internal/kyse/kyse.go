@@ -115,6 +115,19 @@ type File struct {
 	Body []Node
 	// Path is the source file, for error messages.
 	Path string
+
+	// lines are the source as it was written, one entry per line, so a
+	// refusal can show the line it names rewritten into the shape that reads.
+	lines []string
+}
+
+// sourceLine is line n of the view, 1-indexed, or fallback when the file was
+// not built by Parse and carries no source.
+func (f *File) sourceLine(n int, fallback string) string {
+	if n < 1 || n > len(f.lines) {
+		return fallback
+	}
+	return f.lines[n-1]
 }
 
 // IsLayout reports whether this file is a layout.

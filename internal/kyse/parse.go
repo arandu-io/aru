@@ -17,7 +17,10 @@ func Parse(path, source string) (*File, error) {
 	p := &parser{path: path, src: source}
 	p.split()
 
-	file := &File{Path: path}
+	// The lines are kept as they were written, before a comment that spans
+	// lines rewrites the parser's copy, so a refusal the generator makes can
+	// quote the line back in the shape it should have had.
+	file := &File{Path: path, lines: strings.Split(source, "\n")}
 	if err := p.header(file); err != nil {
 		return nil, err
 	}
@@ -255,13 +258,20 @@ func (p *parser) nodes(goBlocks *[]Block, depth int) []Node {
 		// A closing directive ends this run of nodes; the caller consumes it. At
 		// the top level there is nothing to close, so it is a mistake — and
 		// returning here would hide every problem after it.
-		if isClosing(trimmed) {
+		//
+		// A closing directive with markup glued after it -- `@endif>` ending the
+		// tag it guarded -- still closes its block. It is refused for the
+		// markup, and closing the block anyway is what keeps that refusal from
+		// being followed by a second one saying the block was never closed.
+		if end, rest := closingOn(trimmed); end != "" {
 			if depth == 0 {
-				opener := strings.TrimPrefix(strings.Fields(trimmed)[0], "@end")
-				p.fail(lineNo, trimmed+" closes a block that was never opened",
-					"remove it, or open the block with @"+opener+" above.")
+				p.fail(lineNo, "@"+end+" closes a block that was never opened",
+					"remove it, or open the block with @"+strings.TrimPrefix(end, "end")+" above.")
 				p.i++
 				continue
+			}
+			if rest != "" {
+				p.fail(lineNo, fmt.Sprintf("@%s is followed by markup on the same line", end), onLinesOfTheirOwn(trimmed))
 			}
 			flush()
 			return out
@@ -317,11 +327,23 @@ func (p *parser) nodes(goBlocks *[]Block, depth int) []Node {
 		// here rather than emitted without them. The name is checked first, so
 		// that markup beginning with an @ that is nothing of ours -- an event
 		// handler on a line of its own -- is still answered with what it is.
+		//
+		// When the directive itself is whole and markup is glued after it --
+		// `@if(.Target != "")target="_blank"`, `@csrf<button>` -- the refusal
+		// shows the line split the way it reads, and the directive is read on
+		// with the arguments it has. A block opened here then meets its @end
+		// as it would have, so the one mistake is reported once rather than
+		// again as a block never opened or never closed.
 		if !closed && isDirective(name) {
-			p.fail(lineNo, fmt.Sprintf("@%s takes its arguments in parentheses that end the line", name),
-				"close them with ) as the last thing on the line. A directive takes the whole line, and markup goes on the next one.")
-			textLine = p.i + 1
-			continue
+			whole, wholeArgs := gluedDirective(trimmed, name)
+			if !whole {
+				p.fail(lineNo, fmt.Sprintf("@%s takes its arguments in parentheses that end the line", name),
+					"close them with ) as the last thing on the line. A directive takes the whole line, and markup goes on the next one.")
+				textLine = p.i + 1
+				continue
+			}
+			p.fail(lineNo, fmt.Sprintf("@%s is followed by markup on the same line", name), onLinesOfTheirOwn(trimmed))
+			args = wholeArgs
 		}
 
 		switch {
@@ -340,8 +362,12 @@ func (p *parser) nodes(goBlocks *[]Block, depth int) []Node {
 			}
 			want := "@" + blockDirectives[name]
 			if !strings.HasPrefix(closing, want) {
-				p.fail(lineNo, fmt.Sprintf("@%s was never closed", name),
-					fmt.Sprintf("add %s where the block ends.", want))
+				hint := fmt.Sprintf("add %s where the block ends.", want)
+				if at := p.closerAfterMarkup(lineNo, p.i, blockDirectives[name]); at > 0 {
+					hint = fmt.Sprintf("the %s on line %d follows markup on its line, and a directive is read only at the start of one, so it was taken as text.\n"+
+						"    Put it on a line of its own:\n%s", want, at, spacedForm(p.lines[at-1]))
+				}
+				p.fail(lineNo, fmt.Sprintf("@%s was never closed", name), hint)
 			} else {
 				p.i++
 			}
@@ -588,17 +614,221 @@ func (p *parser) assemble(file *File, nodes []Node) {
 	// end of the token.
 }
 
-func isClosing(trimmed string) bool {
+// closingOn reads a closing directive at the start of a trimmed line, and what
+// the line carries after it.
+//
+// The name ends at the first character that cannot be part of one, so
+// `@endif>` is @endif followed by `>`, while `@endiff` is no closing directive
+// at all and is answered as the unknown name it is.
+func closingOn(trimmed string) (end, rest string) {
 	if !strings.HasPrefix(trimmed, "@end") {
-		return false
+		return "", ""
 	}
-	name := strings.TrimPrefix(trimmed, "@")
+	name := leadingName(trimmed[1:])
+	if !isClosingName(name) {
+		return "", ""
+	}
+	return name, strings.TrimSpace(trimmed[1+len(name):])
+}
+
+// isClosingName reports whether name closes one of the block directives.
+func isClosingName(name string) bool {
 	for _, end := range blockDirectives {
 		if name == end {
 			return true
 		}
 	}
 	return false
+}
+
+// isKnownDirective reports whether name is any directive kyse knows: one that
+// opens a block, one that closes it, or an inline one.
+func isKnownDirective(name string) bool {
+	return isDirective(name) || isClosingName(name)
+}
+
+// leadingName is the directive name s starts with: the letters before the
+// first character that is not one.
+func leadingName(s string) string {
+	for i, r := range s {
+		if !isNameRune(r) {
+			return s[:i]
+		}
+	}
+	return s
+}
+
+// gluedDirective reports whether the directive a trimmed line opens with is
+// whole, with markup glued after it -- the shape the parser refuses with the
+// line split, rather than with the advice to close a parenthesis.
+//
+// Whole is one of two things: arguments in parentheses that close, with
+// something after them (`@if(.Target != "")target="_blank"`), or a name with
+// no parentheses and a character right after it that is not a space
+// (`@csrf<button>`). A parenthesis left open, or a name followed by a space and
+// then something other than arguments (`@if .Ready`), is the other mistake,
+// and keeps its own message.
+func gluedDirective(trimmed, name string) (whole bool, args string) {
+	after := trimmed[1+len(name):]
+	if after == "" {
+		return false, ""
+	}
+	rest := strings.TrimLeft(after, " \t")
+	if strings.HasPrefix(rest, "(") {
+		open := len(trimmed) - len(rest)
+		end := closingParen(trimmed, open)
+		if end < 0 {
+			return false, ""
+		}
+		return true, trimmed[open+1 : end]
+	}
+	if after[0] == ' ' || after[0] == '\t' {
+		return false, ""
+	}
+	return true, ""
+}
+
+// closingParen returns the index of the parenthesis that closes the one at
+// s[open], or -1 when the line ends first.
+//
+// The arguments are Go, so a parenthesis inside a string or a rune literal is
+// part of the literal and not a delimiter: `@if(.Label != ")")` closes at the
+// last one.
+func closingParen(s string, open int) int {
+	depth := 0
+	for i := open; i < len(s); i++ {
+		switch c := s[i]; c {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		case '"', '\'', '`':
+			for i++; i < len(s) && s[i] != c; i++ {
+				if s[i] == '\\' && c != '`' {
+					i++
+				}
+			}
+		}
+	}
+	return -1
+}
+
+// directiveAt reads the directive kyse knows that starts at the @ in line[at].
+//
+// It answers with the name, the directive as it should be written on a line of
+// its own -- `@if(.Ready)`, with the parentheses closed where the line closes
+// them -- and the index just past it in line. ok is false when what follows
+// the @ is not a name kyse knows, or when the @ is the middle of a word, as in
+// an address: `team@if.example` holds no directive.
+func directiveAt(line string, at int) (name, token string, end int, args, ok bool) {
+	if at > 0 && isWordByte(line[at-1]) {
+		return "", "", 0, false, false
+	}
+	name = leadingName(line[at+1:])
+	if !isKnownDirective(name) {
+		return "", "", 0, false, false
+	}
+	end = at + 1 + len(name)
+	rest := strings.TrimLeft(line[end:], " \t")
+	if !strings.HasPrefix(rest, "(") {
+		return name, "@" + name, end, false, true
+	}
+	open := len(line) - len(rest)
+	if closing := closingParen(line, open); closing >= 0 {
+		return name, "@" + name + line[open:closing+1], closing + 1, true, true
+	}
+	return name, "@" + name + line[open:], len(line), true, true
+}
+
+// isWordByte is a byte that continues a word or an address, so an @ right
+// after it does not begin a directive.
+func isWordByte(c byte) bool {
+	switch {
+	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		return true
+	}
+	return strings.IndexByte("_.-+%", c) >= 0
+}
+
+// onLinesOfTheirOwn is the hint for a line that carries a directive and markup
+// together: the same line, split the way kyse reads it.
+func onLinesOfTheirOwn(line string) string {
+	return "a directive takes a line of its own, inside a tag as well as between tags, and markup goes on the lines around it:\n" +
+		spacedForm(line)
+}
+
+// spacedForm rewrites a line that carries directives and markup together into
+// the lines kyse reads: each directive on one of its own, the markup between
+// them on the others.
+//
+// Interpolations are copied whole, so a directive name spelled inside a string
+// in one is not split out.
+func spacedForm(line string) string {
+	var parts []string
+	var piece strings.Builder
+	flush := func() {
+		if t := strings.TrimSpace(piece.String()); t != "" {
+			parts = append(parts, t)
+		}
+		piece.Reset()
+	}
+
+	for i := 0; i < len(line); {
+		rest := line[i:]
+		switch {
+		case strings.HasPrefix(rest, "{!!"), strings.HasPrefix(rest, "{{"):
+			opener, closer := "{{", "}}"
+			if strings.HasPrefix(rest, "{!!") {
+				opener, closer = "{!!", "!!}"
+			}
+			n := len(rest)
+			if end := strings.Index(rest[len(opener):], closer); end >= 0 {
+				n = len(opener) + end + len(closer)
+			}
+			piece.WriteString(rest[:n])
+			i += n
+		case line[i] == '@':
+			if _, token, end, _, ok := directiveAt(line, i); ok {
+				flush()
+				parts = append(parts, token)
+				i = end
+				continue
+			}
+			piece.WriteByte('@')
+			i++
+		default:
+			piece.WriteByte(line[i])
+			i++
+		}
+	}
+	flush()
+	return "        " + strings.Join(parts, "\n        ")
+}
+
+// closerAfterMarkup returns the line, 1-indexed, of the first `@end` written
+// after markup between from and to -- 0-indexed, exclusive -- or 0 when there
+// is none. It is what lets "never closed" say where the closing directive
+// went, when the person did write one.
+func (p *parser) closerAfterMarkup(from, to int, end string) int {
+	for i := from; i < to && i < len(p.lines); i++ {
+		line := p.lines[i]
+		start := len(line) - len(strings.TrimLeft(line, " \t"))
+		for at := strings.Index(line, "@"+end); at >= 0; {
+			name, _, _, _, ok := directiveAt(line, at)
+			if ok && name == end && at > start {
+				return i + 1
+			}
+			next := strings.Index(line[at+1:], "@"+end)
+			if next < 0 {
+				break
+			}
+			at += 1 + next
+		}
+	}
+	return 0
 }
 
 // directiveOn reads `@name(args)` or `@name` at the start of a trimmed line.

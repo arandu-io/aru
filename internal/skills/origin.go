@@ -21,7 +21,7 @@ const SkeletonModule = "github.com/arandu-io/arandu"
 //
 // It is pinned rather than read from the newest tag: a project created today
 // has to be the one this build's generators and checks were written against.
-const SkeletonVersion = "v0.34.1"
+const SkeletonVersion = "v0.34.3"
 
 // ModuleOwner is the path prefix of the modules whose skills an application
 // receives when its go.mod requires them.

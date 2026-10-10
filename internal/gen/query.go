@@ -28,7 +28,7 @@ const ModelCoreRelease = "v0.47.0"
 // may stay on without being refused, and a project that has to move anyway
 // should move to the release the generated code was last compiled with rather
 // than to the first one that would have compiled it.
-const HesapeRelease = "v0.52.0"
+const HesapeRelease = "v0.54.0"
 
 // QueryHeaderPrefix opens every file `aru model:build` writes beside an entity.
 //

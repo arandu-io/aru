@@ -31,8 +31,9 @@ const skeletonRepo = "https://github.com/arandu-io/arandu.git"
 // newProject creates a project from the skeleton.
 //
 // It clones, drops the skeleton's git history, records in each of the
-// skeleton's skills where it came from, rewrites the module path, and writes a
-// .env with a fresh key. What it does NOT do is run `go mod tidy` or
+// skeleton's skills where it came from, rewrites the module path, writes a
+// .env with a fresh key, and starts an empty git repository on main. What it
+// does NOT do is commit, run `go mod tidy` or
 // start anything: a command that reaches the network twice and starts a server
 // is a command that fails in three different ways.
 func newProject(args []string, stdout, stderr io.Writer) error {
@@ -73,7 +74,8 @@ func newProject(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("cloning the skeleton: %w", err)
 	}
 
-	// The skeleton's history is not the project's history.
+	// The skeleton's history is not the project's history. The project gets a
+	// repository of its own at the end, once every file is written.
 	if err := os.RemoveAll(filepath.Join(name, ".git")); err != nil {
 		return fmt.Errorf("removing the skeleton history: %w", err)
 	}
@@ -110,8 +112,48 @@ func newProject(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintf(stderr, "\nThe project was created, but its views were not compiled: %v\nRun `aru view:build` inside %s before building.\n", err, name)
 	}
 
+	// An empty repository, with no commit in it: what goes into the first one
+	// is the person's decision. Reported and not returned, for the reason the
+	// views are: the project on disk is complete without it.
+	if parent, err := initRepository(name); parent != "" {
+		fmt.Fprintf(stderr, "\nThe project was created inside the git repository at %s and has no repository of its own: one nested in another is recorded there as a single entry, without its files.\nRun `git init -b main` inside %s if it should have its own.\n", parent, name)
+	} else if err != nil {
+		fmt.Fprintf(stderr, "\nThe project was created, but it is not a git repository: %v\nRun `git init -b main` inside %s.\n", err, name)
+	}
+
 	fmt.Fprint(stdout, createdMessage(name, path))
 	return nil
+}
+
+// initRepository makes dir a git repository with no commits, on the branch
+// main.
+//
+// It does nothing when dir is already inside another repository's work tree,
+// and returns that repository's root as parent. A repository nested in another
+// is recorded by the outer one as a single entry with none of its files, so
+// creating one there would take the project out of the repository the person
+// is working in.
+//
+// git missing from PATH is an error like any other here, and the caller
+// reports it rather than failing: the project on disk is complete without a
+// repository.
+func initRepository(dir string) (parent string, err error) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		return "", errors.New("git was not found in PATH")
+	}
+	if out, err := exec.Command(git, "-C", dir, "rev-parse", "--show-toplevel").Output(); err == nil {
+		if top := strings.TrimSpace(string(out)); top != "" {
+			return top, nil
+		}
+	}
+	if out, err := exec.Command(git, "-C", dir, "init", "--quiet", "--initial-branch=main").CombinedOutput(); err != nil {
+		if detail := strings.TrimSpace(string(out)); detail != "" {
+			return "", fmt.Errorf("git init: %w: %s", err, detail)
+		}
+		return "", fmt.Errorf("git init: %w", err)
+	}
+	return "", nil
 }
 
 // createdMessage is what `aru new` prints last: how to run the project, and

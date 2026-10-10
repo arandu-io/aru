@@ -4,8 +4,10 @@ import (
 	"go/format"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -21,31 +23,13 @@ func TestMain(m *testing.M) {
 }
 
 func TestNewClonesThePublishedSkeletonRelease(t *testing.T) {
-	root := t.TempDir()
-	t.Chdir(root)
-
-	bin := filepath.Join(root, "bin")
-	if err := os.MkdirAll(bin, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	git := "git"
-	if runtime.GOOS == "windows" {
-		git += ".exe"
-	}
-	copyExecutable(t, filepath.Join(bin, git))
-	trace := filepath.Join(root, "git.trace")
-	t.Setenv(gitTraceEnv, trace)
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	trace := fakeGit(t)
 
 	if err := newProject([]string{"my-app"}, io.Discard, io.Discard); err != nil {
 		t.Fatalf("aru new: %v", err)
 	}
 
-	body, err := os.ReadFile(trace)
-	if err != nil {
-		t.Fatalf("read git invocation: %v", err)
-	}
-	got := strings.Split(string(body), "\x00")
+	got := gitInvocations(t, trace)[0]
 	want := []string{
 		"clone",
 		"--branch", "v0.34.1",
@@ -88,11 +72,39 @@ func TestNewSaysWhatPostgresTakes(t *testing.T) {
 	}
 }
 
+// gitInitFailsEnv makes the fake git refuse `init`, the way a git too old for
+// --initial-branch does.
+const gitInitFailsEnv = "ARU_TEST_GIT_INIT_FAILS"
+
+// recordGitInvocation is the fake git: it appends its arguments to trace, one
+// invocation per line, and answers the three commands `aru new` runs. A clone
+// writes the one file the rest of the command reads; rev-parse answers as git
+// does outside any repository; init succeeds unless gitInitFailsEnv is set.
 func recordGitInvocation(trace string, args []string) {
-	if err := os.WriteFile(trace, []byte(strings.Join(args, "\x00")), 0o600); err != nil {
+	f, err := os.OpenFile(trace, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	if err != nil {
+		os.Exit(2)
+	}
+	if _, err := f.WriteString(strings.Join(args, "\x00") + "\n"); err != nil {
+		os.Exit(2)
+	}
+	if err := f.Close(); err != nil {
 		os.Exit(2)
 	}
 	if len(args) == 0 {
+		os.Exit(2)
+	}
+	switch {
+	case slices.Contains(args, "rev-parse"):
+		os.Stderr.WriteString("fatal: not a git repository (or any of the parent directories): .git\n")
+		os.Exit(128)
+	case slices.Contains(args, "init"):
+		if os.Getenv(gitInitFailsEnv) != "" {
+			os.Stderr.WriteString("error: unknown option `initial-branch=main'\n")
+			os.Exit(129)
+		}
+		return
+	case args[0] != "clone":
 		os.Exit(2)
 	}
 	destination := args[len(args)-1]
@@ -102,6 +114,164 @@ func recordGitInvocation(trace string, args []string) {
 	env := "APP_KEY=\n"
 	if err := os.WriteFile(filepath.Join(destination, ".env.example"), []byte(env), 0o600); err != nil {
 		os.Exit(2)
+	}
+}
+
+// gitInvocations reads what the fake git recorded, one argument list per run.
+func gitInvocations(t *testing.T, trace string) [][]string {
+	t.Helper()
+	body, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatalf("read git invocation: %v", err)
+	}
+	var out [][]string
+	for _, line := range strings.Split(strings.TrimSuffix(string(body), "\n"), "\n") {
+		out = append(out, strings.Split(line, "\x00"))
+	}
+	return out
+}
+
+// fakeGit puts the test binary on PATH as git, recording into the returned
+// trace file, and moves into an empty directory.
+func fakeGit(t *testing.T) (trace string) {
+	t.Helper()
+	root := t.TempDir()
+	t.Chdir(root)
+	bin := filepath.Join(root, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git := "git"
+	if runtime.GOOS == "windows" {
+		git += ".exe"
+	}
+	copyExecutable(t, filepath.Join(bin, git))
+	trace = filepath.Join(root, "git.trace")
+	t.Setenv(gitTraceEnv, trace)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return trace
+}
+
+// TestNewEndsWithAnEmptyRepositoryOnMain pins the last thing `aru new` asks of
+// git. The clone's .git is removed, because the skeleton's history is not the
+// project's, and for a long time nothing replaced it: a new project was no
+// repository at all, and its guards over what is tracked skipped instead of
+// checking.
+func TestNewEndsWithAnEmptyRepositoryOnMain(t *testing.T) {
+	trace := fakeGit(t)
+	var stderr strings.Builder
+	if err := newProject([]string{"my-app"}, io.Discard, &stderr); err != nil {
+		t.Fatalf("aru new: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join("my-app", ".git")); !os.IsNotExist(err) {
+		t.Errorf("the skeleton's .git is still in the project: %v", err)
+	}
+
+	calls := gitInvocations(t, trace)
+	last := calls[len(calls)-1]
+	want := []string{"-C", "my-app", "init", "--quiet", "--initial-branch=main"}
+	if strings.Join(last, " ") != strings.Join(want, " ") {
+		t.Fatalf("the last git command:\n  got  %q\n  want %q\nall: %q", last, want, calls)
+	}
+	for _, call := range calls {
+		if slices.Contains(call, "commit") || slices.Contains(call, "add") {
+			t.Errorf("aru new committed or staged: %q", call)
+		}
+	}
+	if s := stderr.String(); strings.Contains(s, "not a git repository") || strings.Contains(s, "no repository of its own") {
+		t.Errorf("a successful init was reported as a failure:\n%s", s)
+	}
+}
+
+// TestNewReportsAFailedInitAndStillCreatesTheProject pins that a repository
+// that could not be started costs the person one command, not the project.
+func TestNewReportsAFailedInitAndStillCreatesTheProject(t *testing.T) {
+	fakeGit(t)
+	t.Setenv(gitInitFailsEnv, "1")
+	var stdout, stderr strings.Builder
+	if err := newProject([]string{"my-app"}, &stdout, &stderr); err != nil {
+		t.Fatalf("aru new failed over git init: %v", err)
+	}
+	for _, line := range []string{
+		"The project was created, but it is not a git repository",
+		"unknown option `initial-branch=main'",
+		"Run `git init -b main` inside my-app.",
+	} {
+		if !strings.Contains(stderr.String(), line) {
+			t.Errorf("stderr does not say %q:\n%s", line, stderr.String())
+		}
+	}
+	if !strings.Contains(stdout.String(), "my-app created") {
+		t.Errorf("the project was not reported as created:\n%s", stdout.String())
+	}
+	if _, err := os.Stat(filepath.Join("my-app", ".env")); err != nil {
+		t.Errorf("the project was not finished: %v", err)
+	}
+}
+
+// realGit skips the test when git is not installed, and keeps the person's own
+// configuration out of the repository the test creates.
+func realGit(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(t.TempDir()))
+}
+
+func gitOutput(t *testing.T, dir string, args ...string) (string, error) {
+	t.Helper()
+	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
+func TestInitRepositoryStartsMainWithNoCommits(t *testing.T) {
+	realGit(t)
+	dir := t.TempDir()
+
+	parent, err := initRepository(dir)
+	if err != nil || parent != "" {
+		t.Fatalf("initRepository: parent %q, %v", parent, err)
+	}
+	if head, err := gitOutput(t, dir, "symbolic-ref", "HEAD"); err != nil || head != "refs/heads/main" {
+		t.Errorf("HEAD is %q (%v), want refs/heads/main", head, err)
+	}
+	if out, err := gitOutput(t, dir, "rev-list", "--all", "--count"); err != nil || out != "0" {
+		t.Errorf("the repository has commits: %q (%v)", out, err)
+	}
+}
+
+func TestInitRepositoryLeavesAProjectInsideAnotherRepositoryAlone(t *testing.T) {
+	realGit(t)
+	outer := t.TempDir()
+	if out, err := gitOutput(t, outer, "init", "--quiet"); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	dir := filepath.Join(outer, "my-app")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	parent, err := initRepository(dir)
+	if err != nil {
+		t.Fatalf("initRepository: %v", err)
+	}
+	want, _ := filepath.EvalSymlinks(outer)
+	if got, _ := filepath.EvalSymlinks(parent); got != want {
+		t.Errorf("parent is %q, want %q", parent, outer)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git")); !os.IsNotExist(err) {
+		t.Errorf("a repository was nested in another: %v", err)
+	}
+}
+
+func TestInitRepositoryWithoutGitSaysSo(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	parent, err := initRepository(t.TempDir())
+	if parent != "" || err == nil || !strings.Contains(err.Error(), "git was not found in PATH") {
+		t.Fatalf("initRepository without git: parent %q, %v", parent, err)
 	}
 }
 

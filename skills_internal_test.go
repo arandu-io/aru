@@ -251,7 +251,8 @@ func TestNewStampsTheSkillsItCopies(t *testing.T) {
 	notes := skeletonProcedure("notes", "The example resource.")
 
 	bin := filepath.Join(root, "bin")
-	script := "#!/bin/sh\nfor last; do :; done\n" +
+	// Only the clone writes the skeleton; aru new runs git again afterwards.
+	script := "#!/bin/sh\n[ \"$1\" = clone ] || exit 0\nfor last; do :; done\n" +
 		"mkdir -p \"$last/.agents/skills/arandu-view\" \"$last/.agents/skills/notes\"\n" +
 		"printf 'APP_KEY=\\n' > \"$last/.env.example\"\n" +
 		"cat > \"$last/.agents/skills/arandu-view/SKILL.md\" <<'SKILL'\n" + view + "SKILL\n" +

@@ -92,6 +92,15 @@ const skeletonGitignore = "# Build output.\nbin/\n\n" +
 	"# `go build .` from the root drops the binary here, named after the module.\n" +
 	"#\n# It is NOT \"/app\".\n/arandu\n\n# Local module resolution.\ngo.work\n"
 
+// gitSays writes to standard error what a real git writes there. The fake has
+// no way to report a failed write other than failing itself, so it exits as
+// git does on an error it cannot recover from.
+func gitSays(text string) {
+	if _, err := os.Stderr.WriteString(text); err != nil {
+		os.Exit(2)
+	}
+}
+
 // recordGitInvocation is the fake git: it appends its arguments to trace, one
 // invocation per line, and answers the three commands `aru new` runs. A clone
 // writes the two files the rest of the command reads and the stderr a real
@@ -113,21 +122,21 @@ func recordGitInvocation(trace string, args []string) {
 	}
 	switch {
 	case slices.Contains(args, "rev-parse"):
-		os.Stderr.WriteString("fatal: not a git repository (or any of the parent directories): .git\n")
+		gitSays("fatal: not a git repository (or any of the parent directories): .git\n")
 		os.Exit(128)
 	case slices.Contains(args, "init"):
 		if os.Getenv(gitInitFailsEnv) != "" {
-			os.Stderr.WriteString("error: unknown option `initial-branch=main'\n")
+			gitSays("error: unknown option `initial-branch=main'\n")
 			os.Exit(129)
 		}
 		return
 	case args[0] != "clone":
 		os.Exit(2)
 	case os.Getenv(gitCloneFailsEnv) != "":
-		os.Stderr.WriteString("warning: Could not find remote branch v0.34.1 to clone.\nfatal: Remote branch v0.34.1 not found in upstream origin\n")
+		gitSays("warning: Could not find remote branch v0.34.1 to clone.\nfatal: Remote branch v0.34.1 not found in upstream origin\n")
 		os.Exit(128)
 	}
-	os.Stderr.WriteString(cloneNoise)
+	gitSays(cloneNoise)
 	destination := args[len(args)-1]
 	if err := os.MkdirAll(destination, 0o755); err != nil {
 		os.Exit(2)

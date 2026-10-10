@@ -40,7 +40,7 @@ func Allowed(g security.Grant) bool { return g != security.Grant{} }
 		t.Fatal("--fix without --apply wrote the file")
 	}
 
-	if code, stdout, stderr = exercise(t, "imports:catalog", "--fix", "--apply"); code != 0 {
+	if code, _, stderr = exercise(t, "imports:catalog", "--fix", "--apply"); code != 0 {
 		t.Fatalf("--fix --apply exited %d: %s", code, stderr)
 	}
 	after, _ := os.ReadFile(service)

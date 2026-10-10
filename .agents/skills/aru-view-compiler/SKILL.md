@@ -242,6 +242,14 @@ build stayed green and the page was missing exactly what the author wrote.
 set and demands each one put something in the output. A closed set is only a
 promise if something walks it.
 
+A block closes with its own end directive, compared as a whole name (`close` in
+`parse.go`). The closer was once compared by prefix, so `@for` closed by
+`@endforeach` compiled as if it were right. A closer of another block that no
+open block is waiting for is refused at its line, naming the opener's line and
+the closer expected, and consumed so the mistake is reported once; a closer an
+enclosing block is waiting for is left to it, and the inner block was never
+closed. The test is `tests/Unit/kyse/closer_test.go`.
+
 ## A directive takes a line of its own
 
 The parser reads a directive only at the start of a line. Written after markup

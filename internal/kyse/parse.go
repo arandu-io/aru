@@ -42,6 +42,17 @@ type parser struct {
 
 	// i is the current line, 0-indexed. Positions reported are i+1.
 	i int
+
+	// open holds the blocks being read, outermost first, so a block that meets
+	// a closing directive that is not its own can tell whether an enclosing
+	// block is the one it closes.
+	open []openBlock
+}
+
+// openBlock is a block directive whose closing directive has not been read yet.
+type openBlock struct {
+	name string
+	line int
 }
 
 func (p *parser) split() { p.lines = strings.Split(p.src, "\n") }
@@ -355,22 +366,10 @@ func (p *parser) nodes(goBlocks *[]Block, depth int) []Node {
 			*goBlocks = append(*goBlocks, Block{Body: body, Line: lineNo + 1})
 
 		case blockDirectives[name] != "":
+			p.open = append(p.open, openBlock{name: name, line: lineNo})
 			children := p.nodes(goBlocks, depth+1)
-			closing := ""
-			if p.i < len(p.lines) {
-				closing = strings.TrimSpace(p.lines[p.i])
-			}
-			want := "@" + blockDirectives[name]
-			if !strings.HasPrefix(closing, want) {
-				hint := fmt.Sprintf("add %s where the block ends.", want)
-				if at := p.closerAfterMarkup(lineNo, p.i, blockDirectives[name]); at > 0 {
-					hint = fmt.Sprintf("the %s on line %d follows markup on its line, and a directive is read only at the start of one, so it was taken as text.\n"+
-						"    Put it on a line of its own:\n%s", want, at, spacedForm(p.lines[at-1]))
-				}
-				p.fail(lineNo, fmt.Sprintf("@%s was never closed", name), hint)
-			} else {
-				p.i++
-			}
+			p.open = p.open[:len(p.open)-1]
+			p.close(name, lineNo)
 			out = append(out, Node{Kind: Directive, Name: name, Body: args, Children: children, Line: lineNo})
 
 		case inlineDirectives[name]:
@@ -384,6 +383,54 @@ func (p *parser) nodes(goBlocks *[]Block, depth int) []Node {
 
 	flush()
 	return out
+}
+
+// close consumes the closing directive of the block opened on line opened, which
+// nodes stopped at, or reports why there is none.
+//
+// A block closes with its own end directive and no other. The name is compared
+// whole: `@for` is closed by `@endfor`, and `@endforeach`, which begins with
+// the same letters, is the closer of a different block. A closer that belongs
+// to no block still open is taken as this block's end written wrong -- it is
+// consumed, so the one mistake is reported once. A closer an enclosing block is
+// waiting for is left for that block, and this one was never closed.
+func (p *parser) close(name string, opened int) {
+	want := blockDirectives[name]
+	got := ""
+	if p.i < len(p.lines) {
+		got, _ = closingOn(strings.TrimSpace(p.lines[p.i]))
+	}
+	switch {
+	case got == want:
+		p.i++
+
+	case got != "" && p.enclosing(got) == nil:
+		p.fail(p.i+1, fmt.Sprintf("@%s closes the @%s opened on line %d", got, name, opened),
+			fmt.Sprintf("a block closes with its own end directive: write @%s here.", want))
+		p.i++
+
+	default:
+		hint := fmt.Sprintf("add @%s where the block ends.", want)
+		if at := p.closerAfterMarkup(opened, p.i, want); at > 0 {
+			hint = fmt.Sprintf("the @%s on line %d follows markup on its line, and a directive is read only at the start of one, so it was taken as text.\n"+
+				"    Put it on a line of its own:\n%s", want, at, spacedForm(p.lines[at-1]))
+		} else if outer := p.enclosing(got); outer != nil {
+			hint = fmt.Sprintf("the @%s on line %d closes the @%s opened on line %d; add @%s above it.",
+				got, p.i+1, outer.name, outer.line, want)
+		}
+		p.fail(opened, fmt.Sprintf("@%s was never closed", name), hint)
+	}
+}
+
+// enclosing returns the innermost block still open that end closes, or nil
+// when none does.
+func (p *parser) enclosing(end string) *openBlock {
+	for i := len(p.open) - 1; i >= 0; i-- {
+		if blockDirectives[p.open[i].name] == end {
+			return &p.open[i]
+		}
+	}
+	return nil
 }
 
 // joinInterpolation folds the lines of an interpolation that spans several into

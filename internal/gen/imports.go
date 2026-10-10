@@ -14,6 +14,7 @@ import (
 
 	"github.com/arandu-io/hesape/publish"
 
+	"github.com/arandu-io/aru/internal/resolve"
 	"github.com/arandu-io/aru/internal/skills"
 )
 
@@ -59,15 +60,18 @@ func Merge(file string, existing, generated []byte) []byte {
 // name in the file.
 func TidyImports(src []byte, candidates ...[]byte) ([]byte, error) {
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "", src, parser.ParseComments)
+	file, err := parser.ParseFile(fset, "", src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		return nil, err
 	}
 
+	// A qualifier the file resolves is a local value that shadows a package,
+	// and uses no import.
+	objects := resolve.Check(fset, file)
 	used := map[string]bool{}
 	ast.Inspect(file, func(n ast.Node) bool {
 		if sel, ok := n.(*ast.SelectorExpr); ok {
-			if id, ok := sel.X.(*ast.Ident); ok && id.Obj == nil {
+			if id, ok := sel.X.(*ast.Ident); ok && !objects.Local(id) {
 				used[id.Name] = true
 			}
 		}

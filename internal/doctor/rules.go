@@ -3553,9 +3553,9 @@ func importsAreCanonical(p *project) []Finding {
 					return true
 				}
 				id, ok := sel.X.(*ast.Ident)
-				// An identifier the parser resolved is a local value that
+				// An identifier the file resolves is a local value that
 				// shadows the import, not the package.
-				if ok && id.Name == local && id.Obj == nil {
+				if ok && id.Name == local && !f.objects().Local(id) {
 					names = append(names, sel.Sel.Name)
 				}
 				return true

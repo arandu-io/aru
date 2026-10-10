@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/ast/astutil"
+
+	"github.com/arandu-io/aru/internal/resolve"
 )
 
 // Rewrite answers the Go source src with every symbol a framework bridge only
@@ -27,7 +29,7 @@ import (
 // what is left on a bridge is what the framework declares.
 func (c *Catalog) Rewrite(filename string, src []byte) ([]byte, bool, error) {
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
+	file, err := parser.ParseFile(fset, filename, src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		return nil, false, err
 	}
@@ -63,15 +65,16 @@ func (c *Catalog) Rewrite(filename string, src []byte) ([]byte, bool, error) {
 	for _, b := range bridges {
 		byLocal[b.local] = b
 	}
+	objects := resolve.Check(fset, file)
 	ast.Inspect(file, func(n ast.Node) bool {
 		sel, ok := n.(*ast.SelectorExpr)
 		if !ok {
 			return true
 		}
 		id, ok := sel.X.(*ast.Ident)
-		// An identifier the parser resolved is a local value that shadows the
+		// An identifier the file resolves is a local value that shadows the
 		// import, not the package.
-		if !ok || id.Obj != nil {
+		if !ok || objects.Local(id) {
 			return true
 		}
 		b, ok := byLocal[id.Name]

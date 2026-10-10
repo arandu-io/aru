@@ -729,3 +729,48 @@ func TestAGeneratedQueryFileOpensNoFeature(t *testing.T) {
 		t.Error("an orphaned query file vanished from the graph instead of being listed under no feature")
 	}
 }
+
+// TestAKernelIsTheValueItsOwnNameWasAssigned: in a declaration of several
+// names at once, the kernel is the value at the same position as the name,
+// not whatever the declaration also holds.
+func TestAKernelIsTheValueItsOwnNameWasAssigned(t *testing.T) {
+	root := writeGraphFixture(t)
+	t.Setenv("GOMODCACHE", t.TempDir())
+	contents := `package bootstrap
+
+import (
+	collectors "example.org/metrics/collectors"
+	search "example.org/search/module"
+	"github.com/arandu-io/framework/kernel"
+)
+
+var registry, count = kernel.New(), 0
+
+func RegisterMore() {
+	n, k := 0, kernel.New()
+	k.Register(search.NewModule())
+
+	k2, other := kernel.New(), 0
+	other.Register(collectors.NewModule())
+	count.Register(collectors.NewModule())
+	_, _, _ = n, k2, registry
+}
+`
+	if err := os.WriteFile(filepath.Join(root, "bootstrap", "more.go"), []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	analysis, err := doctor.Analyze(root, doctor.Conventional)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	var community []string
+	for _, node := range analysis.Graph.Nodes {
+		if node.Kind == "community-module" {
+			community = append(community, node.Label)
+		}
+	}
+	sort.Strings(community)
+	if want := []string{"example.org/community/audit", "example.org/community/fleet", "example.org/search/module"}; !reflect.DeepEqual(community, want) {
+		t.Errorf("community modules = %v, want %v", community, want)
+	}
+}

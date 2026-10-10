@@ -353,8 +353,6 @@ type mapState struct {
 	// queryOwners maps a generated query file to the entity file it was
 	// written from.
 	queryOwners map[string]string
-	// objects caches, per file, which declaration each identifier denotes.
-	objects map[*file]*fileObjects
 }
 
 func buildProjectMap(p *project, findings []Finding) ProjectMap {

@@ -75,6 +75,23 @@ func (u User) LogValue() string { return u.ID }
 `,
 			"app/Services/S.go": "package services\n\nimport (\n\t\"log/slog\"\n\n\tmodels \"example.test/shape/app/Models\"\n)\n\nfunc a(u models.User) { slog.Info(\"x\", \"u\", u) }\n",
 		}, 0, ""},
+		{"a local named like the json package", map[string]string{
+			"app/Http/Requests/TokenRequest.go": `package requests
+
+import "encoding/json"
+
+type TokenRequest struct{ APIToken string }
+
+type archive struct{}
+
+func (archive) Marshal(any) ([]byte, error) { return nil, nil }
+
+func dump() ([]byte, error) {
+	json := archive{}
+	return json.Marshal(&TokenRequest{})
+}
+`,
+		}, 0, ""},
 		{"JSON only, and the secret tagged out of it", map[string]string{
 			"app/Http/Resources/UserResource.go": "package resources\n\nimport \"encoding/json\"\n\ntype UserView struct {\n\tID string `json:\"id\"`\n\tPasswordHash string `json:\"-\"`\n}\n\nfunc out(v UserView) ([]byte, error) { return json.Marshal(v) }\n",
 		}, 0, ""},

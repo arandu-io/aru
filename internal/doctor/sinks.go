@@ -98,7 +98,7 @@ func (f *file) sinkCall(call *ast.CallExpr) (sinkKind, bool) {
 		return 0, false
 	}
 	method := sel.Sel.Name
-	if head, ok := sel.X.(*ast.Ident); ok && head.Obj == nil {
+	if head, ok := sel.X.(*ast.Ident); ok && !f.objects().Local(head) {
 		if path, imported := f.importPath(head.Name); imported {
 			switch {
 			case path == "log/slog" || path == "log" || path == "github.com/arandu-io/hesape/log" ||

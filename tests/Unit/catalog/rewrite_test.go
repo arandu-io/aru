@@ -150,3 +150,26 @@ type QuoteData struct {
 		t.Errorf("a second rewrite changed the view:\n%s", again)
 	}
 }
+
+// TestALocalThatShadowsTheBridgeIsNotThePackage: inside a function whose
+// variable is called security, security.Grant is a field of that variable and
+// moves nowhere; the package's own use outside it still moves.
+func TestALocalThatShadowsTheBridgeIsNotThePackage(t *testing.T) {
+	out := rewriteTwice(t, fixtureCatalog(t), `package services
+
+import "github.com/arandu-io/framework/security"
+
+type holder struct{ Grant int }
+
+func Read(g security.Grant) int {
+	security := holder{}
+	return security.Grant
+}
+`)
+	if !strings.Contains(out, "g auth.Grant") {
+		t.Errorf("the package's own use did not move:\n%s", out)
+	}
+	if !strings.Contains(out, "return security.Grant") {
+		t.Errorf("the field of the local variable was rewritten as if it were the package:\n%s", out)
+	}
+}

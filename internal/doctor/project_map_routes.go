@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/arandu-io/aru/internal/gen"
+	"github.com/arandu-io/aru/internal/resolve"
 )
 
 // routeRegistration is one call that registers routes, read from routes/.
@@ -68,7 +69,7 @@ func (s *mapState) addRoutes(files []*file) {
 		if f.isTest || !strings.HasPrefix(f.rel, "routes/") || f.rel == "routes/console.go" {
 			continue
 		}
-		for _, registration := range routeRegistrations(f, s.objectsOf(f)) {
+		for _, registration := range routeRegistrations(f, f.objects()) {
 			s.addRegistration(registration)
 		}
 	}
@@ -76,7 +77,7 @@ func (s *mapState) addRoutes(files []*file) {
 
 // routeRegistrations finds the registering calls of one file, with the prefix
 // of the group each is made on and the name chained onto it.
-func routeRegistrations(f *file, objects *fileObjects) []routeRegistration {
+func routeRegistrations(f *file, objects *resolve.File) []routeRegistration {
 	names := map[*ast.CallExpr]string{}
 	ast.Inspect(f.ast, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
@@ -112,7 +113,7 @@ func routeRegistrations(f *file, objects *fileObjects) []routeRegistration {
 					if !ok || i >= len(node.Rhs) {
 						continue
 					}
-					declared := objects.object(identifier)
+					declared := objects.Object(identifier)
 					if declared == nil {
 						continue
 					}
@@ -168,10 +169,10 @@ func registersRoutes(method string, call *ast.CallExpr) bool {
 // the expression is one: a parameter or variable is, and so is a Group or a
 // ForModule call on one. The prefix of a router that arrived as a parameter is
 // unknown here and read as empty.
-func routerPrefix(expr ast.Expr, objects *fileObjects, prefixes map[types.Object]string) (string, bool) {
+func routerPrefix(expr ast.Expr, objects *resolve.File, prefixes map[types.Object]string) (string, bool) {
 	switch e := expr.(type) {
 	case *ast.Ident:
-		if declared := objects.object(e); declared != nil {
+		if declared := objects.Object(e); declared != nil {
 			if prefix, found := prefixes[declared]; found {
 				return prefix, true
 			}
@@ -431,12 +432,12 @@ func (s *mapState) expressionType(f *file, expr ast.Expr, depth int) string {
 			return constructed
 		}
 	case *ast.Ident:
-		objects := s.objectsOf(f)
-		declared := objects.object(e)
+		objects := f.objects()
+		declared := objects.Object(e)
 		if declared == nil {
 			return ""
 		}
-		switch decl := objects.decls[declared].(type) {
+		switch decl := objects.Declaration(declared).(type) {
 		case *ast.Field:
 			return typeExprName(decl.Type)
 		case *ast.ValueSpec:
@@ -444,13 +445,13 @@ func (s *mapState) expressionType(f *file, expr ast.Expr, depth int) string {
 				return typeExprName(decl.Type)
 			}
 			for i, name := range decl.Names {
-				if objects.object(name) == declared && i < len(decl.Values) {
+				if objects.Object(name) == declared && i < len(decl.Values) {
 					return s.expressionType(f, decl.Values[i], depth+1)
 				}
 			}
 		case *ast.AssignStmt:
 			for i, left := range decl.Lhs {
-				if identifier, ok := left.(*ast.Ident); ok && objects.object(identifier) == declared && len(decl.Lhs) == len(decl.Rhs) {
+				if identifier, ok := left.(*ast.Ident); ok && objects.Object(identifier) == declared && len(decl.Lhs) == len(decl.Rhs) {
 					return s.expressionType(f, decl.Rhs[i], depth+1)
 				}
 			}

@@ -3,6 +3,7 @@ package doctor
 import (
 	"go/ast"
 	"go/token"
+	"go/types"
 	"regexp"
 	"strconv"
 	"strings"
@@ -62,7 +63,7 @@ func (s *mapState) addReferenceEdges(files []*file) {
 				switch node := n.(type) {
 				case *ast.SelectorExpr:
 					alias, ok := node.X.(*ast.Ident)
-					if !ok || alias.Obj != nil {
+					if !ok || f.objects().Local(alias) {
 						return
 					}
 					importPath, imported := f.importPath(alias.Name)
@@ -81,7 +82,7 @@ func (s *mapState) addReferenceEdges(files []*file) {
 				case *ast.Ident:
 					// A test in the package it tests names what it uses without
 					// a qualifier, and those names are the package's own.
-					if !f.isTest || node.Obj != nil {
+					if !f.isTest || localName(f, node, parent) {
 						return
 					}
 					if selector, ok := parent.(*ast.SelectorExpr); ok && selector.Sel == node {
@@ -96,6 +97,100 @@ func (s *mapState) addReferenceEdges(files []*file) {
 			})
 		})
 	}
+}
+
+// localName reports whether id, an unqualified name written in f, is one f
+// declares rather than a name of its package's other files.
+//
+// It is the file's own resolution with three readings that are deliberately the
+// map's and not the type checker's, which keep the edges what they have been:
+//
+//   - a composite literal key is looked up by its name in the scopes around
+//     it, and a package-level name only once the file has declared it, whether
+//     the key turns out to name a field or not
+//   - the name of a method, and of an init function, in its declaration is no
+//     declaration of the file
+//   - a type parameter of a method's receiver, where it is declared, is none
+//     either
+func localName(f *file, id *ast.Ident, parent ast.Node) bool {
+	objects := f.objects()
+	switch p := parent.(type) {
+	case *ast.KeyValueExpr:
+		if p.Key == id {
+			return keyInScope(f, id)
+		}
+	case *ast.FuncDecl:
+		if p.Name == id && (p.Recv != nil || id.Name == "init") {
+			return false
+		}
+	}
+	if name, ok := objects.Object(id).(*types.TypeName); ok && name.Pos() == id.Pos() {
+		if _, parameter := name.Type().(*types.TypeParam); parameter && inReceiver(f, id.Pos()) {
+			return false
+		}
+	}
+	return objects.Local(id)
+}
+
+// keyInScope reports whether a declaration of f named like the composite
+// literal key id is in scope at the key: a local one declared before it, or a
+// package-level one whose declaration the file has finished by then. A type
+// counts from its own name on, a constant or variable from the end of its
+// spec, a function from the end of its body.
+func keyInScope(f *file, id *ast.Ident) bool {
+	pkg := f.objects().Package()
+	if pkg == nil {
+		return false
+	}
+	scope := pkg.Scope().Innermost(id.Pos())
+	if scope == nil {
+		return false
+	}
+	_, object := scope.LookupParent(id.Name, id.Pos())
+	if object == nil || object.Parent() == types.Universe {
+		return false
+	}
+	if _, imported := object.(*types.PkgName); imported {
+		return false
+	}
+	if object.Parent() != pkg.Scope() {
+		return true
+	}
+	declared := token.NoPos
+	for _, decl := range f.ast.Decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if d.Name.Pos() == object.Pos() {
+				declared = d.End()
+			}
+		case *ast.GenDecl:
+			for _, spec := range d.Specs {
+				switch s := spec.(type) {
+				case *ast.TypeSpec:
+					if s.Name.Pos() == object.Pos() {
+						declared = s.Name.Pos()
+					}
+				case *ast.ValueSpec:
+					for _, name := range s.Names {
+						if name.Pos() == object.Pos() {
+							declared = s.End()
+						}
+					}
+				}
+			}
+		}
+	}
+	return declared.IsValid() && declared <= id.Pos()
+}
+
+// inReceiver reports whether pos falls in the receiver of one of f's methods.
+func inReceiver(f *file, pos token.Pos) bool {
+	for _, decl := range f.ast.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv != nil && fn.Recv.Pos() <= pos && pos < fn.Recv.End() {
+			return true
+		}
+	}
+	return false
 }
 
 func useOf(n, parent ast.Node) referenceUse {

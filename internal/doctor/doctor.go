@@ -30,11 +30,13 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/arandu-io/aru/internal/catalog"
 	"github.com/arandu-io/aru/internal/contract"
 	"github.com/arandu-io/aru/internal/kyse"
 	"github.com/arandu-io/aru/internal/manifest"
+	"github.com/arandu-io/aru/internal/resolve"
 )
 
 // viewsDir is where a project keeps its views.
@@ -242,6 +244,19 @@ type file struct {
 	// project: models.InvoiceStatus(v) names one of them, and converting a
 	// value to it reaches no row.
 	modelTypes map[string]bool
+
+	// resolved is what the identifiers of the file denote, filled on first use
+	// by objects.
+	resolveOnce sync.Once
+	resolved    *resolve.File
+}
+
+// objects answers which declaration each identifier of f denotes, read from f
+// alone and resolved once per file. It is how a rule tells an import from a
+// local variable that shadows it.
+func (f *file) objects() *resolve.File {
+	f.resolveOnce.Do(func() { f.resolved = resolve.Check(f.fset, f.ast) })
+	return f.resolved
 }
 
 // appCategories maps a directory under app/ to the suffix its files carry, so
@@ -510,7 +525,7 @@ func parseProject(dir string) ([]*file, []unreadable, error) {
 		rel = filepath.ToSlash(rel)
 		category, entity := classify(rel)
 
-		parsed, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+		parsed, err := parser.ParseFile(fset, path, nil, parser.ParseComments|parser.SkipObjectResolution)
 		if err != nil {
 			// Recorded, not dropped. The compiler reports the syntax error
 			// better than this ever could -- but every rule reasons over the

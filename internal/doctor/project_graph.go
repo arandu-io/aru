@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"go/ast"
 	"go/token"
+	"go/types"
 	"os"
 	"path"
 	"path/filepath"
@@ -588,7 +589,8 @@ var fluentKernelMethods = map[string]bool{"Register": true, "Use": true}
 func kernelExpression(f *file, expression ast.Expr) bool {
 	switch value := expression.(type) {
 	case *ast.Ident:
-		return value.Obj != nil && kernelDeclaration(f, value.Obj.Decl, value)
+		declared := f.objects().Object(value)
+		return declared != nil && kernelDeclaration(f, f.objects().Declaration(declared), declared)
 	case *ast.CallExpr:
 		selector, ok := value.Fun.(*ast.SelectorExpr)
 		if !ok {
@@ -618,14 +620,14 @@ func kernelExpression(f *file, expression ast.Expr) bool {
 	return false
 }
 
-func kernelDeclaration(f *file, declaration any, identifier *ast.Ident) bool {
+func kernelDeclaration(f *file, declaration ast.Node, object types.Object) bool {
 	switch value := declaration.(type) {
 	case *ast.Field:
 		return kernelType(f, value.Type)
 	case *ast.AssignStmt:
 		for index, left := range value.Lhs {
 			declared, ok := left.(*ast.Ident)
-			if !ok || declared.Obj != identifier.Obj || len(value.Lhs) != len(value.Rhs) {
+			if !ok || f.objects().Object(declared) != object || len(value.Lhs) != len(value.Rhs) {
 				continue
 			}
 			return kernelExpression(f, value.Rhs[index])
@@ -635,7 +637,7 @@ func kernelDeclaration(f *file, declaration any, identifier *ast.Ident) bool {
 			return true
 		}
 		for index, name := range value.Names {
-			if name.Obj != identifier.Obj || len(value.Names) != len(value.Values) {
+			if f.objects().Object(name) != object || len(value.Names) != len(value.Values) {
 				continue
 			}
 			return kernelExpression(f, value.Values[index])

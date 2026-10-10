@@ -541,3 +541,84 @@ func TestARouteIsReadThroughTheVariableItsNameDenotes(t *testing.T) {
 		t.Errorf("routes:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
+
+// TestAnInPackageTestNamesWhatItEmbeds: a test in the package it tests names
+// the package's declarations without a qualifier, and a type it embeds in a
+// struct of its own is one of them. The embedded name declares a field too,
+// and the field is the file's -- the edge is drawn for the type it names.
+func TestAnInPackageTestNamesWhatItEmbeds(t *testing.T) {
+	root := tests.MapProject(t)
+	body := "package services\n\ntype fakeInvoices struct {\n\tInvoiceService\n}\n\nvar _ = fakeInvoices{}\n"
+	if err := os.WriteFile(filepath.Join(root, "app", "Services", "fakes_internal_test.go"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want := "tested-by service:InvoiceService -> test:fakes_internal_test"
+	if _, found := edgeSet(mapOf(t, root))[want]; !found {
+		t.Errorf("missing %s", want)
+	}
+}
+
+// TestAnInPackageTestIsReadAsTheMapHasAlwaysReadIt pins three readings of an
+// unqualified name in a test that the map keeps from the parser's object
+// resolution, which it answered with before it asked the type checker: a
+// composite literal key is looked up by its name in the scopes around it even
+// when it names a field, and a method's name in its declaration, like an init
+// function's, is no declaration of the file. Each draws an edge to the
+// package's declaration of the same name. Whether those edges should go is a
+// change of the map's output, decided on its own, and not something swapping
+// the resolver may do in passing.
+//
+// A key the file declares at package level is its own only below that
+// declaration, which an external test in the same directory can show.
+func TestAnInPackageTestIsReadAsTheMapHasAlwaysReadIt(t *testing.T) {
+	for _, c := range []struct {
+		file, body string
+		edge       bool
+	}{
+		{"keys_internal_test.go", "package services\n\nvar _ = struct{ InvoiceService int }{InvoiceService: 1}\n", true},
+		{"methods_internal_test.go", "package services\n\ntype probe struct{}\n\nfunc (probe) InvoiceService() {}\n", true},
+		{"generic_internal_test.go", "package services\n\ntype box[T any] struct{ v T }\n\nfunc (b box[InvoiceService]) get() InvoiceService { return b.v }\n", true},
+		{"keyabove_test.go", "package services_test\n\nvar _ = struct{ InvoiceService int }{InvoiceService: 1}\n\ntype InvoiceService struct{}\n", true},
+		{"keybelow_test.go", "package services_test\n\ntype InvoiceService struct{}\n\nvar _ = struct{ InvoiceService int }{InvoiceService: 1}\n", false},
+	} {
+		t.Run(c.file, func(t *testing.T) {
+			root := tests.MapProject(t)
+			if err := os.WriteFile(filepath.Join(root, "app", "Services", c.file), []byte(c.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			want := "tested-by service:InvoiceService -> test:" + strings.TrimSuffix(c.file, ".go")
+			if _, found := edgeSet(mapOf(t, root))[want]; found != c.edge {
+				t.Errorf("%s drawn: %t, want %t", want, found, c.edge)
+			}
+		})
+	}
+}
+
+// TestALocalThatShadowsAnImportReferencesNothing: a qualified name is a
+// reference to the project's package only when the qualifier is the import,
+// and a local variable spelled like the import is not.
+func TestALocalThatShadowsAnImportReferencesNothing(t *testing.T) {
+	for _, c := range []struct {
+		what, use string
+		edge      bool
+	}{
+		{"the import", "_ = services.InvoiceService{}", true},
+		{"a local spelled like it", "services := holder{}\n\t_ = services.InvoiceService", false},
+	} {
+		t.Run(c.what, func(t *testing.T) {
+			root := tests.MapProject(t)
+			body := "package unit_test\n\nimport (\n\t\"testing\"\n\n\tservices \"" + tests.MapProjectModule + "/app/Services\"\n)\n\n" +
+				"type holder struct{ InvoiceService int }\n\nfunc TestShadow(t *testing.T) {\n\t" + c.use + "\n}\n"
+			if err := os.MkdirAll(filepath.Join(root, "tests", "Unit"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "tests", "Unit", "Shadow_test.go"), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			want := "tested-by service:InvoiceService -> test:Shadow_test"
+			if _, found := edgeSet(mapOf(t, root))[want]; found != c.edge {
+				t.Errorf("%s drawn: %t, want %t", want, found, c.edge)
+			}
+		})
+	}
+}

@@ -27,6 +27,7 @@ func Parse(path, source string) (*File, error) {
 
 	nodes := p.nodes(&file.Go, 0)
 	p.assemble(file, nodes)
+	p.refuseUnusableTypeNames(file)
 
 	if len(p.errs) > 0 {
 		return nil, p.errs
@@ -132,6 +133,39 @@ func (p *parser) refuseFormatterBytes(first int, text string) {
 				"    Remove it: a tab or a space is what it stands in for.")
 		return
 	}
+}
+
+// refuseUnusableTypeNames refuses a view whose data type, as RenderType and
+// PageType read it from the `@go` blocks, is not a name Go can spell a type
+// with.
+//
+// Those two read the second word of a `type` line and the generator writes it
+// unread into the assertion every render opens with, `kyse__data.(Name)`. The
+// line can be valid Go with a second word that is not a name:
+// `type Page[T any] struct` reads as `Page[T`, and `type Page* struct`, which Go
+// reads as a pointer type, reads as `Page*`. Either way the generated file did
+// not parse, and the person was told about a bug in the generator instead of
+// the line they wrote.
+//
+// The blank identifier is refused with them: it parses in the assertion and
+// names no type.
+func (p *parser) refuseUnusableTypeNames(file *File) {
+	render, renderLine := renderType(file)
+	p.refuseTypeName(render, renderLine)
+	if page, pageLine := pageType(file); pageLine != renderLine {
+		p.refuseTypeName(page, pageLine)
+	}
+}
+
+// refuseTypeName refuses name, declared at line, unless it is an identifier
+// other than the blank one. Line 0 is a name no line of the view declares.
+func (p *parser) refuseTypeName(name string, line int) {
+	if line == 0 || (name != "_" && token.IsIdentifier(name)) {
+		return
+	}
+	p.fail(line, fmt.Sprintf("%q is the type this view draws, and it is not a name Go can assert to", name),
+		"the compiled view asserts its data to the second word of this line, so the word has to be the type's name alone.\n"+
+			"    Declare a plain named type, such as type PageData struct { … }: a type parameter list or a * against the name is not part of it.")
 }
 
 func (p *parser) fail(line int, message, hint string) {

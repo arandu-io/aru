@@ -1,0 +1,3 @@
+go test fuzz v1
+string("//go:build kyse%\npackage viewx\n\n@go\n// Inas an HT0X agm9nt.\ntype Inat* struct {A00000000000000}\n@endgo \n00000000000000000000000000000000000000000")
+bool(false)

@@ -365,13 +365,20 @@ func Name(viewsDir, source string) string {
 // title, the brand, the token, the four navigation links -- belongs to that
 // package, so a layout only declares an interface when it wants a different one.
 func RenderType(f *File) string {
+	name, _ := renderType(f)
+	return name
+}
+
+// renderType is RenderType with the line the name was declared on, or 0 when
+// the name is the native view.Layout and no line of the view declares it.
+func renderType(f *File) (string, int) {
 	if f.IsLayout() {
-		if name := firstType(f, " interface"); name != "" {
-			return name
+		if name, line := firstType(f, " interface"); name != "" {
+			return name, line
 		}
-		return "view.Layout"
+		return "view.Layout", 0
 	}
-	return PageType(f)
+	return pageType(f)
 }
 
 // PageType is the type a view declared, and what a layout publishes to the views
@@ -391,28 +398,39 @@ func RenderType(f *File) string {
 // The view still says which type it draws, in one line, and that line is what
 // makes `{{ .Email }}` compile or not.
 func PageType(f *File) string {
-	if name := firstType(f, " struct"); name != "" {
-		return name
+	name, _ := pageType(f)
+	return name
+}
+
+// pageType is PageType with the source line the name was declared on.
+func pageType(f *File) (string, int) {
+	if name, line := firstType(f, " struct"); name != "" {
+		return name, line
 	}
 	return firstType(f, " = ")
 }
 
-// firstType finds the first `type X <kind>` in the @go blocks.
+// firstType finds the first `type X <kind>` in the @go blocks, and the source
+// line it is on.
 //
 // Order of declaration does not decide anything: the caller asks for the kind it
 // needs. A layout that declares the interface below the struct behaves the same
 // as one that declares it above.
-func firstType(f *File, kind string) string {
+//
+// The name is the second word of the line, whatever it is. Parse refuses the
+// view when that word is not one Go can use as a type name, so a name RenderType
+// or PageType answers for a parsed view is always an identifier.
+func firstType(f *File, kind string) (string, int) {
 	for _, block := range f.Go {
-		for _, line := range strings.Split(block.Body, "\n") {
+		for offset, line := range strings.Split(block.Body, "\n") {
 			line = strings.TrimSpace(line)
 			if !strings.HasPrefix(line, "type ") || !strings.Contains(line, kind) {
 				continue
 			}
 			if fields := strings.Fields(line); len(fields) >= 2 {
-				return fields[1]
+				return fields[1], block.Line + offset
 			}
 		}
 	}
-	return ""
+	return "", 0
 }

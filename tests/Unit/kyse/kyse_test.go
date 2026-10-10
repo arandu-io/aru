@@ -1153,7 +1153,11 @@ package views
 type D struct{ V string }
 @endgo
 
-<a class="btn @if(.V != "")on@endif" href="{{ .V }}">x</a>
+<a class="btn
+@if(.V != "")
+on
+@endif
+" href="{{ .V }}">x</a>
 @foreach(.V as row)
 	<li>{{ row }}</li>
 @endforeach

@@ -86,7 +86,7 @@ func (c *InvoiceAPIController) Index(ctx *hhttp.Context) error {
 `
 
 // mapProjectLayout is the layout every generated screen extends.
-const mapProjectLayout = "//go:build kyse\n\npackage layouts\n\n<html><body>@yield('content')</body></html>\n"
+const mapProjectLayout = "//go:build kyse\n\npackage layouts\n\n<html><body>\n@yield('content')\n</body></html>\n"
 
 // mapProjectGoldens are the generator goldens MapProject copies, by the path
 // the generator writes each to.

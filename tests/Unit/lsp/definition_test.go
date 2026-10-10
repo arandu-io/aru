@@ -54,7 +54,9 @@ func Button(kyse__props ButtonProps) kyse__template.HTML {
 
 package layouts
 
-<html><body>@yield('content')</body></html>
+<html><body>
+@yield('content')
+</body></html>
 `
 )
 

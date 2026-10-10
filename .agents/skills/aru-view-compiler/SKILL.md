@@ -242,6 +242,32 @@ build stayed green and the page was missing exactly what the author wrote.
 set and demands each one put something in the output. A closed set is only a
 promise if something walks it.
 
+## A directive takes a line of its own
+
+The parser reads a directive only at the start of a line. Written after markup
+on the same line -- `<a href="/" @if(.Target != "")target="_blank"@endif>` --
+it used to arrive at the generator as text and be printed on the page, with the
+build green. Now it is refused, never read: a second, inline way to write `@if`
+is the second way to do one thing. Two places hold it:
+
+- **the parser** (`parse.go`): a directive at the start of a line with markup
+  glued after it (`@if(.T)target="x"`, `@endif>`, `@csrf<button>`) is refused
+  once, and the block it opens or closes is still read so no "never opened" or
+  "never closed" follows. A block whose `@end` was written after markup says on
+  which line it went;
+- **the generator** (`directiveAfterMarkup` in `generate.go`): a known directive
+  inside a text node is refused by position -- any form inside a tag outside a
+  value; the form with arguments in the body, a value or a script; the bare form
+  in the body only when it touches a tag (`>@csrf<`). HTML comments are prose
+  throughout: the skeleton's layout says `<!-- One @yield, ... -->`.
+
+Every refusal shows the line split into the shape that reads (`spacedForm`).
+An @ that does not begin a known name -- an address, `@media`, `@click` -- is
+never read. The test is `tests/Unit/kyse/directive_after_markup_test.go`, and
+the proof that no view that compiled before changes is `view:build` of the
+skeleton, the kyse components, the examples and the module publish views,
+diffed byte for byte before and after.
+
 ## Where the output goes
 
 `OutputPath` (`kyse.go:280`) mirrors the source tree under storage:

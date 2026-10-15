@@ -53,7 +53,7 @@
     "file": "app/Http/Controllers/Auth/LoginController.go",
     "line": 4,
     "message": "this file names Context from github.com/arandu-io/hesape/http through github.com/arandu-io/framework/http",
-    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires, and `aru imports:catalog --fix --apply` rewrites the imports to it."
   },
   {
     "rule": "session-not-rotated",
@@ -101,7 +101,7 @@
     "file": "app/Http/Controllers/BillingController.go",
     "line": 6,
     "message": "this file names Wrap, DialectSQLite from github.com/arandu-io/hesape/database through github.com/arandu-io/framework/data",
-    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires, and `aru imports:catalog --fix --apply` rewrites the imports to it."
   },
   {
     "rule": "import-not-canonical",
@@ -109,7 +109,7 @@
     "file": "app/Http/Controllers/BillingController.go",
     "line": 7,
     "message": "this file names Context from github.com/arandu-io/hesape/http through github.com/arandu-io/framework/http",
-    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires, and `aru imports:catalog --fix --apply` rewrites the imports to it."
   },
   {
     "rule": "import-not-canonical",
@@ -117,7 +117,7 @@
     "file": "app/Http/Controllers/BillingController.go",
     "line": 9,
     "message": "this file names SystemGrant from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
-    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires, and `aru imports:catalog --fix --apply` rewrites the imports to it."
   },
   {
     "rule": "view-data-is-a-map",
@@ -325,7 +325,7 @@
     "file": "app/Http/Requests/ChargeRequest.go",
     "line": 4,
     "message": "this file names MustCompile, Rules from github.com/arandu-io/hesape/validation through github.com/arandu-io/framework/validation",
-    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires, and `aru imports:catalog --fix --apply` rewrites the imports to it."
   },
   {
     "rule": "enum-rule-not-derived",
@@ -389,7 +389,7 @@
     "file": "app/Policies/ChargePolicy.go",
     "line": 7,
     "message": "this file names Subject, Action from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
-    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires, and `aru imports:catalog --fix --apply` rewrites the imports to it."
   },
   {
     "rule": "policy-never-opened",
@@ -437,7 +437,7 @@
     "file": "app/Reporting/InvoiceRepo.go",
     "line": 6,
     "message": "this file names DB from github.com/arandu-io/hesape/database through github.com/arandu-io/framework/data",
-    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires, and `aru imports:catalog --fix --apply` rewrites the imports to it."
   },
   {
     "rule": "grant-not-received",
@@ -469,7 +469,7 @@
     "file": "app/Repositories/BillingRepository.go",
     "line": 7,
     "message": "this file names Tenant from github.com/arandu-io/hesape/auth; DB from github.com/arandu-io/hesape/database through github.com/arandu-io/framework/data",
-    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires, and `aru imports:catalog --fix --apply` rewrites the imports to it."
   },
   {
     "rule": "import-not-canonical",
@@ -477,7 +477,7 @@
     "file": "app/Repositories/BillingRepository.go",
     "line": 8,
     "message": "this file names Grant, SystemGrant from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
-    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires, and `aru imports:catalog --fix --apply` rewrites the imports to it."
   },
   {
     "rule": "repository-without-policy",
@@ -533,7 +533,7 @@
     "file": "app/Repositories/SearchRepository.go",
     "line": 6,
     "message": "this file names Tenant from github.com/arandu-io/hesape/auth; DB from github.com/arandu-io/hesape/database through github.com/arandu-io/framework/data",
-    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires, and `aru imports:catalog --fix --apply` rewrites the imports to it."
   },
   {
     "rule": "import-not-canonical",
@@ -541,7 +541,7 @@
     "file": "app/Repositories/SearchRepository.go",
     "line": 7,
     "message": "this file names Grant from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
-    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires, and `aru imports:catalog --fix --apply` rewrites the imports to it."
   },
   {
     "rule": "repository-without-policy",
@@ -565,7 +565,7 @@
     "file": "app/Services/AliasedGrantService.go",
     "line": 4,
     "message": "this file names Grant from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
-    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires, and `aru imports:catalog --fix --apply` rewrites the imports to it."
   },
   {
     "rule": "system-grant-outside-scope",
@@ -589,7 +589,7 @@
     "file": "app/Services/BillingService.go",
     "line": 6,
     "message": "this file names Policy, Subject, Authorize from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
-    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires, and `aru imports:catalog --fix --apply` rewrites the imports to it."
   },
   {
     "rule": "resource-not-reauthorized",
@@ -653,7 +653,7 @@
     "file": "app/Services/JobGrantService.go",
     "line": 5,
     "message": "this file names Grant from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
-    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires, and `aru imports:catalog --fix --apply` rewrites the imports to it."
   },
   {
     "rule": "system-grant-outside-scope",
@@ -677,7 +677,7 @@
     "file": "app/Services/LedgerService.go",
     "line": 4,
     "message": "this file names Grant from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
-    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires, and `aru imports:catalog --fix --apply` rewrites the imports to it."
   },
   {
     "rule": "scaffolding-ships",
@@ -693,7 +693,7 @@
     "file": "app/Services/PermissionService.go",
     "line": 7,
     "message": "this file names Grant, Action from github.com/arandu-io/hesape/auth through github.com/arandu-io/framework/security",
-    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires."
+    "why": "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. Import the path above for them. Nothing else is used from it, so the import goes. `aru imports:catalog` prints every symbol's path for the version go.mod requires, and `aru imports:catalog --fix --apply` rewrites the imports to it."
   },
   {
     "rule": "action-not-a-constant",

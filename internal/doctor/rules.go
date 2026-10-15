@@ -3631,7 +3631,7 @@ func canonicalFinding(p *project, pkg string, names []string) (Finding, bool) {
 		Message: "this file names " + strings.Join(parts, "; ") + " through " + pkg,
 		Why: "those names are aliases, or functions that only call through, on the framework's side; and the package they are named through says it is removed in v1.0.0: " +
 			"the file compiles today and stops compiling then, and until then one type is spelled two ways across the project. " +
-			"Import the path above for them. " + keep + " `aru imports:catalog` prints every symbol's path for the version go.mod requires.",
+			"Import the path above for them. " + keep + " `aru imports:catalog` prints every symbol's path for the version go.mod requires, and `aru imports:catalog --fix --apply` rewrites the imports to it.",
 	}, true
 }
 

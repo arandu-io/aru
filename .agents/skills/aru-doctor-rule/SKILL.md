@@ -343,6 +343,17 @@ then skims.
 There is no ignore comment and no allow-list, deliberately. A finding somebody
 cannot fix is a design question, and the right output is to say so.
 
+`aru doctor --baseline` is not one, and the difference is what keeps it from
+becoming one. It hides nothing: every finding is printed on every run. It
+names no finding: it counts warnings per rule and file
+(`internal/doctor/baseline.go`), so it cannot excuse one line and not its
+neighbour. It never holds an error: `NewBaseline` drops them and an error
+fails whatever the file says. What it changes is only which warnings fail a
+`--strict` run -- the ones above the count -- which is how a project with
+warnings today stops gaining new ones. A change that asks for a per-finding
+entry, an error in the file, or a run that stops printing what the file
+covers is asking for the suppression this section refuses.
+
 ## The four gates
 
 ```sh

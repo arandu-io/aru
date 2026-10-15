@@ -508,8 +508,9 @@ window.`,
 	},
 	{
 		name:  "doctor",
-		usage: "aru doctor [--strict] [--profile=performance] | --list",
+		usage: "aru doctor [--strict] [--profile=performance] [--baseline=<file> [--write-baseline]] | --list",
 		desc:  "check that the project honors the framework contracts",
+		help:  doctorHelp,
 		run:   runDoctor,
 	},
 }

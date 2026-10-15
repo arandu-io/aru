@@ -71,7 +71,10 @@ plus `help` and `version`. The native and inspection commands, in the words of `
   `tenant-from-request`, `tenant-from-header`, `sql-built-by-concatenation`,
   `view-does-not-exist`, `session-not-rotated`. Three of them answer only to
   `--profile=performance`, where a join and a transaction across two aggregates
-  stop being ordinary SQL and become findings.
+  stop being ordinary SQL and become findings. `--strict` fails on warnings
+  too, and `--strict --baseline=doctor-baseline.json` fails only on the ones
+  above what the project recorded with `--write-baseline`, counted by rule and
+  file, so a project that has warnings today still stops gaining new ones.
 - **`aru trace`** — a request reconstructed in the terminal, from the running
   application.
 - **`aru font:add`** — vendors a font into the project: the unicode range and

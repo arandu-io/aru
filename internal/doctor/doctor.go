@@ -79,7 +79,8 @@ type Severity int
 // The two levels. There is no "info": a check that does not change what anyone
 // does is noise that trains people to ignore the output.
 const (
-	// Warning is reported and does not fail, unless --strict.
+	// Warning is reported and does not fail, unless --strict; with a
+	// baseline, only the warnings above it fail a strict run.
 	Warning Severity = iota
 	// Error fails, always.
 	Error

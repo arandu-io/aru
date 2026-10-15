@@ -139,7 +139,7 @@ way to spend an afternoon on something that will be rejected.
 | --- | --- |
 | a CLI framework with subcommand registration | `commands`, a slice in `commands.go`. The order is the help output, which is why it is not a map |
 | a plugin mechanism, dynamically discovered commands | a command not in the slice is forwarded to the project's binary, which knows its own; outside a project it is an error |
-| a suppression comment or allow-list for a doctor finding | nothing. A finding you cannot fix is a design question |
+| a suppression comment or allow-list for a doctor finding | nothing. A finding you cannot fix is a design question. `--baseline` is not one: every finding is still printed, no error is ever held, and it only decides which warnings fail `--strict` -- the ones above the counts a project accepted, per rule and file, so new warnings stop while old ones are fixed |
 | a downloaded binary for the view compiler | `internal/kyse`, compiled into `aru`. One fewer thing to pin, verify and cache |
 | a template engine with a runtime | a Go function that writes strings. A missing field is a compile error |
 | npm, Node, `node_modules`, CDN imports | esbuild's Go API bundles local JavaScript; CSS uses verified Tailwind standalone and esbuild minification. Generated Go registers the bytes with the existing asset transport |

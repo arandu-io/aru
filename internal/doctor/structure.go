@@ -176,7 +176,8 @@ func isPath(want string) func(string) bool {
 // reported.
 //
 // Correction: declare the fields on the request struct with `form:"..."`
-// tags and call ctx.Bind(&in).
+// tags and call ctx.Bind(&in); a field stored as typed (a message, a Markdown
+// body) is tagged `form:"name,raw"`.
 func inputIsBoundNotRead(p *project) []Finding {
 	var out []Finding
 	for _, f := range p.files {
@@ -207,7 +208,8 @@ func inputIsBoundNotRead(p *project) []Finding {
 				Message: funcLabel(fn) + " reads the request by hand: " + summarize(uses),
 				Why: "a field read here is a second request type that the service, a job and a command cannot share, " +
 					"and a field that is missing arrives as an empty string instead of a message. " +
-					"Declare the fields on the struct in app/Http/Requests with form tags and call ctx.Bind(&in).",
+					"Declare the fields on the struct in app/Http/Requests with form tags and call ctx.Bind(&in); a field stored " +
+					"as typed (a message, a Markdown body) is tagged `form:\"name,raw\"`.",
 			})
 		})
 	}
@@ -367,8 +369,9 @@ func writesJSON(f *file, fn *ast.FuncDecl) bool {
 // Severity. A warning.
 //
 // Positive: http.StatusUnprocessableEntity from net/http, or the literal 422,
-// anywhere in the body except a comparison or a case. One finding per
-// function, at the first.
+// anywhere in the body except a comparison or a case -- a whole page answered
+// with it through ctx.ViewStatus included. One finding per function, at the
+// first.
 //
 // Negative: `if status == http.StatusUnprocessableEntity`; a function that
 // receives the status as a parameter -- the caller that passes 422 is the one
@@ -1353,7 +1356,8 @@ func entityRulesArePure(p *project) []Finding {
 // per call.
 //
 // Negative: `ctx.Fragment(http.StatusOK, "partials.note-row", data)`; a view
-// name held in a variable.
+// name held in a variable; `ctx.ViewStatus(http.StatusNotFound,
+// "invoices.missing", data)`, which is a whole page with its status.
 //
 // Known false positive: a view outside partials/ that has no @extends and is
 // only ever a fragment, which still belongs in partials/.
@@ -1361,7 +1365,8 @@ func entityRulesArePure(p *project) []Finding {
 // Limit. Local to the call: only a literal name is read.
 //
 // Correction: move the fragment to resources/views/partials/, include it from
-// the page with @include, and answer pages with ctx.View.
+// the page with @include, and answer a page with ctx.View, or with
+// ctx.ViewStatus when it carries a status other than 200.
 func fragmentsArePartials(p *project) []Finding {
 	var out []Finding
 	for _, f := range p.files {
@@ -1382,7 +1387,8 @@ func fragmentsArePartials(p *project) []Finding {
 				Message: "ctx.Fragment answers " + strconv.Quote(view) + ", which is not in resources/views/partials",
 				Why: "a fragment is a piece a page includes, so page and fragment render one template; a view outside " +
 					"partials/ answered as a fragment is a whole page swapped into an element, or a status chosen by hand. " +
-					"Move it to resources/views/partials/ and @include it, and answer pages with ctx.View.",
+					"Move it to resources/views/partials/ and @include it, and answer a page with ctx.View, or with " +
+					"ctx.ViewStatus when it carries a status other than 200.",
 			})
 		})
 	}

@@ -198,6 +198,10 @@ func (c *C) Store(ctx *hhttp.Context) error {
 }`), 1},
 		{"the literal is the same status", "invalid-form-answered-by-hand", controller(`
 func (c *C) Store(ctx *hhttp.Context) error { return ctx.Status(422) }`), 1},
+		{"a whole page with the status is still answered by hand", "invalid-form-answered-by-hand", controller(`
+func (c *C) Store(ctx *hhttp.Context) error {
+	return ctx.ViewStatus(http.StatusUnprocessableEntity, "invoices.create", struct{}{})
+}`), 1},
 		{"a comparison and a case answer nothing", "invalid-form-answered-by-hand", controller(`
 func (c *C) Store(ctx *hhttp.Context, status int) error {
 	if status == http.StatusUnprocessableEntity {
@@ -432,6 +436,11 @@ func (c *C) Row(ctx *hhttp.Context) error {
 		return ctx.Fragment(200, name, struct{}{})
 	}
 	return ctx.Fragment(200, "partials.note-row", struct{}{})
+}`), 0},
+		{"a page with a status other than 200 is a page", "fragment-without-partial", controller(`
+func (c *C) Missing(ctx *hhttp.Context) error {
+	data := struct{}{}
+	return ctx.ViewStatus(http.StatusNotFound, "invoices.missing", data)
 }`), 0},
 
 		// helper-reimplemented

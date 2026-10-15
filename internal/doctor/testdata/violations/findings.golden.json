@@ -69,7 +69,7 @@
     "file": "app/Http/Controllers/Auth/LoginController.go",
     "line": 20,
     "message": "LoginController.Login reads the request by hand: ctx.Input (x2)",
-    "why": "a field read here is a second request type that the service, a job and a command cannot share, and a field that is missing arrives as an empty string instead of a message. Declare the fields on the struct in app/Http/Requests with form tags and call ctx.Bind(\u0026in)."
+    "why": "a field read here is a second request type that the service, a job and a command cannot share, and a field that is missing arrives as an empty string instead of a message. Declare the fields on the struct in app/Http/Requests with form tags and call ctx.Bind(\u0026in); a field stored as typed (a message, a Markdown body) is tagged `form:\"name,raw\"`."
   },
   {
     "rule": "redirect-to-literal-path",
@@ -253,7 +253,7 @@
     "file": "app/Http/Controllers/ChargeController.go",
     "line": 35,
     "message": "ChargeController.Store reads the request by hand: ctx.Input, ctx.Request.FormValue",
-    "why": "a field read here is a second request type that the service, a job and a command cannot share, and a field that is missing arrives as an empty string instead of a message. Declare the fields on the struct in app/Http/Requests with form tags and call ctx.Bind(\u0026in)."
+    "why": "a field read here is a second request type that the service, a job and a command cannot share, and a field that is missing arrives as an empty string instead of a message. Declare the fields on the struct in app/Http/Requests with form tags and call ctx.Bind(\u0026in); a field stored as typed (a message, a Markdown body) is tagged `form:\"name,raw\"`."
   },
   {
     "rule": "validate-called-by-controller",
@@ -293,7 +293,7 @@
     "file": "app/Http/Controllers/ChargeController.go",
     "line": 63,
     "message": "ctx.Fragment answers \"billing.index\", which is not in resources/views/partials",
-    "why": "a fragment is a piece a page includes, so page and fragment render one template; a view outside partials/ answered as a fragment is a whole page swapped into an element, or a status chosen by hand. Move it to resources/views/partials/ and @include it, and answer pages with ctx.View."
+    "why": "a fragment is a piece a page includes, so page and fragment render one template; a view outside partials/ answered as a fragment is a whole page swapped into an element, or a status chosen by hand. Move it to resources/views/partials/ and @include it, and answer a page with ctx.View, or with ctx.ViewStatus when it carries a status other than 200."
   },
   {
     "rule": "redirect-to-literal-path",
@@ -309,7 +309,7 @@
     "file": "app/Http/Controllers/ChargeController.go",
     "line": 73,
     "message": "ChargeController.Act reads the request by hand: ctx.Input",
-    "why": "a field read here is a second request type that the service, a job and a command cannot share, and a field that is missing arrives as an empty string instead of a message. Declare the fields on the struct in app/Http/Requests with form tags and call ctx.Bind(\u0026in)."
+    "why": "a field read here is a second request type that the service, a job and a command cannot share, and a field that is missing arrives as an empty string instead of a message. Declare the fields on the struct in app/Http/Requests with form tags and call ctx.Bind(\u0026in); a field stored as typed (a message, a Markdown body) is tagged `form:\"name,raw\"`."
   },
   {
     "rule": "operation-chosen-by-form-field",

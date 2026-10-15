@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/arandu-io/aru/internal/buildcache"
+	"github.com/arandu-io/aru/internal/gomod"
 	"github.com/arandu-io/aru/internal/kyse"
 	"github.com/arandu-io/aru/internal/toolchain"
 )
@@ -234,10 +235,13 @@ func stylesheetInput(root string) (string, error) {
 // component class in it and exited 0 -- the original bug, through a new door.
 //
 // What tells the cases apart is the version, not the directory and not whether
-// the command failed. A module the project requires has one, from go.mod or from
-// vendor/modules.txt, and neither needs the network; a module it does not
-// require has none. The directory is checked first because a go.work `use`
-// resolves to a directory with no version at all.
+// the command failed, and then the project's own go.mod. A module the project
+// requires has a version, from go.mod or from vendor/modules.txt, and neither
+// needs the network; a module that is not in the module graph has none. A module
+// that is in the graph only because a dependency's go.mod names it has a version
+// too, and no require line in the project's go.mod, so it counts as not required
+// -- downloading it would write go.sum lines `go mod tidy` removes. A go.work
+// `use` resolves to a directory with no version at all, and is taken as it is.
 func componentLibraryDir(root string) (string, error) {
 	if _, err := exec.LookPath("go"); err != nil {
 		return "", errors.New("the go toolchain was not found in PATH, and aru needs it to find the component library the stylesheet is compiled against")
@@ -246,6 +250,21 @@ func componentLibraryDir(root string) (string, error) {
 	dir, version, err := listComponentLibrary(root)
 	if err != nil {
 		return "", err
+	}
+
+	// A version says the library is in the module graph, which is not the same
+	// as the project needing it: a dependency's go.mod can name it without any
+	// package of the project importing it. Only the project's own go.mod says
+	// which, and a library it does not require is one it renders no class of --
+	// so it is neither downloaded nor handed to Tailwind.
+	if version != "" {
+		required, err := requiresComponentLibrary(root)
+		if err != nil {
+			return "", err
+		}
+		if !required {
+			return "", nil
+		}
 	}
 
 	if dir == "" {
@@ -308,6 +327,33 @@ func listComponentLibrary(root string) (dir, version string, err error) {
 	// version into the path.
 	dir, version, _ = strings.Cut(out, "\n")
 	return strings.TrimSpace(dir), strings.TrimSpace(version), nil
+}
+
+// requiresComponentLibrary reports whether the project's go.mod has a require
+// line for the component library, direct or indirect.
+//
+// The require block is the answer because the go command keeps it so: with
+// module graph pruning, go.mod lists every module that provides a package the
+// project's packages or tests import, however indirectly, and `go mod tidy`
+// removes the rest. A module that is only in the graph because a dependency's
+// go.mod names it has a version in `go list -m` and no line here.
+//
+// Two other questions give the same answer at a higher price. `go mod why -m`
+// loads every package of the build, which needs the source of every module --
+// the network on a fresh clone, and seconds on every view:build. `go list -deps`
+// of the project's packages cannot see what the views import before the views
+// are compiled, and the first view:build is exactly that moment. Reading go.mod
+// needs neither the network nor the module cache, and it is the file
+// vendor/modules.txt is checked against, so a vendored project answers the same.
+// It is read with gomod.Parse, the parser the language server and the project
+// graph already use, so no two readers of the file disagree about a require.
+func requiresComponentLibrary(root string) (bool, error) {
+	body, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return false, fmt.Errorf("reading the requirements of the project's go.mod: %w", err)
+	}
+	_, required := gomod.Parse(string(body)).Versions[componentLibrary]
+	return required, nil
 }
 
 // goOutput runs the go command in dir and returns what it wrote on stdout,

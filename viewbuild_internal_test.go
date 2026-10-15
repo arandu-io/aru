@@ -156,3 +156,49 @@ func TestAComponentLibraryThatCannotBeFoundStopsTheBuild(t *testing.T) {
 		t.Errorf("the build stopped without naming the library it could not find, which is the one thing the person has to know to fix it: %v", err)
 	}
 }
+
+// TestAComponentLibraryOnlyADependencyNamesIsNotFetched keeps view:build from
+// writing a go.sum the project's own `go mod tidy` takes back.
+//
+// A dependency's go.mod can require the component library without any package
+// of the project importing one of its packages. The library is then in the
+// module graph, `go list -m` reports a version for it, and reading that version
+// as "this project requires it" downloaded the module and added its two go.sum
+// lines -- in a project whose `go mod why -m` says the main module does not need
+// it, so every view:build left a diff that `go mod tidy` removed again. The
+// project renders none of those classes either, so there is nothing for
+// Tailwind to read.
+//
+// The fixture has no network and an empty module cache: before the fix the
+// build stopped on the download it should never have attempted.
+func TestAComponentLibraryOnlyADependencyNamesIsNotFetched(t *testing.T) {
+	goTool(t)
+	outsideTheWorkspace(t)
+	t.Setenv("GOMODCACHE", t.TempDir())
+	t.Setenv("GOPROXY", "off")
+	t.Setenv("GOFLAGS", "")
+	t.Setenv("GOTOOLCHAIN", "local")
+
+	dependency := t.TempDir()
+	writeFile(t, filepath.Join(dependency, "go.mod"), "module example.test/docs\n\ngo 1.25.0\n\nrequire github.com/arandu-io/kyse v0.2.0\n")
+	writeFile(t, filepath.Join(dependency, "docs.go"), "package docs\n")
+
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "go.mod"), "module example.test/api\n\ngo 1.25.0\n\nrequire example.test/docs v0.0.0\n\nreplace example.test/docs => "+filepath.ToSlash(dependency)+"\n")
+	writeFile(t, filepath.Join(root, "main.go"), "package main\n\nimport _ \"example.test/docs\"\n\nfunc main() {}\n")
+
+	if _, version, err := listComponentLibrary(root); err != nil || version == "" {
+		t.Fatalf("the fixture does not put the library in the module graph, so it proves nothing: version %q, error %v", version, err)
+	}
+
+	input, err := stylesheetInput(root)
+	if err != nil {
+		t.Fatalf("a project that does not need the component library could not build its stylesheet: %v", err)
+	}
+	if strings.Contains(input, "@source") {
+		t.Errorf("a source was declared for a component library only a dependency names:\n%s", input)
+	}
+	if sum, err := os.ReadFile(filepath.Join(root, "go.sum")); err == nil && strings.Contains(string(sum), componentLibrary) {
+		t.Errorf("view:build wrote go.sum lines for a module the project does not need:\n%s", sum)
+	}
+}

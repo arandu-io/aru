@@ -60,3 +60,77 @@ func Allowed(g security.Grant) bool { return g != security.Grant{} }
 		t.Errorf("--apply alone was accepted: %d %s", code, stderr)
 	}
 }
+
+// TestFixReachesTestFilesAndNamesTheStringsItCannot: a _test.go file, inside
+// app/ or under tests/, is rewritten like the code beside it, and a string
+// that spells a moved name the old way -- the kind a test matching source by
+// text holds -- is named with its line, in the preview and after --apply, and
+// left as it was.
+func TestFixReachesTestFilesAndNamesTheStringsItCannot(t *testing.T) {
+	root := mcpProject(t)
+	inApp := filepath.Join(root, "app", "Services", "ledger_test.go")
+	writeFile(t, inApp, `package services_test
+
+import (
+	"testing"
+
+	"github.com/arandu-io/framework/security"
+)
+
+func TestZero(t *testing.T) {
+	if (security.Grant{}) != (security.Grant{}) {
+		t.Fatal("unequal")
+	}
+}
+`)
+	contract := filepath.Join(root, "tests", "Unit", "contract_test.go")
+	contractBody := `package unit
+
+import "testing"
+
+func TestTheServiceAuthorizes(t *testing.T) {
+	wants := []string{"security.Authorize", "auth.Authorize", "xsecurity.Authorize"}
+	_ = wants
+}
+`
+	writeFile(t, contract, contractBody)
+	service := filepath.Join(root, "app", "Services", "Ledger.go")
+	writeFile(t, service, `package services
+
+import (
+	"context"
+
+	"github.com/arandu-io/framework/security"
+)
+
+func Settle(ctx context.Context, p security.Policy[int], s security.Subject) error {
+	_, err := security.Authorize(ctx, p, s, "ledger.settle", 1)
+	return err
+}
+`)
+	t.Chdir(root)
+
+	notice := "tests/Unit/contract_test.go:6: \"security.Authorize\" is auth.Authorize now"
+	code, stdout, stderr := exercise(t, "imports:catalog", "--fix")
+	if code != 0 {
+		t.Fatalf("--fix exited %d: %s", code, stderr)
+	}
+	for _, want := range []string{"+++ b/app/Services/ledger_test.go", "1 string(s) spell a moved name the old way", notice} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("the preview does not carry %q:\n%s", want, stdout)
+		}
+	}
+
+	if code, stdout, stderr = exercise(t, "imports:catalog", "--fix", "--apply"); code != 0 {
+		t.Fatalf("--fix --apply exited %d: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, notice) {
+		t.Errorf("--apply does not name the string it left:\n%s", stdout)
+	}
+	if body, _ := os.ReadFile(inApp); !strings.Contains(string(body), "(auth.Grant{}) != (auth.Grant{})") {
+		t.Errorf("the test file beside the code was not rewritten:\n%s", body)
+	}
+	if body, _ := os.ReadFile(contract); string(body) != contractBody {
+		t.Errorf("a string was rewritten:\n%s", body)
+	}
+}

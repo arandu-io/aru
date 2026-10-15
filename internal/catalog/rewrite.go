@@ -27,11 +27,17 @@ import (
 // catalog does not know is treated as one that stays. The output is printed by
 // go/format, so it is gofmt-clean, and a second run over it changes nothing:
 // what is left on a bridge is what the framework declares.
-func (c *Catalog) Rewrite(filename string, src []byte) ([]byte, bool, error) {
+//
+// The renames are every qualified name the rewrite moved, as the file spelled
+// it before and after, sorted, each once; none means the file is returned as
+// it was. The two spellings are the same when only the import line changed.
+// They are what a caller needs to find the old spelling where the rewrite
+// cannot reach it -- in a string a test matches source text against.
+func (c *Catalog) Rewrite(filename string, src []byte) ([]byte, []Rename, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, filename, src, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, err
 	}
 
 	type use struct {
@@ -58,7 +64,7 @@ func (c *Catalog) Rewrite(filename string, src []byte) ([]byte, bool, error) {
 		bridges = append(bridges, &bridge{spec: spec, path: p, local: local})
 	}
 	if len(bridges) == 0 {
-		return src, false, nil
+		return src, nil, nil
 	}
 
 	byLocal := map[string]*bridge{}
@@ -97,7 +103,7 @@ func (c *Catalog) Rewrite(filename string, src []byte) ([]byte, bool, error) {
 		}
 	}
 	if !changed {
-		return src, false, nil
+		return src, nil, nil
 	}
 
 	// The names a new import may not take: every identifier of the file other
@@ -146,6 +152,7 @@ func (c *Catalog) Rewrite(filename string, src []byte) ([]byte, bool, error) {
 		}
 	}
 
+	renamed := map[Rename]bool{}
 	for _, b := range bridges {
 		for _, u := range b.moved {
 			target := u.symbol.Canonical
@@ -160,6 +167,7 @@ func (c *Catalog) Rewrite(filename string, src []byte) ([]byte, bool, error) {
 					astutil.AddNamedImport(fset, file, local, target)
 				}
 			}
+			renamed[Rename{From: b.local + "." + u.sel.Sel.Name, To: local + "." + u.symbol.CanonicalName}] = true
 			u.sel.X.(*ast.Ident).Name = local
 			u.sel.Sel.Name = u.symbol.CanonicalName
 		}
@@ -174,9 +182,29 @@ func (c *Catalog) Rewrite(filename string, src []byte) ([]byte, bool, error) {
 
 	var out bytes.Buffer
 	if err := format.Node(&out, fset, file); err != nil {
-		return nil, false, err
+		return nil, nil, err
 	}
-	return out.Bytes(), !bytes.Equal(out.Bytes(), src), nil
+	if bytes.Equal(out.Bytes(), src) {
+		return src, nil, nil
+	}
+	renames := make([]Rename, 0, len(renamed))
+	for r := range renamed {
+		renames = append(renames, r)
+	}
+	sort.Slice(renames, func(i, j int) bool {
+		if renames[i].From != renames[j].From {
+			return renames[i].From < renames[j].From
+		}
+		return renames[i].To < renames[j].To
+	})
+	return out.Bytes(), renames, nil
+}
+
+// Rename is one qualified name a rewrite moved: From as the file spelled it,
+// through the bridge's local name, and To as it spells it now.
+type Rename struct {
+	From string
+	To   string
 }
 
 // importLocal is the name an import is referred to by in its file.

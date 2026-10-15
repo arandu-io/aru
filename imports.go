@@ -4,10 +4,16 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -110,45 +116,45 @@ func printCatalog(w io.Writer, c *catalog.Catalog) error {
 // The Go view:build writes under storage/framework/views is left alone: the
 // next build writes it again from the .kyse.go, which is rewritten instead.
 // vendor, testdata, bin and node_modules are not the project's sources.
+//
+// What the rewrite cannot reach is printed after it: a string literal that
+// spells a moved name the old way. The project compiles either way, and a test
+// that reads the source and matches a call by that string stops matching, so
+// each one is named with its line rather than rewritten -- the same words in
+// a message or a document are the author's to change.
 func fixImports(root string, c *catalog.Catalog, apply bool, stdout io.Writer) error {
 	var changed []string
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(root, path)
-		rel = filepath.ToSlash(rel)
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "vendor", "node_modules", "testdata", "bin":
-				return filepath.SkipDir
-			}
-			if rel == "storage/framework/views" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") {
-			return nil
-		}
+	moved := map[string]map[string]bool{} // old spelling: the spellings it became
+	err := walkSources(root, func(path, rel string, d fs.DirEntry) error {
 		before, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
 		var after []byte
-		var moved bool
+		var touched bool
 		if strings.HasSuffix(path, ".kyse.go") {
 			text, ok := c.RewriteView(string(before))
-			after, moved = []byte(text), ok
+			after, touched = []byte(text), ok
 		} else {
-			after, moved, err = c.Rewrite(path, before)
+			var renames []catalog.Rename
+			after, renames, err = c.Rewrite(path, before)
 			if err != nil {
 				// A file that does not parse is the compiler's report, and
 				// rewriting around it would hide which file it is.
 				return fmt.Errorf("imports:catalog: %s: %w", rel, err)
 			}
+			touched = len(renames) > 0
+			for _, r := range renames {
+				if r.From == r.To {
+					continue
+				}
+				if moved[r.From] == nil {
+					moved[r.From] = map[string]bool{}
+				}
+				moved[r.From][r.To] = true
+			}
 		}
-		if !moved {
+		if !touched {
 			return nil
 		}
 		changed = append(changed, rel)
@@ -172,10 +178,104 @@ func fixImports(root string, c *catalog.Catalog, apply bool, stdout io.Writer) e
 	switch {
 	case len(changed) == 0:
 		fmt.Fprintln(stdout, "every import already names its symbols by their canonical path")
+		return nil
 	case apply:
 		fmt.Fprintf(stdout, "%d file(s) rewritten\n", len(changed))
 	default:
 		fmt.Fprintf(stdout, "%d file(s) would change. Run with --fix --apply to write them.\n", len(changed))
+	}
+	return reportSpellings(root, moved, stdout)
+}
+
+// walkSources calls visit for every Go source and view of the module at root,
+// in lexical order, with its path relative to root in slash form. It skips
+// what is not the project's own source: .git, vendor, node_modules, testdata,
+// bin, and the Go view:build writes under storage/framework/views.
+func walkSources(root string, visit func(path, rel string, d fs.DirEntry) error) error {
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, path)
+		rel = filepath.ToSlash(rel)
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "vendor", "node_modules", "testdata", "bin":
+				return filepath.SkipDir
+			}
+			if rel == "storage/framework/views" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		return visit(path, rel, d)
+	})
+}
+
+// reportSpellings prints every string literal in the Go sources at root that
+// spells one of the old names in moved as a qualified name of its own -- not
+// the tail of a longer selector -- with the spelling it became.
+func reportSpellings(root string, moved map[string]map[string]bool, stdout io.Writer) error {
+	if len(moved) == 0 {
+		return nil
+	}
+	olds := make([]string, 0, len(moved))
+	for old := range moved {
+		olds = append(olds, old)
+	}
+	sort.Strings(olds)
+	patterns := make([]*regexp.Regexp, len(olds))
+	for i, old := range olds {
+		patterns[i] = regexp.MustCompile(`(^|[^\w.])` + regexp.QuoteMeta(old) + `\b`)
+	}
+
+	var lines []string
+	err := walkSources(root, func(path, rel string, _ fs.DirEntry) error {
+		if strings.HasSuffix(path, ".kyse.go") {
+			return nil
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, path, src, parser.SkipObjectResolution)
+		if err != nil {
+			return nil
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			lit, ok := n.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			text, err := strconv.Unquote(lit.Value)
+			if err != nil {
+				return true
+			}
+			for i, re := range patterns {
+				if !re.MatchString(text) {
+					continue
+				}
+				spelled := make([]string, 0, len(moved[olds[i]]))
+				for to := range moved[olds[i]] {
+					spelled = append(spelled, to)
+				}
+				sort.Strings(spelled)
+				lines = append(lines, fmt.Sprintf("  %s:%d: %q is %s now", rel, fset.Position(lit.Pos()).Line, olds[i], strings.Join(spelled, " or ")))
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil || len(lines) == 0 {
+		return err
+	}
+	fmt.Fprintf(stdout, "\n%d string(s) spell a moved name the old way. The project compiles either way; a test that matches source by one of them stops matching:\n", len(lines))
+	for _, line := range lines {
+		fmt.Fprintln(stdout, line)
 	}
 	return nil
 }

@@ -236,6 +236,17 @@ window.`,
 		run:   delegate("vendor:publish"),
 	},
 	{
+		// It forwards for the reason vendor:publish does: the documents come
+		// from the swagger modules the application registered, and only the
+		// application knows them. The binary answers openapi:export, and
+		// --check is what makes it compare instead of write.
+		name:  "openapi:check",
+		usage: "aru openapi:check [flags for openapi:export]",
+		desc:  "fail when a committed OpenAPI contract differs from the one the route table produces",
+		help:  openAPICheckHelp,
+		run:   delegate("openapi:export", "--check"),
+	},
+	{
 		// It runs here rather than forwarding, unlike vendor:publish beside it:
 		// where a skill comes from is the skeleton this binary pins and the
 		// modules go.mod requires, and both are read off the disk without
@@ -540,6 +551,16 @@ publishes over one, and even then the custom blocks are carried forward: what
     migration     a schema change the project applies and keeps
     translation   a catalogue of sentences
     asset         a file served as it is: an image, a font, a stylesheet`
+
+// openAPICheckHelp is the body `aru openapi:check --help` prints, under the
+// usage line.
+const openAPICheckHelp = `It runs the application's binary as openapi:export --check, which the
+arandu-swagger module adds: every registered swagger.Module's document is
+generated from the route table and compared with docs/contracts/<name>.openapi.json.
+Nothing is written, and a difference fails the command. aru openapi:export,
+which goes to the binary as it is, writes the files.
+
+Any other flag is handed to openapi:export as it is.`
 
 func lookup(name string) (command, bool) {
 	for _, c := range commands {

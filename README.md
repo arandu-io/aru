@@ -40,7 +40,7 @@ compiled against is still the one it is running.
 | queues | `queue:work` `queue:listen` `queue:restart` `queue:pause` `queue:resume` `queue:clear` `queue:monitor` `queue:failed` `queue:retry` `queue:forget` `queue:flush` `queue:prune-failed` `queue:retry-batch` `queue:prune-batches` |
 | fonts | `font:add` `font:search` `font:info` `font:list` `font:remove` |
 | native application | `native:run` `native:dev` `native:build` |
-| modules, editor, assistant and inspection | `vendor:publish` `skills:sync` `lsp` `mcp` `action:list` `imports:catalog` `about` |
+| modules, editor, assistant and inspection | `vendor:publish` `openapi:check` `skills:sync` `lsp` `mcp` `action:list` `imports:catalog` `about` |
 | everything else | `key:generate` `schedule:list` `schedule:run` `route:list` `db:seed` `model:build` `view:build` |
 
 plus `help` and `version`. The native and inspection commands, in the words of `aru help`:
@@ -51,6 +51,7 @@ plus `help` and `version`. The native and inspection commands, in the words of `
 | `native:dev` | rebuild the native application and reopen it on every change |
 | `native:build` | compile the native application for one platform |
 | `vendor:publish` | show what the registered modules would publish into the project, and write it |
+| `openapi:check` | fail when a committed OpenAPI contract differs from the one the route table produces |
 | `skills:sync` | show how the project's skills differ from the skeleton's and its modules', and bring them in step |
 | `lsp` | serve Kyse diagnostics and completion, the project map and its navigation to an editor |
 | `mcp` | serve the doctor, the project map, the implementation contract and the generators to an assistant over MCP |

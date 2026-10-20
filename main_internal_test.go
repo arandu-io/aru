@@ -457,6 +457,44 @@ func TestVendorPublishReachesTheProject(t *testing.T) {
 	}
 }
 
+// TestOpenAPICheckReachesTheProjectAsExportWithCheck proves the one command
+// whose forwarded words are more than the name.
+//
+// The binary answers openapi:export, and --check is what turns writing the
+// contracts into comparing them. A forward that dropped the flag would rewrite
+// the committed files in CI and pass, which is the opposite of the command's
+// name; one that dropped what the person typed would hide a flag they asked
+// for. Both are read from the argv the project binary received.
+func TestOpenAPICheckReachesTheProjectAsExportWithCheck(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go is not on PATH, so nothing could be delegated")
+	}
+	probeProject(t)
+
+	code, stdout, stderr := exercise(t, "openapi:check", "--api")
+	if code != 0 {
+		t.Fatalf("openapi:check exited %d inside a project: %s", code, stderr)
+	}
+	if got, want := stdout, "argv: openapi:export --check --api\n"; got != want {
+		t.Errorf("the project binary received %q, want %q", got, want)
+	}
+}
+
+// TestOpenAPICheckSaysWhatItRuns reads the command's description of itself:
+// the help is where a person learns that the check is the application's
+// openapi:export, and so that the swagger module has to be registered.
+func TestOpenAPICheckSaysWhatItRuns(t *testing.T) {
+	code, stdout, _ := exercise(t, "openapi:check", "--help")
+	if code != 0 {
+		t.Fatalf("openapi:check --help exited %d", code)
+	}
+	for _, want := range []string{"openapi:export --check", "arandu-swagger", "docs/contracts/"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("the help does not say %q:\n%s", want, stdout)
+		}
+	}
+}
+
 // TestVendorPublishPreviewsBeforeItWrites reads the command's own description
 // of itself.
 //

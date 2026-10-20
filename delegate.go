@@ -29,7 +29,11 @@ const appPackage = "."
 // it needs on top is the view layer compiled from source, and stopping the
 // application when the command stops -- neither of which any command here wants.
 // See serve.
-func delegate(subcommand string) func([]string, io.Writer, io.Writer) error {
+//
+// fixed are arguments the forwarded command always receives, ahead of the
+// ones typed: openapi:check is openapi:export with --check, so the word a
+// person types names what it does and the binary keeps one command.
+func delegate(subcommand string, fixed ...string) func([]string, io.Writer, io.Writer) error {
 	return func(args []string, stdout, stderr io.Writer) error {
 		root, err := projectRoot()
 		if err != nil {
@@ -58,7 +62,8 @@ func delegate(subcommand string) func([]string, io.Writer, io.Writer) error {
 			return err
 		}
 
-		cmd := buildcache.Application("run", append([]string{appPackage, subcommand}, args...)...)
+		forwarded := append(append([]string{appPackage, subcommand}, fixed...), args...)
+		cmd := buildcache.Application("run", forwarded...)
 		cmd.Dir = root
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr

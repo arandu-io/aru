@@ -890,7 +890,7 @@ var flagsWithoutAFlagSet = map[string]string{
 	"queue:monitor": "forwards", "queue:failed": "forwards", "queue:retry": "forwards",
 	"queue:forget": "forwards", "queue:flush": "forwards", "queue:prune-failed": "forwards",
 	"queue:retry-batch": "forwards", "queue:prune-batches": "forwards", "route:list": "forwards",
-	"db:seed": "forwards", "vendor:publish": "forwards",
+	"db:seed": "forwards", "vendor:publish": "forwards", "openapi:check": "forwards",
 }
 
 // TestEveryUsageLineNamesEveryFlag reads each command's flag set and requires

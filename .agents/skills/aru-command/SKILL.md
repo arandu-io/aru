@@ -11,7 +11,7 @@ command is in its entry: the name a person types, the usage line, the one-line
 description `aru help` prints, and the function that runs it.
 
 ```sh
-grep -c '^\t\tname:' commands.go        # 70
+grep -c '^\t\tname:' commands.go        # 72
 ```
 
 It is a slice and not a map on purpose. The order of `aru help` is part of the
@@ -39,7 +39,7 @@ registered?**
   of them.
 
 ```sh
-grep -c 'run:   delegate(' commands.go  # 23
+grep -c 'run:   delegate(' commands.go  # 24
 ```
 
 `serve` and `dev` are the exception, and they are one exception rather than two.
@@ -51,8 +51,10 @@ one set of pieces in `dev.go` for that reason. `serve` used to forward, and the
 three things it then did not do -- recompile an edited view, recompile an edited
 stylesheet, drop the generated Go of a deleted one -- were silent every time.
 
-Two of the twenty-three forward under a different word than the one typed:
-`queue:work` calls `work` and `route:list` calls `routes`. The name a person
+Three of the twenty-four forward under a different word than the one typed:
+`queue:work` calls `work`, `route:list` calls `routes`, and `openapi:check`
+calls `openapi:export --check` -- the one that also hands the binary an
+argument of its own, through the `fixed` arguments of `delegate`. The name a person
 types is the half that needs parity with what they already know; the string
 handed to the project binary is an internal protocol that promises nothing, so
 changing it would break every project generated before today for no gain.

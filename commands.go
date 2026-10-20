@@ -177,6 +177,13 @@ var commands = []command{
 		run:   delegate("queue:prune-batches"),
 	},
 	{
+		name:  "test",
+		usage: "aru test [--browser] [flags for go test]",
+		desc:  "run the project's tests with go test, or with --browser the ones in tests/Browser",
+		help:  testHelp,
+		run:   runTests,
+	},
+	{
 		name:  "build",
 		usage: "aru build [--docker] [--tag=<name:version>] [--version=v1.2.3] [--output=bin/app] [--skip-views]",
 		desc:  "compile one static binary, with its checksum, or a container image",
@@ -551,6 +558,17 @@ publishes over one, and even then the custom blocks are carried forward: what
     migration     a schema change the project applies and keeps
     translation   a catalogue of sentences
     asset         a file served as it is: an image, a font, a stylesheet`
+
+// testHelp is the body `aru test --help` prints, under the usage line.
+const testHelp = `Without --browser it runs go test ./... from the project root. The tests that
+drive a browser carry the build tag browser, so they are not part of it.
+
+With --browser it runs go test -tags browser ./tests/Browser/... and nothing
+else. A browser test is a Go test package in tests/Browser whose files open with
+//go:build browser; its screenshots go to tests/Browser/screenshots, which is
+not committed.
+
+Every other flag -- -run, -race, -v, -count -- is handed to go test as it is.`
 
 // openAPICheckHelp is the body `aru openapi:check --help` prints, under the
 // usage line.

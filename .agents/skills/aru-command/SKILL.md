@@ -11,7 +11,7 @@ command is in its entry: the name a person types, the usage line, the one-line
 description `aru help` prints, and the function that runs it.
 
 ```sh
-grep -c '^\t\tname:' commands.go        # 72
+grep -c '^\t\tname:' commands.go        # 73
 ```
 
 It is a slice and not a map on purpose. The order of `aru help` is part of the
@@ -50,6 +50,13 @@ first, and the application stopped when the command stops. They are written from
 one set of pieces in `dev.go` for that reason. `serve` used to forward, and the
 three things it then did not do -- recompile an edited view, recompile an edited
 stylesheet, drop the generated Go of a deleted one -- were silent every time.
+
+`test` starts the toolchain in the project too, and is not forwarded either: it
+runs `go test`, not the binary. Without `--browser` that is `go test ./...`;
+with it, `go test -tags browser ./tests/Browser/...` and nothing else, because
+the browser suite carries the build tag `browser` to stay out of the ordinary
+run. Every other argument goes to `go test` as typed, so it has no flag set of
+its own and is listed in `flagsWithoutAFlagSet`.
 
 Three of the twenty-four forward under a different word than the one typed:
 `queue:work` calls `work`, `route:list` calls `routes`, and `openapi:check`

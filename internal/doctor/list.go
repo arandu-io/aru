@@ -134,4 +134,8 @@ var catalogue = []RuleInfo{
 	{Name: "raw-sql-outside-repository", Severities: warningOnly},
 	{Name: "generated-not-wired", Severities: warningOnly},
 	{Name: "subject-built-by-hand", Severities: warningOnly},
+	{Name: "bootstrap-file-beside-app", Severities: warningOnly},
+	{Name: "program-under-cmd", Severities: warningOnly},
+	{Name: "command-outside-commands", Severities: warningOnly},
+	{Name: "program-under-scripts", Severities: warningOnly},
 }

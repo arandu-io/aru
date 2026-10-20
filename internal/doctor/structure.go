@@ -1811,3 +1811,539 @@ func subjectsComeFromStoredAccess(p *project) []Finding {
 	}
 	return out
 }
+
+// kernelFiles are the files of bootstrap/ that compose the built-in console
+// commands, which the framework's console kernel composes once a project
+// requires a framework that carries it.
+var kernelFiles = map[string]bool{
+	"console.go": true, "migrate.go": true, "queue.go": true, "publish.go": true, "background.go": true,
+}
+
+// commandWords are the words of a file name that say the file is a step run
+// once, or on demand, rather than wiring: catalog_upgrade.go, backfill.go.
+var commandWords = map[string]bool{"upgrade": true, "backfill": true, "oneoff": true, "import": true}
+
+// bootstrapDestination answers where the code of one file of bootstrap/
+// belongs, by its name, and the sentence that says how to move it.
+func bootstrapDestination(base string) (where, how string) {
+	if kernelFiles[base] {
+		return "the framework's console kernel",
+			"the framework's console kernel composes the built-in commands this file wires: once go.mod requires the " +
+				"framework release that carries it, delete the file and let main.go hand the command to the kernel"
+	}
+	for _, word := range camelWords(strings.NewReplacer("-", "_", ".", "_").Replace(strings.TrimSuffix(base, ".go"))) {
+		if commandWords[strings.ToLower(word)] {
+			return "app/Console/Commands",
+				"a step run once or on demand is a command: move it to app/Console/Commands and list it in routes/console.go"
+		}
+	}
+	return "app/Providers or config",
+		"wiring that grew is a provider in app/Providers, a foundation.Module listed in bootstrap/app.go; a value is " +
+			"configuration in config/; a driver factory is the framework's, chosen by configuration"
+}
+
+// 39. bootstrap/ holds app.go, and nothing else.
+//
+// Reason. bootstrap/app.go configures the application: its modules and
+// providers, routes, middleware, exceptions, commands and schedule. Every
+// other file beside it is a second place the application is assembled -- the
+// built-in commands copied from the skeleton, the clients built by hand, a
+// one-off upgrade -- and each application grows its own set of them.
+//
+// Scope. Every Go file under bootstrap/ other than bootstrap/app.go, tests
+// excluded, the ones the parser could not read included: where a file is is
+// read from its path.
+//
+// Severity. A warning: the code it reports compiles and runs.
+//
+// Positive: bootstrap/console.go, bootstrap/clients.go,
+// bootstrap/catalog_upgrade.go. One finding per file, at line 1, naming
+// where its code belongs.
+//
+// Negative: bootstrap/app.go; app/Providers/BillingProvider.go.
+//
+// Known false positive: none for the location. The destination is read from
+// the file name: console.go, migrate.go, queue.go, publish.go and background.go
+// go to the framework's console kernel, a name with upgrade, backfill, oneoff
+// or import in it to app/Console/Commands, and everything else to app/Providers
+// or config/. A file named for one thing that does another is sent to the
+// wrong one of the three.
+//
+// Limit. Local to the file tree; the contents are not read.
+//
+// Correction: delete the built-in command files once the framework's console
+// kernel is in go.mod; move a one-off step to app/Console/Commands; move
+// wiring that grew to a provider in app/Providers listed in bootstrap/app.go,
+// and a value to config/.
+func bootstrapIsOnlyApp(p *project) []Finding {
+	var rels []string
+	for _, f := range p.files {
+		if !f.isTest {
+			rels = append(rels, f.rel)
+		}
+	}
+	for _, u := range p.unreadable {
+		if !strings.HasSuffix(u.rel, "_test.go") {
+			rels = append(rels, u.rel)
+		}
+	}
+	sort.Strings(rels)
+	var out []Finding
+	for _, rel := range rels {
+		if !strings.HasPrefix(rel, "bootstrap/") || rel == "bootstrap/app.go" {
+			continue
+		}
+		where, how := bootstrapDestination(path.Base(rel))
+		out = append(out, Finding{
+			Rule: "bootstrap-file-beside-app", Severity: Warning,
+			File: rel, Line: 1,
+			Message: rel + " is a second file in bootstrap/, whose code belongs in " + where,
+			Why: "bootstrap/app.go alone configures the application; every file beside it is a second place it is " +
+				"assembled, which each application grows differently. " + strings.ToUpper(how[:1]) + how[1:] + ".",
+		})
+	}
+	return out
+}
+
+// openAPIProgram reports whether a program's directory name or its imports say
+// it writes OpenAPI documents.
+func openAPIProgram(dir string, files []*file) bool {
+	lower := strings.ToLower(path.Base(dir))
+	if strings.Contains(lower, "openapi") || strings.Contains(lower, "swagger") {
+		return true
+	}
+	for _, f := range files {
+		for imported := range f.imports {
+			if strings.Contains(imported, "arandu-swagger") || strings.Contains(strings.ToLower(imported), "openapi") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// programs groups the non-test files under one directory of the project
+// into the programs they form. key answers the program a file belongs to:
+// cmd/openapi/main.go and cmd/openapi/spec/spec.go are both cmd/openapi.
+func programs(p *project, root string, key func(f *file) string) map[string][]*file {
+	out := map[string][]*file{}
+	for _, f := range p.files {
+		if f.isTest || !strings.HasPrefix(f.rel, root+"/") {
+			continue
+		}
+		if k := key(f); k != "" {
+			out[k] = append(out[k], f)
+		}
+	}
+	for _, files := range out {
+		sort.Slice(files, func(i, j int) bool { return files[i].rel < files[j].rel })
+	}
+	return out
+}
+
+// entryFile answers the file of a program that declares main, or its first
+// file when none does.
+func entryFile(files []*file) *file {
+	for _, f := range files {
+		if f.pkg == "main" && declaresMain(f) {
+			return f
+		}
+	}
+	return files[0]
+}
+
+// sortedKeys answers the keys of a program map in order.
+func sortedKeys(m map[string][]*file) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// 40. The application is one binary: there is no cmd/.
+//
+// Reason. main.go is the application's only entry point, and the console
+// kernel answers every command it has. A program under cmd/ is a second
+// binary, with its own wiring of the configuration and the services, that
+// drifts from the one the server runs; a generator of OpenAPI documents is
+// the commonest, and the route table already produces them.
+//
+// Scope. Every Go file under cmd/, tests excluded, except cmd/native: the
+// native target a module publishes there is a program of its own by design.
+//
+// Severity. A warning.
+//
+// Positive: cmd/openapi/main.go, cmd/worker/main.go. One finding per
+// directory directly under cmd/, at the file declaring main.
+//
+// Negative: cmd/native/main.go; app/Console/Commands/ExportContracts.go.
+//
+// Known false positive: none for the location. An OpenAPI generator is
+// recognised by a directory name with openapi or swagger in it, or by an
+// import of arandu-swagger or of a path with openapi in it; one that is
+// neither is sent to app/Console/Commands, which is still right.
+//
+// Limit. Local to the file tree and the imports.
+//
+// Correction: an OpenAPI generator is replaced by `aru openapi:check`, which
+// runs the binary's openapi:export --check from arandu-swagger; a contract no
+// swagger.Module produces, and any other program, becomes a command in
+// app/Console/Commands listed in routes/console.go.
+func programsAreNotUnderCmd(p *project) []Finding {
+	found := programs(p, "cmd", func(f *file) string {
+		if isNativeTarget(f.rel) {
+			return ""
+		}
+		segments := strings.SplitN(f.dir, "/", 3)
+		return strings.Join(segments[:min(len(segments), 2)], "/")
+	})
+	var out []Finding
+	for _, dir := range sortedKeys(found) {
+		files := found[dir]
+		entry := entryFile(files)
+		finding := Finding{
+			Rule: "program-under-cmd", Severity: Warning,
+			File: entry.rel, Line: entry.line(entry.ast.Name),
+			Message: dir + " is a program beside the application's binary, whose code belongs in app/Console/Commands",
+			Why: "the application is one binary, and a second main wires the configuration and the services again, " +
+				"apart from the server's. Move it to app/Console/Commands and list it in routes/console.go, where the " +
+				"binary runs it with the server's wiring.",
+		}
+		if openAPIProgram(dir, files) {
+			finding.Message = dir + " is a program that writes OpenAPI documents beside the application's binary"
+			finding.Why = "the contracts come from the route table: `aru openapi:check` runs the binary's openapi:export " +
+				"--check from arandu-swagger, which writes and checks every swagger.Module's document. A contract no " +
+				"swagger.Module produces is a command in app/Console/Commands, listed in routes/console.go."
+		}
+		out = append(out, finding)
+	}
+	return out
+}
+
+// hesapeConsole is the import path of the console component, whose Command a
+// module or the application declares a command with.
+const hesapeConsole = "github.com/arandu-io/hesape/console"
+
+// commandsDir is where the code of the application's own commands lives.
+const commandsDir = "app/Console/Commands"
+
+// importNamed answers the path a file imports under a local name. The doctor
+// records an import without an alias under the last element of its path, and
+// the package name the code uses is usually that element in lower case --
+// app/Console/Commands is used as commands -- so the second lookup ignores
+// case.
+func (f *file) importNamed(local string) (string, bool) {
+	if p, ok := f.importPath(local); ok {
+		return p, true
+	}
+	for p, name := range f.imports {
+		if strings.EqualFold(name, local) {
+			return p, true
+		}
+	}
+	return "", false
+}
+
+// isCommandType reports whether a type expression names a console command:
+// the Command routes/console.go declares, spelled bare inside the routes
+// package or qualified from outside it, or the console component's Command.
+func (f *file) isCommandType(e ast.Expr, modulePath string) bool {
+	if star, ok := e.(*ast.StarExpr); ok {
+		e = star.X
+	}
+	switch t := e.(type) {
+	case *ast.Ident:
+		return t.Name == "Command" && f.pkg == "routes" && strings.HasPrefix(f.rel, "routes/")
+	case *ast.SelectorExpr:
+		x, ok := t.X.(*ast.Ident)
+		if !ok || t.Sel.Name != "Command" {
+			return false
+		}
+		imported, ok := f.importNamed(x.Name)
+		return ok && (imported == hesapeConsole || (modulePath != "" && imported == modulePath+"/routes"))
+	}
+	return false
+}
+
+// commandLiterals visits every composite literal of a file that declares a
+// command, including the elements of a []Command whose type is elided.
+func (f *file) commandLiterals(modulePath string, visit func(lit *ast.CompositeLit)) {
+	ast.Inspect(f.ast, func(n ast.Node) bool {
+		lit, ok := n.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		if lit.Type != nil && f.isCommandType(lit.Type, modulePath) {
+			visit(lit)
+			return true
+		}
+		var elt ast.Expr
+		switch t := lit.Type.(type) {
+		case *ast.ArrayType:
+			elt = t.Elt
+		case *ast.MapType:
+			elt = t.Value
+		}
+		if elt == nil || !f.isCommandType(elt, modulePath) {
+			return true
+		}
+		for _, e := range lit.Elts {
+			if kv, ok := e.(*ast.KeyValueExpr); ok {
+				e = kv.Value
+			}
+			if u, ok := e.(*ast.UnaryExpr); ok && u.Op == token.AND {
+				e = u.X
+			}
+			if inner, ok := e.(*ast.CompositeLit); ok && inner.Type == nil {
+				visit(inner)
+			}
+		}
+		return true
+	})
+}
+
+// field answers the value a keyed composite literal gives one field.
+func field(lit *ast.CompositeLit, name string) ast.Expr {
+	for _, e := range lit.Elts {
+		kv, ok := e.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		if key, ok := kv.Key.(*ast.Ident); ok && key.Name == name {
+			return kv.Value
+		}
+	}
+	return nil
+}
+
+// 41. A command's code lives in app/Console/Commands.
+//
+// Reason. routes/console.go is the list of what the binary answers, and
+// app/Console/Commands is where each command's code is: one place to look for
+// what `aru billing:run` does. A command whose function sits in app/Console,
+// in a service or in bootstrap/ is a command nobody looking in
+// app/Console/Commands finds.
+//
+// Scope. Every Command literal -- the Command of routes/console.go, or the
+// console component's -- in app/, bootstrap/, routes/, config/, cmd/ and
+// main.go, tests excluded, including the elements of a []Command.
+//
+// Severity. A warning.
+//
+// Positive: `{Name: console.BillingRunName, Run: console.RunBillingRun}` with
+// console imported from app/Console; `Run: closeInvoices` with closeInvoices
+// declared in routes/. One finding per command, at its Run field.
+//
+// Negative: `Run: commands.CloseInvoices` imported from app/Console/Commands;
+// `Run: swagger.Export` from another module; `Run: func(...) error {...}`, a
+// closure written where the command is listed.
+//
+// Known false positive: none for a function the rule can name. The package
+// name is matched to the import without regard to case.
+//
+// Limit. Local to the literal. A Run that names a function is followed to the
+// package that declares it, by its import path or, for a bare name, by the
+// functions of the literal's own directory; a closure, a method value and a
+// function held in a variable are not followed and are not reported.
+//
+// Correction: move the function to app/Console/Commands and point Run at it
+// there; routes/console.go keeps the list.
+func commandsLiveInConsoleCommands(p *project) []Finding {
+	declaredIn := map[string]map[string]bool{}
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+		f.functions(func(fn *ast.FuncDecl) {
+			if fn.Recv != nil {
+				return
+			}
+			if declaredIn[f.dir] == nil {
+				declaredIn[f.dir] = map[string]bool{}
+			}
+			declaredIn[f.dir][fn.Name.Name] = true
+		})
+	}
+	inCommands := func(dir string) bool { return dir == commandsDir || strings.HasPrefix(dir, commandsDir+"/") }
+
+	var out []Finding
+	for _, f := range p.files {
+		if !applicationFile(f) {
+			continue
+		}
+		f.commandLiterals(p.modulePath, func(lit *ast.CompositeLit) {
+			run := field(lit, "Run")
+			if run == nil {
+				return
+			}
+			var dir, label string
+			switch r := run.(type) {
+			case *ast.Ident:
+				if !declaredIn[f.dir][r.Name] {
+					return
+				}
+				dir, label = f.dir, r.Name
+			case *ast.SelectorExpr:
+				x, ok := r.X.(*ast.Ident)
+				if !ok || p.modulePath == "" {
+					return
+				}
+				imported, ok := f.importNamed(x.Name)
+				if !ok {
+					return
+				}
+				rest, ok := strings.CutPrefix(imported, p.modulePath+"/")
+				if !ok {
+					return
+				}
+				dir, label = rest, exprName(r)
+			default:
+				return
+			}
+			if inCommands(dir) {
+				return
+			}
+			name := "a command"
+			if n := field(lit, "Name"); n != nil {
+				if s, ok := stringLiteral(n); ok {
+					name = "the command " + s
+				} else if e := exprName(n); e != "" {
+					name = "the command " + e
+				}
+			}
+			out = append(out, Finding{
+				Rule: "command-outside-commands", Severity: Warning,
+				File: f.rel, Line: f.line(run),
+				Message: name + " runs " + label + ", declared in " + dir + " and not in " + commandsDir,
+				Why: "routes/console.go is the list of what the binary answers and app/Console/Commands is where each " +
+					"command's code lives; a command whose function is elsewhere is one nobody looking there finds. " +
+					"Move the function to app/Console/Commands and point Run at it.",
+			})
+		})
+	}
+	return out
+}
+
+// browserDrivers are import path prefixes of the Go libraries that drive a
+// browser.
+var browserDrivers = []string{
+	"github.com/chromedp/", "github.com/go-rod/", "github.com/playwright-community/playwright-go",
+	"github.com/tebeka/selenium", "github.com/sclevine/agouti",
+}
+
+// drivesABrowser reports whether a program drives a browser: it imports a
+// driver, starts one with remote debugging or headless, or sends the DevTools
+// protocol's navigation and evaluation methods by hand.
+func drivesABrowser(files []*file) bool {
+	for _, f := range files {
+		for imported := range f.imports {
+			for _, driver := range browserDrivers {
+				if strings.HasPrefix(imported, driver) {
+					return true
+				}
+			}
+		}
+		found := false
+		ast.Inspect(f.ast, func(n ast.Node) bool {
+			lit, ok := n.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return !found
+			}
+			s, err := strconv.Unquote(lit.Value)
+			if err != nil {
+				return true
+			}
+			if strings.Contains(s, "--remote-debugging") || strings.HasPrefix(s, "--headless") ||
+				s == "Page.navigate" || s == "Runtime.evaluate" {
+				found = true
+			}
+			return !found
+		})
+		if found {
+			return true
+		}
+	}
+	return false
+}
+
+// reachesTheApplication reports whether a program imports a package of the
+// application's own module.
+func reachesTheApplication(files []*file, modulePath string) bool {
+	if modulePath == "" {
+		return false
+	}
+	for _, f := range files {
+		for imported := range f.imports {
+			if strings.HasPrefix(imported, modulePath+"/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// 42. A Go program under scripts/ is a command or a test.
+//
+// Reason. A program in scripts/ that reaches the application's packages is a
+// command run outside the binary, with wiring of its own; one that drives a
+// browser is a test whose result is whatever it prints. The first has an
+// owner in app/Console/Commands, the second in tests/Browser, where go test
+// runs it and answers PASS or FAIL.
+//
+// Scope. Every directory under scripts/ holding a non-test Go file of package
+// main that declares main.
+//
+// Severity. A warning.
+//
+// Positive: scripts/browser-check, which starts Chrome with
+// --remote-debugging-pipe and sends Page.navigate; scripts/sandbox-env, which
+// imports the application's bootstrap. One finding per directory, at the file
+// declaring main.
+//
+// Negative: scripts/release.sh, which is not Go; a program that imports
+// nothing of the application and drives no browser, which is a tool of the
+// repository rather than of the application.
+//
+// Known false positive: a program that only prints the browser flags or the
+// protocol method names it matches, without starting a browser.
+//
+// Limit. Local to the program's files: imports, and string literals for a
+// browser driven by hand.
+//
+// Correction: a browser program becomes a Go test package in tests/Browser
+// with the build tag browser, run by `aru test --browser`; any other becomes a
+// command in app/Console/Commands listed in routes/console.go.
+func scriptsAreNotPrograms(p *project) []Finding {
+	found := programs(p, "scripts", func(f *file) string { return f.dir })
+	var out []Finding
+	for _, dir := range sortedKeys(found) {
+		files := found[dir]
+		entry := entryFile(files)
+		if entry.pkg != "main" || !declaresMain(entry) {
+			continue
+		}
+		switch {
+		case drivesABrowser(files):
+			out = append(out, Finding{
+				Rule: "program-under-scripts", Severity: Warning,
+				File: entry.rel, Line: entry.line(entry.ast.Name),
+				Message: dir + " is a Go program that drives a browser, whose place is tests/Browser",
+				Why: "a program that drives the browser is a test whose result is whatever it prints. Make it a Go test " +
+					"package in tests/Browser with the build tag browser; `aru test --browser` runs it and go test " +
+					"answers PASS or FAIL.",
+			})
+		case reachesTheApplication(files, p.modulePath):
+			out = append(out, Finding{
+				Rule: "program-under-scripts", Severity: Warning,
+				File: entry.rel, Line: entry.line(entry.ast.Name),
+				Message: dir + " is a Go program that runs the application's code, whose place is app/Console/Commands",
+				Why: "a program that reaches the application's packages is one of its commands, run outside the binary " +
+					"with wiring of its own. Move it to app/Console/Commands and list it in routes/console.go, where the " +
+					"binary runs it with the server's wiring.",
+			})
+		}
+	}
+	return out
+}

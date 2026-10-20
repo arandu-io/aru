@@ -792,6 +792,22 @@
     "why": "the code owns tables, and an installer who did not expect that will not know to run aru migrate. Set migrations = true under [permissions], or remove the code that needs it."
   },
   {
+    "rule": "bootstrap-file-beside-app",
+    "severity": "warning",
+    "file": "bootstrap/http.go",
+    "line": 1,
+    "message": "bootstrap/http.go is a second file in bootstrap/, whose code belongs in app/Providers or config",
+    "why": "bootstrap/app.go alone configures the application; every file beside it is a second place it is assembled, which each application grows differently. Wiring that grew is a provider in app/Providers, a foundation.Module listed in bootstrap/app.go; a value is configuration in config/; a driver factory is the framework's, chosen by configuration."
+  },
+  {
+    "rule": "bootstrap-file-beside-app",
+    "severity": "warning",
+    "file": "bootstrap/queue.go",
+    "line": 1,
+    "message": "bootstrap/queue.go is a second file in bootstrap/, whose code belongs in the framework's console kernel",
+    "why": "bootstrap/app.go alone configures the application; every file beside it is a second place it is assembled, which each application grows differently. The framework's console kernel composes the built-in commands this file wires: once go.mod requires the framework release that carries it, delete the file and let main.go hand the command to the kernel."
+  },
+  {
     "rule": "retired-module",
     "severity": "warning",
     "file": "bootstrap/queue.go",
@@ -806,6 +822,14 @@
     "line": 8,
     "message": "this file imports github.com/arandu-io/queue/kv, and the repository behind it was deleted",
     "why": "what github.com/arandu-io/queue held now lives in github.com/arandu-io/hesape/queue, and the two are not kept in step. The proxy still serves the old module, so nothing breaks today -- which is why this is worth saying now: the project stays on a copy nobody maintains, and every fix and every new driver lands on the other one. Import github.com/arandu-io/hesape/queue instead."
+  },
+  {
+    "rule": "program-under-cmd",
+    "severity": "warning",
+    "file": "cmd/openapi/main.go",
+    "line": 3,
+    "message": "cmd/openapi is a program that writes OpenAPI documents beside the application's binary",
+    "why": "the contracts come from the route table: `aru openapi:check` runs the binary's openapi:export --check from arandu-swagger, which writes and checks every swagger.Module's document. A contract no swagger.Module produces is a command in app/Console/Commands, listed in routes/console.go."
   },
   {
     "rule": "migrations-not-linked",
@@ -870,5 +894,21 @@
     "line": 34,
     "message": "@click holds state in the browser",
     "why": "Nothing this project serves evaluates that attribute: the layout loads a behaviours file that dispatches on data- attributes and evaluates no expression, and the policy is script-src 'self' with no unsafe-eval, so a framework that compiles a directive out of a string cannot run beside it. Either the directive is inert and the screen silently does nothing, or the policy was relaxed to run a second client stack -- and then there are two state models, two loading states and two places to forget the CSRF token. Put the decision in a handler and swap the markup; what dies with the tab goes on a data- attribute, or in \u003cdetails\u003e and :focus-within."
+  },
+  {
+    "rule": "command-outside-commands",
+    "severity": "warning",
+    "file": "routes/console.go",
+    "line": 20,
+    "message": "the command console.BillingRunName runs console.RunBillingRun, declared in app/Console and not in app/Console/Commands",
+    "why": "routes/console.go is the list of what the binary answers and app/Console/Commands is where each command's code lives; a command whose function is elsewhere is one nobody looking there finds. Move the function to app/Console/Commands and point Run at it."
+  },
+  {
+    "rule": "program-under-scripts",
+    "severity": "warning",
+    "file": "scripts/browser-check/main.go",
+    "line": 3,
+    "message": "scripts/browser-check is a Go program that drives a browser, whose place is tests/Browser",
+    "why": "a program that drives the browser is a test whose result is whatever it prints. Make it a Go test package in tests/Browser with the build tag browser; `aru test --browser` runs it and go test answers PASS or FAIL."
   }
 ]

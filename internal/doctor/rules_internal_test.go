@@ -171,6 +171,10 @@ func emitsByRule() map[string][]string {
 		"sqlLivesInRepositories":             {"raw-sql-outside-repository"},
 		"constructorsAreWired":               {"generated-not-wired"},
 		"subjectsComeFromStoredAccess":       {"subject-built-by-hand"},
+		"bootstrapIsOnlyApp":                 {"bootstrap-file-beside-app"},
+		"programsAreNotUnderCmd":             {"program-under-cmd"},
+		"commandsLiveInConsoleCommands":      {"command-outside-commands"},
+		"scriptsAreNotPrograms":              {"program-under-scripts"},
 	}
 }
 

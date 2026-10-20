@@ -32,6 +32,10 @@ var structuralRules = []string{
 	"raw-sql-outside-repository",
 	"generated-not-wired",
 	"subject-built-by-hand",
+	"bootstrap-file-beside-app",
+	"program-under-cmd",
+	"command-outside-commands",
+	"program-under-scripts",
 }
 
 // structureProject writes a project with the files given, plus a go.mod and a
@@ -518,6 +522,107 @@ func (u User) Subject() security.Subject {
 func guest() security.Subject { return security.Subject{ID: "guest"} }
 `,
 			"database/seeders/Seeder.go": "package seeders\n\nimport \"github.com/arandu-io/framework/security\"\n\nvar seed = security.Subject{ID: \"seed\", Roles: []string{\"admin\"}}\n",
+		}, 0},
+
+		// bootstrap-file-beside-app
+		{"the kernel's files, a client factory, an upgrade and one that does not parse", "bootstrap-file-beside-app", map[string]string{
+			"bootstrap/app.go":             "package bootstrap\n",
+			"bootstrap/console.go":         "package bootstrap\n",
+			"bootstrap/clients.go":         "package bootstrap\n",
+			"bootstrap/catalog_upgrade.go": "package bootstrap\n",
+			"bootstrap/broken.go":          "package bootstrap\n\nfunc {\n",
+		}, 4},
+		{"app.go alone, a provider, and a test beside app.go", "bootstrap-file-beside-app", map[string]string{
+			"bootstrap/app.go":                  "package bootstrap\n",
+			"bootstrap/app_test.go":             "package bootstrap\n",
+			"app/Providers/BillingProvider.go":  "package providers\n",
+			"config/bootstrap/notbootstrap.go":  "package bootstrap\n",
+			"tests/Unit/bootstrap/bootstrap.go": "package bootstrap\n",
+		}, 0},
+
+		// program-under-cmd
+		{"an OpenAPI generator and a worker under cmd", "program-under-cmd", map[string]string{
+			"cmd/openapi/main.go":      "package main\n\nfunc main() {}\n",
+			"cmd/openapi/spec/spec.go": "package spec\n",
+			"cmd/worker/main.go":       "package main\n\nfunc main() {}\n",
+		}, 2},
+		{"the native target, and a test alone under cmd", "program-under-cmd", map[string]string{
+			"cmd/native/main.go":        "package main\n\nfunc main() {}\n",
+			"cmd/native/screens.go":     "package main\n",
+			"cmd/tool/tool_test.go":     "package main\n",
+			"app/Console/Commands/X.go": "package commands\n",
+		}, 0},
+
+		// command-outside-commands
+		{"commands whose functions are in app/Console, a service and the routes package", "command-outside-commands", map[string]string{
+			"routes/console.go": `package routes
+
+import (
+	"context"
+
+	console "example.test/shape/app/Console"
+	services "example.test/shape/app/Services"
+	hconsole "github.com/arandu-io/hesape/console"
+)
+
+type Command struct {
+	Name string
+	Run  func(ctx context.Context, args []string) error
+}
+
+func Console() []Command {
+	return []Command{
+		{Name: console.BillingRunName, Run: console.RunBillingRun},
+		{Name: "plans:install", Run: closeInvoices},
+	}
+}
+
+var nightly = hconsole.Command{Name: "nightly", Run: services.Nightly}
+
+func closeInvoices(ctx context.Context, args []string) error { return nil }
+`,
+			"app/Console/BillingRun.go": "package console\n\nconst BillingRunName = \"billing:run\"\n",
+		}, 3},
+		{"a command in app/Console/Commands, one from a module, and a closure", "command-outside-commands", map[string]string{
+			"routes/console.go": `package routes
+
+import (
+	"context"
+
+	"example.test/shape/app/Console/Commands"
+	swagger "github.com/hyz-is/arandu-swagger"
+)
+
+type Command struct {
+	Name string
+	Run  func(ctx context.Context, args []string) error
+}
+
+func Console() []*Command {
+	return []*Command{
+		{Name: "invoice:close", Run: commands.CloseInvoices},
+		{Name: "openapi:export", Run: swagger.Export},
+		{Name: "hello", Run: func(ctx context.Context, args []string) error { return nil }},
+	}
+}
+`,
+			"app/Console/Commands/CloseInvoices.go": "package commands\n\nimport \"context\"\n\nfunc CloseInvoices(ctx context.Context, args []string) error { return nil }\n",
+			"tests/Unit/console_test.go":            "package unit\n\ntype Command struct{ Run func() }\n\nvar _ = Command{Run: helper}\n\nfunc helper() {}\n",
+		}, 0},
+
+		// program-under-scripts
+		{"a browser driven by hand, one through a driver, and a program on the application", "program-under-scripts", map[string]string{
+			"scripts/browser-check/main.go": "package main\n\nimport \"os/exec\"\n\nfunc main() {\n\t_ = exec.Command(\"chrome\", \"--headless=new\", \"--remote-debugging-pipe\")\n}\n",
+			"scripts/browser-check/page.go": "package main\n\nconst navigate = \"Page.navigate\"\n",
+			"scripts/tour/main.go":          "package main\n\nimport _ \"github.com/chromedp/chromedp\"\n\nfunc main() {}\n",
+			"scripts/sandbox-env/main.go":   "package main\n\nimport _ \"example.test/shape/bootstrap\"\n\nfunc main() {}\n",
+		}, 3},
+		{"a tool of the repository, a library, a shell script, and a browser test", "program-under-scripts", map[string]string{
+			"scripts/gen-icons/main.go":        "package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\"icons\") }\n",
+			"scripts/shared/shared.go":         "package shared\n\nimport _ \"example.test/shape/bootstrap\"\n",
+			"scripts/release.sh":               "#!/bin/sh\necho --headless\n",
+			"tests/Browser/checkout_test.go":   "//go:build browser\n\npackage browser\n\nconst flag = \"--remote-debugging-pipe\"\n",
+			"scripts/sandbox-env/main_test.go": "package main\n\nimport _ \"example.test/shape/bootstrap\"\n\nfunc main() {}\n",
 		}, 0},
 	}
 }

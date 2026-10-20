@@ -11,11 +11,11 @@ AST and never runs the code, so it works on a project that does not compile —
 which is exactly when someone needs to be told what is wrong.
 
 ```sh
-awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 56  rule functions
+awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 60  rule functions
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/doctor/structure.go \
-	internal/testlayout/testlayout.go | sort -u | wc -l                   # 66  names a report can carry
+	internal/testlayout/testlayout.go | sort -u | wc -l                   # 70  names a report can carry
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/doctor/structure.go \
-	| sort -u | wc -l                                                     # 62  of them declared here
+	| sort -u | wc -l                                                     # 66  of them declared here
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/testlayout/testlayout.go \
 	| sort -u | wc -l                                                     # 4  forwarded, declared there
 ```
@@ -111,15 +111,15 @@ the CLI accepts the fixture as a project:
 ```sh
 cp -R internal/doctor/testdata/violations /tmp/viol && touch /tmp/viol/arandu.toml
 (cd /tmp/viol && /tmp/aru-src doctor > /tmp/viol.out 2>&1); echo $?   # 1
-tail -1 /tmp/viol.out                                                 # 39 error(s), 70 warning(s)
-grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 59
+tail -1 /tmp/viol.out                                                 # 39 error(s), 75 warning(s)
+grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 63
 ```
 
 `violations` carries a `vendor/` directory holding a slice of the framework:
 the bridge packages it imports, declared the way the framework declares them.
 `import-not-canonical` decides from the framework's own source, at the version
 go.mod requires, and a vendor directory is the one place that source can sit
-inside a fixture and survive the `cp -R` above. Sixteen of the seventy
+inside a fixture and survive the `cp -R` above. Sixteen of the seventy-five
 warnings are that rule. The other fixtures require a framework version no
 module cache here holds, so the rule is silent on them -- which is its declared
 limit, not an accident.
@@ -228,7 +228,7 @@ says so, and it is the only version policy this package has.
 
 ## Structural warnings
 
-Nineteen rules in `internal/doctor/structure.go` report where code lives, not
+Twenty-three rules in `internal/doctor/structure.go` report where code lives, not
 what it lets through: a second way to do something the application tree
 already has an owner for. They are all `Warning` and stay so until the
 applications' reports show a rule is never wrong; promotion to `Error` is a
@@ -263,6 +263,10 @@ and near misses in `gaps` and `clean`.
 | `raw-sql-outside-repository` | a body that runs a statement, outside `app/Repositories` and `database/` | body |
 | `generated-not-wired` | a `New*` in Controllers or Services that no other non-test file names; a test double (Fake, Stub, Mock, Spy or Dummy in the constructor, its result type or its file) that a `_test.go` file constructs is exempt | project, by name |
 | `subject-built-by-hand` | a `Subject` literal whose `Roles` or `Actions` the code chose, outside tests and `database/` | literal |
+| `bootstrap-file-beside-app` | a Go file under `bootstrap/` other than `app.go`, sent by its name to the framework's console kernel (`console`, `migrate`, `queue`, `publish`, `background`), to `app/Console/Commands` (upgrade, backfill, oneoff, import) or to `app/Providers` or `config/` | file tree |
+| `program-under-cmd` | a directory under `cmd/` holding Go, `cmd/native` excluded; an OpenAPI generator is pointed at `aru openapi:check` | file tree and imports |
+| `command-outside-commands` | a `Command` literal (the one `routes/console.go` declares, or `hesape/console`'s) whose `Run` names a function declared outside `app/Console/Commands`; a closure is not followed | literal |
+| `program-under-scripts` | a `package main` under `scripts/` that drives a browser (a driver import, `--remote-debugging`, `--headless`, `Page.navigate`) or imports the application's packages | the program's files |
 
 `aru doctor --list` prints them with the rest, and is what the skeleton's
 `arandu-doctor` skill is checked against.

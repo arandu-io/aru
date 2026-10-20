@@ -100,6 +100,10 @@ var rules = []func(*project) []Finding{
 	sqlLivesInRepositories,
 	constructorsAreWired,
 	subjectsComeFromStoredAccess,
+	bootstrapIsOnlyApp,
+	programsAreNotUnderCmd,
+	commandsLiveInConsoleCommands,
+	scriptsAreNotPrograms,
 }
 
 // 0. A file doctor could not read makes every other rule unreliable.

@@ -32,9 +32,10 @@ type SendInvoice struct {
 // is no shape of Job that skipped any of the three.
 //
 // The caller holds the queue: a listener, once the write that stored its event
-// has committed, or a task in a provider's Schedule(). A service the handler
-// calls never dispatches it -- this package imports app/Services as soon as a
-// handler takes a service, and a service importing it back is an import cycle.
+// has committed, or a task in Schedule in routes/console.go. A service the
+// handler calls never dispatches it -- this package imports app/Services as
+// soon as a handler takes a service, and a service importing it back is an
+// import cycle.
 // The write that leads to the job stores an event in the outbox, in its own
 // transaction, and the listener the relay hands it to dispatches this.
 func DispatchSendInvoice(ctx context.Context, q hqueue.Queue, g auth.Grant, in SendInvoice) error {
@@ -52,15 +53,15 @@ func DispatchSendInvoice(ctx context.Context, q hqueue.Queue, g auth.Grant, in S
 type SendInvoiceHandler struct {
 	// arandu:begin custom
 	// Anything else the handler keeps goes here. A service is a parameter of
-	// NewSendInvoiceHandler instead, so registerHandlers is where it comes from.
+	// NewSendInvoiceHandler instead, so RegisterJobs is where it comes from.
 	// arandu:end custom
 }
 
 // NewSendInvoiceHandler wires the handler with the services it calls.
 //
-// registerHandlers, in bootstrap/background.go, calls it with the services the
-// App it receives already holds -- the ones bootstrap.Build made at boot, the
-// same a request reaches -- and the handler never builds one of its own. A
+// RegisterJobs, in app/Providers/AppServiceProvider.go, calls it with the
+// services the provider already holds -- the ones it built at boot, the same
+// a request reaches -- and the handler never builds one of its own. A
 // service the job needs later is one more parameter here and one more field
 // above: regenerate with --services, or add both by hand.
 func NewSendInvoiceHandler() *SendInvoiceHandler {

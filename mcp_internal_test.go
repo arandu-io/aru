@@ -171,7 +171,7 @@ func TestGenerateWritesOnlyWhenAskedAndOnlyGenerators(t *testing.T) {
 	if _, err := os.Stat(job); err != nil {
 		t.Fatalf("apply=true did not write the job: %v", err)
 	}
-	if !strings.Contains(answers["1"].Result.Content[0].Text, "registerHandlers") {
+	if !strings.Contains(answers["1"].Result.Content[0].Text, "RegisterJobs") {
 		t.Errorf("the wiring the generator printed was not handed back: %s", answers["1"].Result.Content[0].Text)
 	}
 }

@@ -94,34 +94,32 @@ func makeJob(args []string, stdout, stderr io.Writer) error {
 // wiringJob is what to do with the handler that was just written: register it
 // where the built services are, and say how it receives them.
 //
-// The handler takes its services through its constructor, and registerHandlers
-// in bootstrap/background.go is where they are: it receives the App that
-// bootstrap.Build returned, holding every service built at boot. A handler that
-// built its own would be a second application, subtly different from the one a
-// request reaches.
+// The handler takes its services through its constructor, and the provider's
+// RegisterJobs is where they are: bootstrap/app.go hands it to WithJobs, and
+// the provider holds every service it built at boot. A handler that built its
+// own would be a second application, subtly different from the one a request
+// reaches.
 func wiringJob(s gen.JobSpec) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, `
 The handler is written, the registration is not.
 
-  bootstrap/background.go -- in registerHandlers, inside the custom block
+  app/Providers/AppServiceProvider.go -- in RegisterJobs, the function
+  bootstrap/app.go hands to WithJobs
 
       w.Handle(appjobs.%s, %s)
 
-  and the import, aliased because background.go already imports the queue's own
-  jobs package under that name
+  and the import, aliased because jobs is also the queue's own package name
 
       appjobs %q
 `, s.Const(), s.Constructor(), s.ModulePath+"/app/Jobs")
 
 	if deps := s.Deps(); len(deps) > 0 {
 		fmt.Fprintf(&b, `
-The handler takes its services as the parameters of
-New%s, and registerHandlers passes them from app: the App
-bootstrap.Build returns, holding the services it built at boot. App carries
-each one as a field -- in bootstrap/app.go, add the ones it does not carry
-yet, and fill them where Build returns App from the variables it built them
-in:
+The handler takes its services as the parameters of New%s,
+and RegisterJobs passes them from the provider, which holds the services it
+built at boot. The provider carries each one as a field -- add the ones it does
+not carry yet, and fill them where NewAppServiceProvider builds them:
 
 `, s.Handler())
 		for _, d := range deps {
@@ -129,15 +127,15 @@ in:
 		}
 		b.WriteString("\n")
 		for _, d := range deps {
-			fmt.Fprintf(&b, "      %s: %s,\n", d.AppField, d.Field)
+			fmt.Fprintf(&b, "      p.%s = %s\n", d.AppField, serviceConstruction(gen.Module{Name: gen.Normalize(unsuffixed(d.Type, "Service"))}))
 		}
 	} else {
 		fmt.Fprintf(&b, `
 New%s takes nothing yet. A service the job calls is a
 parameter of it and a field of the handler -- regenerate with
---services=<Entity>,... or add both by hand -- and registerHandlers passes it
-from app, the App bootstrap.Build returns with the services it built at boot.
-The handler never builds its own.
+--services=<Entity>,... or add both by hand -- and RegisterJobs passes it from
+the provider, which holds the services it built at boot. The handler never
+builds its own.
 `, s.Handler())
 	}
 	b.WriteString(`

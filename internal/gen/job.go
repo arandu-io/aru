@@ -38,8 +38,8 @@ type JobService struct {
 	Type string
 	// Field is the handler's field and the constructor's parameter: notes.
 	Field string
-	// AppField is the field of the App bootstrap.Build returns that holds the
-	// built service: Notes.
+	// AppField is the field of the application's service provider that holds
+	// the built service: Notes.
 	AppField string
 }
 
@@ -64,12 +64,12 @@ func (s JobSpec) Deps() []JobService {
 // ServicesImport is the package the services come from.
 func (s JobSpec) ServicesImport() string { return s.ModulePath + "/app/Services" }
 
-// Constructor is how registerHandlers builds the handler, from the App it
-// receives: appjobs.NewSendInvoiceHandler(app.Invoices).
+// Constructor is how the provider's RegisterJobs builds the handler, from
+// the services the provider holds: appjobs.NewSendInvoiceHandler(p.Invoices).
 func (s JobSpec) Constructor() string {
 	args := make([]string, 0, len(s.Services))
 	for _, d := range s.Deps() {
-		args = append(args, "app."+d.AppField)
+		args = append(args, "p."+d.AppField)
 	}
 	return "appjobs.New" + s.Handler() + "(" + strings.Join(args, ", ") + ")"
 }
@@ -191,9 +191,10 @@ type {{.Type}} struct {
 // is no shape of Job that skipped any of the three.
 //
 // The caller holds the queue: a listener, once the write that stored its event
-// has committed, or a task in a provider's Schedule(). A service the handler
-// calls never dispatches it -- this package imports app/Services as soon as a
-// handler takes a service, and a service importing it back is an import cycle.
+// has committed, or a task in Schedule in routes/console.go. A service the
+// handler calls never dispatches it -- this package imports app/Services as
+// soon as a handler takes a service, and a service importing it back is an
+// import cycle.
 // The write that leads to the job stores an event in the outbox, in its own
 // transaction, and the listener the relay hands it to dispatches this.
 func Dispatch{{.Type}}(ctx context.Context, q hqueue.Queue, g auth.Grant, in {{.Type}}) error {
@@ -215,15 +216,15 @@ type {{.Handler}} struct {
 {{- end}}
 	// arandu:begin custom
 	// Anything else the handler keeps goes here. A service is a parameter of
-	// New{{.Handler}} instead, so registerHandlers is where it comes from.
+	// New{{.Handler}} instead, so RegisterJobs is where it comes from.
 	// arandu:end custom
 }
 
 // New{{.Handler}} wires the handler with the services it calls.
 //
-// registerHandlers, in bootstrap/background.go, calls it with the services the
-// App it receives already holds -- the ones bootstrap.Build made at boot, the
-// same a request reaches -- and the handler never builds one of its own. A
+// RegisterJobs, in app/Providers/AppServiceProvider.go, calls it with the
+// services the provider already holds -- the ones it built at boot, the same
+// a request reaches -- and the handler never builds one of its own. A
 // service the job needs later is one more parameter here and one more field
 // above: regenerate with --services, or add both by hand.
 func New{{.Handler}}({{range $i, $d := .Deps}}{{if $i}}, {{end}}{{$d.String}}{{end}}) *{{.Handler}} {

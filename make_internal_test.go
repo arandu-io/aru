@@ -1011,8 +1011,9 @@ func treeOf(t *testing.T, root string) string {
 }
 
 // TestMakeJobTakesItsServicesThroughItsConstructor: a handler's services are
-// parameters of its constructor, and registerHandlers passes them from the App
-// bootstrap.Build returned. The printed wiring used to build the handler with
+// parameters of its constructor, and the provider's RegisterJobs -- the
+// function bootstrap/app.go hands to WithJobs -- passes them from the services
+// the provider holds. The printed wiring used to build the handler with
 // nothing and say nothing about where a service would come from, so the first
 // handler that needed one was wired by guessing.
 func TestMakeJobTakesItsServicesThroughItsConstructor(t *testing.T) {
@@ -1038,14 +1039,20 @@ func TestMakeJobTakesItsServicesThroughItsConstructor(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"bootstrap/background.go -- in registerHandlers",
-		"w.Handle(appjobs.SettlePurchaseOrderName, appjobs.NewSettlePurchaseOrderHandler(app.PurchaseOrders))",
+		"app/Providers/AppServiceProvider.go -- in RegisterJobs",
+		"bootstrap/app.go hands to WithJobs",
+		"w.Handle(appjobs.SettlePurchaseOrderName, appjobs.NewSettlePurchaseOrderHandler(p.PurchaseOrders))",
 		"PurchaseOrders *services.PurchaseOrderService",
-		"PurchaseOrders: purchaseOrders,",
-		"registerHandlers passes them from app",
+		"p.PurchaseOrders = services.NewPurchaseOrderService(db)",
+		"RegisterJobs passes them from the provider",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("the wiring does not say %q:\n%s", want, stdout)
+		}
+	}
+	for _, stale := range []string{"registerHandlers", "background.go", "bootstrap.Build", "app.PurchaseOrders"} {
+		if strings.Contains(stdout, stale) {
+			t.Errorf("the wiring still names %q, which the application layout no longer has:\n%s", stale, stdout)
 		}
 	}
 
@@ -1056,7 +1063,7 @@ func TestMakeJobTakesItsServicesThroughItsConstructor(t *testing.T) {
 	for _, want := range []string{
 		"appjobs.NewSendReminderHandler())",
 		"--services=<Entity>",
-		"registerHandlers passes it",
+		"RegisterJobs passes it",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("the wiring of a handler with no service does not say %q:\n%s", want, stdout)

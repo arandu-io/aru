@@ -274,10 +274,11 @@ and near misses in `gaps` and `clean`.
 ## The CSRF exemption rule
 
 `csrf-exempt-without-signature` is a warning in `rules.go`, and it is the one
-rule that reads the route table: `CSRFExcept` literals under `bootstrap/` give
-the exempt prefixes, the project map built from the same AST gives every route
-that changes state under one (matched the way the framework matches it: the
-path itself, or anything below a prefix that ends in a slash), and the action
+rule that reads the route table: `CSRFExcept` and `ValidateCSRFTokensExcept`
+literals under `bootstrap/` give the exempt prefixes, the project map built
+from the same AST gives every route that changes state under one (matched the
+way the framework matches it, segment by segment: the path itself, or anything
+below a prefix that ends in a slash, a `{name}` segment standing for any one), and the action
 each reaches is read, alone, for a call of `Verify` through the file's import
 of `hesape/webhook`. Its comment carries reason, scope, positive, negative,
 known false positive (an action that hands the body to a helper that

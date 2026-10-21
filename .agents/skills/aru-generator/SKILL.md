@@ -131,9 +131,10 @@ A template names each framework symbol by the path `aru imports:catalog` prints
 for it, and never by package. The catalog is read from the framework's source:
 a symbol the framework only aliases or calls through to is written with the
 component's path -- `auth.Grant`, `database.DB`, `log.FromContext`, `*hhttp.Context`
--- and one it declares or envelops keeps the framework's: `fhttp.Router` and the
-resource interfaces, `fhttp.Middleware`, the `mail` package. So a controller
-imports both `http` packages, under `fhttp` and `hhttp`, beside `net/http`.
+-- and one it declares or envelops keeps the framework's: `fhttp.Middleware`,
+the `mail` package. The router and the resource interfaces are hesape's now, so
+a controller asserts `hcontrollers.Indexer` and the rest from
+`hesape/routing/controllers`, beside `hhttp` and `net/http`.
 
 ```sh
 GOWORK=off go build -o /tmp/aru-src . && (cd <a project> && /tmp/aru-src imports:catalog)
@@ -151,8 +152,10 @@ yet fails there, and the template keeps the bridge path for that symbol until
 it does.
 
 `TestTheDoctorIsSilentOnTheGeneratedProject` (`tests/Unit/gen/doctor_test.go`)
-pastes the wiring over the same corpus -- every constructor named in
-bootstrap, the migrations and the connector linked from main.go -- runs the
+pastes the wiring over the same corpus where the skeleton keeps it -- every
+constructor named in app/Providers, hesape's events module in bootstrap/app.go,
+the command listed in routes/console.go, the migrations and the connector
+linked from main.go -- runs the
 doctor, and fails on any error and on any warning `internal/doctor/structure.go`
 declares. A new generator is added to `generatedProject`, and both tests then
 hold it.
@@ -218,10 +221,10 @@ beside it, and prints its wiring.
 | `make:notification <Name> [--channels=mail,database]` | `app/Notifications/<Name>.go` and test | on `hesape/notifications`: `Key`, `Via`, `ToMail` built from lines that `messages.Mail` renders itself, `ToDatabase`, an assertion per channel |
 | `make:client <Vendor>` | `app/Clients/<Vendor>Client.go`, `<Vendor>Fake.go` and test | typed config that redacts its token, a small interface, the client over `hesape/http/client`, a fake; the test uses the fake and runs the client against a faked factory |
 | `make:mcp-tool`, `make:mcp-resource`, `make:mcp-prompt` | `app/Mcp/<Name>.go` and test | a tool calls its service's `Get` with `r.Subject()`, a resource its `List`; the tests drive them through an `mcp.Server` |
-| `make:job <Name> [--fields] [--services=<Entity>,...]` | `app/Jobs/<Name>.go` | the payload, `Dispatch<Name>` through `hjobs.New` with the Grant, and the handler: each service named is a field and a parameter of `New<Name>Handler`, and the printed line registers it in `registerHandlers` with the services from `app`, the App `bootstrap.Build` returned; `--services` refuses an entity with no `app/Services/<Entity>Service.go`; the doc comment on `Dispatch<Name>` names who calls it -- a listener after the commit, or a task in a provider's `Schedule()` -- and never a service, which the handler's import of `app/Services` would make an import cycle |
+| `make:job <Name> [--fields] [--services=<Entity>,...]` | `app/Jobs/<Name>.go` | the payload, `Dispatch<Name>` through `hjobs.New` with the Grant, and the handler: each service named is a field and a parameter of `New<Name>Handler`, and the printed line registers it in the provider's `RegisterJobs` (handed to `WithJobs`) with the services the provider holds, `p.<Plural>`; `--services` refuses an entity with no `app/Services/<Entity>Service.go`; the doc comment on `Dispatch<Name>` names who calls it -- a listener after the commit, or a task in `Schedule()` in `routes/console.go` -- and never a service, which the handler's import of `app/Services` would make an import cycle |
 | `make:event <Name> --aggregate=<entity> [--fields]` | `app/Events/<Name>.go` | the payload, its key constant and `Event(aggregateID)`; a field named `event` is refused, because `Event` is the type's method and Go refuses a field and a method of one name. The printed store -- imports, the `outbox` field and its value, and `outbox.Store` inside `database.Transaction` beside the row's `Save` -- is `gen.EventSpec.StoreSnippet`, the same text the event's doc comment carries and the compile harness pastes into a service; the row is `EventSpec.Row`, the aggregate as a Go variable |
-| `make:listener <Name> [--event=<entity>.<fact>]` | `app/Listeners/<Name>.go` | an `events.Publisher` that answers one event name, or every event without `--event`. The relay takes one Publisher: when `bootstrap/app.go` builds it with a `listeners.Each{...}` list (`gen.FindListenerList`, by the import of `app/Listeners` and under its alias), the printed line is one more element of that list, at the line it opens on; only a bootstrap with no list is told to build a relay around the listener, because beside a list that line replaces the Publisher and drops what the list held |
-| `make:controller <Name> [--resource\|--singleton\|--invokable] [--parent] [--action]` | one controller | `Router.Resource`, `Router.Singleton`, `Router.Invokable` with `fhttp.Invoker`; a parent's and a record's parameters named by `gen.ResourceParameter`, which is hesape's inflector; a named action for `Router.ResourceAction` |
+| `make:listener <Name> [--event=<entity>.<fact>]` | `app/Listeners/<Name>.go` | with `--event`, the event name as `<Name>Event`, a payload type of its own `<Name>Payload` and `Handle(ctx, payload, stored)` for `events.On`; without it, an `events.Publisher` for `events.Every`. The relay takes one Publisher: when the provider (or an older `bootstrap/app.go`) builds it over an `events.Listeners{...}` list (`gen.FindListenerList`, by the import of hesape's events and of `app/Listeners`, under their aliases), the printed line is one more element of that list, at the line it opens on; a `listeners.Each{...}` list is to become `events.Listeners` first; only a project with no list is told to build a relay, because beside a list that line replaces the Publisher and drops what the list held |
+| `make:controller <Name> [--resource\|--singleton\|--invokable] [--parent] [--action]` | one controller | `Router.Resource`, `Router.Singleton`, `Router.Invokable` with `hcontrollers.Invoker`; a parent's and a record's parameters named by `gen.ResourceParameter`, which is hesape's inflector; a named action for `Router.ResourceAction` |
 
 Two things about the printed routes are deliberate. A method is written as the
 string the route table already uses -- `"POST"` -- because `routes/web.go`
@@ -349,8 +352,8 @@ records `source: aru@<version>`, and `aru doctor` reports it as
 
 ## Wiring is printed, never performed
 
-The generator does not edit `bootstrap/app.go`, `routes/web.go` or
-`database/seeders/seeders.go`. It prints the lines to paste, naming the file and
+The generator does not edit `bootstrap/app.go`, `app/Providers`, `routes/web.go`,
+`routes/console.go` or `database/seeders/seeders.go`. It prints the lines to paste, naming the file and
 the place in it — `wiringSeeder` in `makeseeder.go` is the shape. A generator
 that changes the wiring behind you is a generator whose output nobody can
 explain, and those files have no custom block, so a patch would edit code

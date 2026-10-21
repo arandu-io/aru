@@ -699,7 +699,7 @@ func TestTheGeneratedJobSaysWhoDispatchesIt(t *testing.T) {
 	}
 	body := string(file.Content)
 	comment := body[strings.Index(body, "// DispatchSettleInvoice enqueues"):strings.Index(body, "func DispatchSettleInvoice(")]
-	for _, want := range []string{"a listener", "Schedule()", "never dispatches it", "import cycle"} {
+	for _, want := range []string{"a listener", "Schedule() in routes/console.go", "never dispatches it", "import cycle"} {
 		if !strings.Contains(comment, want) {
 			t.Errorf("the doc comment on DispatchSettleInvoice does not say %q:\n%s", want, comment)
 		}

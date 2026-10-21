@@ -33,7 +33,7 @@ type SettleInvoice struct {
 // is no shape of Job that skipped any of the three.
 //
 // The caller holds the queue: a listener, once the write that stored its event
-// has committed, or a task in Schedule in routes/console.go. A service the
+// has committed, or a task in Schedule() in routes/console.go. A service the
 // handler calls never dispatches it -- this package imports app/Services as
 // soon as a handler takes a service, and a service importing it back is an
 // import cycle.

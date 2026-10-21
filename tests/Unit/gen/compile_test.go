@@ -371,6 +371,32 @@ func generatedProject(t *testing.T) (string, map[string]string) {
 	emit("aru make:listener RecordEverything", func() ([]gen.File, error) {
 		return gen.GenerateListener(gen.Listener{Name: "RecordEverything", ModulePath: generatedModulePath})
 	})
+	// What make:listener prints for both, pasted into the list the relay is
+	// built with the way the skeleton's provider builds it: the framework's
+	// relay over hesape's outbox, the list from hesape. A listener whose
+	// Handle does not have the shape events.On calls fails here, where the
+	// generated file alone would still build.
+	one("the wiring aru make:listener prints, pasted into the provider", func() (gen.File, error) {
+		list := gen.ListenerList{File: "app/Providers/Relay.go", Package: "listeners", Events: "hevents"}
+		return gen.File{Path: "app/Providers/Relay.go", Content: []byte(`package providers
+
+import (
+	"github.com/arandu-io/framework/events"
+	"github.com/arandu-io/hesape/database"
+	hevents "github.com/arandu-io/hesape/events"
+
+	listeners "` + generatedModulePath + `/app/Listeners"
+)
+
+// Relay is the relay make:listener's lines are pasted into.
+func Relay(db *database.DB) *events.Relay {
+	return events.NewRelay(hevents.NewOutbox(db), hevents.Listeners{
+		` + list.Entry(gen.Listener{Name: "NotifyBuyer", Event: "purchase_order.approved"}) + `
+		` + list.Entry(gen.Listener{Name: "RecordEverything"}) + `
+	}, events.RelayOptions{})
+}
+`)}, nil
+	})
 	// The job recipe, written out: the approval service above stores
 	// PurchaseOrderApproved, and a listener built with the queue dispatches
 	// SettlePurchaseOrder once that write commits. The job's handler takes the

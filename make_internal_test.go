@@ -1143,9 +1143,9 @@ func TestTheEventWiringNamesWhatCompiles(t *testing.T) {
 	message := wiringEvent(spec)
 	for _, want := range []string{
 		`appevents "example.test/project/app/Events"`,
-		`frameevents "github.com/arandu-io/framework/events"`,
+		`"github.com/arandu-io/hesape/events"`,
 		"outbox *events.Outbox",
-		"outbox: frameevents.NewOutbox(db),",
+		"outbox: events.NewOutbox(db),",
 		indentLines(spec.StoreSnippet()),
 		"newsletterDelivery is the row the event happened to",
 		"aru make:listener <Name> --event=newsletter_delivery.reported",
@@ -1154,7 +1154,7 @@ func TestTheEventWiringNamesWhatCompiles(t *testing.T) {
 			t.Errorf("the wiring does not say %q:\n%s", want, message)
 		}
 	}
-	for _, stale := range []string{"data.Transaction", "PullEvents", "newsletter_delivery.Save", "newsletter_delivery.ID", "events.Recorder"} {
+	for _, stale := range []string{"data.Transaction", "PullEvents", "frameevents", "framework/events", "newsletter_delivery.Save", "newsletter_delivery.ID", "events.Recorder"} {
 		if strings.Contains(message, stale) {
 			t.Errorf("the wiring still says %q:\n%s", stale, message)
 		}

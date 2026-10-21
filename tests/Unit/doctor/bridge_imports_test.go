@@ -231,23 +231,23 @@ func TestABridgeImportAndTheImportItPointsAtReadTheSame(t *testing.T) {
 	}
 }
 
-// TestTheHesapeEventsModuleBringsNoOutboxTable pins the one place the two
-// spellings must not agree.
-//
-// framework/events is a bridge everywhere except its Module, which it declares
-// because hesape's carries no Migrations. Registering hesape's module runs a
-// relay over a table nothing created, so the project that registers it is the
-// project whose sign-up fails with `no such table: outbox`, and the doctor has
-// to keep saying so.
-func TestTheHesapeEventsModuleBringsNoOutboxTable(t *testing.T) {
+// TestEitherEventsModuleBringsTheOutboxTable: the component's Module declares
+// the outbox migrations as the framework's does, so registering either one --
+// NewModule, or WithRelay over the relay a list of events.On listeners is
+// handed to -- is the registration the rule asks for, and a call of the same
+// name from a package that brings no table is still reported.
+func TestEitherEventsModuleBringsTheOutboxTable(t *testing.T) {
 	for _, tc := range []struct {
 		module   string
+		call     string
 		reported bool
 	}{
-		{"github.com/arandu-io/framework/events", false},
-		{"github.com/arandu-io/hesape/events", true},
+		{"github.com/arandu-io/framework/events", "NewModule()", false},
+		{"github.com/arandu-io/hesape/events", "NewModule()", false},
+		{"github.com/arandu-io/hesape/events", "WithRelay(nil)", false},
+		{"github.com/arandu-io/hesape/notifications", "NewModule()", true},
 	} {
-		t.Run(tc.module, func(t *testing.T) {
+		t.Run(tc.module+"."+tc.call, func(t *testing.T) {
 			root := twinProject(t, direct)
 			writeFile(t, filepath.Join(root, "bootstrap", "events.go"), `package bootstrap
 
@@ -257,7 +257,7 @@ import (
 )
 
 func Events(app *foundation.Application) {
-	app.Register(registered.NewModule())
+	app.Register(registered.`+tc.call+`)
 }
 `)
 			findings, err := doctor.Run(root, doctor.Conventional)
@@ -265,8 +265,8 @@ func Events(app *foundation.Application) {
 				t.Fatalf("Run: %v", err)
 			}
 			if got := findRule(findings, "outbox-not-registered") != nil; got != tc.reported {
-				t.Errorf("registering %s.NewModule: outbox-not-registered reported = %v, want %v\n%s",
-					tc.module, got, tc.reported, describe(findings))
+				t.Errorf("registering %s.%s: outbox-not-registered reported = %v, want %v\n%s",
+					tc.module, tc.call, got, tc.reported, describe(findings))
 			}
 		})
 	}

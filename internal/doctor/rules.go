@@ -2800,20 +2800,20 @@ var outboxWriters = map[importedFunction]outboxFunction{
 
 // outboxProviders are the registrations that bring the table.
 //
-// Two, because the relay is registered instead of the plain module when
-// something publishes: events.WithRelay carries the same Migrations. A rule that
+// Two per package, because the relay is registered instead of the plain module
+// when something publishes: WithRelay carries the same Migrations. A rule that
 // knew only NewModule would fire on the more advanced of the two correct
 // wirings, which is how a tool teaches people to ignore it.
 //
-// hesape/events declares a NewModule and a WithRelay of its own, and neither
-// is here, on purpose. framework/events is a bridge everywhere except its
-// Module, which it declares rather than aliases precisely because hesape's
-// answers no Migrations: registering hesape's module runs the relay and
-// creates no table. Accepting it would silence this rule on the one project
-// where the sign-up still fails with `no such table: outbox`.
+// Both packages count. The component's Module declares the outbox migrations
+// itself, so events.WithRelay(relay) over hesape's relay -- the one a list of
+// events.On listeners is handed to -- creates the table exactly as the
+// framework's module does.
 var outboxProviders = map[importedFunction]bool{
-	{pkg: frameworkEvents, name: "NewModule"}: true,
-	{pkg: frameworkEvents, name: "WithRelay"}: true,
+	{pkg: frameworkEvents, name: "NewModule"}:         true,
+	{pkg: frameworkEvents, name: "WithRelay"}:         true,
+	{pkg: hesapePrefix + "events", name: "NewModule"}: true,
+	{pkg: hesapePrefix + "events", name: "WithRelay"}: true,
 }
 
 // importedFunction resolves a package function call through the file's import
@@ -2927,7 +2927,7 @@ func theOutboxTableTravelsWithWhatWritesToIt(p *project) []Finding {
 		File: w.file, Line: w.line,
 		Message: w.call + " stores domain events and this project registers no outbox table",
 		Why: w.breaks + " -- at runtime, with `no such table: outbox`, in front of whoever was using it. " +
-			"The table belongs to the events module so that it travels rather than being copied into every project: add events.NewModule() to the k.Register(...) list in bootstrap/app.go, or events.WithRelay(relay) if something already publishes them.",
+			"The table belongs to the events module so that it travels rather than being copied into every project: add events.NewModule() to WithProviders(...) in bootstrap/app.go, or events.WithRelay(relay) if something already publishes them.",
 	}}
 }
 

@@ -57,7 +57,7 @@ func (s EventSpec) Row() string {
 // eventSnippetBinds are the names the printed wiring declares or imports.
 var eventSnippetBinds = map[string]bool{
 	"ctx": true, "s": true, "g": true, "err": true,
-	"database": true, "events": true, "appevents": true, "frameevents": true,
+	"database": true, "events": true, "appevents": true,
 }
 
 // StoreImports are the import lines the store snippet needs in the service it
@@ -66,7 +66,6 @@ func (s EventSpec) StoreImports() []string {
 	return []string{
 		`"github.com/arandu-io/hesape/database"`,
 		`"github.com/arandu-io/hesape/events"`,
-		`frameevents "github.com/arandu-io/framework/events"`,
 		`appevents "` + s.EventsImport() + `"`,
 	}
 }
@@ -76,7 +75,7 @@ func (s EventSpec) StoreImports() []string {
 // constructor takes.
 const (
 	EventOutboxField = "outbox *events.Outbox"
-	EventOutboxValue = "outbox: frameevents.NewOutbox(db),"
+	EventOutboxValue = "outbox: events.NewOutbox(db),"
 )
 
 // StoreSnippet is the code that stores the event, in a service method that

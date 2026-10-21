@@ -829,7 +829,7 @@
     "file": "cmd/openapi/main.go",
     "line": 3,
     "message": "cmd/openapi is a program that writes OpenAPI documents beside the application's binary",
-    "why": "the contracts come from the route table: `aru openapi:check` runs the binary's openapi:export --check from arandu-swagger, which writes and checks every swagger.Module's document. A contract no swagger.Module produces is a command in app/Console/Commands, listed in routes/console.go."
+    "why": "the contracts come from the route table: `aru openapi:check` runs the binary's openapi:export --check from arandu-swagger, which writes and checks every document the swagger module exports. A contract the swagger module does not export is a command in app/Console/Commands, listed in routes/console.go."
   },
   {
     "rule": "migrations-not-linked",

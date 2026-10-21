@@ -1988,8 +1988,8 @@ func sortedKeys(m map[string][]*file) []string {
 // Limit. Local to the file tree and the imports.
 //
 // Correction: an OpenAPI generator is replaced by `aru openapi:check`, which
-// runs the binary's openapi:export --check from arandu-swagger; a contract no
-// swagger.Module produces, and any other program, becomes a command in
+// runs the binary's openapi:export --check from arandu-swagger; a contract the
+// swagger module does not export, and any other program, becomes a command in
 // app/Console/Commands listed in routes/console.go.
 func programsAreNotUnderCmd(p *project) []Finding {
 	found := programs(p, "cmd", func(f *file) string {
@@ -2014,8 +2014,8 @@ func programsAreNotUnderCmd(p *project) []Finding {
 		if openAPIProgram(dir, files) {
 			finding.Message = dir + " is a program that writes OpenAPI documents beside the application's binary"
 			finding.Why = "the contracts come from the route table: `aru openapi:check` runs the binary's openapi:export " +
-				"--check from arandu-swagger, which writes and checks every swagger.Module's document. A contract no " +
-				"swagger.Module produces is a command in app/Console/Commands, listed in routes/console.go."
+				"--check from arandu-swagger, which writes and checks every document the swagger module exports. " +
+				"A contract the swagger module does not export is a command in app/Console/Commands, listed in routes/console.go."
 		}
 		out = append(out, finding)
 	}

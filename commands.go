@@ -573,7 +573,7 @@ Every other flag -- -run, -race, -v, -count -- is handed to go test as it is.`
 // openAPICheckHelp is the body `aru openapi:check --help` prints, under the
 // usage line.
 const openAPICheckHelp = `It runs the application's binary as openapi:export --check, which the
-arandu-swagger module adds: every registered swagger.Module's document is
+arandu-swagger module adds: every document the swagger module exports is
 generated from the route table and compared with docs/contracts/<name>.openapi.json.
 Nothing is written, and a difference fails the command. aru openapi:export,
 which goes to the binary as it is, writes the files.

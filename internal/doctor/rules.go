@@ -1894,7 +1894,7 @@ func sessionMustRotateOnLogin(p *project) []Finding {
 // its string literal arguments; every route registered under routes/ that changes state
 // -- POST, PUT, PATCH, DELETE or any method -- whose pattern the prefix exempts
 // by the framework's own test (the path itself, or anything under a prefix
-// that ends in a slash); and the controller action each such route reaches.
+// that ends in a slash, a {name} segment standing for any one segment); and the controller action each such route reaches.
 //
 // Severity. Warning: a new rule enters as one.
 //
@@ -1971,7 +1971,7 @@ func csrfExemptionsVerifyASignature(p *project) []Finding {
 			continue
 		}
 		for _, e := range exempt {
-			if route.Pattern != e.prefix && !(strings.HasSuffix(e.prefix, "/") && strings.HasPrefix(route.Pattern, e.prefix)) {
+			if !csrfExempts(e.prefix, route.Pattern) {
 				continue
 			}
 			key := action.ID + "\x00" + e.prefix
@@ -1993,6 +1993,30 @@ func csrfExemptionsVerifyASignature(p *project) []Finding {
 		}
 	}
 	return out
+}
+
+// csrfExempts reports whether an exemption covers a route pattern, by the
+// framework's own test: segment by segment, the route's path itself, or
+// anything under an exemption that ends in a slash. A {name} segment of the
+// exemption stands for any one segment, and a parameter segment of the route
+// is matched by any segment of the exemption, since the request that reaches
+// it may carry that value.
+func csrfExempts(exemption, pattern string) bool {
+	subtree := strings.HasSuffix(exemption, "/")
+	want := strings.Split(strings.TrimSuffix(strings.TrimPrefix(exemption, "/"), "/"), "/")
+	got := strings.Split(strings.TrimPrefix(pattern, "/"), "/")
+	if subtree && strings.HasSuffix(pattern, "/") && len(got) == len(want)+1 && got[len(got)-1] == "" {
+		got = got[:len(got)-1]
+	} else if subtree && len(got) <= len(want) || !subtree && len(got) != len(want) {
+		return false
+	}
+	isParam := func(s string) bool { return len(s) > 2 && s[0] == '{' && s[len(s)-1] == '}' }
+	for i, w := range want {
+		if w != got[i] && !isParam(w) && !isParam(got[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // changesState reports whether a route's method is one the CSRF check guards:

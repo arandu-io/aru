@@ -123,6 +123,12 @@ func TestAnExemptPathIsReachedOnlyByAVerifyingAction(t *testing.T) {
 		{"the declared false positive: a helper verifies", []string{"/webhooks/"},
 			[]string{`r.Post("/webhooks/billing", hooks.Delegating)`}, "webhook",
 			[]string{"HookController.Delegating answers POST /webhooks/billing"}},
+		{"a parameter segment of the exemption covers any value", []string{"/checkout/{token}/sessions"},
+			[]string{`r.Post("/checkout/{id}/sessions", hooks.Trusting)`, `r.Post("/checkout/{id}/refunds", hooks.Legacy)`}, "webhook",
+			[]string{"HookController.Trusting answers POST /checkout/{id}/sessions"}},
+		{"a parameter segment under an exempt subtree", []string{"/checkout/{token}/"},
+			[]string{`r.Post("/checkout/abc/sessions", hooks.Trusting)`, `r.Post("/checkout/abc", hooks.Legacy)`}, "webhook",
+			[]string{"HookController.Trusting answers POST /checkout/abc/sessions"}},
 		{"no exemption at all", nil,
 			[]string{`r.Post("/webhooks/billing", hooks.Trusting)`}, "webhook", nil},
 	} {

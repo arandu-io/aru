@@ -13,12 +13,17 @@ import (
 
 // AuditTrail answers every event.
 //
-// It implements events.Publisher: the relay calls Publish once the event is
-// committed and readable, never inside the transaction that wrote it.
+// It implements events.Publisher, and is listed in the events.Listeners the
+// relay is built with as
+//
+//	events.Every(NewAuditTrail())
+//
+// so the relay hands it every event, undecoded, once it is committed and
+// readable -- never inside the transaction that wrote it.
 type AuditTrail struct {
-	// The collaborators this listener needs are fields, set where it is wired in
-	// bootstrap/app.go. A listener that reaches for a global is a listener no
-	// test can pin.
+	// The collaborators this listener needs are fields, set by its constructor
+	// where the events.Listeners list is built. A listener that reaches for a
+	// global is a listener no test can pin.
 }
 
 // NewAuditTrail returns the listener.
@@ -29,7 +34,7 @@ func NewAuditTrail() *AuditTrail {
 // Compile-time proof that this satisfies what the relay calls.
 var _ events.Publisher = (*AuditTrail)(nil)
 
-// Publish handles one committed event.
+// Publish handles one committed event, whatever its name.
 //
 // # Delivery is at-least-once
 //
@@ -48,10 +53,9 @@ var _ events.Publisher = (*AuditTrail)(nil)
 // Returning nil on a failure loses the event silently, which is the one outcome
 // the outbox exists to prevent.
 func (au *AuditTrail) Publish(ctx context.Context, e events.Stored) error {
-
-	// The payload is the JSON the producer stored. Unmarshal it into a struct
-	// declared HERE, not shared with the producer: a consumer that compiles
-	// against the producer's type is a consumer that has to be deployed with it.
+	// Every event passes through here. The payload is the JSON the producer
+	// stored; a listener that needs its fields answers one event instead, with
+	// a type of its own that events.On decodes into.
 	log.For(ctx).Info("event received", "event", e.Name, "id", e.ID)
 
 	// arandu:begin custom

@@ -69,42 +69,77 @@ func makeListener(args []string, stdout, stderr io.Writer) error {
 
 // wiringListener is where the listener that was just written goes.
 //
-// The relay takes one Publisher. When bootstrap/app.go already builds it with
-// a listeners.Each list, the listener is one more element of that list, and
-// the answer names the line the list opens on. Only a bootstrap without one is
-// told to build a relay around this listener -- printed for a list, that line
-// replaces the Publisher, and pasting it drops every listener the list held.
+// The relay takes one Publisher. When the project already builds it with an
+// events.Listeners list, the listener is one more element of that list, and
+// the answer names the file and line the list opens on. A list written as
+// app/Listeners' Each takes Publishers only, so it is turned into
+// events.Listeners first. Only a project with no list is told to build a relay
+// -- printed for a list, that line replaces the Publisher, and pasting it drops
+// every listener the list held.
 func wiringListener(spec gen.Listener, list gen.ListenerList, found bool) string {
 	var b strings.Builder
-	if found {
+	imports := func() {
+		var lines []string
+		if list.Package == "" {
+			lines = append(lines, fmt.Sprintf("    listeners %q", spec.ModulePath+"/app/Listeners"))
+		}
+		if list.Events == "" {
+			lines = append(lines, fmt.Sprintf("    %q", "github.com/arandu-io/hesape/events"))
+		}
+		if len(lines) > 0 {
+			fmt.Fprintf(&b, "\nand the imports %s does not have yet:\n\n%s\n", list.File, strings.Join(lines, "\n"))
+		}
+	}
+	switch {
+	case found && !list.Each:
 		fmt.Fprintf(&b, `
-Wire it in bootstrap/app.go. The relay hands every committed event to each
-listener in the %s.Each list it is built with, at bootstrap/app.go:%d.
-Add it to that list:
+The relay hands every committed event to the listeners of the events.Listeners
+list it is built with, at %s:%d. Add it to that list:
+
+    %s
+`, list.File, list.Line, list.Entry(spec))
+		imports()
+	case found:
+		fmt.Fprintf(&b, `
+The relay at %s:%d is built with %s.Each, a list of Publishers, and
+events.Listeners is the list the relay takes now: it matches the name and decodes
+the payload, so a listener of one event is handed a value. Make the list
+events.Listeners -- each element it holds becomes events.Every(<element>) -- and
+add:
 
     %s
 
-A collaborator the listener needs is a parameter of New%s and a field of
-the listener, passed there from what Build has already made.
-`, list.Package, list.Line, list.Entry(spec), spec.Type())
-	} else {
+%s.Each is then unused, and app/Listeners/Each.go can go.
+`, list.File, list.Line, list.Package, list.Entry(spec), list.Package)
+		imports()
+	default:
+		list = gen.ListenerList{File: "app/Providers/AppServiceProvider.go"}
 		fmt.Fprintf(&b, `
-Wire it in bootstrap/app.go, where the events module is registered. The listener
-is the Publisher a Relay hands events to, and the Relay is what the module runs:
+Wire it where the provider builds the services, app/Providers/AppServiceProvider.go.
+The relay is what hands committed events to the listeners, and the events
+module runs it:
 
-    listeners "%s/app/Listeners"
+    relay := events.NewRelay(events.NewOutbox(db), events.Listeners{
+        %s
+    }, events.RelayOptions{Locks: d.Locks})
 
-    relay := events.NewRelay(events.NewOutbox(db), listeners.New%s(), events.RelayOptions{})
+kept on the provider as its Relay field, and in bootstrap/app.go, in WithProviders(...), in place
+of events.NewModule():
 
-and, in the k.Register(...) list, in place of events.NewModule():
-
-    events.WithRelay(relay),
-`, spec.ModulePath, spec.Type())
+    events.WithRelay(app.Relay),
+`, list.Entry(spec))
+		imports()
 	}
 	b.WriteString(`
 The relay calls it after the write commits, never inside the transaction that
 wrote it. Delivery is at-least-once, so what it does has to be safe to do twice --
-the doc comment on Publish says where that goes.
+the doc comment on the listener says where that goes.
 `)
+	if spec.EventOrAny() != "" {
+		fmt.Fprintf(&b, `
+The fields it reads are declared on %s, in the custom block, under the JSON
+names the producer stored.
+`, spec.Payload())
+	}
 	return b.String()
 }

@@ -11,14 +11,33 @@ import (
 	"github.com/arandu-io/hesape/log"
 )
 
+// NotifyAccountingEvent is the event NotifyAccounting answers: the name the producer
+// stored, written once, here, and named by the events.Listeners list.
+const NotifyAccountingEvent = "invoice.paid"
+
+// NotifyAccountingPayload is what NotifyAccounting reads from the event's payload.
+//
+// The payload is the JSON the producer stored, and this type is declared HERE
+// rather than shared with the producer: a consumer that compiles against the
+// producer's type is a consumer that has to be deployed with it. Declare the
+// fields this listener needs, under the JSON names the producer wrote.
+type NotifyAccountingPayload struct {
+	// arandu:begin custom
+	// arandu:end custom
+}
+
 // NotifyAccounting answers `invoice.paid`.
 //
-// It implements events.Publisher: the relay calls Publish once the event is
-// committed and readable, never inside the transaction that wrote it.
+// It is listed in the events.Listeners the relay is built with as
+//
+//	events.On(NotifyAccountingEvent, NewNotifyAccounting().Handle)
+//
+// and the relay calls Handle once the event is committed and readable, never
+// inside the transaction that wrote it.
 type NotifyAccounting struct {
-	// The collaborators this listener needs are fields, set where it is wired in
-	// bootstrap/app.go. A listener that reaches for a global is a listener no
-	// test can pin.
+	// The collaborators this listener needs are fields, set by its constructor
+	// where the events.Listeners list is built. A listener that reaches for a
+	// global is a listener no test can pin.
 }
 
 // NewNotifyAccounting returns the listener.
@@ -26,10 +45,11 @@ func NewNotifyAccounting() *NotifyAccounting {
 	return &NotifyAccounting{}
 }
 
-// Compile-time proof that this satisfies what the relay calls.
-var _ events.Publisher = (*NotifyAccounting)(nil)
-
-// Publish handles one committed event.
+// Handle handles one committed event, its payload already decoded.
+//
+// A payload that does not decode into NotifyAccountingPayload never reaches it: the
+// relay keeps the event and parks it after the attempts run out, with the
+// decode failure as the reason.
 //
 // # Delivery is at-least-once
 //
@@ -47,17 +67,7 @@ var _ events.Publisher = (*NotifyAccounting)(nil)
 // backing off, and parks it in the dead letter after the attempts run out.
 // Returning nil on a failure loses the event silently, which is the one outcome
 // the outbox exists to prevent.
-func (n *NotifyAccounting) Publish(ctx context.Context, e events.Stored) error {
-	// One listener per event name, so this returns early rather than growing a
-	// switch. A switch here is how a listener becomes the place every event
-	// passes through.
-	if e.Name != "invoice.paid" {
-		return nil
-	}
-
-	// The payload is the JSON the producer stored. Unmarshal it into a struct
-	// declared HERE, not shared with the producer: a consumer that compiles
-	// against the producer's type is a consumer that has to be deployed with it.
+func (n *NotifyAccounting) Handle(ctx context.Context, event NotifyAccountingPayload, e events.Stored) error {
 	log.For(ctx).Info("event received", "event", e.Name, "id", e.ID)
 
 	// arandu:begin custom

@@ -564,6 +564,14 @@ func anatomyOf(f *file) (kind, variant string) {
 	}) {
 		return "event", ""
 	}
+	// A listener of one event asserts nothing: events.On takes its Handle as a
+	// method value, so what it declares is the shape On calls -- a context, the
+	// decoded payload and the stored row, answering an error.
+	if f.importsAny(hesapePrefix+"events", frameworkEvents) && f.declaresMethod(func(fn *ast.FuncDecl) bool {
+		return fn.Name.Name == "Handle" && fn.Type.Params.NumFields() == 3 && lastParamSelector(fn, "Stored")
+	}) {
+		return "listener", ""
+	}
 	if strings.HasPrefix(f.rel, "app/") && f.declaresFunction(func(fn *ast.FuncDecl) bool {
 		return fn.Recv == nil && resultSelector(fn, "Middleware")
 	}) {
@@ -736,6 +744,17 @@ func resultSelector(fn *ast.FuncDecl, name string) bool {
 		return false
 	}
 	selector, ok := results.List[0].Type.(*ast.SelectorExpr)
+	return ok && selector.Sel.Name == name
+}
+
+// lastParamSelector reports whether the last parameter of fn has a qualified
+// type whose name is name: events.Stored.
+func lastParamSelector(fn *ast.FuncDecl, name string) bool {
+	params := fn.Type.Params.List
+	if len(params) == 0 {
+		return false
+	}
+	selector, ok := params[len(params)-1].Type.(*ast.SelectorExpr)
 	return ok && selector.Sel.Name == name
 }
 

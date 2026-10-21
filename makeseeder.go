@@ -109,12 +109,13 @@ of the wiring is -- once, for every seeder, and not again:
 
   database/seeders/seeders.go -- the field
 
-      DB *data.DB
+      DB *database.DB
 
-  bootstrap/migrate.go -- where seeders.Run is called, with the connection
-  bootstrap/app.go opened, returned on App as DB
+  app/Providers/AppServiceProvider.go -- in Seed, the function bootstrap/app.go
+  hands to WithSeeders, where seeders.Run is called: the connection the
+  framework opened, in the seeders.Deps literal
 
-      seeders.Deps{Users: app.Users, Tenant: cfg.Auth.Tenant, DB: app.DB}
+      DB: p.drivers.DB,
 
 Then:
 

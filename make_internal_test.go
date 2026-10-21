@@ -160,9 +160,14 @@ func TestTheSeederWiringNamesTheDeclaredType(t *testing.T) {
 		t.Error("the generated seeder does not declare the type the message registers")
 	}
 	message := wiringSeeder(spec)
-	for _, want := range []string{"InvoiceSeeder{},", "DB *data.DB", "aru db:seed InvoiceSeeder"} {
+	for _, want := range []string{"InvoiceSeeder{},", "DB *database.DB", "in Seed, the function bootstrap/app.go\n  hands to WithSeeders", "DB: p.drivers.DB,", "aru db:seed InvoiceSeeder"} {
 		if !strings.Contains(message, want) {
 			t.Errorf("the message does not say %q:\n%s", want, message)
+		}
+	}
+	for _, stale := range []string{"bootstrap/migrate.go", "app.DB", "data.DB"} {
+		if strings.Contains(message, stale) {
+			t.Errorf("the message still says %q, which the application layout no longer has:\n%s", stale, message)
 		}
 	}
 	// db:seed refuses --class= with the word to type instead, so a message that

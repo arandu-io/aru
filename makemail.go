@@ -81,7 +81,7 @@ Then `+"`aru view:build`"+`, and send it:
 
     mailer.To(user.Email).Send(ctx, mail.%s{})
 
-The mailer is wired in bootstrap/app.go. In development it is the log
+The framework builds the mailer from MAIL_URL. In development it is the log
 transport, which prints the message instead of sending it -- an application
 that needs a mail server to run is one nobody runs.
 `, modulePath, spec.Type)

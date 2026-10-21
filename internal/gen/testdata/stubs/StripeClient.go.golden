@@ -10,7 +10,7 @@ import (
 	"github.com/arandu-io/hesape/http/client"
 )
 
-// StripeConfig is what the Stripe client needs, typed. bootstrap/app.go
+// StripeConfig is what the Stripe client needs, typed. app/Providers
 // reads it from the configuration once and hands it over; nothing here looks a
 // setting up again.
 type StripeConfig struct {
@@ -66,7 +66,7 @@ type StripeClient struct {
 }
 
 // NewStripeClient builds the client with its configuration and the factory its
-// requests are made from: client.NewFactory(nil) in bootstrap/app.go, and the
+// requests are made from: client.NewFactory(nil) in app/Providers, and the
 // same factory faked in a test that wants to see the request.
 func NewStripeClient(config StripeConfig, http *client.Factory) *StripeClient {
 	return &StripeClient{config: config, http: http}

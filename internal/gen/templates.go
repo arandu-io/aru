@@ -506,8 +506,8 @@ type {{.Controller}} struct {
 	svc *services.{{.ServiceType}}
 }
 
-// New{{.Controller}} returns the controller. bootstrap builds it and hands it to
-// the routes.
+// New{{.Controller}} returns the controller. app/Providers builds it and hands
+// it to the routes.
 func New{{.Controller}}(svc *services.{{.ServiceType}}) *{{.Controller}} {
 	return &{{.Controller}}{svc: svc}
 }

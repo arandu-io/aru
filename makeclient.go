@@ -57,9 +57,10 @@ func makeClient(args []string, stdout, stderr io.Writer) error {
 	}
 
 	fmt.Fprintf(stdout, `
-The client is written, the wiring is not. bootstrap/app.go builds it once,
-with its configuration and a request factory, and hands it to the service that
-calls it -- by hand, because the wiring is meant to be readable:
+The client is written, the wiring is not. app/Providers/AppServiceProvider.go
+builds it once, with its configuration and a request factory, and hands it to
+the service that calls it -- by hand, because the wiring is meant to be
+readable:
 
       %[1]s := clients.New%[2]s(clients.%[3]s{
           BaseURL: "https://...",   // from the configuration

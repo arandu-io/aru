@@ -77,13 +77,13 @@ func makeNotification(args []string, stdout, stderr io.Writer) error {
 
 	fmt.Fprintf(stdout, `
 The notification is written, and nothing sends it yet. A service sends it, with
-the Grant its policy issued, through the Notifier bootstrap/app.go builds once
+the Grant its policy issued, through the Notifier the provider builds once
 with the channels the application has -- by hand, because the wiring is meant
 to be readable:
 
-  bootstrap/app.go
+  app/Providers/AppServiceProvider.go
 
-      notifier := hnotifications.New([]hnotifications.Channel{
+      p.Notifier = hnotifications.New([]hnotifications.Channel{
           channels.NewMail(mailer),                                 // a channels.Mailer
           channels.NewDatabase(hnotifications.NewTableStore(db)),
       })

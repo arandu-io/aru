@@ -40,8 +40,8 @@ type PurchaseOrderController struct {
 	svc *services.PurchaseOrderService
 }
 
-// NewPurchaseOrderController returns the controller. bootstrap builds it and hands it to
-// the routes.
+// NewPurchaseOrderController returns the controller. app/Providers builds it and hands
+// it to the routes.
 func NewPurchaseOrderController(svc *services.PurchaseOrderService) *PurchaseOrderController {
 	return &PurchaseOrderController{svc: svc}
 }

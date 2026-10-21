@@ -102,12 +102,12 @@ func isOrAre(n int) string {
 }
 
 // wiringService is what to do with the service that was just written: build
-// it in bootstrap/app.go and hand it to whatever calls it.
+// it in the provider and hand it to whatever calls it.
 func wiringService(m gen.Module) string {
 	return fmt.Sprintf(`
-The file is written, the wiring is not. bootstrap/app.go builds the service
-with the connection and hands it to the controller, the job or the tool that
-calls it:
+The file is written, the wiring is not. app/Providers/AppServiceProvider.go
+builds the service with the connection and hands it to the controller, the job
+or the tool that calls it:
 
       services.New%s(db)
 

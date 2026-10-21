@@ -365,7 +365,7 @@ type {{.Type}} struct {
 }
 
 // New{{.Type}} returns the controller, with the service every action calls.
-// bootstrap/app.go builds it and hands it to the routes.
+// app/Providers builds it and hands it to the routes.
 func New{{.Type}}(svc *services.{{.Service}}) *{{.Type}} {
 	return &{{.Type}}{svc: svc}
 }
@@ -374,10 +374,10 @@ func New{{.Type}}(svc *services.{{.Service}}) *{{.Type}} {
 	// and never from a package-level variable: a controller that builds its own
 	// dependencies is a controller no test can pin. Declare the service this
 	// controller calls as a field here, take it as a parameter below, and pass
-	// it in bootstrap/app.go.
+	// it in app/Providers.
 }
 
-// New{{.Type}} returns the controller. bootstrap/app.go builds it and
+// New{{.Type}} returns the controller. app/Providers builds it and
 // hands it to the routes.
 func New{{.Type}}() *{{.Type}} {
 	return &{{.Type}}{}
@@ -554,7 +554,7 @@ import (
 //	func {{.Type}}(sessions *security.SessionStore) fhttp.Middleware
 //
 // A middleware that reached for a package-level variable would be a middleware
-// no test can pin, and no reader of bootstrap/app.go can see the dependencies
+// no test can pin, and no reader of the wiring can see the dependencies
 // of.
 //
 // What it must not do is reach the database. A middleware is the request, one

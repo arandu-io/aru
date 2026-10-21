@@ -72,10 +72,10 @@ either file:
       admin := r.Group("/admin", appmiddleware.%s())
       r.Action("GET", "/billing", d.Billing.Handle, appmiddleware.%s())
 
-  bootstrap/app.go -- global, in the k.Use(...) pipeline, where the order of the
-  list is the order of execution
+  bootstrap/app.go -- global, in WithMiddleware, after the framework's own
+  layers and right before the router, in the order the calls are written
 
-      Use(..., appmiddleware.%s())
+      m.Append(appmiddleware.%s())
 
 Global means every request, including /favicon.ico and the sign-in page. Pick
 the group unless the answer is genuinely "all of them".

@@ -107,7 +107,7 @@ func requireServiceMethod(root string, s gen.MCPSpec, kind gen.MCPKind) error {
 }
 
 // wiringMCP is what to do with the file that was just written: take the module
-// if the project does not have it, compose the server in bootstrap/app.go and
+// if the project does not have it, compose the server in the provider and
 // mount it in routes/web.go, so the route table stays one table.
 func wiringMCP(root string, s gen.MCPSpec) string {
 	take := ""
@@ -130,7 +130,8 @@ command does not edit go.mod:
 The file is written, the wiring is not. By hand, because the wiring is meant to
 be readable:
 
-  bootstrap/app.go -- the server, composed once, and handed to the routes
+  app/Providers/AppServiceProvider.go -- the server, composed once, and handed
+  to the routes
 
       mcpServer := &mcp.Server{
           Name:         "...",
@@ -149,6 +150,6 @@ be readable:
       r.Action("POST", "/mcp", mcp.Web(d.MCP), middleware.RequireAuth(d.Sessions)).Name("mcp")
 
 RequireToken in place of RequireAuth serves a client holding an API token. The
-imports are "%s" in both files and appmcp "%s" in bootstrap/app.go.
+imports are "%s" in both files and appmcp "%s" in the provider.
 `, take, list, elem, s.Constructor(svc), gen.MCPModule, s.MCPImport())
 }

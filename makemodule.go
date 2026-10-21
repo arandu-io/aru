@@ -124,7 +124,7 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 	// anyone.
 	//
 	// Three lines, and none of them is optional: the code is written, the
-	// wiring is not. A generator that edited routes/web.go and bootstrap/app.go behind
+	// wiring is not. A generator that edited routes/web.go and the provider behind
 	// your back would be a generator you cannot read the output of -- the whole
 	// point of explicit wiring is that the file says what the application is.
 	fmt.Fprint(stdout, wiring(spec, len(written)))
@@ -154,7 +154,8 @@ Then, by hand, because the wiring is meant to be readable -- four lines:
 
       r.Group("", middleware.RequireAuth(d.Sessions)).Resource(%q, d.%s)
 
-  bootstrap/app.go -- in the routes.Deps literal
+  app/Providers/AppServiceProvider.go -- in the routes.Deps literal the
+  provider builds, the one bootstrap/app.go hands to WithRouting
 
       %s: controllers.New%s(%s),
 
@@ -165,7 +166,7 @@ Then, by hand, because the wiring is meant to be readable -- four lines:
 
 They name two packages a file may not import yet:
 "github.com/arandu-io/framework/http/middleware" in routes/web.go, and
-"%s/app/Services" in bootstrap/app.go.
+"%s/app/Services" in app/Providers/AppServiceProvider.go.
 %s%s
 The migration is not one of them: %s registers itself in its own init, and
 nothing lists it. What it needs is to be linked -- something has to import
@@ -188,7 +189,7 @@ Then:
 		m.MigrationType())
 }
 
-// serviceConstruction is how bootstrap/app.go builds the module's service:
+// serviceConstruction is how the provider builds the module's service:
 // with the connection, and for a nested module with the service its parent is
 // loaded through.
 func serviceConstruction(m gen.Module) string {

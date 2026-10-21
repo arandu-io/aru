@@ -1435,3 +1435,49 @@ func TestTheCommandWiringListsItInCommands(t *testing.T) {
 		}
 	}
 }
+
+// TestThePrintedWiringNamesOnlyTheFilesTheLayoutHas: the application keeps
+// bootstrap/app.go alone, configured through the builder, its services in
+// app/Providers and its commands in routes/console.go. Every make:* that
+// prints wiring is run, and none of what it prints may send the reader to a
+// file or a function that layout removed -- bootstrap/background.go,
+// migrate.go or console.go, registerHandlers, the App bootstrap.Build
+// returned, the kernel's k.Register and k.Use -- or claim that bootstrap/app.go
+// builds a service, which is the provider's job now.
+func TestThePrintedWiringNamesOnlyTheFilesTheLayoutHas(t *testing.T) {
+	root := projectWithModule(t, "purchase_order")
+	t.Chdir(root)
+	runs := [][]string{
+		{"make:module", "shipment", "--fields", "code:string"},
+		{"make:mcp-tool", "ShowShipment", "--service=Shipment"},
+		{"make:controller", "ReportController"},
+		{"make:controller", "InvoiceController", "--resource"},
+		{"make:service", "PurchaseOrder", "--force"},
+		{"make:job", "SettlePurchaseOrder", "--services=PurchaseOrder"},
+		{"make:event", "PurchaseOrderApproved", "--aggregate=purchase_order"},
+		{"make:listener", "NotifyBuyer", "--event=purchase_order.approved"},
+		{"make:seeder", "Warehouse"},
+		{"make:command", "ClosePurchaseOrders"},
+		{"make:middleware", "EnsureBuyerIsActive"},
+		{"make:mail", "OrderConfirmation"},
+		{"make:notification", "OrderShipped"},
+		{"make:client", "Carrier"},
+	}
+	stale := []string{
+		"bootstrap/background.go", "bootstrap/migrate.go", "bootstrap/console.go", "registerHandlers",
+		"bootstrap.Build", "k.Register", "k.Use", "Console() in routes", "bootstrap/app.go builds",
+		"in bootstrap/app.go -- in the routes.Deps", "bootstrap/app.go -- in the routes.Deps",
+	}
+	for _, args := range runs {
+		code, stdout, stderr := exercise(t, args...)
+		if code != 0 {
+			t.Errorf("%s exited %d: %s", strings.Join(args, " "), code, stderr)
+			continue
+		}
+		for _, s := range stale {
+			if strings.Contains(stdout, s) {
+				t.Errorf("%s prints %q, which the layout no longer has:\n%s", strings.Join(args, " "), s, stdout)
+			}
+		}
+	}
+}

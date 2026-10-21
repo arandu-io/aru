@@ -265,7 +265,8 @@ is meant to be readable:
 
 %s
 
-  bootstrap/app.go -- in the routes.Deps literal
+  app/Providers/AppServiceProvider.go -- in the routes.Deps literal the
+  provider builds, the one bootstrap/app.go hands to WithRouting
 
       %s: %s,
 %s

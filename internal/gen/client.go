@@ -65,7 +65,7 @@ import (
 	"github.com/arandu-io/hesape/http/client"
 )
 
-// {{.Config}} is what the {{.Vendor}} client needs, typed. bootstrap/app.go
+// {{.Config}} is what the {{.Vendor}} client needs, typed. app/Providers
 // reads it from the configuration once and hands it over; nothing here looks a
 // setting up again.
 type {{.Config}} struct {
@@ -121,7 +121,7 @@ type {{.Type}} struct {
 }
 
 // New{{.Type}} builds the client with its configuration and the factory its
-// requests are made from: client.NewFactory(nil) in bootstrap/app.go, and the
+// requests are made from: client.NewFactory(nil) in app/Providers, and the
 // same factory faked in a test that wants to see the request.
 func New{{.Type}}(config {{.Config}}, http *client.Factory) *{{.Type}} {
 	return &{{.Type}}{config: config, http: http}

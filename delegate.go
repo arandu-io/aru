@@ -23,7 +23,8 @@ const appPackage = "."
 // and that list only exists inside the application: the modules are wired
 // explicitly in bootstrap/app.go, with no container and no plugin loading. A CLI
 // compiled separately cannot know them, so the honest implementation is to run
-// the project. This is also why those subcommands exist in the skeleton's main.
+// the project, whose binary answers them through the framework's console
+// kernel.
 //
 // serve runs the project the same way and is deliberately not one of these. What
 // it needs on top is the view layer compiled from source, and stopping the

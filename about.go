@@ -27,12 +27,11 @@ const redacted = "[redacted]"
 //
 // It reads the project and never runs it. The answer used to come from the
 // project's binary, through a subcommand no project's dispatch has ever
-// answered -- the skeleton's switch has no case for it -- so the command failed
-// in every application that exists. Teaching the skeleton would reach only the
-// projects generated after the lesson: bootstrap/console.go belongs to the
-// project, and nothing here edits it. Everything the report holds is on disk
-// instead: go.mod, the environment and .env read the way the boot reads them,
-// and the registrations the doctor's project graph already finds.
+// answered, so the command failed in every application that existed. Teaching
+// the skeleton would reach only the projects generated after the lesson, and
+// nothing here edits a project. Everything the report holds is on disk instead:
+// go.mod, the environment and .env read the way the boot reads them, and the
+// registrations the doctor's project graph already finds.
 //
 // What that costs is said in the report rather than hidden. A setting is shown
 // as the environment and .env give it; a default the project's own config

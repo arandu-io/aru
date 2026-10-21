@@ -115,7 +115,7 @@ import (
 // {{.Type}} is one thing this application tells somebody.
 //
 // It is sent by a service, after the policy issued the Grant, through the
-// Notifier bootstrap/app.go builds with the channels the application has:
+// Notifier app/Providers builds with the channels the application has:
 //
 //	err := s.notifier.Send(ctx, g, recipient, notifications.{{.Type}}{})
 //

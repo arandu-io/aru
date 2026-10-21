@@ -21,7 +21,7 @@ import (
 //	func EnsureAccountIsActive(sessions *security.SessionStore) fhttp.Middleware
 //
 // A middleware that reached for a package-level variable would be a middleware
-// no test can pin, and no reader of bootstrap/app.go can see the dependencies
+// no test can pin, and no reader of the wiring can see the dependencies
 // of.
 //
 // What it must not do is reach the database. A middleware is the request, one

@@ -67,7 +67,7 @@ func (s MCPSpec) IsPrompt() bool   { return s.Kind == MCPPrompt }
 func (s MCPSpec) ServicesImport() string { return s.ModulePath + "/app/Services" }
 func (s MCPSpec) MCPImport() string      { return s.ModulePath + "/app/Mcp" }
 
-// Constructor is how bootstrap/app.go builds it: NewShowInvoice(svc) for a
+// Constructor is how app/Providers builds it: NewShowInvoice(svc) for a
 // tool or a resource, the literal for a prompt.
 func (s MCPSpec) Constructor(svc string) string {
 	if s.IsPrompt() {

@@ -27,10 +27,10 @@ type InvoiceController struct {
 	// and never from a package-level variable: a controller that builds its own
 	// dependencies is a controller no test can pin. Declare the service this
 	// controller calls as a field here, take it as a parameter below, and pass
-	// it in bootstrap/app.go.
+	// it in app/Providers.
 }
 
-// NewInvoiceController returns the controller. bootstrap/app.go builds it and
+// NewInvoiceController returns the controller. app/Providers builds it and
 // hands it to the routes.
 func NewInvoiceController() *InvoiceController {
 	return &InvoiceController{}

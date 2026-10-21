@@ -1285,7 +1285,7 @@ func relay(db *database.DB) *events.Relay {
 		{
 			name: "an Each list in bootstrap", file: "bootstrap/app.go", body: legacy, event: "invoice.paid",
 			want: []string{
-				"bootstrap/app.go:11 is built with appListeners.Each",
+				"built with appListeners.Each, at bootstrap/app.go:11.",
 				"events.Every(<element>)",
 				"    events.On(appListeners.NotifyAccountingEvent, appListeners.NewNotifyAccounting().Handle),\n",
 				`"github.com/arandu-io/hesape/events"`,
@@ -1312,7 +1312,7 @@ func relay(db *database.DB) *events.Relay {
 }
 `,
 			want: []string{
-				"app/Providers/AppServiceProvider.go:12 is built with listeners.Each",
+				"built with listeners.Each, at app/Providers/AppServiceProvider.go:12.",
 				"Make the list\nhevents.Listeners -- each element it holds becomes hevents.Every(<element>)",
 				"    hevents.On(listeners.NotifyAccountingEvent, listeners.NewNotifyAccounting().Handle),\n",
 			},

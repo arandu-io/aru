@@ -101,8 +101,8 @@ list it is built with, at %s:%d. Add it to that list:
 		imports()
 	case found:
 		fmt.Fprintf(&b, `
-The relay at %s:%d is built with %s.Each, a list of Publishers, and
-events.Listeners is the list the relay takes now: it matches the name and decodes
+The relay is built with %[3]s.Each, at %[1]s:%[2]d. Each takes
+Publishers only, and events.Listeners is the list the relay takes now: it matches the name and decodes
 the payload, so a listener of one event is handed a value. Make the list
 %[4]s.Listeners -- each element it holds becomes %[4]s.Every(<element>) -- and
 add:
@@ -140,8 +140,8 @@ the doc comment on the listener says where that goes.
 `)
 	if spec.EventOrAny() != "" {
 		fmt.Fprintf(&b, `
-The fields it reads are declared on %s, in the custom block, under the JSON
-names the producer stored.
+The fields it reads are declared on %s, in the custom block,
+under the JSON names the producer stored.
 `, spec.Payload())
 	}
 	return b.String()

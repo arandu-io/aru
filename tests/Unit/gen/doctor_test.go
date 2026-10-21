@@ -25,7 +25,7 @@ import (
 // rules exist because the applications copied a shape from somewhere.
 //
 // The wiring is what pasting the printed lines produces, reduced to what the
-// doctor reads: bootstrap/app.go names every constructor the generators wrote,
+// doctor reads: app/Providers names every constructor the generators wrote,
 // main.go links the migrations and the connector, and routes/web.go is the
 // route table. The structural rules are read off internal/doctor/structure.go,
 // so a rule added there is a rule this test holds the generators to.
@@ -74,9 +74,9 @@ func structuralRules(t *testing.T) map[string]bool {
 }
 
 // writeWiring writes the files the generators print lines for and never
-// write: main.go, the project's arandu.toml, bootstrap/app.go naming every
-// constructor of a controller and a service and registering the events module,
-// and routes/web.go.
+// write: main.go, the project's arandu.toml, app/Providers naming every
+// constructor of a controller and a service, bootstrap/app.go registering the
+// events module, routes/console.go listing the command and routes/web.go.
 func writeWiring(t *testing.T, root string) {
 	t.Helper()
 
@@ -113,11 +113,10 @@ func writeWiring(t *testing.T, root string) {
 	}
 	sort.Strings(aliases)
 
-	writeInto(t, filepath.Join(root, "bootstrap", "app.go"), []byte(`// Package bootstrap is where the printed wiring is pasted.
-package bootstrap
+	writeInto(t, filepath.Join(root, "app", "Providers", "AppServiceProvider.go"), []byte(`// Package providers is where the printed service wiring is pasted.
+package providers
 
 import (
-	frameevents "github.com/arandu-io/framework/events"
 `+strings.Join(aliases, "\n")+`
 )
 
@@ -126,10 +125,36 @@ import (
 var Constructors = []any{
 	`+strings.Join(refs, ",\n\t")+`,
 }
+`))
+	writeInto(t, filepath.Join(root, "bootstrap", "app.go"), []byte(`// Package bootstrap is where the printed registrations are pasted.
+package bootstrap
+
+import (
+	"github.com/arandu-io/hesape/events"
+
+	_ "`+generatedModulePath+`/app/Providers"
+)
 
 // Modules registers the outbox table, as the skeleton does, because what
-// make:event prints stores events in it.
-var Modules = []any{frameevents.NewModule()}
+// make:event prints stores events in it. It is hesape's module, which brings
+// the table as the framework's does.
+var Modules = []any{events.NewModule()}
+`))
+	writeInto(t, filepath.Join(root, "routes", "console.go"), []byte(`// Package routes lists the commands the printed lines name.
+package routes
+
+import (
+	"github.com/arandu-io/hesape/console"
+
+	commands "`+generatedModulePath+`/app/Console/Commands"
+)
+
+// Commands is the list make:command's line is pasted into.
+func Commands() []console.Command {
+	return []console.Command{
+		commands.ClosePurchaseOrders(),
+	}
+}
 `))
 	writeInto(t, filepath.Join(root, "routes", "web.go"), []byte(`// Package routes is the route table.
 package routes

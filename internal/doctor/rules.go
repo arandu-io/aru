@@ -1889,8 +1889,9 @@ func sessionMustRotateOnLogin(p *project) []Finding {
 // that promise alone. An exempt route that verifies nothing takes a write from
 // any page a signed-in person opens, and from anybody who can reach it.
 //
-// Scope. Every CSRFExcept call outside a test under bootstrap/, by its string
-// literal arguments; every route registered under routes/ that changes state
+// Scope. Every CSRFExcept call outside a test under bootstrap/, and every
+// ValidateCSRFTokensExcept the application builder's middleware is given, by
+// its string literal arguments; every route registered under routes/ that changes state
 // -- POST, PUT, PATCH, DELETE or any method -- whose pattern the prefix exempts
 // by the framework's own test (the path itself, or anything under a prefix
 // that ends in a slash); and the controller action each such route reaches.
@@ -1918,10 +1919,15 @@ func sessionMustRotateOnLogin(p *project) []Finding {
 // true -- webhook.Verify(secrets, timestamp, deliveryID, body, signature) from
 // github.com/arandu-io/hesape/webhook, answering 401 when it fails -- or take
 // the route out of the exempt prefix.
+// csrfExemptions are the calls that exempt a path from the CSRF check: the
+// option passed to CSRFProtect, and the builder's middleware method that
+// forwards to it.
+var csrfExemptions = map[string]bool{"CSRFExcept": true, "ValidateCSRFTokensExcept": true}
+
 func csrfExemptionsVerifyASignature(p *project) []Finding {
 	type exemption struct {
-		prefix, file string
-		line         int
+		prefix, file, call string
+		line               int
 	}
 	var exempt []exemption
 	for _, f := range p.files {
@@ -1929,12 +1935,13 @@ func csrfExemptionsVerifyASignature(p *project) []Finding {
 			continue
 		}
 		f.calls(func(call *ast.CallExpr, name string) {
-			if name != "CSRFExcept" && !strings.HasSuffix(name, ".CSRFExcept") {
+			called := name[strings.LastIndexByte(name, '.')+1:]
+			if !csrfExemptions[called] {
 				return
 			}
 			for _, arg := range call.Args {
 				if prefix, ok := stringLiteral(arg); ok && prefix != "" {
-					exempt = append(exempt, exemption{prefix: prefix, file: f.rel, line: f.line(call)})
+					exempt = append(exempt, exemption{prefix: prefix, file: f.rel, call: called, line: f.line(call)})
 				}
 			}
 		})
@@ -1979,8 +1986,8 @@ func csrfExemptionsVerifyASignature(p *project) []Finding {
 			out = append(out, Finding{
 				Rule: "csrf-exempt-without-signature", Severity: Warning,
 				File: action.File, Line: action.Line,
-				Message: fmt.Sprintf("%s answers %s %s, which CSRFExcept(%q) at %s:%d exempts from the CSRF check, and it never calls webhook.Verify",
-					action.Label, route.Method, route.Pattern, e.prefix, e.file, e.line),
+				Message: fmt.Sprintf("%s answers %s %s, which %s(%q) at %s:%d exempts from the CSRF check, and it never calls webhook.Verify",
+					action.Label, route.Method, route.Pattern, e.call, e.prefix, e.file, e.line),
 				Why: "the exemption is safe only because the route proves the sender with a signature over the body instead of a token: without one, any page a signed-in person opens can post to it, and anybody who can reach it can forge what it receives. Verify the request in the action with webhook.Verify(secrets, timestamp, deliveryID, body, signature) from github.com/arandu-io/hesape/webhook and answer 401 when it fails, or take the route out of the exempt prefix.",
 			})
 		}

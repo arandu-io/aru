@@ -149,3 +149,31 @@ func TestAnExemptPathIsReachedOnlyByAVerifyingAction(t *testing.T) {
 		})
 	}
 }
+
+// TestTheBuilderSpellingOfAnExemptionIsRead: an application configured
+// through the builder exempts a prefix with m.ValidateCSRFTokensExcept inside
+// WithMiddleware, which forwards to CSRFExcept. The rule reads that spelling
+// too, and names it in the finding.
+func TestTheBuilderSpellingOfAnExemptionIsRead(t *testing.T) {
+	files := map[string]string{
+		"routes/webhooks.go":                     csrfRoutes(`r.Post("/webhooks/billing", hooks.Trusting)`),
+		"app/Http/Controllers/HookController.go": hookController("webhook"),
+		"bootstrap/app.go": `package bootstrap
+
+import "github.com/arandu-io/framework/foundation"
+
+func Configure(b *foundation.ApplicationBuilder) *foundation.ApplicationBuilder {
+	return b.WithMiddleware(func(m *foundation.Middleware) {
+		m.ValidateCSRFTokensExcept("/webhooks/")
+	})
+}
+`,
+	}
+	got := findingsOf(t, structureProject(t, files), "csrf-exempt-without-signature")
+	if len(got) != 1 {
+		t.Fatalf("got %d finding(s), want 1: %v", len(got), got)
+	}
+	if want := `ValidateCSRFTokensExcept("/webhooks/") at bootstrap/app.go:7`; !strings.Contains(got[0].Message, want) {
+		t.Errorf("finding says %q, want it to say %q", got[0].Message, want)
+	}
+}

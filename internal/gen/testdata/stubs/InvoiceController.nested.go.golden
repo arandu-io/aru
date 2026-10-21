@@ -3,8 +3,8 @@ package controllers
 import (
 	"net/http"
 
-	fhttp "github.com/arandu-io/framework/http"
 	hhttp "github.com/arandu-io/hesape/http"
+	hcontrollers "github.com/arandu-io/hesape/routing/controllers"
 )
 
 // InvoiceController answers the accounts.invoices routes.
@@ -48,7 +48,7 @@ func NewInvoiceController() *InvoiceController {
 	return &InvoiceController{}
 }
 
-// Compile-time proof of the seven actions fhttp.Router.Resource looks for. It
+// Compile-time proof of the seven actions hcontrollers.Router.Resource looks for. It
 // registers the ones the controller implements and nothing else, so a route that
 // exists is a route that answers -- and a renamed method fails the build here
 // rather than answering 404 in production.
@@ -57,13 +57,13 @@ func NewInvoiceController() *InvoiceController {
 // resource does not have: a controller without Create and Edit registers five
 // routes instead of seven.
 var (
-	_ fhttp.Indexer   = (*InvoiceController)(nil)
-	_ fhttp.Creator   = (*InvoiceController)(nil)
-	_ fhttp.Storer    = (*InvoiceController)(nil)
-	_ fhttp.Shower    = (*InvoiceController)(nil)
-	_ fhttp.Editor    = (*InvoiceController)(nil)
-	_ fhttp.Updater   = (*InvoiceController)(nil)
-	_ fhttp.Destroyer = (*InvoiceController)(nil)
+	_ hcontrollers.Indexer   = (*InvoiceController)(nil)
+	_ hcontrollers.Creator   = (*InvoiceController)(nil)
+	_ hcontrollers.Storer    = (*InvoiceController)(nil)
+	_ hcontrollers.Shower    = (*InvoiceController)(nil)
+	_ hcontrollers.Editor    = (*InvoiceController)(nil)
+	_ hcontrollers.Updater   = (*InvoiceController)(nil)
+	_ hcontrollers.Destroyer = (*InvoiceController)(nil)
 )
 
 // Index renders the listing.
@@ -120,7 +120,7 @@ func (c *InvoiceController) Destroy(ctx *hhttp.Context) error {
 }
 
 // Send answers POST /invoices/{invoice}/send: one named action on a
-// record, beyond the seven. It is registered with fhttp.Router.ResourceAction,
+// record, beyond the seven. It is registered with hcontrollers.Router.ResourceAction,
 // under the route name accounts.invoices.send, behind the same guard as
 // the rest of the resource.
 //

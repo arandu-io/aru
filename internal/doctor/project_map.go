@@ -589,7 +589,7 @@ var contractKinds = func() map[string]string {
 			out[p+"."+name] = kind
 		}
 	}
-	httpPaths := []string{"github.com/arandu-io/framework/http", hesapePrefix + "http", hesapePrefix + "routing"}
+	httpPaths := []string{"github.com/arandu-io/framework/http", hesapePrefix + "http", hesapePrefix + "routing", hesapePrefix + "routing/controllers"}
 	add("resource", "JsonResource", httpPaths...)
 	for _, name := range []string{"Indexer", "Creator", "Storer", "Shower", "Editor", "Updater", "Destroyer", "Invoker"} {
 		add("controller", name, httpPaths...)

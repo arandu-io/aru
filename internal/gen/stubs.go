@@ -21,12 +21,12 @@ type Kind string
 const (
 	// KindPlain is a controller with no actions yet, and it is the default.
 	KindPlain Kind = "plain"
-	// KindResource is the seven actions fhttp.Router.Resource looks for.
+	// KindResource is the seven actions hcontrollers.Router.Resource looks for.
 	KindResource Kind = "resource"
-	// KindSingleton is the three fhttp.Router.Singleton looks for: show, edit
+	// KindSingleton is the three hcontrollers.Router.Singleton looks for: show, edit
 	// and update, with no id, for a thing there is one of where it is reached.
 	KindSingleton Kind = "singleton"
-	// KindInvokable is one action, Invoke, registered with fhttp.Router.Invokable.
+	// KindInvokable is one action, Invoke, registered with hcontrollers.Router.Invokable.
 	KindInvokable Kind = "invokable"
 )
 
@@ -308,7 +308,7 @@ const controllerStubTemplate = `package controllers
 {{if or .IsResource .IsSingleton .IsInvokable}}import (
 	"net/http"
 
-	fhttp "github.com/arandu-io/framework/http"
+	hcontrollers "github.com/arandu-io/hesape/routing/controllers"
 	hhttp "github.com/arandu-io/hesape/http"
 {{- if .Service}}
 
@@ -384,7 +384,7 @@ func New{{.Type}}() *{{.Type}} {
 }
 {{- end}}
 {{if .IsResource}}
-// Compile-time proof of the seven actions fhttp.Router.Resource looks for. It
+// Compile-time proof of the seven actions hcontrollers.Router.Resource looks for. It
 // registers the ones the controller implements and nothing else, so a route that
 // exists is a route that answers -- and a renamed method fails the build here
 // rather than answering 404 in production.
@@ -393,13 +393,13 @@ func New{{.Type}}() *{{.Type}} {
 // resource does not have: a controller without Create and Edit registers five
 // routes instead of seven.
 var (
-	_ fhttp.Indexer   = (*{{.Type}})(nil)
-	_ fhttp.Creator   = (*{{.Type}})(nil)
-	_ fhttp.Storer    = (*{{.Type}})(nil)
-	_ fhttp.Shower    = (*{{.Type}})(nil)
-	_ fhttp.Editor    = (*{{.Type}})(nil)
-	_ fhttp.Updater   = (*{{.Type}})(nil)
-	_ fhttp.Destroyer = (*{{.Type}})(nil)
+	_ hcontrollers.Indexer   = (*{{.Type}})(nil)
+	_ hcontrollers.Creator   = (*{{.Type}})(nil)
+	_ hcontrollers.Storer    = (*{{.Type}})(nil)
+	_ hcontrollers.Shower    = (*{{.Type}})(nil)
+	_ hcontrollers.Editor    = (*{{.Type}})(nil)
+	_ hcontrollers.Updater   = (*{{.Type}})(nil)
+	_ hcontrollers.Destroyer = (*{{.Type}})(nil)
 )
 
 // Index renders the listing.
@@ -453,12 +453,12 @@ func (c *{{.Type}}) Destroy(ctx *hhttp.Context) error {
 ` + controllerActionTemplate + `
 {{- end}}
 {{end}}{{if .IsSingleton}}
-// Compile-time proof of the three actions fhttp.Router.Singleton looks for. It
+// Compile-time proof of the three actions hcontrollers.Router.Singleton looks for. It
 // registers the ones the controller implements and nothing else.
 var (
-	_ fhttp.Shower  = (*{{.Type}})(nil)
-	_ fhttp.Editor  = (*{{.Type}})(nil)
-	_ fhttp.Updater = (*{{.Type}})(nil)
+	_ hcontrollers.Shower  = (*{{.Type}})(nil)
+	_ hcontrollers.Editor  = (*{{.Type}})(nil)
+	_ hcontrollers.Updater = (*{{.Type}})(nil)
 )
 
 // Show renders the one there is.
@@ -483,9 +483,9 @@ func (c *{{.Type}}) Update(ctx *hhttp.Context) error {
 	return ctx.Status(http.StatusNotImplemented)
 }
 {{end}}{{if .IsInvokable}}
-// Compile-time proof that fhttp.Router.Invokable takes this controller. A
+// Compile-time proof that hcontrollers.Router.Invokable takes this controller. A
 // renamed Invoke fails the build here rather than registering nothing.
-var _ fhttp.Invoker = (*{{.Type}})(nil)
+var _ hcontrollers.Invoker = (*{{.Type}})(nil)
 
 // Invoke answers the one route this controller has.
 //
@@ -518,7 +518,7 @@ func (c *{{.Type}}) Invoke(ctx *hhttp.Context) error {
 // is part of the controller make:controller --action writes, and rendered on
 // its own, through RenderAction, for a controller that already exists.
 const controllerActionTemplate = `// {{.ActionMethod}} answers POST {{.MemberPath}}/{{.Action}}: one named action on a
-// record, beyond the seven. It is registered with fhttp.Router.ResourceAction,
+// record, beyond the seven. It is registered with hcontrollers.Router.ResourceAction,
 // under the route name {{.RouteResource}}.{{.Action}}, behind the same guard as
 // the rest of the resource.
 //

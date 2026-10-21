@@ -33,8 +33,8 @@ import (
 // The cost is that these three lines go stale the day the skeleton moves, and
 // that is what TestThePinnedTagsMatchTheSkeleton answers.
 var published = map[string]string{
-	"github.com/arandu-io/framework": "v0.59.0",
-	"github.com/arandu-io/hesape":    "v0.72.0",
+	"github.com/arandu-io/framework": "v0.60.0",
+	"github.com/arandu-io/hesape":    "v0.73.0",
 	"github.com/arandu-io/kyse":      "v0.35.0",
 }
 

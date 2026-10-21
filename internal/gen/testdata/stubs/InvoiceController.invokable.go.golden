@@ -3,8 +3,8 @@ package controllers
 import (
 	"net/http"
 
-	fhttp "github.com/arandu-io/framework/http"
 	hhttp "github.com/arandu-io/hesape/http"
+	hcontrollers "github.com/arandu-io/hesape/routing/controllers"
 )
 
 // InvoiceController answers the one route it is registered for.
@@ -42,9 +42,9 @@ func NewInvoiceController() *InvoiceController {
 	return &InvoiceController{}
 }
 
-// Compile-time proof that fhttp.Router.Invokable takes this controller. A
+// Compile-time proof that hcontrollers.Router.Invokable takes this controller. A
 // renamed Invoke fails the build here rather than registering nothing.
-var _ fhttp.Invoker = (*InvoiceController)(nil)
+var _ hcontrollers.Invoker = (*InvoiceController)(nil)
 
 // Invoke answers the one route this controller has.
 //

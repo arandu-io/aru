@@ -32,10 +32,10 @@ func TestTheControllerWiringNamesWhatTheFileDeclares(t *testing.T) {
 		{"resource", gen.Stub{Kind: gen.KindResource, Resource: "invoices"},
 			[]string{`r.Resource("invoices", d.Invoice)`}, []string{"func (c *InvoiceController) Index("}},
 		{"singleton", gen.Stub{Kind: gen.KindSingleton, Resource: "invoice"},
-			[]string{`r.Singleton("invoice", d.Invoice)`}, []string{"func (c *InvoiceController) Show(", "_ fhttp.Updater"}},
+			[]string{`r.Singleton("invoice", d.Invoice)`}, []string{"func (c *InvoiceController) Show(", "_ hcontrollers.Updater"}},
 		{"invokable", gen.Stub{Kind: gen.KindInvokable, Resource: "invoices"},
 			[]string{`r.Invokable("POST", "/invoices", d.Invoice).Name("invoices")`},
-			[]string{"func (c *InvoiceController) Invoke(", "_ fhttp.Invoker"}},
+			[]string{"func (c *InvoiceController) Invoke(", "_ hcontrollers.Invoker"}},
 		{"nested with an action", gen.Stub{Kind: gen.KindResource, Resource: "invoices", Parent: "accounts", Action: "send"},
 			[]string{`r.Resource("accounts.invoices", d.Invoice)`, `r.ResourceAction("POST", "accounts.invoices", "send", d.Invoice.Send)`},
 			[]string{"func (c *InvoiceController) Send(", `ctx.Param("account")`, `ctx.Param("invoice")`}},
@@ -1135,7 +1135,7 @@ func TestMakeControllerActionOnAnExistingControllerPrintsWhatToPaste(t *testing.
 	}
 	forced, _ := os.ReadFile(path)
 	if !strings.Contains(string(forced), "func (c *PurchaseOrderController) Approve(ctx *hhttp.Context) error {") ||
-		!strings.Contains(string(forced), "_ fhttp.Indexer   = (*PurchaseOrderController)(nil)") {
+		!strings.Contains(string(forced), "_ hcontrollers.Indexer   = (*PurchaseOrderController)(nil)") {
 		t.Errorf("--force did not write the resource controller with the action:\n%s", forced)
 	}
 }

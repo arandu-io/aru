@@ -467,7 +467,7 @@ import (
 	"strconv"
 
 {{end}}
-	fhttp "github.com/arandu-io/framework/http"
+	hcontrollers "github.com/arandu-io/hesape/routing/controllers"
 	hhttp "github.com/arandu-io/hesape/http"
 	"github.com/arandu-io/hesape/pagination"
 	"github.com/arandu-io/hesape/view"
@@ -512,18 +512,18 @@ func New{{.Controller}}(svc *services.{{.ServiceType}}) *{{.Controller}} {
 	return &{{.Controller}}{svc: svc}
 }
 
-// Compile-time proof of the seven actions fhttp.Router.Resource looks for. It
+// Compile-time proof of the seven actions hcontrollers.Router.Resource looks for. It
 // registers the ones the controller implements and nothing else, so a route that
 // exists is a route that answers -- and a renamed method fails the build here
 // rather than answering 404 in production.
 var (
-	_ fhttp.Indexer   = (*{{.Controller}})(nil)
-	_ fhttp.Creator   = (*{{.Controller}})(nil)
-	_ fhttp.Storer    = (*{{.Controller}})(nil)
-	_ fhttp.Shower    = (*{{.Controller}})(nil)
-	_ fhttp.Editor    = (*{{.Controller}})(nil)
-	_ fhttp.Updater   = (*{{.Controller}})(nil)
-	_ fhttp.Destroyer = (*{{.Controller}})(nil)
+	_ hcontrollers.Indexer   = (*{{.Controller}})(nil)
+	_ hcontrollers.Creator   = (*{{.Controller}})(nil)
+	_ hcontrollers.Storer    = (*{{.Controller}})(nil)
+	_ hcontrollers.Shower    = (*{{.Controller}})(nil)
+	_ hcontrollers.Editor    = (*{{.Controller}})(nil)
+	_ hcontrollers.Updater   = (*{{.Controller}})(nil)
+	_ hcontrollers.Destroyer = (*{{.Controller}})(nil)
 )
 
 // Index renders the listing, one page at a time.

@@ -199,8 +199,9 @@ func TestTheProjectDecidesWhichSourceIsRead(t *testing.T) {
 }
 
 // TestTheFrameworkCheckedOutBesideThisRepository pins the symbols the decision
-// was taken over, against the framework itself: the request context and the
-// Grant are the component's, the router and the session store the framework's.
+// was taken over, against the framework itself: the request context, the
+// Grant, the router and the session store are the component's, each aliased
+// by the framework.
 func TestTheFrameworkCheckedOutBesideThisRepository(t *testing.T) {
 	root, err := filepath.EvalSymlinks(filepath.Join(tests.Root(t), "..", "framework"))
 	if err != nil {
@@ -212,10 +213,10 @@ func TestTheFrameworkCheckedOutBesideThisRepository(t *testing.T) {
 	}
 	for _, want := range []struct{ pkg, name, canonical string }{
 		{httpBridge, "Context", "github.com/arandu-io/hesape/http"},
-		{httpBridge, "Router", httpBridge},
+		{httpBridge, "Router", "github.com/arandu-io/hesape/routing/controllers"},
 		{security, "Grant", hesapeAuth},
 		{security, "Authorize", hesapeAuth},
-		{security, "SessionStore", security},
+		{security, "SessionStore", "github.com/arandu-io/hesape/http"},
 	} {
 		got, ok := c.Lookup(want.pkg, want.name)
 		if !ok {

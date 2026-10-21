@@ -3,8 +3,8 @@ package controllers
 import (
 	"net/http"
 
-	fhttp "github.com/arandu-io/framework/http"
 	hhttp "github.com/arandu-io/hesape/http"
+	hcontrollers "github.com/arandu-io/hesape/routing/controllers"
 )
 
 // InvoiceController answers the invoice singleton: show, edit and update,
@@ -43,12 +43,12 @@ func NewInvoiceController() *InvoiceController {
 	return &InvoiceController{}
 }
 
-// Compile-time proof of the three actions fhttp.Router.Singleton looks for. It
+// Compile-time proof of the three actions hcontrollers.Router.Singleton looks for. It
 // registers the ones the controller implements and nothing else.
 var (
-	_ fhttp.Shower  = (*InvoiceController)(nil)
-	_ fhttp.Editor  = (*InvoiceController)(nil)
-	_ fhttp.Updater = (*InvoiceController)(nil)
+	_ hcontrollers.Shower  = (*InvoiceController)(nil)
+	_ hcontrollers.Editor  = (*InvoiceController)(nil)
+	_ hcontrollers.Updater = (*InvoiceController)(nil)
 )
 
 // Show renders the one there is.

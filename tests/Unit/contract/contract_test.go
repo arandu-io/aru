@@ -103,7 +103,7 @@ func TestTheWebhookRecipeStoresAnEventAndDispatchesNoJob(t *testing.T) {
 		t.Fatal("no webhook recipe")
 	}
 	steps := strings.Join(r.Steps, "\n")
-	for _, want := range []string{"webhook.Verify", "CSRFExcept", "aru make:event", "outbox.Store", "database.Transaction", "aru make:listener", "listeners.Each"} {
+	for _, want := range []string{"webhook.Verify", "ValidateCSRFTokensExcept", "WithMiddleware", "aru make:event", "outbox.Store", "database.Transaction", "aru make:listener", "events.Listeners"} {
 		if !strings.Contains(steps, want) {
 			t.Errorf("the webhook recipe does not say %q:\n%s", want, steps)
 		}
@@ -146,16 +146,16 @@ func TestTheJobRecipeDispatchesFromWhereTheQueueIs(t *testing.T) {
 	}
 	steps := strings.Join(r.Steps, "\n")
 	for _, want := range []string{
-		"aru make:job", "--services=", "registerHandlers", "bootstrap/background.go",
-		"outbox.Store", "database.Transaction", "aru make:listener", "listeners.Each",
+		"aru make:job", "--services=", "RegisterJobs", "WithJobs",
+		"outbox.Store", "database.Transaction", "aru make:listener", "events.Listeners",
 		"auth.SystemGrant(<action>, e.TenantID)", "//arandu:system-grant",
-		"Schedule()", "app/Providers/AppServiceProvider.go", "import cycle",
+		"Schedule() in routes/console.go", "app/Providers/AppServiceProvider.go", "import cycle",
 	} {
 		if !strings.Contains(steps, want) {
 			t.Errorf("the job recipe does not say %q:\n%s", want, steps)
 		}
 	}
-	for _, stale := range []string{"from the service with", "routes/console.go", "handler catalogue"} {
+	for _, stale := range []string{"from the service with", "registerHandlers", "bootstrap/background.go", "listeners.Each", "handler catalogue"} {
 		if strings.Contains(steps, stale) {
 			t.Errorf("the job recipe still says %q:\n%s", stale, steps)
 		}
@@ -178,7 +178,7 @@ func TestTheJobRecipeDispatchesFromWhereTheQueueIs(t *testing.T) {
 	}
 
 	listener, _ := contract.RecipeNamed("listener")
-	if !strings.Contains(strings.Join(listener.Steps, "\n"), "listeners.Each") {
+	if !strings.Contains(strings.Join(listener.Steps, "\n"), "events.Listeners") {
 		t.Errorf("the listener recipe does not say where the listener goes:\n%s", strings.Join(listener.Steps, "\n"))
 	}
 }
@@ -200,7 +200,7 @@ func TestNoCardOrRecipeHasAServiceDispatchAJob(t *testing.T) {
 		}
 	}
 	callers := strings.Join(job.CalledBy, "\n")
-	for _, want := range []string{"registerHandlers", "a listener", "Schedule()"} {
+	for _, want := range []string{"RegisterJobs", "a listener", "Schedule()"} {
 		if !strings.Contains(callers, want) {
 			t.Errorf("the job card's calledBy does not name %q:\n%s", want, callers)
 		}

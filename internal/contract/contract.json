@@ -133,7 +133,7 @@
         {"path": "github.com/arandu-io/hesape/auth", "names": ["Grant"]}
       ],
       "signature": "func Dispatch<Name>(ctx context.Context, q hqueue.Queue, g auth.Grant, in <Name>) error\nfunc (h *<Name>Handler) Handle(ctx context.Context, g auth.Grant, j *hjobs.Job) error\nvar _ hqueue.Handler = (*<Name>Handler)(nil)",
-      "calledBy": ["the worker, from registerHandlers in bootstrap/background.go", "Dispatch<Name>: a listener once the write that recorded the event has committed, or a task in a provider's Schedule()"],
+      "calledBy": ["the worker, from the provider's RegisterJobs, which bootstrap/app.go hands to WithJobs", "Dispatch<Name>: a listener once the write that recorded the event has committed, or a task in Schedule() in routes/console.go"],
       "may": ["call a service", "retry by returning an error"],
       "mayNot": ["start a goroutine in a constructor or in Boot", "call a controller"],
       "errors": "returned; the queue retries and then records the failure",
@@ -349,7 +349,7 @@
       "path": "app/Http/Controllers/<Vendor>WebhookController.go",
       "imports": [{"path": "github.com/arandu-io/hesape/webhook", "names": ["Verify", "SecretSet"]}],
       "signature": "func (c *<Vendor>WebhookController) Store(ctx *hhttp.Context) error",
-      "calledBy": ["the router, under a path CSRFExcept exempts in bootstrap/app.go"],
+      "calledBy": ["the router, under a path m.ValidateCSRFTokensExcept exempts in WithMiddleware, in bootstrap/app.go"],
       "may": [
         "1. verify the signature over the raw body with webhook.Verify, before binding anything",
         "2. bind the request from the same bytes",
@@ -372,7 +372,7 @@
       "title": "CRUD of an entity",
       "steps": [
         "aru make:module <name> --fields \"title:string!,amount:money\" --tenant",
-        "paste the wiring it printed into bootstrap/app.go and routes/web.go",
+        "paste the wiring it printed into app/Providers/AppServiceProvider.go and routes/web.go",
         "aru model:build, aru view:build",
         "run the project's gates"
       ],
@@ -416,9 +416,9 @@
       "title": "Background work",
       "steps": [
         "aru make:job <Name> --fields \"invoice_id:uuid\" --services=<Entity>: the handler takes the services it calls through its constructor",
-        "register the handler in registerHandlers, in bootstrap/background.go, with the services from app, as make:job prints",
-        "work that follows a write: the service stores an event with outbox.Store inside the write's database.Transaction (aru make:event prints it), and a listener built with the queue dispatches the job after the commit, under auth.SystemGrant(<action>, e.TenantID) with an //arandu:system-grant reason (aru make:listener, added to listeners.Each in bootstrap/app.go)",
-        "work on a clock: a task in the Schedule() of app/Providers/AppServiceProvider.go dispatches it, with the queue the provider holds (WithQueue) and the Grant the scheduler issues for the task's Action",
+        "register the handler in RegisterJobs, in app/Providers/AppServiceProvider.go, which bootstrap/app.go hands to WithJobs, with the services the provider holds, as make:job prints",
+        "work that follows a write: the service stores an event with outbox.Store inside the write's database.Transaction (aru make:event prints it), and a listener built with the queue dispatches the job after the commit, under auth.SystemGrant(<action>, e.TenantID) with an //arandu:system-grant reason (aru make:listener, added to the events.Listeners list the relay is built with in app/Providers/AppServiceProvider.go)",
+        "work on a clock: a task in Schedule() in routes/console.go dispatches it, with the queue ConsoleDeps carries from app/Providers/AppServiceProvider.go and the Grant the scheduler issues for the task's Action",
         "the service never dispatches the job: app/Jobs imports app/Services once a handler takes a service, and a service importing app/Jobs back is an import cycle"
       ],
       "cards": ["job", "event", "listener", "service"]
@@ -426,22 +426,22 @@
     {
       "name": "command",
       "title": "A console command",
-      "steps": ["aru make:command <Name> --signature=invoice:close", "register it in routes/console.go"],
+      "steps": ["aru make:command <Name> --signature=invoice:close", "list it in Commands in routes/console.go, which bootstrap/app.go hands to WithCommands"],
       "cards": ["command", "service"]
     },
     {
       "name": "listener",
       "title": "Reacting to a fact",
-      "steps": ["aru make:event <Name> --aggregate=<entity>", "aru make:listener <Name> --event=<entity>.<fact>: add it to listeners.Each in bootstrap/app.go, as it prints", "store the event with outbox.Store inside the service's database.Transaction, as make:event prints; the relay delivers it after the commit"],
+      "steps": ["aru make:event <Name> --aggregate=<entity>", "aru make:listener <Name> --event=<entity>.<fact>: add it to the events.Listeners list the relay is built with in app/Providers/AppServiceProvider.go, as it prints", "store the event with outbox.Store inside the service's database.Transaction, as make:event prints; the relay delivers it after the commit"],
       "cards": ["event", "listener", "service"]
     },
     {
       "name": "webhook",
       "title": "A received webhook",
       "steps": [
-        "aru make:controller <Vendor>Webhook: one action that verifies the signature over the raw body with webhook.Verify before anything else, on a route under a prefix CSRFExcept exempts in bootstrap/app.go",
+        "aru make:controller <Vendor>Webhook: one action that verifies the signature over the raw body with webhook.Verify before anything else, on a route under a prefix m.ValidateCSRFTokensExcept exempts in WithMiddleware, in bootstrap/app.go",
         "aru make:event <Vendor><Fact> --aggregate=<vendor>_delivery: the service the controller hands the delivery to stores it with outbox.Store inside database.Transaction, under the delivery id, as the command prints",
-        "aru make:listener <Name> --event=<vendor>_delivery.<fact>: add it to listeners.Each in bootstrap/app.go; it does the processing after the commit, retried by the relay, and keys on the delivery id because delivery is at-least-once",
+        "aru make:listener <Name> --event=<vendor>_delivery.<fact>: add it to the events.Listeners list in app/Providers/AppServiceProvider.go; it does the processing after the commit, retried by the relay, and keys on the delivery id because delivery is at-least-once",
         "the controller answers 2xx as soon as the event is stored; the service dispatches no job, because app/Jobs imports app/Services once a handler takes a service and the reverse import is a cycle"
       ],
       "cards": ["webhook", "event", "listener", "service"]
@@ -451,7 +451,7 @@
       "title": "An external system",
       "steps": [
         "aru make:client <Vendor>: config, interface, client, fake and test",
-        "hand the client to the service's constructor in bootstrap/app.go",
+        "hand the client to the service's constructor in app/Providers/AppServiceProvider.go",
         "tests use the fake; the service never sees the network",
         "a client more than one project needs becomes an hyz-is/arandu-* module"
       ],

@@ -94,7 +94,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		// Not one of ours, so it may be one of the application's.
 		//
 		// routes/console.go is where a project declares its own commands, and
-		// the project binary dispatches them through routes.Lookup. A console
+		// the framework's console kernel in the project binary dispatches them. A console
 		// that ships inside the project can dispatch its own commands directly;
 		// here aru is a separate binary, and without this the command a person just generated
 		// with `aru make:command` answers "unknown command" from the tool that

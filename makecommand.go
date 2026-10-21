@@ -16,8 +16,9 @@ const makeCommandUsage = `aru make:command <Name> [--signature=invoice:close] [-
 //
 // What differs from the usual shape is how the command becomes reachable.
 // Discovery scans app/Console/Commands, instantiates what it finds and reads a
-// signature string at run time. Here the command is a value returned by
-// Console() in routes/console.go, because nothing is discovered by reflection.
+// signature string at run time. Here the command is listed in Commands in
+// routes/console.go, which bootstrap/app.go hands to WithCommands, because
+// nothing is discovered by reflection.
 //
 // The cost is one line pasted by hand, which this command prints. What it buys
 // is that the console listing and the compiler read the same slice: a command
@@ -72,19 +73,20 @@ func makeCommand(args []string, stdout, stderr io.Writer) error {
 	// person reads, and a generator that edits routes/console.go behind their
 	// back is a generator whose output nobody can account for.
 	fmt.Fprintf(stdout, `
-Add it to Console() in routes/console.go, inside the custom block:
+Add it to Commands in routes/console.go, inside the custom block -- the list
+bootstrap/app.go hands to WithCommands:
 
-    {
-        Name:        %q,
-        Description: %q,
-        Run:         commands.New%s().Run,
-    },
+    commands.%s(),
 
 and the import:
 
     commands "%s/app/Console/Commands"
 
+A service it calls is a parameter of %s, passed there from the
+ConsoleDeps Commands receives; the provider fills ConsoleDeps with the services
+it built at boot.
+
 Then `+"`aru %s`"+` runs it.
-`, spec.SignatureOrDefault(), spec.DescriptionOrDefault(), spec.Type(), modulePath, spec.SignatureOrDefault())
+`, spec.Type(), modulePath, spec.Type(), spec.SignatureOrDefault())
 	return nil
 }

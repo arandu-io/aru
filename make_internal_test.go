@@ -1368,3 +1368,40 @@ func relay(db *database.DB) *events.Relay {
 		})
 	}
 }
+
+// TestTheCommandWiringListsItInCommands: make:command writes a function that
+// returns the console.Command, and the line it prints is that function called
+// in Commands in routes/console.go -- the list bootstrap/app.go hands to
+// WithCommands -- never the Console() slice of structs the layout used to
+// keep.
+func TestTheCommandWiringListsItInCommands(t *testing.T) {
+	root := bareProject(t)
+	t.Chdir(root)
+	code, stdout, stderr := exercise(t, "make:command", "CloseInvoices", "--signature=invoice:close")
+	if code != 0 {
+		t.Fatalf("make:command exited %d: %s", code, stderr)
+	}
+	body, err := os.ReadFile(filepath.Join(root, "app", "Console", "Commands", "CloseInvoices.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "func CloseInvoices() console.Command {") {
+		t.Errorf("the command is not a function returning console.Command:\n%s", body)
+	}
+	for _, want := range []string{
+		"Add it to Commands in routes/console.go",
+		"hands to WithCommands",
+		"    commands.CloseInvoices(),\n",
+		`commands "example.test/project/app/Console/Commands"`,
+		"aru invoice:close",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("the wiring does not say %q:\n%s", want, stdout)
+		}
+	}
+	for _, stale := range []string{"Console()", ".Run,", "NewCloseInvoices"} {
+		if strings.Contains(stdout, stale) {
+			t.Errorf("the wiring still says %q:\n%s", stale, stdout)
+		}
+	}
+}

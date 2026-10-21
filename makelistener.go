@@ -104,31 +104,34 @@ list it is built with, at %s:%d. Add it to that list:
 The relay at %s:%d is built with %s.Each, a list of Publishers, and
 events.Listeners is the list the relay takes now: it matches the name and decodes
 the payload, so a listener of one event is handed a value. Make the list
-events.Listeners -- each element it holds becomes events.Every(<element>) -- and
+%[4]s.Listeners -- each element it holds becomes %[4]s.Every(<element>) -- and
 add:
 
-    %s
+    %[5]s
 
-%s.Each is then unused, and app/Listeners/Each.go can go.
-`, list.File, list.Line, list.Package, list.Entry(spec), list.Package)
+%[3]s.Each is then unused, and app/Listeners/Each.go can go.
+`, list.File, list.Line, list.Package, list.EventsName(), list.Entry(spec))
 		imports()
 	default:
-		list = gen.ListenerList{File: "app/Providers/AppServiceProvider.go"}
+		list = gen.ListenerList{File: "app/Providers/AppServiceProvider.go", Package: "listeners", Events: "hevents"}
 		fmt.Fprintf(&b, `
 Wire it where the provider builds the services, app/Providers/AppServiceProvider.go.
 The relay is what hands committed events to the listeners, and the events
 module runs it:
 
-    relay := events.NewRelay(events.NewOutbox(db), events.Listeners{
+    relay := events.NewRelay(hevents.NewOutbox(db), hevents.Listeners{
         %s
-    }, events.RelayOptions{Locks: d.Locks})
+    }, events.RelayOptions{Locker: d.Locker})
 
-kept on the provider as its Relay field, and in bootstrap/app.go, in WithProviders(...), in place
-of events.NewModule():
+kept on the provider as its Relay field, and in bootstrap/app.go, in
+WithProviders(...), in place of events.NewModule():
 
     events.WithRelay(app.Relay),
-`, list.Entry(spec))
-		imports()
+
+where events is "github.com/arandu-io/framework/events", hevents is
+"github.com/arandu-io/hesape/events" and listeners is
+%q.
+`, list.Entry(spec), spec.ModulePath+"/app/Listeners")
 	}
 	b.WriteString(`
 The relay calls it after the write commits, never inside the transaction that

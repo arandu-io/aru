@@ -1292,12 +1292,42 @@ func relay(db *database.DB) *events.Relay {
 			},
 		},
 		{
+			// The provider of the first skeleton in this layout: the framework's
+			// relay over hesape's outbox, and the list still app/Listeners' Each.
+			name: "an Each list in the provider", file: "app/Providers/AppServiceProvider.go", event: "invoice.paid",
+			body: `package providers
+
+import (
+	"github.com/arandu-io/framework/events"
+	"github.com/arandu-io/hesape/database"
+	hevents "github.com/arandu-io/hesape/events"
+
+	listeners "example.test/project/app/Listeners"
+)
+
+func relay(db *database.DB) *events.Relay {
+	return events.NewRelay(hevents.NewOutbox(db), listeners.Each{
+		listeners.NewEventLog(),
+	}, events.RelayOptions{})
+}
+`,
+			want: []string{
+				"app/Providers/AppServiceProvider.go:12 is built with listeners.Each",
+				"Make the list\nhevents.Listeners -- each element it holds becomes hevents.Every(<element>)",
+				"    hevents.On(listeners.NotifyAccountingEvent, listeners.NewNotifyAccounting().Handle),\n",
+			},
+		},
+		{
 			name: "no list at all", event: "invoice.paid",
 			want: []string{
-				`listeners "example.test/project/app/Listeners"`,
-				"relay := events.NewRelay(events.NewOutbox(db), events.Listeners{",
-				"events.On(listeners.NotifyAccountingEvent, listeners.NewNotifyAccounting().Handle),",
-				"events.RelayOptions{Locks: d.Locks})",
+				`listeners is
+"example.test/project/app/Listeners"`,
+				"relay := events.NewRelay(hevents.NewOutbox(db), hevents.Listeners{",
+				"hevents.On(listeners.NotifyAccountingEvent, listeners.NewNotifyAccounting().Handle),",
+				"events.RelayOptions{Locker: d.Locker})",
+				`events is "github.com/arandu-io/framework/events"`,
+				`hevents is
+"github.com/arandu-io/hesape/events"`,
 				"WithProviders(...)",
 				"events.WithRelay(app.Relay),",
 			},

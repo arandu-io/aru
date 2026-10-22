@@ -109,7 +109,7 @@ func buildViews(root string, stdout, stderr io.Writer) error {
 		return nil
 	}
 
-	tailwind, err := toolchain.Tailwind(pins.Tailwind).Ensure(stdout)
+	tailwind, err := toolchain.Tailwind(pins.Tailwind, pins.TailwindSums).Ensure(stdout)
 	if err != nil {
 		return err
 	}

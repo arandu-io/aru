@@ -32,6 +32,30 @@ import (
 // machine and not on yours, which is the worst kind. Override in arandu.toml.
 const DefaultTailwindVersion = "v4.3.3"
 
+// tailwindDigests are the SHA-256 of every asset of the Tailwind releases aru
+// ships checksums for, by version and asset name.
+//
+// The release's own sha256sums.txt sits beside the binary it describes, so
+// whoever can replace one can replace the other, and checking one against the
+// other proves only that the download arrived whole. These were read from the
+// release's checksums file, from the digest GitHub records for each asset, and
+// from a binary downloaded before, and all three agree.
+//
+// DefaultTailwindVersion is always here. A version is added when it becomes the
+// default and never removed: a project pinning a former default keeps building
+// on a machine that has not downloaded it yet.
+var tailwindDigests = map[string]map[string]string{
+	"v4.3.3": {
+		"tailwindcss-linux-arm64":      "55fd0b241214eff3de1e8ee4f22796662f2d2e7a49bcfca7477cfd0bac398195",
+		"tailwindcss-linux-arm64-musl": "71ea4be79c9de9827545682df3e040053fb535d37c71ed2cfdedf9385a0868e0",
+		"tailwindcss-linux-x64":        "dc61b3ac6b8c9ca874c0cc4c57b2409791a64c5540404ca5f5367360babc313a",
+		"tailwindcss-linux-x64-musl":   "a04d34ceacc8f52cbe8920ad846cdeb61d3d0021dba32db0d1f77c9d9fad7a6c",
+		"tailwindcss-macos-arm64":      "cdf646702987a743464dff4d9c60fd4480d1c1e73dd819a9a67f1078815dce9d",
+		"tailwindcss-macos-x64":        "7922e0953f2110c05976e3bf58f14e643d90427575e766b7d433f5f80cbee7e1",
+		"tailwindcss-windows-x64.exe":  "e0e260ce048014e9268f6237ff18f8ccf02cef521cbd0ae04e82c2cdf7aa3955",
+	},
+}
+
 // Tool is one managed binary.
 type Tool struct {
 	// Name is what the binary is called on disk and in messages.
@@ -46,15 +70,25 @@ type Tool struct {
 	asset func(goos, goarch, libc string) (string, bool)
 	// checksums is the release artifact listing "<sha256>  <name>" lines.
 	checksums string
+	// digests are the SHA-256 of each asset of this version as aru ships them,
+	// keyed by asset name, or nil for a version aru has none for.
+	digests map[string]string
+	// sums is the SHA-256 of the checksums file, pinned by the project. It is
+	// what a version without digests is checked against.
+	sums string
+	// host is where releases are downloaded from; a test points it elsewhere.
+	host string
 }
 
-// Tailwind returns the standalone Tailwind CLI.
+// Tailwind returns the standalone Tailwind CLI at version, downloaded against
+// sums: the SHA-256 of the release's sha256sums.txt, which a version other
+// than the ones aru ships checksums for needs, and those do not.
 //
 // Standalone is the whole point: Tailwind publishes this binary precisely for
 // people who do not want Node in the project, and it is the only form of
 // Tailwind this project will ever use. Never `npx tailwindcss`, never the npm
 // package.
-func Tailwind(version string) Tool {
+func Tailwind(version, sums string) Tool {
 	if version == "" {
 		version = DefaultTailwindVersion
 	}
@@ -63,6 +97,9 @@ func Tailwind(version string) Tool {
 		Repo:      "tailwindlabs/tailwindcss",
 		Version:   version,
 		checksums: "sha256sums.txt",
+		digests:   tailwindDigests[version],
+		sums:      sums,
+		host:      "https://github.com",
 		asset: func(goos, goarch, libc string) (string, bool) {
 			switch goos {
 			case "darwin":
@@ -142,7 +179,15 @@ func Dir() (string, error) {
 }
 
 // Path is where this exact version of the tool is cached.
+//
+// The version is part of the file name, so it is refused unless it is a
+// release tag, and the joined path is refused unless it is a file directly in
+// Dir: a version carrying a separator or `..` would otherwise name a file
+// anywhere the user can write, and the binary downloaded into it is executed.
 func (t Tool) Path() (string, error) {
+	if !releaseTag.MatchString(t.Version) {
+		return "", fmt.Errorf("%s version %q is not a release tag, want one written as %s", t.Name, t.Version, DefaultTailwindVersion)
+	}
 	dir, err := Dir()
 	if err != nil {
 		return "", err
@@ -151,7 +196,11 @@ func (t Tool) Path() (string, error) {
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	return filepath.Join(dir, name), nil
+	path := filepath.Join(dir, name)
+	if filepath.Dir(path) != filepath.Clean(dir) {
+		return "", fmt.Errorf("%s version %q names a file outside %s", t.Name, t.Version, dir)
+	}
+	return path, nil
 }
 
 // Ensure returns the path to the binary, downloading it on first use.
@@ -173,28 +222,49 @@ func (t Tool) Ensure(w io.Writer) (string, error) {
 			t.Name, runtime.GOOS, runtime.GOARCH, filepath.Dir(path))
 	}
 
+	// Refused before anything is downloaded: a version with no digest from
+	// outside its release has nothing to be checked against.
+	known, shipped := t.digests[assetName]
+	if !shipped && t.sums == "" {
+		return "", fmt.Errorf("%s %s: aru ships no checksums for this version, so nothing outside the release could check this download.\n"+
+			"    Pin the SHA-256 of that release's %s in arandu.toml, under [tools]:\n"+
+			"        tailwindcss-sha256sums = \"<sha256 of %s>\"\n"+
+			"    or remove the tailwindcss line to build with %s",
+			t.Name, t.Version, t.checksums, t.checksums, DefaultTailwindVersion)
+	}
+
 	fmt.Fprintf(w, "downloading %s %s\n", t.Name, t.Version)
 
-	base := fmt.Sprintf("https://github.com/%s/releases/download/%s/", t.Repo, t.Version)
+	base := fmt.Sprintf("%s/%s/releases/download/%s/", t.host, t.Repo, t.Version)
 	body, err := fetch(base + assetName)
 	if err != nil {
 		return "", err
 	}
 
-	// The checksum comes from the same release, so it proves the bytes arrived
-	// intact -- not that the release itself is trustworthy. That is what pinning
-	// the version is for: an existing cached binary is never replaced silently.
-	sums, err := fetch(base + t.checksums)
-	if err != nil {
-		return "", err
-	}
-	want, err := checksumFor(string(sums), assetName)
-	if err != nil {
-		return "", err
+	want := known
+	if t.sums != "" {
+		// The checksums file is trusted because its own digest is the one the
+		// project pinned, and the line for this asset is trusted because the
+		// file is. Where aru ships a digest as well, the two must agree.
+		sums, err := fetch(base + t.checksums)
+		if err != nil {
+			return "", err
+		}
+		if digest := sha256.Sum256(sums); hex.EncodeToString(digest[:]) != t.sums {
+			return "", fmt.Errorf("%s %s: the release's %s does not match the tailwindcss-sha256sums pinned in arandu.toml", t.Name, t.Version, t.checksums)
+		}
+		listed, err := checksumFor(string(sums), assetName)
+		if err != nil {
+			return "", err
+		}
+		if shipped && listed != known {
+			return "", fmt.Errorf("%s %s: the release's %s lists %s with a checksum other than the one aru ships", t.Name, t.Version, t.checksums, assetName)
+		}
+		want = listed
 	}
 	got := sha256.Sum256(body)
 	if hex.EncodeToString(got[:]) != want {
-		return "", fmt.Errorf("%s: the downloaded %s does not match the published checksum", t.Name, assetName)
+		return "", fmt.Errorf("%s %s: the downloaded %s does not match its checksum", t.Name, t.Version, assetName)
 	}
 
 	// The asset is the binary itself. Tailwind publishes it that way, and it is

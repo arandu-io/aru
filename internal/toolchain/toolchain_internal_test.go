@@ -52,21 +52,21 @@ func TestAssetNames(t *testing.T) {
 		want          string
 		wantPublished bool
 	}{
-		{Tailwind(""), "darwin", "arm64", "gnu", "tailwindcss-macos-arm64", true},
-		{Tailwind(""), "darwin", "amd64", "gnu", "tailwindcss-macos-x64", true},
-		{Tailwind(""), "linux", "arm64", "gnu", "tailwindcss-linux-arm64", true},
-		{Tailwind(""), "linux", "amd64", "gnu", "tailwindcss-linux-x64", true},
+		{Tailwind("", ""), "darwin", "arm64", "gnu", "tailwindcss-macos-arm64", true},
+		{Tailwind("", ""), "darwin", "amd64", "gnu", "tailwindcss-macos-x64", true},
+		{Tailwind("", ""), "linux", "arm64", "gnu", "tailwindcss-linux-arm64", true},
+		{Tailwind("", ""), "linux", "amd64", "gnu", "tailwindcss-linux-x64", true},
 
 		// The musl builds. Asking for the glibc one on Alpine fails with "no
 		// such file or directory" naming the file that is right there, because
 		// what is missing is the loader -- and Alpine is what the Dockerfile
 		// builds in, so this is the case CI runs and a laptop never does.
-		{Tailwind(""), "linux", "amd64", "musl", "tailwindcss-linux-x64-musl", true},
-		{Tailwind(""), "linux", "arm64", "musl", "tailwindcss-linux-arm64-musl", true},
+		{Tailwind("", ""), "linux", "amd64", "musl", "tailwindcss-linux-x64-musl", true},
+		{Tailwind("", ""), "linux", "arm64", "musl", "tailwindcss-linux-arm64-musl", true},
 
-		{Tailwind(""), "windows", "amd64", "gnu", "tailwindcss-windows-x64.exe", true},
-		{Tailwind(""), "darwin", "386", "gnu", "", false},
-		{Tailwind(""), "plan9", "amd64", "gnu", "", false},
+		{Tailwind("", ""), "windows", "amd64", "gnu", "tailwindcss-windows-x64.exe", true},
+		{Tailwind("", ""), "darwin", "386", "gnu", "", false},
+		{Tailwind("", ""), "plan9", "amd64", "gnu", "", false},
 	} {
 		got, published := c.tool.asset(c.goos, c.goarch, c.libc)
 		if published != c.wantPublished {
@@ -82,11 +82,11 @@ func TestAssetNames(t *testing.T) {
 // not overwrite each other's binary, and upgrading must not silently reuse the
 // old one.
 func TestTheVersionIsInTheCachedPath(t *testing.T) {
-	first, err := Tailwind("v4.0.0").Path()
+	first, err := Tailwind("v4.0.0", "").Path()
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := Tailwind("v4.1.0").Path()
+	second, err := Tailwind("v4.1.0", "").Path()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestPinsDefaultToTheBuiltInVersions(t *testing.T) {
 	if pins.Tailwind != "" {
 		t.Fatalf("pins = %+v, want empty so the defaults apply", pins)
 	}
-	if Tailwind(pins.Tailwind).Version != DefaultTailwindVersion {
+	if Tailwind(pins.Tailwind, pins.TailwindSums).Version != DefaultTailwindVersion {
 		t.Error("the default tailwind version did not apply")
 	}
 }

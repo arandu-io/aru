@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -15,7 +16,15 @@ import (
 // There is one, and it is not Node. The view compiler is deliberately absent:
 // kyse is part of `aru` itself, so there is nothing to pin, verify or cache.
 type Pins struct {
+	// Tailwind is the release tag of the standalone CLI, as "v4.3.3".
 	Tailwind string
+
+	// TailwindSums is the SHA-256 of the sha256sums.txt that release
+	// publishes, in hex. A version aru ships no checksums for is downloaded
+	// only against it: the checksums file comes from the same release as the
+	// binary, so on its own it proves the bytes arrived whole and not that
+	// they are the bytes the project asked for.
+	TailwindSums string
 
 	// Aru is the oldest CLI this project can be built with, as "v0.17.0".
 	//
@@ -34,6 +43,14 @@ type Pins struct {
 	// the tool is still in play.
 	Retired []retired
 }
+
+// releaseTag is the only shape a pinned version may take. The version is
+// written into a file name under the cache directory and into a URL, and a
+// `../` in either goes somewhere else.
+var releaseTag = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+
+// sha256Hex is a SHA-256 digest as sha256sum prints it.
+var sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // retired is a pin that was valid once and is now dead weight.
 type retired struct {
@@ -140,14 +157,26 @@ func ReadPins(root string) (Pins, error) {
 			pins.Aru = value
 
 		case "tailwindcss":
+			// The version becomes part of a file name in the cache and of the
+			// download URL, so a value that is not a release tag is refused
+			// here rather than joined into either.
+			if !releaseTag.MatchString(value) {
+				return Pins{}, fmt.Errorf("arandu.toml:%d: tailwindcss = %q is not a release tag, want one written as v4.3.3", i+1, value)
+			}
 			pins.Tailwind = value
+
+		case "tailwindcss-sha256sums":
+			if !sha256Hex.MatchString(value) {
+				return Pins{}, fmt.Errorf("arandu.toml:%d: tailwindcss-sha256sums = %q is not a SHA-256, want 64 lowercase hex digits", i+1, value)
+			}
+			pins.TailwindSums = value
 
 		default:
 			because, ok := retiredBecause(name)
 			if !ok {
 				// A key that was never a tool is a typo, and a typo that is
 				// ignored is a version that silently does not apply.
-				return Pins{}, fmt.Errorf("arandu.toml:%d: unknown tool %q, want tailwindcss", i+1, name)
+				return Pins{}, fmt.Errorf("arandu.toml:%d: unknown tool %q, want tailwindcss or tailwindcss-sha256sums", i+1, name)
 			}
 			// Retired, not wrong. kyse replaced templ, and every project
 			// generated before that has this line -- including the published

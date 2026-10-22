@@ -1043,7 +1043,8 @@ func tenantMustComeFromTheGrant(p *project) []Finding {
 type tenantShape int
 
 const (
-	// tenantSecondArgument is SystemGrant(action, tenant).
+	// tenantSecondArgument is SystemGrant(action, tenant), and
+	// SystemGrantActing(action, tenant, impersonator) after it.
 	tenantSecondArgument tenantShape = iota
 	// tenantOnAJobLiteral is GrantFor(Job{TenantID: ...}), by value or behind
 	// an ampersand.
@@ -1092,8 +1093,10 @@ type grantConstructor struct {
 // packages whose last path element is unchanged, so `jobs.GrantFor` went on
 // matching a different module's function for as long as nobody aliased it.
 //
-// Four entries and two modules, because both spell the same two functions: the
-// framework re-exports what hesape declares, and a project can reach either.
+// Two modules, because both spell SystemGrant and GrantFor: the framework
+// re-exports what hesape declares, and a project can reach either. hesape also
+// declares SystemGrantActing, SystemGrant with the person who set the work in
+// motion recorded on it -- the same escape, with the same tenant argument.
 //
 // A new function returning a Grant has to be added here. Nothing makes that
 // automatic -- the doctor reads one package at a time and does not resolve types
@@ -1103,6 +1106,7 @@ type grantConstructor struct {
 var grantConstructors = []grantConstructor{
 	{"github.com/arandu-io/framework/security", "SystemGrant", tenantSecondArgument},
 	{"github.com/arandu-io/hesape/auth", "SystemGrant", tenantSecondArgument},
+	{"github.com/arandu-io/hesape/auth", "SystemGrantActing", tenantSecondArgument},
 	{"github.com/arandu-io/framework/jobs", "GrantFor", tenantOnAJobLiteral},
 	{"github.com/arandu-io/hesape/queue/jobs", "GrantFor", tenantOnAJobLiteral},
 }

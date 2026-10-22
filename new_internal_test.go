@@ -32,7 +32,7 @@ func TestNewClonesThePublishedSkeletonRelease(t *testing.T) {
 	got := gitInvocations(t, trace)[0]
 	want := []string{
 		"clone",
-		"--branch", "v0.36.1",
+		"--branch", "v0.37.0",
 		"--single-branch",
 		"--depth", "1",
 		"--quiet",

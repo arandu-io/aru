@@ -339,10 +339,57 @@ var (
 	errput io.Writer = os.Stderr
 )
 
+// secretEnv is the variable a signing tool reads its password from.
+//
+// A command line is readable by every process on the machine for as long as
+// the tool runs, and it is what --verbose prints; the environment of a process
+// is readable only by its owner. apksigner takes `env:NAME`, and keytool and
+// jarsigner take `-storepass:env NAME` and `-keypass:env NAME`, so the password
+// is handed over here and only the name goes on the command line.
+const secretEnv = "ARANDU_PACK_SECRET"
+
+// secretEnviron is this process's environment with value under secretEnv, for
+// the Env of a command that reads its password from there.
+func secretEnviron(value string) []string {
+	return append(os.Environ(), secretEnv+"="+value)
+}
+
+// secretsOf answers the passwords cmd carries: the one handed over under
+// secretEnv, and the value after a --password flag, which notarytool reads
+// from its command line only.
+func secretsOf(cmd *exec.Cmd) []string {
+	var secrets []string
+	for _, kv := range cmd.Env {
+		if v, ok := strings.CutPrefix(kv, secretEnv+"="); ok && v != "" {
+			secrets = append(secrets, v)
+		}
+	}
+	for i, arg := range cmd.Args {
+		if arg == "--password" && i+1 < len(cmd.Args) && cmd.Args[i+1] != "" {
+			secrets = append(secrets, cmd.Args[i+1])
+		}
+	}
+	return secrets
+}
+
+// redact answers s with every secret in it replaced.
+func redact(s string, secrets []string) string {
+	for _, secret := range secrets {
+		s = strings.ReplaceAll(s, secret, "[redacted]")
+	}
+	return s
+}
+
 // runCmdRaw runs one command and answers what it printed.
+//
+// The command line it prints under --verbose, and the one and the output it
+// puts in an error, have the command's passwords redacted: a tool that fails
+// may echo what it was given, and an error travels into logs and CI output.
 func runCmdRaw(cmd *exec.Cmd) ([]byte, error) {
+	secrets := secretsOf(cmd)
+	line := redact(strings.Join(cmd.Args, " "), secrets)
 	if *printCommands {
-		fmt.Fprintf(output, "%s\n", strings.Join(cmd.Args, " "))
+		fmt.Fprintf(output, "%s\n", line)
 	}
 	out, err := cmd.Output()
 	if err == nil {
@@ -350,7 +397,7 @@ func runCmdRaw(cmd *exec.Cmd) ([]byte, error) {
 	}
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
-		return nil, fmt.Errorf("%s failed: %s%s", strings.Join(cmd.Args, " "), out, exit.Stderr)
+		return nil, fmt.Errorf("%s failed: %s", line, redact(string(out)+string(exit.Stderr), secrets))
 	}
 	return nil, err
 }

@@ -601,13 +601,15 @@ func signAPK(tmpDir string, apkFile string, tools *androidTools, bi *buildInfo) 
 		}
 	}
 
-	_, err := runCmd(exec.Command(
+	cmd := exec.Command(
 		filepath.Join(tools.buildtools, "apksigner"),
 		"sign",
-		"--ks-pass", "pass:"+bi.password,
+		"--ks-pass", "env:"+secretEnv,
 		"--ks", bi.key,
 		apkFile,
-	))
+	)
+	cmd.Env = secretEnviron(bi.password)
+	_, err := runCmd(cmd)
 
 	return err
 }
@@ -649,13 +651,15 @@ func signAAB(tmpDir string, aabFile string, tools *androidTools, bi *buildInfo) 
 		}
 	}
 
-	keytoolList, err := runCmd(exec.Command(
+	list := exec.Command(
 		"keytool",
 		"-keystore", bi.key,
 		"-list",
-		"-keypass", bi.password,
+		"-keypass:env", secretEnv,
 		"-v",
-	))
+	)
+	list.Env = secretEnviron(bi.password)
+	keytoolList, err := runCmd(list)
 	if err != nil {
 		return err
 	}
@@ -667,15 +671,17 @@ func signAAB(tmpDir string, aabFile string, tools *androidTools, bi *buildInfo) 
 		}
 	}
 
-	_, err = runCmd(exec.Command(
+	sign := exec.Command(
 		filepath.Join("jarsigner"),
 		"-sigalg", "SHA256withRSA",
 		"-digestalg", "SHA-256",
 		"-keystore", bi.key,
-		"-storepass", bi.password,
+		"-storepass:env", secretEnv,
 		aabFile,
 		strings.TrimSpace(alias),
-	))
+	)
+	sign.Env = secretEnviron(bi.password)
+	_, err = runCmd(sign)
 
 	return err
 }
@@ -710,17 +716,19 @@ func defaultAndroidKeystore(tmpDir string, bi *buildInfo) error {
 	if err != nil {
 		return err
 	}
-	_, err = runCmd(exec.Command(
+	cmd := exec.Command(
 		keytool,
 		"-genkey",
 		"-keystore", bi.key,
-		"-storepass", bi.password,
+		"-storepass:env", secretEnv,
 		"-alias", "android",
 		"-keyalg", "RSA", "-keysize", "2048",
 		"-validity", "10000",
 		"-noprompt",
 		"-dname", "CN=android",
-	))
+	)
+	cmd.Env = secretEnviron(bi.password)
+	_, err = runCmd(cmd)
 	return err
 }
 

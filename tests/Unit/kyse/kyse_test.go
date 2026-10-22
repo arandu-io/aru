@@ -955,7 +955,7 @@ type D struct{ V string }
 <div style="color: {{ .V }}">x</div>
 <style>.a { color: {{ .V }} }</style>
 <script>var n = {{ .V }};</script>
-<input type="checkbox" {{ .V }}>
+<div hx-trigger="{{ .V }}">x</div>
 `
 	file, err := kyse.Parse("resources/views/home.kyse.go", source)
 	if err != nil {
@@ -967,15 +967,16 @@ type D struct{ V string }
 	}
 
 	want := []string{
-		"body", // <p>{{ }}</p>
-		"attr", // class="{{ }}"
-		"url",  // href="{{ }}" -- the front of the value, where a scheme goes
-		"attr", // href="/posts/{{ }}" -- the view already settled the scheme
-		"url",  // hx-get="{{ }}" -- an address to the HTML parser is an attribute
-		"css",  // style="color: {{ }}"
-		"css",  // inside <style>
-		"js",   // inside <script>
-		"name", // where the name of an attribute goes
+		"body",    // <p>{{ }}</p>
+		"attr",    // class="{{ }}"
+		"url",     // href="{{ }}" -- the front of the value, where a scheme goes
+		"attr",    // href="/posts/{{ }}" -- the view already settled the scheme
+		"url",     // hx-get="{{ }}" -- an address to the HTML parser is an attribute
+		"css",     // style="color: {{ }}"
+		"css",     // inside <style>
+		"js",      // inside <script>
+		"trigger", // hx-trigger="{{ }}" -- examined for a filter first,
+		"attr",    // and then escaped as the attribute it is
 	}
 	if got := escapersIn(string(out)); !reflect.DeepEqual(got, want) {
 		t.Errorf("the escapes chosen are\n%v\nand the positions ask for\n%v\n%s", got, want, out)
@@ -991,8 +992,8 @@ func escapersIn(generated string) []string {
 		{"kyse__view.TextURL(", "url"},
 		{"kyse__view.TextJS(", "js"},
 		{"kyse__view.TextCSS(", "css"},
-		// The one position with no escape: the value is examined instead.
-		{"kyse__strings.ContainsAny(", "name"},
+		// A trigger is examined before its escape, so the check is read first.
+		{"kyse__strings.ContainsAny(", "trigger"},
 	}
 
 	var out []string
@@ -1014,10 +1015,9 @@ func escapersIn(generated string) []string {
 
 // A position with no escape at all refuses the view, and says which position.
 //
-// Refusing at build time rather than at render time is the difference between
-// these and the name of an attribute: there the value decides, and a page
-// writing `checked` there works. In these four no value is safe, so waiting for
-// one is waiting for nothing.
+// Refusing at build time rather than at render time is the point: in these no
+// value is safe, so waiting for one is waiting for nothing. The name of an
+// attribute is one of them, and has a test of its own.
 func TestAPositionWithNoEscapeRefusesTheView(t *testing.T) {
 	for _, c := range []struct {
 		what, markup, says string

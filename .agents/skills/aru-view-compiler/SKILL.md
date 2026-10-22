@@ -167,8 +167,8 @@ read with character references decoded and tabs and newlines removed, and a
 value takes the URL check while the front is still empty. `hx-push-url` and
 `hx-replace-url` are addresses too.
 
-And these positions produce no escape at all, so the value is refused instead —
-all at build time except the attribute name:
+And these positions produce no escape at all, so the value is refused instead,
+all at build time:
 
 - **an unquoted attribute value** — it ends at the first space, and no escape
   puts a space back inside it;
@@ -188,8 +188,12 @@ all at build time except the attribute name:
   references;
 - **a position the markup left unknown** — a tag opened in one branch and closed
   in another, or a `{!! !!}`, `@include` or `@yield` written inside a tag;
-- **where an attribute name goes** — refused at render time, because a page
-  writes a name there today and only the value decides.
+- **where an attribute name goes** — whole or in part: `{{ .N }}="{{ .V }}"`,
+  `{{ .N }}="1"`, a bare `{{ .N }}`, `data-{{ .N }}`. The escape of every value
+  is chosen from the name of its attribute, and a name that is data is one the
+  compiler never read, so `onclick`, `hx-post` or `href` would carry their value
+  as inert text. An attribute whose name is data is written with `@attributes`,
+  whose `view.Attributes` refuses an active or address name at render time.
 
 `attributeHoldsURL` is an exact list of the attributes that hold **one** URL.
 `srcset` is deliberately absent: it holds several with a descriptor after each,
@@ -202,7 +206,7 @@ refusal. There is no default that "probably escapes enough".
 
 ## A refusal at render time fails closed
 
-`view.TextURL`, `view.TextCSS`, the attribute-name check and the trigger check
+`view.TextURL`, `view.TextCSS`, `view.Attributes` and the trigger check
 return an error, and the first error stops every write after it: the generated
 render function returns it, wrapped with the view's file and line. A generated
 **component** returns its markup only when every write succeeded, and the empty

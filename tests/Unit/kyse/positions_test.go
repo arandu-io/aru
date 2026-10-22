@@ -21,8 +21,7 @@ var escapeCall = regexp.MustCompile(
 		`|kyse__view\.TextURL\(` + // url
 		`|kyse__view\.TextJS\(kyse__d\.` + // js
 		`|kyse__view\.TextCSS\(` + // css
-		`|kyse__strings\.ContainsAny\(kyse__v\d+, "\[\]"\)` + // trigger
-		`|kyse__strings\.ContainsAny\(`) // name
+		`|kyse__strings\.ContainsAny\(kyse__v\d+, "\[\]"\)`) // trigger
 
 // escapesOf names the escapes in generated Go, in the order they are written.
 func escapesOf(generated string) []string {
@@ -34,7 +33,6 @@ func escapesOf(generated string) []string {
 		"kyse__view.TextURL(":                              "url",
 		"kyse__view.TextJS(kyse__d.":                       "js",
 		"kyse__view.TextCSS(":                              "css",
-		"kyse__strings.ContainsAny(":                       "name",
 	}
 	var out []string
 	for _, m := range escapeCall.FindAllString(generated, -1) {
@@ -63,6 +61,7 @@ func TestEveryAttributePositionTakesItsEscapeOrIsRefused(t *testing.T) {
 		acts    = "which the browser acts on rather than displays"
 		open    = "before the scheme and the host of the address are fixed"
 		lateMet = "http-equiv is written after a value"
+		name    = "where the name of an attribute goes"
 	)
 	for _, c := range []struct {
 		what, markup string
@@ -130,7 +129,8 @@ func TestEveryAttributePositionTakesItsEscapeOrIsRefused(t *testing.T) {
 		{"style element in SVG", `<svg><style>{{ .Q }}</style></svg>`, []string{"css"}, ""},
 		{"textarea", `<textarea>{{ .Q }}</textarea>`, []string{"body"}, ""},
 		{"title", `<title>{{ .Q }}</title>`, []string{"body"}, ""},
-		{"attribute name", `<div {{ .Q }}></div>`, []string{"name"}, ""},
+		{"attribute name", `<div {{ .Q }}></div>`, nil, name},
+		{"attribute name before a value", `<div {{ .Q }}="{{ .U }}"></div>`, nil, name},
 		{"an ordinary data attribute", `<div data-src="{{ .Q }}" data-id="{{ .Q }}"></div>`, []string{"attr", "attr"}, ""},
 	} {
 		t.Run(c.what, func(t *testing.T) {

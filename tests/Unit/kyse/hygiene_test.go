@@ -59,7 +59,7 @@ type PageData struct {
 type Row struct {
 	URL   string
 	Label string
-	Attr  string
+	Event string
 	Color string
 }
 @endgo
@@ -70,7 +70,7 @@ type Row struct {
 <h1>{{ .Title }}</h1>
 @foreach(.Rows as BINDING)
 <a href="{{ BINDING.URL }}">{{ BINDING.Label }}</a>
-<span {{ BINDING.Attr }}="1">{{ .Title }}</span>
+<span hx-trigger="{{ BINDING.Event }}">{{ .Title }}</span>
 <p style="color: {{ BINDING.Color }}">{{ BINDING.Label }}</p>
 <script>var label = "{{ BINDING.Label }}";</script>
 @include('partials.footer')

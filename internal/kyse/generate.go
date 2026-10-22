@@ -578,13 +578,10 @@ func (g *generator) write(line int, format string, args ...any) {
 // the page, and refuses it when the position will not hold it.
 //
 // The build knows the position and never the value, so this is the half that
-// has to happen at render time. It is where an attribute name goes, the one
-// position with no escape whose values a page still writes: what goes there
-// today is a name a helper returns, so refusing every value would refuse the
-// pages that work. And it is an HTMX trigger, where a component writes the
-// events it listens for and only a square bracket turns the value into a
-// script. Refusing the value rather than repairing it is the
-// choice everywhere else too -- rewriting would change what the page says
+// has to happen at render time. It is an HTMX trigger, where a component
+// writes the events it listens for and only a square bracket turns the value
+// into a script. Refusing the value rather than repairing it is the choice
+// everywhere else too -- rewriting would change what the page says
 // without saying so.
 //
 // The refusal stops the render and names the view's own file and line. Dropping
@@ -714,9 +711,9 @@ func (g *generator) self() { g.out.WriteString(markerSelf + "\n") }
 // emit writes the file: the body first, then the header above it.
 //
 // The order is backwards on purpose. The import block depends on what the walk
-// over the nodes found -- a value written where an attribute name goes is
-// examined at render time, and the check needs two imports a view without one
-// must not carry, because an unused import is a compile error. Only the walk
+// over the nodes found -- a value written into an HTMX trigger is examined at
+// render time, and the check needs two imports a view without one must not
+// carry, because an unused import is a compile error. Only the walk
 // knows, so the walk runs first and the header is written over it.
 //
 // The line markers are resolved after the whole file is formatted, so building
@@ -1149,17 +1146,18 @@ func (g *generator) directiveAfterMarkup(n Node) {
 // Which one a value needs is read off the markup around it, which is why a view
 // writes {{ }} and says nothing about escaping.
 //
-// Seven of the cases refuse rather than escape. Five are positions with no
-// escape at all, and a sixth is not a position but the absence of one; all six
-// are refused here, because no value would be safe in them. The seventh --
-// where the name of an attribute goes -- is refused at render time instead,
-// because a page writes a name there today and only the value decides.
+// Seven of the cases refuse rather than escape, and all seven at build time.
+// Six are positions with no escape at all, and the seventh is not a position
+// but the absence of one; no value would be safe in any of them, so waiting
+// for one at render time would be waiting for nothing.
 func (g *generator) echo(n Node) {
 	expr := g.expr(n.Body)
 
 	switch g.scan.position() {
 	case posAttributeName:
-		g.checked(n.Line, expr, deniedInAttributeName, reasonAttributeName, "")
+		g.refuse(n.Line, "this value is written where the name of an attribute goes",
+			"the escape of a value is chosen from the name of the attribute it sits in, and a name that is data is one this compiler never reads -- onclick, hx-post or href would carry their value as inert text, a value the view wrote as well. An attribute name carries no character references either, so no escape keeps the name one name.\n"+
+				"    Choose between fixed attributes with @if, or pass the attributes as a map to @attributes, which refuses a name the browser acts on.")
 
 	case posTrigger:
 		g.checked(n.Line, expr, deniedInTrigger, reasonTrigger, pkgView+".TextAttr")
@@ -1553,9 +1551,11 @@ const (
 	posScript
 	// posStyle is a style attribute, or the body of a style element.
 	posStyle
-	// posAttributeName is where the name of an attribute goes. An attribute
-	// name carries no character references, so a character that ends the name
-	// cannot be written as anything else.
+	// posAttributeName is where the name of an attribute goes. A value is
+	// refused there: the escape of every value is chosen from the name of its
+	// attribute, and a name that is data is one nothing has read, so onclick or
+	// href would carry their value as inert text. A name from data is written
+	// with @attributes, which checks the name and is the one shape that does.
 	posAttributeName
 	// posUnquotedValue is an attribute value with no quotes around it, which
 	// ends at the first space -- and a space is not one of the six.
@@ -1605,9 +1605,6 @@ var controlCharacters = func() string {
 // syntax of the position -- not from a list of characters seen in an attack,
 // which is a list that is always one entry short.
 var (
-	// An attribute name ends at whitespace, at `/`, at `>` and at `=`, and the
-	// syntax forbids a quote, `<` and a backtick inside one.
-	deniedInAttributeName = controlCharacters + " \"'/<=>`"
 	// A trigger evaluates what it holds between square brackets as a script, so
 	// a value may not open or close one.
 	deniedInTrigger = "[]"
@@ -1615,8 +1612,7 @@ var (
 
 // The reasons a refusal gives, which are what somebody reads when a page stops.
 const (
-	reasonAttributeName = "the value interpolated where an attribute name goes holds a character that would end the name and begin markup of its own, and an attribute name carries no entities, so there is no escape that would keep it one name"
-	reasonTrigger       = "the value interpolated into an HTMX trigger holds a square bracket, and HTMX evaluates what a trigger holds between square brackets as a script"
+	reasonTrigger = "the value interpolated into an HTMX trigger holds a square bracket, and HTMX evaluates what a trigger holds between square brackets as a script"
 )
 
 // scanState is the state of the HTML tokenizer, cut to what deciding a position

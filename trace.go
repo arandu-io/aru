@@ -9,8 +9,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"reflect"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // trace reconstructs one request in the terminal.
@@ -49,7 +51,7 @@ func trace(args []string, stdout, stderr io.Writer) error {
 	}
 
 	if *asJSON {
-		fmt.Fprintln(stdout, string(body))
+		fmt.Fprintln(stdout, printable(string(body)))
 		return nil
 	}
 	if id == "" {
@@ -183,6 +185,7 @@ func printList(w io.Writer, body []byte) error {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return fmt.Errorf("trace: the console answered something unexpected: %w", err)
 	}
+	sanitize(reflect.ValueOf(&payload))
 
 	if len(payload.Rows) == 0 {
 		fmt.Fprintln(w, "nothing recorded yet. Make a request and try again.")
@@ -211,6 +214,7 @@ func printRequest(w io.Writer, body []byte) error {
 	if err := json.Unmarshal(body, &p); err != nil {
 		return fmt.Errorf("trace: the console answered something unexpected: %w", err)
 	}
+	sanitize(reflect.ValueOf(&p))
 
 	fmt.Fprintf(w, "%s %s  %d  %s  (%s)\n%s\n\n", p.Method, p.Path, p.Status, p.Duration, p.At, p.ID)
 
@@ -286,4 +290,56 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n-1] + "…"
+}
+
+// printable answers s with every character a terminal would act on rather
+// than show written out as a \u escape, so what the server recorded is read
+// and never executed.
+//
+// Every field the report prints comes from the application, and much of it
+// from whoever made the request: a path, a header dumped, an argument of a
+// query. An escape sequence in one of them can clear the screen, rewrite the
+// lines above, set the window title or hand the terminal a link, and a
+// bidirectional override makes a line read in an order other than the one it
+// is written in. A newline and a tab are kept, because a dump is printed line
+// by line and indents with them.
+//
+// The escape is the one JSON uses, so --json stays a document that decodes to
+// the same values.
+func printable(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r == '\n' || r == '\t' || !unicode.IsControl(r) && !isBidiControl(r) {
+			b.WriteRune(r)
+			continue
+		}
+		fmt.Fprintf(&b, `\u%04x`, r)
+	}
+	return b.String()
+}
+
+// isBidiControl reports whether r changes the direction of the text around it.
+func isBidiControl(r rune) bool {
+	return r >= '\u202a' && r <= '\u202e' || r >= '\u2066' && r <= '\u2069' || r == '\u200e' || r == '\u200f' || r == '\u061c'
+}
+
+// sanitize passes every string reachable from v through printable, so a field
+// added to a payload is covered without anybody remembering to.
+func sanitize(v reflect.Value) {
+	switch v.Kind() {
+	case reflect.Pointer:
+		if !v.IsNil() {
+			sanitize(v.Elem())
+		}
+	case reflect.Struct:
+		for i := range v.NumField() {
+			sanitize(v.Field(i))
+		}
+	case reflect.Slice:
+		for i := range v.Len() {
+			sanitize(v.Index(i))
+		}
+	case reflect.String:
+		v.SetString(printable(v.String()))
+	}
 }

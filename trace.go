@@ -87,7 +87,17 @@ func fetchTrace(host, id, secret string) ([]byte, error) {
 		req.Header.Set("X-Arandu-Trace", secret)
 	}
 
-	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	// A redirect is not followed. The secret is a header of this program's own,
+	// which net/http does not know to drop when a redirect leaves the host, so
+	// following one would hand it to wherever the answer pointed. The 3xx is
+	// answered below with where it pointed instead.
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		var opErr *net.OpError
 		if errors.As(err, &opErr) {
@@ -115,8 +125,12 @@ func fetchTrace(host, id, secret string) ([]byte, error) {
 			return nil, fmt.Errorf("no request with id %s.\nThe buffer keeps the most recent ones and drops the rest -- reproduce it and try again", id)
 		}
 		return nil, fmt.Errorf("%s has no debug console.\nIt is mounted in development, and in other environments only when APP_TRACING_SECRET is set", host)
+	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther,
+		http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+		return nil, fmt.Errorf("%s answered %s and points at %s.\naru trace does not follow a redirect, so the tracing secret goes only to the host it was given: point --host at where the application answers",
+			host, printable(resp.Status), printable(resp.Header.Get("Location")))
 	default:
-		return nil, fmt.Errorf("trace: %s answered %s", host, resp.Status)
+		return nil, fmt.Errorf("trace: %s answered %s", host, printable(resp.Status))
 	}
 }
 

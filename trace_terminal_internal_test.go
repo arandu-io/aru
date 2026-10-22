@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -72,5 +74,37 @@ func TestTheTerminalIsGivenNoControlCharacters(t *testing.T) {
 	var decoded struct{ Path string }
 	if err := json.Unmarshal([]byte(out), &decoded); err != nil || decoded.Path != "/\u009b2J\u202e" {
 		t.Errorf("--json no longer decodes to what the server sent: %v, %q", err, decoded.Path)
+	}
+}
+
+// A redirect is not followed, so the tracing secret never reaches a host other
+// than the one it was given to, and the error says where the answer pointed.
+func TestTheTracingSecretDoesNotFollowARedirect(t *testing.T) {
+	var reached atomic.Bool
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached.Store(true)
+		if r.Header.Get("X-Arandu-Trace") != "" {
+			t.Errorf("the tracing secret reached another host: %q", r.Header.Get("X-Arandu-Trace"))
+		}
+		_, _ = w.Write([]byte(detailJSON))
+	}))
+	defer elsewhere.Close()
+
+	for _, status := range []int{http.StatusFound, http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, elsewhere.URL+"/_arandu/debug/abc123?format=json", status)
+		}))
+
+		_, err := runTrace(t, "abc123", "--host", app.URL, "--secret", "s3cret")
+		app.Close()
+		if err == nil {
+			t.Fatalf("%d: a redirected trace was reported as a success", status)
+		}
+		if !strings.Contains(err.Error(), elsewhere.URL) || !strings.Contains(err.Error(), "does not follow a redirect") {
+			t.Errorf("%d: the error does not say where the answer pointed: %v", status, err)
+		}
+	}
+	if reached.Load() {
+		t.Error("the redirect was followed")
 	}
 }

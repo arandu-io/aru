@@ -49,8 +49,8 @@ retract v0.37.0 // Does not pin the skeleton and could clone an incompatible mov
 
 require (
 	github.com/akavel/rsrc v0.10.2
-	github.com/arandu-io/framework v0.64.0
-	github.com/arandu-io/hesape v0.84.1
+	github.com/arandu-io/framework v0.65.0
+	github.com/arandu-io/hesape v0.84.2
 	github.com/arandu-io/mcp v0.4.3
 	github.com/evanw/esbuild v0.28.2
 	golang.org/x/image v0.46.0

@@ -511,6 +511,18 @@ window.`,
 		run:   makeTest,
 	},
 	{
+		name:  "make:e2e",
+		usage: makeE2EUsage,
+		desc:  "generate an end-to-end journey in tests/E2E, behind the e2e tag",
+		run:   makeE2E,
+	},
+	{
+		name:  "make:contract",
+		usage: makeContractUsage,
+		desc:  "generate the contract test of one operation of the exported OpenAPI document, in tests/Contract",
+		run:   makeContract,
+	},
+	{
 		name:  "trace",
 		usage: "aru trace [<request_id>] [--host http://127.0.0.1:8080] [--secret=<secret>] [--json]",
 		desc:  "reconstruct a request in the terminal, from the running application",

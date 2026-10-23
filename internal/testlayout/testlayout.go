@@ -13,6 +13,10 @@
 // true of both, and a second implementation of them is how the two would come
 // to disagree.
 //
+// It also lists them: List reads every test of a module from its sources, with
+// the layer, the build tags and the literal subtests of each, for the commands
+// and the editor that show a suite without compiling it.
+//
 // What it does not do is decide what an empty answer means. A check reports how
 // many files it examined, and zero is a fact rather than a verdict: in a
 // repository whose suite is required to exist it means the walk is looking in

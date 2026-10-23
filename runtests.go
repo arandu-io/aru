@@ -58,6 +58,9 @@ type testRun struct {
 	driver, engine string
 	// deprecated is set by a bare --browser, the old name of --e2e.
 	deprecated bool
+	// list is --list: read the tests from the sources and print them instead
+	// of running anything. json is --json beside it.
+	list, json bool
 	// rest is everything handed to go test as it was typed.
 	rest []string
 }
@@ -91,6 +94,13 @@ func runTests(args []string, stdout, stderr io.Writer) error {
 	root, err := projectRoot()
 	if err != nil {
 		return err
+	}
+	if run.list {
+		if extra := run.listConflict(); extra != "" {
+			return errors.New("aru test --list reads the test sources and runs nothing, so it takes no flag but --json: drop " +
+				extra + ". go test's own -list is written -list=<regexp>")
+		}
+		return listTests(root, run.json, stdout, stderr)
 	}
 	if _, err := exec.LookPath("go"); err != nil {
 		return errors.New("the go toolchain was not found in PATH, and aru needs it to run the tests")
@@ -245,9 +255,14 @@ func sortedPackages(m map[string][]string) []string {
 
 // parseTestArgs takes aru test's own flags out of the arguments. Scanning
 // stops at a bare --: what follows is for go test, even a --e2e.
+//
+// --list without a value is aru's, and -list=<regexp> is go test's own. A
+// --json is aru's only beside --list; without it, it is the -json go test
+// streams its events with, and stays where it was typed.
 func parseTestArgs(args []string) (testRun, error) {
 	var run testRun
 	run.rest = make([]string, 0, len(args))
+	var jsonAt []int
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--" {
@@ -260,6 +275,17 @@ func parseTestArgs(args []string) (testRun, error) {
 			continue
 		}
 		switch name {
+		case "list":
+			if hasValue {
+				run.rest = append(run.rest, a)
+				continue
+			}
+			run.list = true
+		case "json":
+			if !hasValue {
+				jsonAt = append(jsonAt, len(run.rest))
+			}
+			run.rest = append(run.rest, a)
 		case "e2e":
 			run.e2e = true
 		case "smoke":
@@ -301,7 +327,38 @@ func parseTestArgs(args []string) (testRun, error) {
 			run.rest = append(run.rest, a)
 		}
 	}
+	if run.list && len(jsonAt) > 0 {
+		kept := make([]string, 0, len(run.rest))
+		for i, a := range run.rest {
+			if len(jsonAt) > 0 && jsonAt[0] == i {
+				jsonAt = jsonAt[1:]
+				continue
+			}
+			kept = append(kept, a)
+		}
+		run.rest, run.json = kept, true
+	}
 	return run, nil
+}
+
+// listConflict names the first argument --list cannot be given with, or
+// returns empty when there is none.
+func (r testRun) listConflict() string {
+	switch {
+	case r.smoke:
+		return "--smoke"
+	case r.shards > 0:
+		return "--shard"
+	case r.driver != "":
+		return "--driver"
+	case r.engine != "" || r.deprecated:
+		return "--browser"
+	case r.e2e:
+		return "--e2e"
+	case len(r.rest) > 0:
+		return r.rest[0]
+	}
+	return ""
 }
 
 // parseShard reads i/n, with 1 <= i <= n.

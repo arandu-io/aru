@@ -178,8 +178,8 @@ var commands = []command{
 	},
 	{
 		name:  "test",
-		usage: "aru test [--e2e] [--smoke] [--shard=i/n] [--driver=cdp] [--browser=chromium] [flags for go test]",
-		desc:  "run the project's tests with go test, or with --e2e the journeys in tests/E2E",
+		usage: "aru test [--list [--json]] [--e2e] [--smoke] [--shard=i/n] [--driver=cdp] [--browser=chromium] [flags for go test]",
+		desc:  "run the project's tests with go test, or with --e2e the journeys in tests/E2E, or list them with --list",
 		help:  testHelp,
 		run:   runTests,
 	},
@@ -612,7 +612,41 @@ ARANDU_E2E_BROWSER. Either one implies --e2e. A bare --browser is the old name
 of --e2e and still runs tests/E2E.
 
 Every other flag -- -run, -race, -v, -count -- is handed to go test as it is,
-and a -tags of yours is joined with e2e rather than replaced.`
+and a -tags of yours is joined with e2e rather than replaced.
+
+--list prints every test of the project and runs nothing: it reads the Go
+sources, so a build that is broken is listed too. Each test is a func TestX
+taking *testing.T in a _test.go file, with its layer (Unit, Feature, Contract,
+E2E, Conformance, or Other for a test outside those directories), package,
+file, line, the tags -tags needs for its file, and the t.Run subtests whose
+name is a string literal. It takes no other flag. go test's own -list is
+written -list=<regexp>.
+
+--list --json prints the same as one JSON object, for an editor to read:
+
+  version     1. It changes only when a field is removed, renamed or changes
+              meaning; a new field leaves it as it is, so ignore what you do
+              not know
+  module      the module path go.mod declares
+  layers      every layer a test can be in, in the order tests are sorted:
+              objects of name, dir (relative to the module root, empty for
+              Other) and tag (the build tag the layer's files carry, or empty)
+  tests       every top-level test, sorted by layer, file and line: objects of
+                layer       the name of its layer
+                package     the import path go test reports
+                file        relative to the module root, with forward slashes
+                line        the 1-based line of its func keyword
+                name        the function name -run matches
+                constraint  the file's //go:build expression, or empty
+                tags        what -tags needs: the tags the constraint names
+                            that are not negated and are not an operating
+                            system, architecture, compiler, cgo or Go version
+                subtests    objects of name (the full name go test reports,
+                            TestX/sub/inner, spaces as underscores, a repeat
+                            numbered #01) and line, depth first
+  unreadable  every test file the parser refused: objects of file and error
+
+Arrays are never null, and a field that has no value is an empty string.`
 
 // openAPICheckHelp is the body `aru openapi:check --help` prints, under the
 // usage line.

@@ -59,7 +59,14 @@ adds `-run '^TestSmoke'` (the convention: a smoke journey is named
 `TestSmoke<Journey>`), `--shard=i/n` lists the tests with `go test -list`, sorts
 them and runs every n-th from the i-th, and `--driver`/`--browser=<engine>` are
 exported as `ARANDU_E2E_DRIVER`/`ARANDU_E2E_BROWSER`. A bare `--browser` is the
-old name of `--e2e`. Every other argument goes to `go test` as typed, so it has
+old name of `--e2e`. `--list` starts no toolchain at all: `testlayout.List`
+reads the sources with `go/parser` and the command prints every test by layer,
+package, file and line with the tags its file needs and its literal `t.Run`
+subtests, or with `--json` the versioned inventory the editor's Test Controller
+reads, whose schema is written in `testHelp` and held to the encoded struct by
+`TestTheHelpNamesEveryFieldOfTheSchema`. `--list` without a value is aru's and
+`-list=<regexp>` is go test's; `--json` is aru's only beside `--list`, so a
+`-json` typed for go test still streams its events. Every other argument goes to `go test` as typed, so it has
 no flag set of its own and is listed in `flagsWithoutAFlagSet`; the
 end-to-end directory and tag come from `testlayout.E2EDir` and
 `testlayout.E2ETag`, the names the doctor and the generators read too.

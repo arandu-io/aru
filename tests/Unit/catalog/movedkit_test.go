@@ -21,7 +21,7 @@ func kitFramework(t *testing.T, withKit bool) string {
 		"test/browser/browser.go": "package browser\n\ntype Page struct{}\n",
 	}
 	for name, body := range files {
-		if (!withKit && strings.HasPrefix(name, "test/")) {
+		if !withKit && strings.HasPrefix(name, "test/") {
 			continue
 		}
 		path := filepath.Join(dir, filepath.FromSlash(name))

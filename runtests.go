@@ -345,9 +345,7 @@ func takeTags(args []string) ([]string, []string) {
 			i++
 			value = args[i]
 		}
-		for _, t := range strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' }) {
-			tags = append(tags, t)
-		}
+		tags = append(tags, strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' })...)
 	}
 	return rest, tags
 }

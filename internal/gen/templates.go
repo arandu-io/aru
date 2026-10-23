@@ -179,6 +179,31 @@ func ({{.PolicyType}}) Can(ctx context.Context, s auth.Subject, a auth.Action, {
 
 	return fmt.Errorf("no rule allows %s on {{.Name}}", a)
 }
+
+// Writes reports whether the action changes a {{.Name}}. A Grant issued for an
+// action this answers false for is a Grant for reading, and inserting,
+// updating or deleting with it is refused: a service that authorized
+// {{.Entity}}View and then saved is stopped at the save instead of writing.
+//
+// An action that changes a row and is not one of the three goes in the custom
+// block. Left out, it is a reading action, and every write made with its Grant
+// is refused.
+func ({{.PolicyType}}) Writes(a auth.Action) bool {
+	switch a {
+	case {{.Entity}}Create, {{.Entity}}Update, {{.Entity}}Delete:
+		return true
+	}
+
+	// arandu:begin custom
+	// The write actions this policy opens beyond the three:
+	//
+	//	if a == {{.Entity}}Approve {
+	//		return true
+	//	}
+	// arandu:end custom
+
+	return false
+}
 `
 
 const serviceTemplate = `package services

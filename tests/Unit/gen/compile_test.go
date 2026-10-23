@@ -221,6 +221,16 @@ func generatedProject(t *testing.T) (string, map[string]string) {
 		return gen.GenerateService(service)
 	})
 
+	// What every generated policy declares about its writes, run: the three
+	// actions that change a row answer true and the two that read answer
+	// false, whichever command wrote the policy. The interface is written in
+	// the test rather than imported, so the generated code is proved against
+	// a hesape that does not publish it yet.
+	one("the writes every generated policy declares", func() (gen.File, error) {
+		return gen.File{Path: "tests/Unit/PolicyWrites_test.go", Content: policyWritesTest(
+			"PurchaseOrder", "StockItem", "Task", "Media", "Warehouse", "Shipment")}, nil
+	})
+
 	// make:resource, over the tenant module's model as make:module wrote it:
 	// the columns are read back off the file, which is what the command does.
 	emit("aru make:resource PurchaseOrder", func() ([]gen.File, error) {
@@ -904,3 +914,50 @@ func (l *SettleApprovedPurchaseOrder) Publish(ctx context.Context, e events.Stor
 	})
 }
 `
+
+// policyWritesTest is a test, in the generated project, of what the policy of
+// each entity answers when it is asked whether an action writes.
+//
+// A policy that declared update as a reading action would compile, and every
+// edit made through it would be refused at the save.
+func policyWritesTest(entities ...string) []byte {
+	var cases strings.Builder
+	for _, e := range entities {
+		fmt.Fprintf(&cases, "\t\t{%q, policies.%sPolicy{}, []auth.Action{policies.%sCreate, policies.%sUpdate, policies.%sDelete}, []auth.Action{policies.%sView, policies.%sList}},\n",
+			e, e, e, e, e, e, e)
+	}
+	return []byte(`package unit_test
+
+import (
+	"testing"
+
+	"github.com/arandu-io/hesape/auth"
+
+	policies "` + generatedModulePath + `/app/Policies"
+)
+
+// writer is how a policy is asked which of its actions change a row.
+type writer interface{ Writes(auth.Action) bool }
+
+func TestEveryGeneratedPolicyDeclaresItsWrites(t *testing.T) {
+	for _, c := range []struct {
+		entity string
+		policy writer
+		writes []auth.Action
+		reads  []auth.Action
+	}{
+` + cases.String() + `	} {
+		for _, a := range c.writes {
+			if !c.policy.Writes(a) {
+				t.Errorf("%s: %s changes a row, and the policy calls it a reading action", c.entity, a)
+			}
+		}
+		for _, a := range c.reads {
+			if c.policy.Writes(a) {
+				t.Errorf("%s: %s only reads, and the policy lets its Grant write", c.entity, a)
+			}
+		}
+	}
+}
+`)
+}

@@ -57,3 +57,28 @@ func (PurchaseOrderPolicy) Can(ctx context.Context, s auth.Subject, a auth.Actio
 
 	return fmt.Errorf("no rule allows %s on purchase_order", a)
 }
+
+// Writes reports whether the action changes a purchase_order. A Grant issued for an
+// action this answers false for is a Grant for reading, and inserting,
+// updating or deleting with it is refused: a service that authorized
+// PurchaseOrderView and then saved is stopped at the save instead of writing.
+//
+// An action that changes a row and is not one of the three goes in the custom
+// block. Left out, it is a reading action, and every write made with its Grant
+// is refused.
+func (PurchaseOrderPolicy) Writes(a auth.Action) bool {
+	switch a {
+	case PurchaseOrderCreate, PurchaseOrderUpdate, PurchaseOrderDelete:
+		return true
+	}
+
+	// arandu:begin custom
+	// The write actions this policy opens beyond the three:
+	//
+	//	if a == PurchaseOrderApprove {
+	//		return true
+	//	}
+	// arandu:end custom
+
+	return false
+}

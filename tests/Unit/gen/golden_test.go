@@ -246,6 +246,28 @@ func TestTheGeneratedPolicyDeniesByDefault(t *testing.T) {
 	t.Fatal("no policy was generated")
 }
 
+// TestTheGeneratedPolicyDeclaresItsWrites: every policy the generator writes
+// says which of its actions change a row, so a Grant issued for reading cannot
+// be spent on a save. Without the method the policy issues Grants that write
+// whatever the action was, which is the hole the declaration closes.
+func TestTheGeneratedPolicyDeclaresItsWrites(t *testing.T) {
+	for _, tenant := range []bool{true, false} {
+		policy := byName(t, spec(tenant))["PurchaseOrderPolicy.go"]
+		if !strings.Contains(policy, "func (PurchaseOrderPolicy) Writes(a auth.Action) bool {") {
+			t.Fatalf("tenant=%v: the policy does not declare its writes:\n%s", tenant, policy)
+		}
+		if !strings.Contains(policy, "case PurchaseOrderCreate, PurchaseOrderUpdate, PurchaseOrderDelete:\n\t\treturn true") {
+			t.Errorf("tenant=%v: the policy does not name create, update and delete as its writes:\n%s", tenant, policy)
+		}
+		body := policy[strings.Index(policy, ") Writes("):]
+		for _, read := range []string{"PurchaseOrderView", "PurchaseOrderList"} {
+			if strings.Contains(strings.SplitN(body, "arandu:begin custom", 2)[0], read) {
+				t.Errorf("tenant=%v: %s is declared a write", tenant, read)
+			}
+		}
+	}
+}
+
 // TestTenantScopesEveryQuery: a tenant table keeps Hesape's tenant_id default,
 // while a global table must opt out explicitly, with Global -- the one field of
 // model.TableSpec that drops the filter. Every terminal then applies that

@@ -39,10 +39,11 @@ import (
 // where it lives, and a caller that disagreed with it would write the directive
 // for a file that is not the one on disk.
 //
-// Both paths are written into the output verbatim -- the Go compiler prints a
-// //line file name exactly as it finds it, without resolving it -- so passing
-// them relative to the project root is what makes the reported position
-// clickable from where `go build` runs.
+// Both paths are given relative to the project root. Output under
+// storage/framework/views names them relative to its own directory, which is
+// how go/parser resolves a relative line directive, so go vet and an editor
+// report the .kyse.go itself; anywhere else they are written as given. See
+// lineFile.
 func Generate(f *File, name, dataType, output string) ([]byte, error) {
 	// A view that reads a field with no type to read it from cannot produce Go
 	// that compiles, and it has to be said here rather than by the Go compiler
@@ -484,6 +485,7 @@ const viewData = "d"
 // It replaces each marker line in place, never inserting or removing one, so
 // the line numbers it hands out stay true for the markers below it.
 func resolveLineMarkers(formatted []byte, source, generated string) []byte {
+	source, self := lineFile(source, generated), lineFile(generated, generated)
 	lines := strings.Split(string(formatted), "\n")
 	for i, line := range lines {
 		switch {
@@ -492,7 +494,7 @@ func resolveLineMarkers(formatted []byte, source, generated string) []byte {
 		case line == markerSelf:
 			// A directive names the position of the line after it, and i counts
 			// from zero, so the line after this one is i+2.
-			lines[i] = fmt.Sprintf("//line %s:%d", generated, i+2)
+			lines[i] = fmt.Sprintf("//line %s:%d", self, i+2)
 		}
 	}
 	return []byte(strings.Join(lines, "\n"))
@@ -3056,8 +3058,26 @@ func Stale(pkg, source, output string, line int, message string) []byte {
 	return []byte(b.String())
 }
 
-// lineFile is how a line directive in the file at output names the view at
-// source.
-func lineFile(source, output string) string {
-	return filepath.ToSlash(source)
+// lineFile is how a line directive in the file at output names the file at
+// path, both relative to where the build runs.
+//
+// A project compiles its views into storage/framework/views, away from the
+// sources, and there the name is relative to the directory of the output.
+// That is the rule go/parser applies to a relative line directive -- and with
+// it go vet, gopls and every analysis built on them -- so a position they
+// report resolves to the .kyse.go itself. The Go compiler prints the name as
+// written, which reads relative to the package directory.
+//
+// Anywhere else the name stays as it was given, relative to the module root:
+// a library compiles each view beside its source and commits the output, which
+// every consumer imports as published.
+func lineFile(path, output string) string {
+	if !strings.HasPrefix(filepath.ToSlash(output), CompiledDir+"/") {
+		return filepath.ToSlash(path)
+	}
+	rel, err := filepath.Rel(filepath.Dir(output), path)
+	if err != nil {
+		return filepath.ToSlash(path)
+	}
+	return filepath.ToSlash(rel)
 }

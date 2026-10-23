@@ -1,6 +1,9 @@
 package main
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -137,5 +140,48 @@ func TestAFailedBuildDoesNotLeaveTheLastOutputBehind(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "resources/views/notes/index.kyse.go:9") || !strings.Contains(string(out), "viewDidNotCompile") {
 		t.Errorf("go build does not stop at the view's line:\n%s", out)
+	}
+}
+
+// TestAnAnalysisOfTheCompiledViewLandsInTheView: go vet, gopls and every
+// analysis built on go/parser resolve a relative line directive against the
+// directory of the file that carries it. The compiled view lives in
+// storage/framework/views, so a directive naming resources/views/... from
+// there pointed at storage/framework/views/notes/resources/views/..., a file
+// that does not exist. Every position the parser maps has to be the view or
+// the compiled file, and both have to be on disk.
+func TestAnAnalysisOfTheCompiledViewLandsInTheView(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, viewsDir, "notes", "index"+viewSuffix)
+	if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("//go:build kyse\n\npackage notes\n\n@go\ntype IndexData struct{ Title string }\n@endgo\n\n<h1>{{ .Title }}</h1>\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := compileViews(root, &strings.Builder{}); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "storage", "framework", "views", "notes", "index.go")
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, target, nil, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	landed := map[string]bool{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		if n != nil {
+			landed[fset.Position(n.Pos()).Filename] = true
+		}
+		return true
+	})
+	if !landed[source] {
+		t.Errorf("no position of the compiled view resolves to %s; they resolve to %v", source, landed)
+	}
+	for name := range landed {
+		if _, err := os.Stat(name); err != nil {
+			t.Errorf("a position resolves to %s, which is not on disk", name)
+		}
 	}
 }

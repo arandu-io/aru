@@ -136,7 +136,7 @@ func generate(args []string, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "\n%s generated from %s, %d files.\n", module.Name, path, len(written))
 	fmt.Fprintf(stdout, "\nThe policy opens what %s listed and denies the rest.\n",
 		filepath.Base(path))
-	fmt.Fprint(stdout, wiring(target, len(written)))
+	fmt.Fprint(stdout, wiring(root, target, len(written)))
 	return nil
 }
 

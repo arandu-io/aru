@@ -377,7 +377,7 @@ func TestTheModuleWiringNamesTheImportsItsSnippetNeeds(t *testing.T) {
 		ModulePath: "example.test/project",
 		Fields:     []gen.Field{{Name: "title", Type: gen.TypeString}},
 	}
-	message := wiring(spec, 12)
+	message := wiring("", spec, 12)
 
 	if !strings.Contains(message, "services.New") {
 		t.Fatalf("the snippet no longer calls the service constructor:\n%s", message)
@@ -388,7 +388,7 @@ func TestTheModuleWiringNamesTheImportsItsSnippetNeeds(t *testing.T) {
 		t.Errorf("the printed constructor does not take the service alone:\n%s", message)
 	}
 
-	for _, want := range []string{`"example.test/project/app/Services"`, `"github.com/arandu-io/framework/http/middleware"`} {
+	for _, want := range []string{`"example.test/project/app/Services"`, `"github.com/arandu-io/hesape/http/middleware"`} {
 		if !strings.Contains(message, want) {
 			t.Errorf("the message does not print the import %s, which its own snippet needs:\n%s", want, message)
 		}
@@ -436,7 +436,7 @@ func TestTheTenantClaimNamesTheTableTheMigrationCreates(t *testing.T) {
 		t.Fatal("the module generated no migration, so there is no table for the claim to be about")
 	}
 
-	message := wiring(spec, len(files))
+	message := wiring("", spec, len(files))
 
 	// The file the line goes in, and the line itself, in the shape the suite's
 	// own failure asks for.
@@ -459,7 +459,7 @@ func TestTheTenantClaimNamesTheTableTheMigrationCreates(t *testing.T) {
 // A table with no tenant column that gets claimed anyway fails the same suite,
 // so a module generated without --tenant must not be told to claim one.
 func TestTheTenantClaimIsAbsentWithoutATenantColumn(t *testing.T) {
-	message := wiring(gen.Module{
+	message := wiring("", gen.Module{
 		Name:       "report",
 		ModulePath: "example.test/project",
 		Fields:     []gen.Field{{Name: "title", Type: gen.TypeString}},
@@ -1480,4 +1480,68 @@ func TestThePrintedWiringNamesOnlyTheFilesTheLayoutHas(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestTheModuleWiringPrintsOnlyTheImportsAFileLacks.
+//
+// The skeleton's routes/web.go already imports hesape's middleware, and its
+// provider already imports the project's services. An import printed for a
+// name the file binds is the line that answers "middleware redeclared in this
+// block" when it is pasted, whichever path the file bound the name to. What is
+// printed is what each file lacks, and nothing it has.
+func TestTheModuleWiringPrintsOnlyTheImportsAFileLacks(t *testing.T) {
+	spec := gen.Module{
+		Name:       "invoice",
+		ModulePath: "example.test/project",
+		Fields:     []gen.Field{{Name: "title", Type: gen.TypeString}},
+	}
+	write := func(t *testing.T, root, rel, body string) {
+		t.Helper()
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("the skeleton's two files", func(t *testing.T) {
+		root := t.TempDir()
+		write(t, root, "routes/web.go", "package routes\n\nimport (\n\t\"github.com/arandu-io/hesape/http/middleware\"\n\n\tcontrollers \"example.test/project/app/Http/Controllers\"\n)\n")
+		write(t, root, "app/Providers/AppServiceProvider.go", "package providers\n\nimport (\n\tcontrollers \"example.test/project/app/Http/Controllers\"\n\tservices \"example.test/project/app/Services\"\n)\n")
+		message := wiring(root, spec, 12)
+		for _, absent := range []string{"http/middleware\"", "app/Services\"", "app/Http/Controllers\"", "do not import", "does not import"} {
+			if strings.Contains(message, absent) {
+				t.Errorf("an import both files already have is printed (%s):\n%s", absent, message)
+			}
+		}
+	})
+
+	t.Run("another package already bound as middleware", func(t *testing.T) {
+		root := t.TempDir()
+		write(t, root, "routes/web.go", "package routes\n\nimport \"github.com/arandu-io/framework/http/middleware\"\n")
+		message := wiring(root, spec, 12)
+		if strings.Contains(message, "hesape/http/middleware") {
+			t.Errorf("a second package named middleware is printed for routes/web.go, which redeclares it:\n%s", message)
+		}
+		// The provider was not there to read, so its imports are printed.
+		for _, want := range []string{`services "example.test/project/app/Services"`, `controllers "example.test/project/app/Http/Controllers"`} {
+			if !strings.Contains(message, want) {
+				t.Errorf("the message does not print %s for a file it could not read:\n%s", want, message)
+			}
+		}
+	})
+
+	t.Run("files that import neither", func(t *testing.T) {
+		root := t.TempDir()
+		write(t, root, "routes/web.go", "package routes\n\nimport \"time\"\n")
+		write(t, root, "app/Providers/AppServiceProvider.go", "package providers\n")
+		message := wiring(root, spec, 12)
+		web := strings.Index(message, "\n  routes/web.go\n\n      \"github.com/arandu-io/hesape/http/middleware\"\n")
+		provider := strings.Index(message, "\n  app/Providers/AppServiceProvider.go\n\n      controllers \"example.test/project/app/Http/Controllers\"\n      services \"example.test/project/app/Services\"\n")
+		if web < 0 || provider < 0 {
+			t.Errorf("the imports are not printed under the file each one goes in:\n%s", message)
+		}
+	})
 }

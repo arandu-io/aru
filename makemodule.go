@@ -3,9 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/arandu-io/aru/internal/gen"
@@ -127,15 +131,17 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 	// wiring is not. A generator that edited routes/web.go and the provider behind
 	// your back would be a generator you cannot read the output of -- the whole
 	// point of explicit wiring is that the file says what the application is.
-	fmt.Fprint(stdout, wiring(spec, len(written)))
+	fmt.Fprint(stdout, wiring(root, spec, len(written)))
 	return nil
 }
 
 // wiring is what to do with the files that were just written.
 //
 // It is a function so it can be tested: an instruction that does not compile is
-// worse than no instruction, because it is followed.
-func wiring(m gen.Module, count int) string {
+// worse than no instruction, because it is followed. root is the project the
+// lines are pasted into; the imports they need are read against its files, and
+// an empty root prints every one of them.
+func wiring(root string, m gen.Module, count int) string {
 	return fmt.Sprintf(`
 %s created, %d files.
 
@@ -163,11 +169,7 @@ Then, by hand, because the wiring is meant to be readable -- four lines:
   list if it should run by default
 
       %sSeeder{},
-
-They name two packages a file may not import yet:
-"github.com/arandu-io/framework/http/middleware" in routes/web.go, and
-"%s/app/Services" in app/Providers/AppServiceProvider.go.
-%s%s
+%s%s%s
 The migration is not one of them: %s registers itself in its own init, and
 nothing lists it. What it needs is to be linked -- something has to import
 database/migrations, or Go leaves the package, and its init, out of the binary.
@@ -183,10 +185,103 @@ Then:
 		m.RouteResource(), m.Entity(),
 		m.Entity(), m.Controller(), serviceConstruction(m),
 		m.Entity(),
-		m.ModulePath,
+		importsNote(wiringImports(root, m)),
 		nestedNote(m),
 		tenantClaim(m),
 		m.MigrationType())
+}
+
+// wiringImport is one package a printed line names: the file the line goes
+// in, the name the line calls it by, and the import that binds that name.
+type wiringImport struct {
+	file, name, path string
+}
+
+// line is the import as it is pasted: with the name when the path's last
+// element does not already say it, which is the case for every directory of
+// app/, whose package clauses are lowercase.
+func (w wiringImport) line() string {
+	if path.Base(w.path) == w.name {
+		return strconv.Quote(w.path)
+	}
+	return w.name + " " + strconv.Quote(w.path)
+}
+
+// wiringImports are the packages the printed lines name that the files they
+// go in do not bind yet, read from those files.
+//
+// A name a file already binds is left out, whatever path binds it. The
+// skeleton's routes/web.go imports hesape's middleware, and a project may
+// import another package under that name; printing a second import of the same
+// name is the line that answers "middleware redeclared in this block" when it
+// is pasted. A file that cannot be read gets every import printed: nothing
+// says what it holds.
+func wiringImports(root string, m gen.Module) []wiringImport {
+	wanted := []wiringImport{
+		{"routes/web.go", "middleware", "github.com/arandu-io/hesape/http/middleware"},
+		{"routes/web.go", "controllers", m.ModulePath + "/app/Http/Controllers"},
+		{"app/Providers/AppServiceProvider.go", "controllers", m.ModulePath + "/app/Http/Controllers"},
+		{"app/Providers/AppServiceProvider.go", "services", m.ModulePath + "/app/Services"},
+	}
+	bound := map[string]map[string]bool{}
+	var out []wiringImport
+	for _, w := range wanted {
+		names, ok := bound[w.file]
+		if !ok {
+			names = importedNames(root, w.file)
+			bound[w.file] = names
+		}
+		if !names[w.name] {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// importedNames is every name the imports of root/rel bind, or none when the
+// file cannot be read or parsed. An import without a name binds its package's
+// name, taken as the lowercase last element of the path, which is how every
+// package of a project and of the framework is declared.
+func importedNames(root, rel string) map[string]bool {
+	names := map[string]bool{}
+	if root == "" {
+		return names
+	}
+	f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, filepath.FromSlash(rel)), nil, parser.ImportsOnly)
+	if err != nil {
+		return names
+	}
+	for _, spec := range f.Imports {
+		p, err := strconv.Unquote(spec.Path.Value)
+		if err != nil {
+			continue
+		}
+		name := strings.ToLower(path.Base(p))
+		if spec.Name != nil {
+			name = spec.Name.Name
+		}
+		names[name] = true
+	}
+	return names
+}
+
+// importsNote says which imports the printed lines need, by file, and nothing
+// when every name they use is already bound where they go.
+func importsNote(missing []wiringImport) string {
+	if len(missing) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\nThey name packages a file does not import yet:\n")
+	file := ""
+	for _, w := range missing {
+		if w.file != file {
+			file = w.file
+			fmt.Fprintf(&b, "\n  %s\n\n", file)
+		}
+		fmt.Fprintf(&b, "      %s\n", w.line())
+	}
+	return b.String()
 }
 
 // serviceConstruction is how the provider builds the module's service:

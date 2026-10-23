@@ -42,7 +42,11 @@ package kyse
 
 import (
 	"fmt"
+	"go/ast"
+	goparser "go/parser"
+	"go/token"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -404,18 +408,247 @@ func PageType(f *File) string {
 
 // pageType is PageType with the source line the name was declared on.
 func pageType(f *File) (string, int) {
-	if name, line := firstType(f, " struct"); name != "" {
-		return name, line
+	name, line, _ := pageChoice(f)
+	return name, line
+}
+
+// typeDecl is one type an `@go` block declares, as far as choosing the page's
+// data type needs to know about it.
+type typeDecl struct {
+	name string
+	line int
+	// isStruct is false for an alias.
+	isStruct bool
+	// marked is true for a struct that embeds view.Page, and for any type the
+	// block asserts to an interface with `var _ I = Name{}`.
+	marked bool
+	// referenced is true for a type another struct of the blocks names in a
+	// field: the row of a table, the item of a list.
+	referenced bool
+}
+
+// pageChoice decides the type a page draws, and answers the declarations that
+// make the choice ambiguous when there is no one answer.
+//
+// The page's data is the struct that embeds view.Page, which is what lets the
+// layout draw it, or the type the view asserts to view.Layout or to the
+// interface of its own layout. A struct declared beside it -- the row of a
+// table, the item of a list -- is a helper, wherever it sits in the block.
+//
+// A page that marks no type draws the one no other struct of its blocks names
+// in a field: the row a table holds is part of the page that holds the table.
+// When that leaves more than one, or none, the page is refused rather than
+// guessed at, because the first one in the block is as likely to be the helper.
+//
+// A view that extends no layout is not a page: a component's props and a
+// partial's data are the first struct it declares, or the first alias when it
+// declares no struct.
+func pageChoice(f *File) (string, int, []typeDecl) {
+	decls, ok := declaredTypes(f)
+	if !ok {
+		// A block that does not parse, or that declares a type no assertion
+		// can name, is read line by line as it was written: the Go compiler or
+		// refuseUnusableTypeNames refuses it, about the line and not about a
+		// choice between types.
+		if name, line := firstType(f, " struct"); name != "" {
+			return name, line, nil
+		}
+		name, line := firstType(f, " = ")
+		return name, line, nil
 	}
-	return firstType(f, " = ")
+
+	var marked []typeDecl
+	for _, d := range decls {
+		if d.marked {
+			marked = append(marked, d)
+		}
+	}
+	switch {
+	case len(marked) == 1:
+		return marked[0].name, marked[0].line, nil
+	case len(marked) > 1:
+		return marked[0].name, marked[0].line, marked
+	case len(decls) > 1 && f.Extends != "":
+		var unused []typeDecl
+		for _, d := range decls {
+			if !d.referenced {
+				unused = append(unused, d)
+			}
+		}
+		if len(unused) == 1 {
+			return unused[0].name, unused[0].line, nil
+		}
+		if len(unused) == 0 {
+			unused = decls
+		}
+		return unused[0].name, unused[0].line, unused
+	}
+	for _, d := range decls {
+		if d.isStruct {
+			return d.name, d.line, nil
+		}
+	}
+	if len(decls) > 0 {
+		return decls[0].name, decls[0].line, nil
+	}
+	return "", 0, nil
+}
+
+// declaredTypes reads the struct and alias declarations of the `@go` blocks, in
+// source order, and reports false when a block does not parse as Go.
+//
+// Each block is parsed on its own, behind a package clause of its own, so the
+// line of a declaration is the block's first line plus its line in the block.
+func declaredTypes(f *File) ([]typeDecl, bool) {
+	views := viewImportNames(f.Imports)
+	var decls []typeDecl
+	asserted := map[string]bool{}
+	// named holds every identifier a struct field's type names, so a type
+	// another struct refers to is known to be a part of it.
+	named := map[string]bool{}
+	for _, block := range f.Go {
+		fset := token.NewFileSet()
+		file, err := goparser.ParseFile(fset, "", "package kyse\n"+block.Body, goparser.SkipObjectResolution)
+		if err != nil {
+			return nil, false
+		}
+		for _, decl := range file.Decls {
+			gen, isGen := decl.(*ast.GenDecl)
+			if !isGen {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				switch s := spec.(type) {
+				case *ast.TypeSpec:
+					// A type parameter list, or a * Go reads as a pointer to the
+					// struct, is a declaration the compiled view cannot assert
+					// to. The line is read as written instead, and Parse
+					// refuses the name it spells.
+					if star, isStar := s.Type.(*ast.StarExpr); s.TypeParams != nil || (isStar && isStruct(star.X)) {
+						return nil, false
+					}
+					line := block.Line + fset.Position(s.Name.Pos()).Line - 2
+					switch t := s.Type.(type) {
+					case *ast.StructType:
+						for _, field := range t.Fields.List {
+							ast.Inspect(field.Type, func(n ast.Node) bool {
+								if id, ok := n.(*ast.Ident); ok && id.Name != s.Name.Name {
+									named[id.Name] = true
+								}
+								return true
+							})
+						}
+						decls = append(decls, typeDecl{name: s.Name.Name, line: line, isStruct: true, marked: embedsPage(t, views)})
+					default:
+						if s.Assign.IsValid() {
+							decls = append(decls, typeDecl{name: s.Name.Name, line: line})
+						}
+					}
+				case *ast.ValueSpec:
+					if s.Type == nil {
+						continue
+					}
+					for i, name := range s.Names {
+						if name.Name == "_" && i < len(s.Values) {
+							if asserts := assertedType(s.Values[i]); asserts != "" {
+								asserted[asserts] = true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	for i := range decls {
+		if asserted[decls[i].name] {
+			decls[i].marked = true
+		}
+		if named[decls[i].name] {
+			decls[i].referenced = true
+		}
+	}
+	return decls, true
+}
+
+// isStruct reports whether the expression is a struct type.
+func isStruct(e ast.Expr) bool {
+	_, ok := e.(*ast.StructType)
+	return ok
+}
+
+// embedsPage reports whether the struct embeds view.Page, by value or by
+// pointer, under any name the view imports the view package as.
+func embedsPage(t *ast.StructType, views map[string]bool) bool {
+	for _, field := range t.Fields.List {
+		if len(field.Names) != 0 {
+			continue
+		}
+		typ := field.Type
+		if star, ok := typ.(*ast.StarExpr); ok {
+			typ = star.X
+		}
+		sel, ok := typ.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Page" {
+			continue
+		}
+		if pkg, ok := sel.X.(*ast.Ident); ok && views[pkg.Name] {
+			return true
+		}
+	}
+	return false
+}
+
+// assertedType is the type an assertion `var _ I = <value>` is about: Name{},
+// &Name{} or (*Name)(nil), and empty for any other value.
+func assertedType(value ast.Expr) string {
+	if unary, ok := value.(*ast.UnaryExpr); ok && unary.Op == token.AND {
+		value = unary.X
+	}
+	switch v := value.(type) {
+	case *ast.CompositeLit:
+		if id, ok := v.Type.(*ast.Ident); ok {
+			return id.Name
+		}
+	case *ast.CallExpr:
+		if paren, ok := v.Fun.(*ast.ParenExpr); ok {
+			if star, ok := paren.X.(*ast.StarExpr); ok {
+				if id, ok := star.X.(*ast.Ident); ok {
+					return id.Name
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// viewImportNames are the names a view calls the view package by: view, which
+// the generator always provides, and the name of every import whose path ends
+// in /view.
+func viewImportNames(imports []string) map[string]bool {
+	names := map[string]bool{"view": true}
+	for _, spec := range imports {
+		fields := strings.Fields(spec)
+		if len(fields) == 0 {
+			continue
+		}
+		path, err := strconv.Unquote(fields[len(fields)-1])
+		if err != nil || !strings.HasSuffix(path, "/view") {
+			continue
+		}
+		if len(fields) == 2 {
+			names[fields[0]] = true
+		}
+	}
+	return names
 }
 
 // firstType finds the first `type X <kind>` in the @go blocks, and the source
 // line it is on.
 //
-// Order of declaration does not decide anything: the caller asks for the kind it
-// needs. A layout that declares the interface below the struct behaves the same
-// as one that declares it above.
+// The first one in source order wins, so this answers about one kind only: a
+// layout's interface, which a layout declares one of, and the fallback for a
+// block that does not parse. Which struct a page draws is pageChoice's
+// question, and it is not decided by order.
 //
 // The name is the second word of the line, whatever it is. Parse refuses the
 // view when that word is not one Go can use as a type name, so a name RenderType

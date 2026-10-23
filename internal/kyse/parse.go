@@ -28,6 +28,7 @@ func Parse(path, source string) (*File, error) {
 	nodes := p.nodes(&file.Go, 0)
 	p.assemble(file, nodes)
 	p.refuseUnusableTypeNames(file)
+	p.refuseAmbiguousPageType(file)
 
 	if len(p.errs) > 0 {
 		return nil, p.errs
@@ -155,6 +156,35 @@ func (p *parser) refuseUnusableTypeNames(file *File) {
 	if page, pageLine := pageType(file); pageLine != renderLine {
 		p.refuseTypeName(page, pageLine)
 	}
+}
+
+// refuseAmbiguousPageType refuses a page whose data type pageChoice cannot
+// choose: two structs that both embed view.Page or are both asserted to an
+// interface, or a page extending a layout that declares two types and marks
+// neither.
+//
+// Taking the first declaration used to be the answer, and a helper struct
+// written above the page's own -- the row of its table -- became the type the
+// compiled view asserted to. The build then failed on a field the page
+// declares, in a message about the helper, which is the one place nobody
+// looks.
+func (p *parser) refuseAmbiguousPageType(file *File) {
+	if file.IsLayout() {
+		return
+	}
+	_, _, ambiguous := pageChoice(file)
+	if len(ambiguous) < 2 {
+		return
+	}
+	names := make([]string, 0, len(ambiguous))
+	for _, d := range ambiguous {
+		names = append(names, fmt.Sprintf("%s (line %d)", d.name, d.line))
+	}
+	first := ambiguous[0].name
+	p.fail(ambiguous[1].line, "this view declares more than one type it could draw: "+strings.Join(names, ", "),
+		"the page's data is the struct that embeds view.Page, or the type the view asserts to its layout's interface.\n"+
+			"    Embed view.Page in the one this page draws and in no other, or assert it with `var _ view.Layout = "+first+"{}`;\n"+
+			"    a struct beside it is then a helper, wherever it is declared.")
 }
 
 // refuseTypeName refuses name, declared at line, unless it is an identifier

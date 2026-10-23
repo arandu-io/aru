@@ -712,3 +712,28 @@ func TestEveryStructuralRuleFiresOnTheViolationsFixture(t *testing.T) {
 		}
 	}
 }
+
+// TestTheUnwiredCorrectionPointsAtTheProvider: a controller or a service is
+// constructed in app/Providers, where the provider builds the services and the
+// routes.Deps literal. bootstrap/app.go is only the application and
+// routes/web.go only the table, so a correction sending the person to either
+// sends them to a file where the line they would paste does not compile.
+func TestTheUnwiredCorrectionPointsAtTheProvider(t *testing.T) {
+	got := findingsOf(t, structureProject(t, map[string]string{
+		"app/Services/NoteService.go": "package services\n\ntype NoteService struct{}\n\nfunc NewNoteService() *NoteService { return nil }\n",
+	}), "generated-not-wired")
+	if len(got) != 1 {
+		t.Fatalf("%d finding(s), want 1", len(got))
+	}
+	said := got[0].Message + "\n" + got[0].Why
+	for _, want := range []string{"app/Providers/AppServiceProvider.go", "NewAppServiceProvider", "routes.Deps"} {
+		if !strings.Contains(said, want) {
+			t.Errorf("the finding does not name %s:\n%s", want, said)
+		}
+	}
+	for _, stale := range []string{"bootstrap/app.go", "routes/web.go", "bootstrap and routes"} {
+		if strings.Contains(said, stale) {
+			t.Errorf("the finding still sends the wiring to %s:\n%s", stale, said)
+		}
+	}
+}

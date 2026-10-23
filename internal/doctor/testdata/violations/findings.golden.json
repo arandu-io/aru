@@ -244,8 +244,8 @@
     "severity": "warning",
     "file": "app/Http/Controllers/ChargeController.go",
     "line": 28,
-    "message": "NewChargeController is never called: bootstrap and routes do not construct it, and nothing else does",
-    "why": "code nothing constructs is code the router never reaches: its tests pass and a change to it changes nothing anybody sees. Paste the wiring make:module printed into bootstrap/app.go and routes/web.go, or delete what nothing reaches."
+    "message": "NewChargeController is never called: the provider does not construct it, and nothing else does",
+    "why": "code nothing constructs is code the router never reaches: its tests pass and a change to it changes nothing anybody sees. Paste the wiring make:module printed into app/Providers/AppServiceProvider.go, where NewAppServiceProvider builds the services and the routes.Deps literal the routes are handed, or delete what nothing reaches."
   },
   {
     "rule": "input-read-by-hand",

@@ -1604,8 +1604,8 @@ func sqlLivesInRepositories(p *project) []Finding {
 //
 // Positive: NewInvoiceService, declared and named nowhere else.
 //
-// Negative: a constructor bootstrap/app.go or routes/web.go calls; one
-// another constructor calls, which is wiring the rule cannot judge; a test
+// Negative: a constructor the provider or the routes call; one another
+// constructor calls, which is wiring the rule cannot judge; a test
 // double -- Fake, Stub, Mock, Spy or Dummy is a word of the constructor, of
 // the type it returns or of its file -- that a _test.go file constructs. A
 // double exists for the tests, and a test calling it is the wiring it has.
@@ -1622,8 +1622,9 @@ func sqlLivesInRepositories(p *project) []Finding {
 // which is the case the rule exists for: a service whose only caller is its
 // own test.
 //
-// Correction: paste the wiring make:module printed into bootstrap/app.go and
-// routes/web.go, or delete the code nothing reaches.
+// Correction: paste the wiring make:module printed into
+// app/Providers/AppServiceProvider.go, where NewAppServiceProvider builds the
+// services and the routes.Deps literal, or delete the code nothing reaches.
 func constructorsAreWired(p *project) []Finding {
 	type ctor struct {
 		f  *file
@@ -1672,10 +1673,11 @@ func constructorsAreWired(p *project) []Finding {
 		out = append(out, Finding{
 			Rule: "generated-not-wired", Severity: Warning,
 			File: c.f.rel, Line: c.f.line(c.fn),
-			Message: c.fn.Name.Name + " is never called: bootstrap and routes do not construct it, and nothing else does",
+			Message: c.fn.Name.Name + " is never called: the provider does not construct it, and nothing else does",
 			Why: "code nothing constructs is code the router never reaches: its tests pass and a change to it changes " +
-				"nothing anybody sees. Paste the wiring make:module printed into bootstrap/app.go and routes/web.go, or " +
-				"delete what nothing reaches.",
+				"nothing anybody sees. Paste the wiring make:module printed into app/Providers/AppServiceProvider.go, where " +
+				"NewAppServiceProvider builds the services and the routes.Deps literal the routes are handed, or delete what " +
+				"nothing reaches.",
 		})
 	}
 	return out

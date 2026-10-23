@@ -400,6 +400,14 @@
     "why": "this is how `aru make:policy` generates it, on purpose. Open what the application needs inside the custom block -- until then every request that reaches this entity is refused."
   },
   {
+    "rule": "policy-declares-no-writes",
+    "severity": "warning",
+    "file": "app/Policies/ChargePolicy.go",
+    "line": 17,
+    "message": "ChargePolicy does not say which of its actions write",
+    "why": "a Grant this policy issues writes whatever action it was issued for, so a service that authorized a view and then saved writes the row. Add func (ChargePolicy) Writes(a auth.Action) bool answering true for the actions that change a row: create, update and delete, and any write action the policy opens beyond them."
+  },
+  {
     "rule": "html-template-in-app",
     "severity": "warning",
     "file": "app/Presentation/Money.go",

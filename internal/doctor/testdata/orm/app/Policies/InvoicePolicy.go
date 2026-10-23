@@ -40,3 +40,6 @@ func (InvoicePolicy) Can(ctx context.Context, s security.Subject, a security.Act
 
 	return fmt.Errorf("not permitted")
 }
+
+// Writes reports whether the action changes an invoice.
+func (InvoicePolicy) Writes(a security.Action) bool { return a == ActionCreateInvoice }

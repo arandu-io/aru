@@ -30,3 +30,13 @@ func (ReportPolicy) Can(ctx context.Context, s security.Subject, a security.Acti
 
 	return fmt.Errorf("no rule allows %s on report", a)
 }
+
+// Can on a type that is not a policy over one entity: two parameters, so
+// policy-declares-no-writes leaves it alone.
+type ReportGate struct{}
+
+// Can answers whether the gate is open.
+func (ReportGate) Can(ctx context.Context, a security.Action) error { return nil }
+
+// Writes reports whether the action changes a report.
+func (ReportPolicy) Writes(a security.Action) bool { return a == ActionDeleteReport }

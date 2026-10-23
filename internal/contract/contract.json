@@ -70,15 +70,15 @@
       "title": "Policy",
       "path": "app/Policies/<Entity>Policy.go",
       "imports": [{"path": "github.com/arandu-io/hesape/auth", "names": ["Policy", "Subject", "Action"]}],
-      "signature": "const <Entity>View auth.Action = \"<entity>.view\"  // and List, Create, Update, Delete\nfunc (<Entity>Policy) Can(ctx context.Context, s auth.Subject, a auth.Action, x models.<Entity>) error\nvar _ auth.Policy[models.<Entity>] = <Entity>Policy{}",
+      "signature": "const <Entity>View auth.Action = \"<entity>.view\"  // and List, Create, Update, Delete\nfunc (<Entity>Policy) Can(ctx context.Context, s auth.Subject, a auth.Action, x models.<Entity>) error\nfunc (<Entity>Policy) Writes(a auth.Action) bool  // true for Create, Update and Delete\nvar _ auth.Policy[models.<Entity>] = <Entity>Policy{}",
       "calledBy": ["auth.Authorize, from the service"],
       "may": ["compare the tenant first", "read the subject's actions", "deny by default"],
       "mayNot": ["be skipped on a read", "reach the database"],
       "errors": "a refusal error; the router answers 403",
       "generators": ["make:policy", "make:module"],
-      "custom": "a custom block for rules",
+      "custom": "a custom block for rules, and one for the write actions the policy adds",
       "example": "app/Policies/NotePolicy.go",
-      "verifiedBy": ["policy-never-opened", "repository-without-policy", "action-not-a-constant", "permission-not-declared", "permission-not-used"]
+      "verifiedBy": ["policy-never-opened", "policy-declares-no-writes", "repository-without-policy", "action-not-a-constant", "permission-not-declared", "permission-not-used"]
     },
     {
       "kind": "model",

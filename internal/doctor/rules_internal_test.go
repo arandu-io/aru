@@ -116,6 +116,7 @@ func emitsByRule() map[string][]string {
 		"repositoryNeedsPolicy":                   {"repository-without-policy"},
 		"repositoryMethodNeedsGrant":              {"grant-not-checked", "grant-not-received", "grant-check-discarded"},
 		"policyMustBeOpened":                      {"policy-never-opened"},
+		"policiesDeclareTheirWrites": {"policy-declares-no-writes"},
 		"actionsAreConstants":                     {"action-not-a-constant"},
 		"enumRulesAreDerived":                     {"enum-rule-not-derived"},
 		"controllerMustNotReachData":              {"handler-reaches-data", "handler-reaches-the-model"},

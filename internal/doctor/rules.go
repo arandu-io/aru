@@ -48,6 +48,7 @@ var rules = []func(*project) []Finding{
 	repositoryNeedsPolicy,
 	repositoryMethodNeedsGrant,
 	policyMustBeOpened,
+	policiesDeclareTheirWrites,
 	actionsAreConstants,
 	enumRulesAreDerived,
 	controllerMustNotReachData,
@@ -841,6 +842,103 @@ func policyMustBeOpened(p *project) []Finding {
 		}
 	}
 	return out
+}
+
+// 3b. A policy says which of its actions write.
+//
+// Reason. A Grant carries the action it was issued for, and the model refuses
+// to insert, update or delete with a Grant whose policy called that action a
+// read. A policy that declares nothing issues Grants that write whatever the
+// action was: a service that authorized a view and then saved writes, and
+// nothing in the code looks wrong.
+//
+// Scope. Every type with a method Can(ctx, subject, action, entity) error --
+// the shape of a policy over one entity -- declared outside a test, in
+// app/Policies or under a name ending in Policy. Writes is looked for on the
+// same type in every file of the same directory, so a policy whose methods are
+// split across two files is read as one.
+//
+// Severity. A warning while declaring is optional; it becomes required in the
+// next major.
+//
+// Positive: InvoicePolicy with Can and no Writes.
+//
+// Negative: the same policy with func (InvoicePolicy) Writes(a auth.Action)
+// bool, in its own file or another; a Can with another shape, which is not a
+// policy over an entity.
+//
+// Correction: add Writes, answering true for the actions that change a row --
+// create, update and delete for a resource, and any write action the policy
+// opens beyond them.
+func policiesDeclareTheirWrites(p *project) []Finding {
+	type policy struct {
+		f  *file
+		fn *ast.FuncDecl
+	}
+	var policies []policy
+	declares := map[string]bool{}
+	for _, f := range p.files {
+		if f.isTest {
+			continue
+		}
+		dir := path.Dir(f.rel)
+		f.functions(func(fn *ast.FuncDecl) {
+			receiver := receiverType(fn)
+			if receiver == "" {
+				return
+			}
+			switch {
+			case fn.Name.Name == "Writes":
+				declares[dir+"\x00"+receiver] = true
+			case fn.Name.Name == "Can" && isPolicyCan(fn) &&
+				(f.category == "Policies" || strings.HasSuffix(receiver, "Policy")):
+				policies = append(policies, policy{f, fn})
+			}
+		})
+	}
+	var out []Finding
+	for _, pol := range policies {
+		receiver := receiverType(pol.fn)
+		if declares[path.Dir(pol.f.rel)+"\x00"+receiver] {
+			continue
+		}
+		file, line := pol.f.at(pol.fn)
+		out = append(out, Finding{
+			Rule: "policy-declares-no-writes", Severity: Warning,
+			File: file, Line: line,
+			Message: receiver + " does not say which of its actions write",
+			Why: "a Grant this policy issues writes whatever action it was issued for, so a service that authorized a view " +
+				"and then saved writes the row. Add func (" + receiver + ") Writes(a auth.Action) bool answering true for " +
+				"the actions that change a row: create, update and delete, and any write action the policy opens beyond them.",
+		})
+	}
+	return out
+}
+
+// isPolicyCan reports whether fn has the shape of a policy's decision: four
+// parameters, the third an Action, and one result.
+func isPolicyCan(fn *ast.FuncDecl) bool {
+	params, results := fn.Type.Params, fn.Type.Results
+	if params == nil || params.NumFields() != 4 || results == nil || results.NumFields() != 1 {
+		return false
+	}
+	var types []ast.Expr
+	for _, field := range params.List {
+		n := len(field.Names)
+		if n == 0 {
+			n = 1
+		}
+		for range n {
+			types = append(types, field.Type)
+		}
+	}
+	switch t := types[2].(type) {
+	case *ast.SelectorExpr:
+		return t.Sel.Name == "Action"
+	case *ast.Ident:
+		return t.Name == "Action"
+	}
+	return false
 }
 
 func returnsNil(fn *ast.FuncDecl) bool {

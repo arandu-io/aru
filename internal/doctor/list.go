@@ -74,6 +74,7 @@ var catalogue = []RuleInfo{
 	{Name: "grant-not-checked", Severities: errorOnly},
 	{Name: "grant-check-discarded", Severities: errorOnly},
 	{Name: "policy-never-opened", Severities: warningOnly},
+	{Name: "policy-declares-no-writes", Severities: warningOnly},
 	{Name: "action-not-a-constant", Severities: errorOnly},
 	{Name: "enum-rule-not-derived", Severities: either},
 	{Name: "handler-reaches-data", Severities: errorOnly},

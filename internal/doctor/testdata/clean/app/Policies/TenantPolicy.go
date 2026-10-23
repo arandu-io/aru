@@ -18,3 +18,6 @@ func (TenantPolicy) Can(_ context.Context, s security.Subject, a security.Action
 	}
 	return nil
 }
+
+// Writes reports that no action on a tenant row writes through this policy.
+func (TenantPolicy) Writes(security.Action) bool { return false }

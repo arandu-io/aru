@@ -46,3 +46,13 @@ func (InvoicePolicy) Can(ctx context.Context, s security.Subject, a security.Act
 
 	return fmt.Errorf("no rule allows %s on invoice", a)
 }
+
+// Writes reports whether the action changes an invoice: a Grant issued for any
+// other action reads and cannot write.
+func (InvoicePolicy) Writes(a security.Action) bool {
+	switch a {
+	case ActionCreateInvoice, ActionUpdateInvoice, ActionDeleteInvoice:
+		return true
+	}
+	return false
+}

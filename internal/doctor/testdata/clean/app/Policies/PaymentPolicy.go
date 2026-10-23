@@ -35,3 +35,6 @@ func (PaymentPolicy) Can(ctx context.Context, s security.Subject, a security.Act
 
 	return fmt.Errorf("no rule allows %s on payment", a)
 }
+
+// Writes reports whether the action changes a payment.
+func (PaymentPolicy) Writes(a security.Action) bool { return a == ActionCreatePayment }

@@ -32,6 +32,40 @@ import (
 	"unicode/utf8"
 )
 
+// Category is one layer of a project's test tree: a directory under tests/
+// and the build tag its files carry, if any.
+type Category struct {
+	// Dir is the directory, relative to the module root, with forward slashes.
+	Dir string
+	// Tag is the build tag every file in it opens with, or empty when go test
+	// ./... runs it.
+	Tag string
+	// Proves is what a test there proves, in one phrase.
+	Proves string
+}
+
+// The end-to-end layer: where its journeys live and the tag that keeps them
+// out of the ordinary run.
+const (
+	E2EDir = "tests/E2E"
+	E2ETag = "e2e"
+)
+
+// Categories are the layers of an application's test tree. Every one of them
+// is accepted by the four checks below -- they ask whether a test is under
+// tests/, not under which layer -- and the list is what the commands that
+// write, run and check a layer read, so a layer is named the same way by all
+// of them.
+func Categories() []Category {
+	return []Category{
+		{Dir: "tests/Unit", Proves: "one rule, with nothing running"},
+		{Dir: "tests/Feature", Proves: "the HTTP answer in process, the policy and the JSON"},
+		{Dir: "tests/Contract", Proves: "the answers against the exported OpenAPI document"},
+		{Dir: E2EDir, Tag: E2ETag, Proves: "the real journey: server, database, browser, JavaScript and htmx"},
+		{Dir: "tests/Conformance", Proves: "the framework's and the modules' kits, one call each"},
+	}
+}
+
 // Problem is one thing a check found: where it is, what breaks, and why that
 // matters.
 type Problem struct {

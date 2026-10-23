@@ -130,7 +130,8 @@ if offenders=$(printf '%s\n' "$sources" | grep -E 'Tests?\.go$'); then
 fi
 
 # 2. A test outside tests/ has to need an unexported identifier, and says so in
-#    its name. Anything else belongs in a category.
+#    its name. Anything else belongs in a layer: Unit, Feature, Contract, E2E or
+#    Conformance, or this repository's Fuzz.
 while IFS= read -r file; do
 	[ -z "$file" ] && continue
 
@@ -186,11 +187,15 @@ fi
 #    it is meant to protect.
 #
 #    The tags are passed because a suite behind one is invisible without them,
-#    and so is a production package that ever grows a build tag of its own. This
-#    repository has no tests/Integration or tests/E2E today -- tests/ holds Unit
-#    and Fuzz -- so the two tags currently select nothing; they are passed
-#    anyway, because the cost is nothing and the day one of those trees is added
-#    is not the day anyone remembers to come back here.
+#    and so is a production package that ever grows a build tag of its own. The
+#    layers an application's tests/ holds are the ones internal/testlayout
+#    names -- Unit, Feature, Contract, E2E behind the e2e tag, and Conformance
+#    -- and checks 2 and 3 accept every one of them, because they ask whether a
+#    test is under tests/, not under which layer. This repository has no
+#    tests/Integration or tests/E2E today -- tests/ holds Unit and Fuzz -- so the
+#    two tags currently select nothing; they are passed anyway, because the cost
+#    is nothing and the day one of those trees is added is not the day anyone
+#    remembers to come back here.
 #
 #    The kyse tag is NOT passed, and that is the one tag this repository has to
 #    withhold. A .kyse.go file opens with //go:build kyse precisely so the

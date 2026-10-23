@@ -3,6 +3,7 @@ package unit_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/arandu-io/aru/internal/testlayout"
@@ -366,4 +367,41 @@ func contains(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// TestEveryCategoryIsAccepted plants a test in each layer of the application's
+// tree -- the end-to-end one behind its build tag -- with a helper package
+// beside them, and requires the four checks to find nothing. A layer the
+// checks refused would be one the generators write and the doctor then
+// reports.
+func TestEveryCategoryIsAccepted(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "go.mod", "module example.test/layers\n")
+	write(t, root, "app/service.go", "package app\n")
+	write(t, root, "tests/TestCase.go", "package tests\n")
+	want := map[string]bool{"tests/Unit": true, "tests/Feature": true, "tests/Contract": true, "tests/E2E": true, "tests/Conformance": true}
+	for _, c := range testlayout.Categories() {
+		delete(want, c.Dir)
+		pkg := strings.ToLower(filepath.Base(c.Dir)) + "_test"
+		body := "package " + pkg + "\n\nimport \"testing\"\n\nfunc TestLayer(t *testing.T) {}\n"
+		if c.Tag != "" {
+			body = "//go:build " + c.Tag + "\n\n" + body
+		}
+		write(t, root, c.Dir+"/layer_test.go", body)
+	}
+	if len(want) > 0 {
+		t.Errorf("Categories does not name %v", want)
+	}
+	problems, _, err := testlayout.Run(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range problems {
+		t.Errorf("a test in an accepted layer was reported: %s", p)
+	}
+	for _, c := range testlayout.Categories() {
+		if (c.Dir == testlayout.E2EDir) != (c.Tag == testlayout.E2ETag) {
+			t.Errorf("%s carries the tag %q; only %s is behind %s", c.Dir, c.Tag, testlayout.E2EDir, testlayout.E2ETag)
+		}
+	}
 }

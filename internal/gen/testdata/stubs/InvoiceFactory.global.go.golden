@@ -4,7 +4,6 @@ package factories
 
 import (
 	"context"
-	"time"
 
 	"github.com/arandu-io/hesape/auth"
 	"github.com/arandu-io/hesape/database/model"
@@ -112,7 +111,6 @@ func defineInvoice(f faker.Faker) models.Invoice {
 		Reference:     f.UserName(),
 		SupplierEmail: f.Email(),
 		Total:         int64(f.Int(1, 1000)),
-		DeliveryDate:  f.Time(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)),
 	}
 }
 

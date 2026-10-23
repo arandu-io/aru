@@ -226,6 +226,13 @@ func generatedProject(t *testing.T) (string, map[string]string) {
 	// false, whichever command wrote the policy. The interface is written in
 	// the test rather than imported, so the generated code is proved against
 	// a hesape that does not publish it yet.
+	// A date and a timestamp nobody filled in, stored and read back through
+	// the generated migration and model on SQLite: the column holds NULL and
+	// the field comes back nil, rather than the first day of year one.
+	one("an unset time stored through the generated model", func() (gen.File, error) {
+		return gen.File{Path: "tests/Unit/NullableTime_test.go", Content: []byte(nullableTimeTest)}, nil
+	})
+
 	one("the writes every generated policy declares", func() (gen.File, error) {
 		return gen.File{Path: "tests/Unit/PolicyWrites_test.go", Content: policyWritesTest(
 			"PurchaseOrder", "StockItem", "Task", "Media", "Warehouse", "Shipment")}, nil
@@ -961,3 +968,128 @@ func TestEveryGeneratedPolicyDeclaresItsWrites(t *testing.T) {
 }
 `)
 }
+
+// nullableTimeTest stores a stock item with its delivery date and its
+// received time unset, through the model make:module wrote for it, over a
+// driver that records what each statement was handed.
+//
+// The two fields are not required, so the migration makes their columns
+// nullable. Declared as time.Time they could not say "unset": the model wrote
+// their zero, and the column held 0001-01-01 for a row that meant nothing. The
+// recording driver is what lets the claim be about the value that reaches the
+// database rather than about the field.
+const nullableTimeTest = `package unit_test
+
+import (
+	"context"
+	"database/sql"
+	"database/sql/driver"
+	"io"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/arandu-io/hesape/auth"
+	"github.com/arandu-io/hesape/database"
+
+	models "` + generatedModulePath + `/app/Models"
+	policies "` + generatedModulePath + `/app/Policies"
+)
+
+// recorded is every statement the driver ran, and the values bound to it.
+var recorded struct {
+	sync.Mutex
+	statements []string
+	args       [][]driver.NamedValue
+}
+
+type recordingDriver struct{}
+type recordingConn struct{}
+type noRows struct{}
+
+func (recordingDriver) Open(string) (driver.Conn, error) { return recordingConn{}, nil }
+
+func (recordingConn) Prepare(string) (driver.Stmt, error) { return nil, driver.ErrSkip }
+func (recordingConn) Close() error                        { return nil }
+func (recordingConn) Begin() (driver.Tx, error)           { return recordingConn{}, nil }
+func (recordingConn) Commit() error                       { return nil }
+func (recordingConn) Rollback() error                     { return nil }
+
+func (recordingConn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	recorded.Lock()
+	defer recorded.Unlock()
+	recorded.statements = append(recorded.statements, query)
+	recorded.args = append(recorded.args, args)
+	return driver.RowsAffected(1), nil
+}
+
+func (recordingConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	return noRows{}, nil
+}
+
+func (noRows) Columns() []string              { return nil }
+func (noRows) Close() error                   { return nil }
+func (noRows) Next([]driver.Value) error      { return io.EOF }
+
+func init() { sql.Register("a234-recording", recordingDriver{}) }
+
+// columnsOf reads the column list of an insert, in order.
+func columnsOf(insert string) []string {
+	open, end := strings.Index(insert, "("), strings.Index(insert, ")")
+	if open < 0 || end < open {
+		return nil
+	}
+	var out []string
+	for _, c := range strings.Split(insert[open+1:end], ",") {
+		out = append(out, strings.Trim(strings.TrimSpace(c), "\"` + "`" + `"))
+	}
+	return out
+}
+
+func TestAnUnsetTimeIsStoredAsNull(t *testing.T) {
+	raw, err := sql.Open("a234-recording", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	db := database.Wrap(raw, database.DialectSQLite)
+
+	record, err := models.StockItems(db).New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.Reference, record.SupplierEmail, record.Total, record.Quantity = "r-1", "buyer@example.test", 100, 1
+	if _, err := record.Save(context.Background(), auth.SystemGrant(policies.StockItemCreate, "tenant-a")); err != nil {
+		t.Fatalf("storing a stock item with no dates: %v", err)
+	}
+
+	recorded.Lock()
+	defer recorded.Unlock()
+	for i, statement := range recorded.statements {
+		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(statement)), "insert") {
+			continue
+		}
+		values := map[string]any{}
+		for j, column := range columnsOf(statement) {
+			if j < len(recorded.args[i]) {
+				values[column] = recorded.args[i][j].Value
+			}
+		}
+		for _, column := range []string{"delivery_date", "received_at"} {
+			value, sent := values[column]
+			if !sent {
+				continue
+			}
+			if value != nil {
+				t.Errorf("%s was left unset and the insert sent %v for it, where NULL was meant", column, value)
+			}
+			if at, ok := value.(time.Time); ok && at.Year() == 1 {
+				t.Errorf("%s was stored as the first day of year one", column)
+			}
+		}
+		return
+	}
+	t.Fatalf("no insert reached the database: %q", recorded.statements)
+}
+`

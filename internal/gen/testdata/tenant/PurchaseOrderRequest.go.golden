@@ -11,12 +11,12 @@ import (
 // no mass assignment, so a key the client sends and this struct does not
 // declare goes nowhere.
 type PurchaseOrderRequest struct {
-	Reference     string    `form:"reference"`
-	SupplierEmail string    `form:"supplier_email"`
-	Total         int64     `form:"total"`
-	Approved      bool      `form:"approved"`
-	Notes         string    `form:"notes"`
-	DeliveryDate  time.Time `form:"delivery_date"`
+	Reference     string     `form:"reference"`
+	SupplierEmail string     `form:"supplier_email"`
+	Total         int64      `form:"total"`
+	Approved      bool       `form:"approved"`
+	Notes         string     `form:"notes"`
+	DeliveryDate  *time.Time `form:"delivery_date"`
 }
 
 // Validate reports the errors per field.

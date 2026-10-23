@@ -18,15 +18,15 @@ import (
 type PurchaseOrder struct {
 	model.Model
 
-	ID            string    `db:"id"`
-	Reference     string    `db:"reference"`
-	SupplierEmail string    `db:"supplier_email"`
-	Total         int64     `db:"total"`
-	Approved      bool      `db:"approved"`
-	Notes         string    `db:"notes"`
-	DeliveryDate  time.Time `db:"delivery_date"`
-	CreatedAt     time.Time `db:"created_at"`
-	UpdatedAt     time.Time `db:"updated_at"`
+	ID            string     `db:"id"`
+	Reference     string     `db:"reference"`
+	SupplierEmail string     `db:"supplier_email"`
+	Total         int64      `db:"total"`
+	Approved      bool       `db:"approved"`
+	Notes         string     `db:"notes"`
+	DeliveryDate  *time.Time `db:"delivery_date"`
+	CreatedAt     time.Time  `db:"created_at"`
+	UpdatedAt     time.Time  `db:"updated_at"`
 }
 
 // purchaseOrderTable is the table PurchaseOrder is a row of.
@@ -64,10 +64,10 @@ func (p PurchaseOrder) LogValue() slog.Value {
 // argument -- and the service calls them between the policy and the save.
 //
 //	func (p *PurchaseOrder) Approve(at time.Time) error {
-//		if !p.ApprovedAt.IsZero() {
+//		if p.ApprovedAt != nil {
 //			return errors.New("this purchase order is already approved")
 //		}
-//		p.ApprovedAt = at
+//		p.ApprovedAt = &at
 //		return nil
 //	}
 // arandu:end custom

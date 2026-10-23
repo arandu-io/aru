@@ -4,7 +4,6 @@ package factories
 
 import (
 	"context"
-	"time"
 
 	"github.com/arandu-io/hesape/auth"
 	"github.com/arandu-io/hesape/database/model"
@@ -118,7 +117,6 @@ func definePurchaseOrder(f faker.Faker) models.PurchaseOrder {
 		Total:         int64(f.Int(1, 1000)),
 		Approved:      f.Bool(),
 		Notes:         f.UserName(),
-		DeliveryDate:  f.Time(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)),
 	}
 }
 

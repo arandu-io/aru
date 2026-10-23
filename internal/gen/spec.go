@@ -177,6 +177,51 @@ func (f Field) IsString() bool {
 // that arrive as text and leave as time.Time.
 func (f Field) IsTime() bool { return f.Type == TypeDate || f.Type == TypeTimestamp }
 
+// IsDate reports whether the field is a date, which binds through database.Day.
+func (f Field) IsDate() bool { return f.Type == TypeDate }
+
+// Nullable reports whether the field's column holds NULL: a date or a
+// timestamp nobody is required to fill. "Not filled in" is a value of its own
+// for a time -- not shipped yet, not approved yet -- and time.Time has no
+// spelling for it. Its zero is the first instant of year one, and a nullable
+// column written through a time.Time stores 0001-01-01 where the row meant
+// nothing, which every "where it is set" scope then reads as set.
+func (f Field) Nullable() bool { return f.IsTime() && !f.Required }
+
+// ModelType is how the field is declared on the entity and on the request: the
+// Go type, or a pointer to it for a nullable field, which ctx.Bind leaves nil
+// when the input was empty and the model writes as NULL.
+func (f Field) ModelType() string {
+	if f.Nullable() {
+		return "*" + f.GoType()
+	}
+	return f.GoType()
+}
+
+// ColumnModifier is what the create migration chains after the column so the
+// column holds what the Go field can: nothing for a required field, which is
+// NOT NULL; Nullable for a nullable time; and for any other field nobody is
+// required to fill, NOT NULL with the zero of its type as the default. A string
+// or a number has no NULL in Go, so a column that admitted one would hold a row
+// the entity cannot read back.
+//
+// Long text gets no default: MySQL refuses a literal DEFAULT on a TEXT column.
+// It is NOT NULL all the same, and the model writes the empty string.
+func (f Field) ColumnModifier() string {
+	switch {
+	case f.Required || f.Type == TypeText:
+		return ""
+	case f.Nullable():
+		return ".Nullable()"
+	case f.Type == TypeBool:
+		return ".Default(false)"
+	case f.Type == TypeInt || f.Type == TypeMoney || f.Type == TypeDecimal:
+		return ".Default(0)"
+	default:
+		return `.Default("")`
+	}
+}
+
 // IsBool reports whether the field is a checkbox in a form.
 func (f Field) IsBool() bool { return f.Type == TypeBool }
 
@@ -647,6 +692,17 @@ func (m Module) ViewsImport() string {
 // it: one word has no separator.
 func (m Module) ViewsPackage() string {
 	return strings.ReplaceAll(m.Resource(), "-", "")
+}
+
+// HasNullable reports whether a field is a nullable time, which the controller
+// formats only when it is set.
+func (m Module) HasNullable() bool {
+	for _, f := range m.Fields {
+		if f.Nullable() {
+			return true
+		}
+	}
+	return false
 }
 
 // NeedsTimeParse reports whether the request declares a date or a timestamp,

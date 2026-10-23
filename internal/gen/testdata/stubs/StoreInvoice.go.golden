@@ -19,10 +19,10 @@ import (
 // auth.Authorize inside the service, and a second place to say yes is a
 // second place to forget. See app/Policies.
 type StoreInvoice struct {
-	Reference     string    `form:"reference"`
-	SupplierEmail string    `form:"supplier_email"`
-	Total         int64     `form:"total"`
-	DeliveryDate  time.Time `form:"delivery_date"`
+	Reference     string     `form:"reference"`
+	SupplierEmail string     `form:"supplier_email"`
+	Total         int64      `form:"total"`
+	DeliveryDate  *time.Time `form:"delivery_date"`
 }
 
 // Validate reports the errors per field.

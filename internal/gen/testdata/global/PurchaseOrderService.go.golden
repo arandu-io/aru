@@ -164,7 +164,11 @@ func (s *PurchaseOrderService) fill(p *models.PurchaseOrder, in requests.Purchas
 	p.Total = in.Total
 	p.Approved = in.Approved
 	p.Notes = in.Notes
-	p.DeliveryDate = database.Day(in.DeliveryDate)
+	p.DeliveryDate = in.DeliveryDate
+	if in.DeliveryDate != nil {
+		day := database.Day(*in.DeliveryDate)
+		p.DeliveryDate = &day
+	}
 }
 
 // arandu:begin custom

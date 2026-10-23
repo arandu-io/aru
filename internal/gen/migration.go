@@ -158,7 +158,7 @@ func ({{.Type}}) Up(ctx context.Context, conn migrations.Connection) error {
 		table.String("tenant_id")
 {{- end}}
 {{- range .Fields}}
-		table.{{.BlueprintMethod}}("{{.Column}}"){{if not .Required}}.Nullable(){{end}}
+		table.{{.BlueprintMethod}}("{{.Column}}"){{.ColumnModifier}}
 {{- end}}
 		table.Timestamps()
 {{- range .UniqueFields}}

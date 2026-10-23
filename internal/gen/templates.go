@@ -41,7 +41,7 @@ type {{.Entity}} struct {
 	{{.ParentField}} string ` + "`" + `db:"{{.ParentColumn}}"` + "`" + `
 {{- end}}
 {{- range .Fields}}
-	{{.GoName}} {{.GoType}} ` + "`" + `db:"{{.Column}}"` + "`" + `
+	{{.GoName}} {{.ModelType}} ` + "`" + `db:"{{.Column}}"` + "`" + `
 {{- end}}
 	CreatedAt time.Time ` + "`" + `db:"created_at"` + "`" + `
 	UpdatedAt time.Time ` + "`" + `db:"updated_at"` + "`" + `
@@ -91,10 +91,10 @@ func ({{.Receiver}} {{.Entity}}) LogValue() slog.Value {
 // argument -- and the service calls them between the policy and the save.
 //
 //	func ({{.Receiver}} *{{.Entity}}) Approve(at time.Time) error {
-//		if !{{.Receiver}}.ApprovedAt.IsZero() {
+//		if {{.Receiver}}.ApprovedAt != nil {
 //			return errors.New("this {{.Human}} is already approved")
 //		}
-//		{{.Receiver}}.ApprovedAt = at
+//		{{.Receiver}}.ApprovedAt = &at
 //		return nil
 //	}
 // arandu:end custom
@@ -429,6 +429,14 @@ func (s *{{.ServiceType}}) fill({{.Receiver}} *models.{{.Entity}}, in requests.{
 {{- range .Fields}}
 {{- if .IsEmail}}
 	{{$.Receiver}}.{{.GoName}} = strings.ToLower(in.{{.GoName}})
+{{- else if .Nullable}}
+	{{$.Receiver}}.{{.GoName}} = in.{{.GoName}}
+{{- if .IsDate}}
+	if in.{{.GoName}} != nil {
+		day := database.Day(*in.{{.GoName}})
+		{{$.Receiver}}.{{.GoName}} = &day
+	}
+{{- end}}
 {{- else}}
 	{{$.Receiver}}.{{.GoName}} = {{.Bind "in"}}
 {{- end}}
@@ -484,7 +492,7 @@ var _ validation.Validatable = {{.Request}}{}
 // gen.Stub have.
 const requestRulesTemplate = `{{define "requestFields"}}
 {{- range .Fields}}
-	{{.GoName}} {{.GoType}} {{.FormTag}}
+	{{.GoName}} {{.ModelType}} {{.FormTag}}
 {{- end}}
 {{- end}}{{define "storeRules"}}
 {{- range .Fields}}
@@ -699,14 +707,24 @@ func (c *{{.Controller}}) Destroy(ctx *hhttp.Context) error {
 // has no route table, so a link written there could only be a literal. This
 // takes the context so it can ask for the route by name.
 func (c *{{.Controller}}) row(ctx *hhttp.Context, {{.Receiver}} *models.{{.Entity}}) views.{{.RowStruct}} {
-	return views.{{.RowStruct}}{
+	{{if .HasNullable}}row := {{else}}return {{end}}views.{{.RowStruct}}{
 		ID:  {{.Receiver}}.ID,
 		URL: ctx.URL("{{.RouteName "show"}}", {{.Receiver}}.ID),
-{{- range .Fields}}
+{{- range .Fields}}{{if not .Nullable}}
 		{{.GoName}}: {{.RowValue $.Receiver}},
-{{- end}}
+{{- end}}{{end}}
 		Created: {{.Receiver}}.CreatedAt.Format("2006-01-02 15:04"),
 	}
+{{- if .HasNullable}}
+	// A time nobody filled in is an empty cell and an empty input, never the
+	// first day of year one.
+{{- range .Fields}}{{if .Nullable}}
+	if {{$.Receiver}}.{{.GoName}} != nil {
+		row.{{.GoName}} = {{$.Receiver}}.{{.GoName}}.Format("{{.TimeLayout}}")
+	}
+{{- end}}{{end}}
+	return row
+{{- end}}
 }
 
 // arandu:begin custom

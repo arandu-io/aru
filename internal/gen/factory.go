@@ -24,7 +24,7 @@ type FactoryField struct {
 
 // Factory is how a specification field describes itself to a factory.
 func (f Field) Factory() FactoryField {
-	return FactoryField{GoName: f.GoName(), GoType: f.GoType()}
+	return FactoryField{GoName: f.GoName(), GoType: f.ModelType()}
 }
 
 // Fake is the expression the definition fills the field with, from the faker

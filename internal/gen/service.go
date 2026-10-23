@@ -3,6 +3,7 @@ package gen
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 )
 
 // GenerateService produces app/Services/<Entity>Service.go with one use case,
@@ -52,7 +53,9 @@ func ServiceFields(model, request []FactoryField) []Field {
 		if t != f.GoType || kind == "" {
 			continue
 		}
-		field := Field{Name: Normalize(f.GoName), Type: kind}
+		// Required decides only whether a time is a pointer, and a field
+		// declared without one is a value that is always there.
+		field := Field{Name: Normalize(f.GoName), Type: kind, Required: !strings.HasPrefix(f.GoType, "*")}
 		if field.GoName() != f.GoName {
 			field.goName = f.GoName
 		}
@@ -70,6 +73,8 @@ var goKinds = map[string]Type{
 	"float64":   TypeDecimal,
 	"bool":      TypeBool,
 	"time.Time": TypeTimestamp,
+	// A nullable time copies as it is, pointer onto pointer.
+	"*time.Time": TypeTimestamp,
 }
 
 const serviceStubTemplate = `package services

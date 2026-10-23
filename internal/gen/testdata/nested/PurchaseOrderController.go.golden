@@ -182,7 +182,7 @@ func (c *PurchaseOrderController) Destroy(ctx *hhttp.Context) error {
 // has no route table, so a link written there could only be a literal. This
 // takes the context so it can ask for the route by name.
 func (c *PurchaseOrderController) row(ctx *hhttp.Context, p *models.PurchaseOrder) views.PurchaseOrderRow {
-	return views.PurchaseOrderRow{
+	row := views.PurchaseOrderRow{
 		ID:            p.ID,
 		URL:           ctx.URL("suppliers.purchase-orders.show", p.ID),
 		Reference:     p.Reference,
@@ -190,9 +190,14 @@ func (c *PurchaseOrderController) row(ctx *hhttp.Context, p *models.PurchaseOrde
 		Total:         strconv.FormatInt(p.Total, 10),
 		Approved:      p.Approved,
 		Notes:         p.Notes,
-		DeliveryDate:  p.DeliveryDate.Format("2006-01-02"),
 		Created:       p.CreatedAt.Format("2006-01-02 15:04"),
 	}
+	// A time nobody filled in is an empty cell and an empty input, never the
+	// first day of year one.
+	if p.DeliveryDate != nil {
+		row.DeliveryDate = p.DeliveryDate.Format("2006-01-02")
+	}
+	return row
 }
 
 // arandu:begin custom

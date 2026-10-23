@@ -184,6 +184,13 @@ var commands = []command{
 		run:   runTests,
 	},
 	{
+		name:  "e2e:record",
+		usage: e2eRecordUsage,
+		desc:  "record a journey in Chrome and write it as a test in tests/E2E",
+		help:  e2eRecordHelp,
+		run:   e2eRecord,
+	},
+	{
 		name:  "e2e:explain",
 		usage: e2eExplainUsage,
 		desc:  "read a failed journey's trace and say what most probably broke it",

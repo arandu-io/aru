@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/arandu-io/aru/internal/doctor"
+	"github.com/arandu-io/aru/internal/gen"
 )
 
 // kitProject writes a project whose tests package declares Serve and Open over
@@ -160,5 +163,51 @@ func TestMakeContractWritesTheTestOfAnOperation(t *testing.T) {
 
 	if code, _, stderr := exercise(t, "make:contract", "invoices.delete"); code == 0 || !strings.Contains(stderr, "GET /invoices/{invoice} (invoices.show)") {
 		t.Errorf("an undocumented operation was not refused with the list: %s", stderr)
+	}
+}
+
+// TestWhatTheGeneratorsWriteIsQuietOnTheSuiteRules generates a module with
+// its policy test -- which builds a Subject to ask the Policy's Can -- a
+// tenant-scoped feature test, a journey and a contract test, and requires the
+// doctor's suite rules to find nothing in them but the pipeline the project
+// has not written yet.
+func TestWhatTheGeneratorsWriteIsQuietOnTheSuiteRules(t *testing.T) {
+	root := kitProject(t)
+	m := moduleUnderTest("purchase_order")
+	m.ModulePath = "example.test/probe"
+	files, err := gen.Generate(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := gen.Write(root, files, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"make:e2e", "Checkout", "--smoke"}, {"make:contract", "invoices.show"}} {
+		if code, _, stderr := exercise(t, args...); code != 0 {
+			t.Fatalf("%v: %s", args, stderr)
+		}
+	}
+	findings, err := doctor.Run(root, doctor.Conventional)
+	if err != nil {
+		t.Fatal(err)
+	}
+	suite := map[string]bool{"test-sleep": true, "test-forged-subject": true, "test-css-locator": true,
+		"test-copied-conformance": true, "skip-without-reason": true, "driver-specific-api-in-test": true}
+	sawCI := false
+	for _, f := range findings {
+		if suite[f.Rule] {
+			t.Errorf("generated code is reported: %s", f)
+		}
+		sawCI = sawCI || f.Rule == "e2e-not-run-in-ci"
+	}
+	if !sawCI {
+		t.Error("a project with a journey and no pipeline was not told to run it in CI")
+	}
+	writeFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"), "jobs:\n  e2e:\n    steps:\n      - run: aru test --smoke\n")
+	findings, _ = doctor.Run(root, doctor.Conventional)
+	for _, f := range findings {
+		if f.Rule == "e2e-not-run-in-ci" {
+			t.Errorf("a pipeline running aru test --smoke was not read: %s", f)
+		}
 	}
 }

@@ -36,7 +36,12 @@ Reading tools: doctor, project_map, where_does_it_go, feature_recipe,
 commands and imports_catalog. One tool writes, generate: it runs a make:*
 command as a preview, and writes only when called with apply=true. Nothing
 it does runs a migration or edits bootstrap/app.go or routes/: the wiring a
-generator prints is handed back for a person to paste.`
+generator prints is handed back for a person to paste.
+
+Browser tools: e2e_open, e2e_accessibility_tree, e2e_click, e2e_fill,
+e2e_expect, e2e_capture, e2e_read_trace and e2e_close drive one page of the
+running application in Chrome through the test kit's native driver, with the
+waiting and the automatic failures of a journey in tests/E2E.`
 
 // mcpSubject is who the developer server acts as. It reaches no application
 // data -- every tool reads the source tree or runs a generator -- so the
@@ -73,13 +78,16 @@ func runMCP(args []string, stdout, stderr io.Writer) error {
 // every log line on logs. out receives protocol frames and nothing else.
 func serveMCP(ctx context.Context, root string, in io.Reader, out, logs io.Writer) error {
 	logger := slog.New(slog.NewTextHandler(logs, nil))
-	server := developerServer(root)
+	session := newE2ESession(root)
+	defer session.close()
+	server := developerServer(root, session)
 	logger.Info("aru mcp: serving over stdio", "project", root, "tools", len(server.Tools), "version", Version())
 	return mcp.Local(ctx, server, mcpSubject, in, out)
 }
 
-// developerServer is the server: the six reading tools and generate.
-func developerServer(root string) *mcp.Server {
+// developerServer is the server: the six reading tools, generate, and the
+// browser tools over one page of the running application.
+func developerServer(root string, session *e2eSession) *mcp.Server {
 	return &mcp.Server{
 		Name:    "aru",
 		Version: Version(),
@@ -88,8 +96,10 @@ func developerServer(root string) *mcp.Server {
 			"implementation contract), the order a feature is built in, aru's commands and the import " +
 			"path of each framework symbol. Ask where_does_it_go before writing a file, and feature_recipe " +
 			"before starting a feature. generate runs a make:* generator, as a preview unless apply is true; " +
-			"it never runs a migration and never edits bootstrap or routes -- paste the wiring it returns.",
-		Tools: []mcp.Tool{
+			"it never runs a migration and never edits bootstrap or routes -- paste the wiring it returns. " +
+			"The e2e_ tools drive one page of the running application in Chrome with the test kit, as a " +
+			"journey in tests/E2E does: check a screen with them, and write what you find down as a journey.",
+		Tools: append([]mcp.Tool{
 			doctorTool{root: root},
 			projectMapTool{root: root},
 			whereTool{},
@@ -97,7 +107,7 @@ func developerServer(root string) *mcp.Server {
 			commandsTool{},
 			importsTool{root: root},
 			generateTool{root: root},
-		},
+		}, e2eTools(session)...),
 	}
 }
 

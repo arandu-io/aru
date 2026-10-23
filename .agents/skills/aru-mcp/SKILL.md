@@ -1,6 +1,6 @@
 ---
 name: aru-mcp
-description: Change what `aru mcp` serves to a developer's assistant -- add, rename or change a tool (doctor, project_map, where_does_it_go, feature_recipe, commands, imports_catalog, generate), change the implementation contract it answers from (internal/contract/contract.json), or touch what the generate tool may run or write. Use when the request is "add a tool to aru mcp", "where_does_it_go answers the wrong path", "add a recipe", "a card is missing", "let the assistant run X", or when an MCP client reports a line it cannot parse. Covers the stdout rule, the one write tool and what it never does, and why the contract is one embedded file.
+description: Change what `aru mcp` serves to a developer's assistant -- add, rename or change a tool (doctor, project_map, where_does_it_go, feature_recipe, commands, imports_catalog, generate, and the e2e_ browser tools), change the implementation contract it answers from (internal/contract/contract.json), or touch what the generate tool may run or write. Use when the request is "add a tool to aru mcp", "where_does_it_go answers the wrong path", "add a recipe", "a card is missing", "let the assistant run X", or when an MCP client reports a line it cannot parse. Covers the stdout rule, the one write tool and what it never does, and why the contract is one embedded file.
 license: MIT
 metadata:
   audience: contributor
@@ -13,7 +13,8 @@ metadata:
 for an assistant rather than an editor.
 
 ```sh
-grep -c 'Tool{root\|Tool{}' mcp.go          # the tools developerServer lists
+grep -c 'Tool{root\|Tool{}' mcp.go          # the reading tools and generate
+grep -c 'name: "e2e_' mcpbrowser.go          # the browser tools
 grep -c '"kind":' internal/contract/contract.json   # contract cards
 grep -c '"name":' internal/contract/contract.json   # recipes
 ```
@@ -84,3 +85,33 @@ documents and the canonical imports of `aru imports:catalog`.
    must carry.
 4. A tool that needs the command table reads it through `mcpCommands`, which
    `init` assigns: the table refers to `runMCP`, and Go refuses the cycle.
+
+## The browser tools
+
+`mcpbrowser.go` holds eight tools -- `e2e_open`, `e2e_accessibility_tree`,
+`e2e_click`, `e2e_fill`, `e2e_expect`, `e2e_capture`, `e2e_read_trace`,
+`e2e_close` -- over one `e2eSession`: the test kit's `browser.Page` on the
+native `cdp` driver, opened by the first `e2e_open` and closed by `e2e_close`
+or when the serve ends. They are the kit's page and not a second driver
+written here, so the assistant meets the same waiting, the same locators and
+the same automatic failures (an exception, a console error, a 5xx) as a
+journey in `tests/E2E`.
+
+- The page reports to `mcpT`, which stands in for a test: `Fatalf` unwinds to
+  the tool with `stepFailed`, the tool answers it with `IsError`, and the page
+  stays open. `mcpT` embeds `testing.TB` only to satisfy the interface; a
+  method the page starts calling that it does not override panics, and the
+  stdio test is what finds it.
+- `e2e_read_trace` writes the session's trace where the page writes it on
+  close (`trace.Dir("aru-mcp")`) and answers `explainTrace`, the same
+  explanation `aru e2e:explain` prints.
+- `e2e_accessibility_tree` and `aru e2e:record` name elements with one piece
+  of JavaScript, `elementNames` in `e2erecordscript.go`.
+- Their answers say that a defect found this way ends as a journey (`aru
+  make:e2e`, `aru e2e:record`): exploration is not where a regression is kept.
+
+`TestTheBrowserToolsDriveThePage` (`mcpbrowser_internal_test.go`) drives all
+of them over stdio against a small site with a headless Chrome; it skips with
+no browser and fails in CI. A new browser tool goes in `e2eTools` and in that
+test, not in `TestTheDeveloperServerAnswersEveryToolOverStdio`, which needs no
+browser and only lists them.

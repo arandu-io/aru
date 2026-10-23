@@ -109,7 +109,8 @@ func TestTheDeveloperServerAnswersEveryToolOverStdio(t *testing.T) {
 	for _, tool := range answers["2"].Result.Tools {
 		names = append(names, tool.Name)
 	}
-	want := "doctor project_map where_does_it_go feature_recipe commands imports_catalog generate"
+	want := "doctor project_map where_does_it_go feature_recipe commands imports_catalog generate " +
+		"e2e_open e2e_accessibility_tree e2e_click e2e_fill e2e_expect e2e_capture e2e_read_trace e2e_close"
 	if strings.Join(names, " ") != want {
 		t.Errorf("tools/list = %v, want %s", names, want)
 	}

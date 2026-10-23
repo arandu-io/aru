@@ -19,7 +19,7 @@ const playwrightModule = "github.com/hyz-is/arandu-playwright"
 
 // playwrightInstaller is the command of that module that installs its driver
 // and its browsers into the user's cache, outside the project tree.
-const playwrightInstaller = playwrightModule + "/cmd/install-browsers"
+const playwrightInstaller = playwrightModule + "/install-browsers"
 
 // e2eInstallUsage is the usage line of e2e:install-browsers.
 const e2eInstallUsage = "aru e2e:install-browsers [arguments for the driver's installer]"

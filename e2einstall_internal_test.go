@@ -36,10 +36,10 @@ func TestInstallBrowsersDelegatesToThePlaywrightModule(t *testing.T) {
 	}
 	module := t.TempDir()
 	writeFile(t, filepath.Join(module, "go.mod"), "module "+playwrightModule+"\n\ngo 1.26\n")
-	writeFile(t, filepath.Join(module, "cmd", "install-browsers", "main.go"),
+	writeFile(t, filepath.Join(module, "install-browsers", "main.go"),
 		"package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\nfunc main() { fmt.Println(\"installer-ran\", os.Args[1:]) }\n")
 
-	root := probeProjectRunning(t, "package main\n\nimport _ \""+playwrightModule+"/cmd/install-browsers\"\n\nfunc main() {}\n")
+	root := probeProjectRunning(t, "package main\n\nimport _ \""+playwrightModule+"/install-browsers\"\n\nfunc main() {}\n")
 	writeFile(t, filepath.Join(root, "go.mod"), "module example.test/probe\n\ngo 1.26\n\nrequire "+playwrightModule+
 		" v0.1.0\n\nreplace "+playwrightModule+" => "+module+"\n")
 

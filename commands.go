@@ -178,8 +178,8 @@ var commands = []command{
 	},
 	{
 		name:  "test",
-		usage: "aru test [--browser] [flags for go test]",
-		desc:  "run the project's tests with go test, or with --browser the ones in tests/Browser",
+		usage: "aru test [--e2e] [--smoke] [--shard=i/n] [--driver=cdp] [--browser=chromium] [flags for go test]",
+		desc:  "run the project's tests with go test, or with --e2e the journeys in tests/E2E",
 		help:  testHelp,
 		run:   runTests,
 	},
@@ -560,15 +560,26 @@ publishes over one, and even then the custom blocks are carried forward: what
     asset         a file served as it is: an image, a font, a stylesheet`
 
 // testHelp is the body `aru test --help` prints, under the usage line.
-const testHelp = `Without --browser it runs go test ./... from the project root. The tests that
-drive a browser carry the build tag browser, so they are not part of it.
+const testHelp = `Without a flag of its own it runs go test ./... from the project root. The
+journeys carry the build tag e2e, so they are not part of it.
 
-With --browser it runs go test -tags browser ./tests/Browser/... and nothing
-else. A browser test is a Go test package in tests/Browser whose files open with
-//go:build browser; its screenshots go to tests/Browser/screenshots, which is
-not committed.
+--e2e runs go test -tags e2e ./tests/E2E/... and nothing else: the journeys
+boot the server over a database of their own and drive a real browser.
 
-Every other flag -- -run, -race, -v, -count -- is handed to go test as it is.`
+--smoke runs the journeys whose names start with TestSmoke, the ones a pull
+request runs; the rest run at night. It sets -run itself.
+
+--shard=i/n lists the tests the run would execute, sorts them by package and
+name, and runs every n-th one from the i-th, so n machines share one suite
+without two of them running the same test.
+
+--driver=<name> and --browser=<engine> choose the driver the journeys launch
+and its engine (chromium, firefox, webkit), exported as ARANDU_E2E_DRIVER and
+ARANDU_E2E_BROWSER. Either one implies --e2e. A bare --browser is the old name
+of --e2e and still runs tests/E2E.
+
+Every other flag -- -run, -race, -v, -count -- is handed to go test as it is,
+and a -tags of yours is joined with e2e rather than replaced.`
 
 // openAPICheckHelp is the body `aru openapi:check --help` prints, under the
 // usage line.

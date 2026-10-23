@@ -52,11 +52,17 @@ three things it then did not do -- recompile an edited view, recompile an edited
 stylesheet, drop the generated Go of a deleted one -- were silent every time.
 
 `test` starts the toolchain in the project too, and is not forwarded either: it
-runs `go test`, not the binary. Without `--browser` that is `go test ./...`;
-with it, `go test -tags browser ./tests/Browser/...` and nothing else, because
-the browser suite carries the build tag `browser` to stay out of the ordinary
-run. Every other argument goes to `go test` as typed, so it has no flag set of
-its own and is listed in `flagsWithoutAFlagSet`.
+runs `go test`, not the binary. With no flag of its own that is `go test ./...`;
+with `--e2e`, `go test -tags e2e ./tests/E2E/...` and nothing else, because the
+journeys carry the build tag `e2e` to stay out of the ordinary run. `--smoke`
+adds `-run '^TestSmoke'` (the convention: a smoke journey is named
+`TestSmoke<Journey>`), `--shard=i/n` lists the tests with `go test -list`, sorts
+them and runs every n-th from the i-th, and `--driver`/`--browser=<engine>` are
+exported as `ARANDU_E2E_DRIVER`/`ARANDU_E2E_BROWSER`. A bare `--browser` is the
+old name of `--e2e`. Every other argument goes to `go test` as typed, so it has
+no flag set of its own and is listed in `flagsWithoutAFlagSet`; the
+end-to-end directory and tag come from `testlayout.E2EDir` and
+`testlayout.E2ETag`, the names the doctor and the generators read too.
 
 Three of the twenty-four forward under a different word than the one typed:
 `queue:work` calls `work`, `route:list` calls `routes`, and `openapi:check`

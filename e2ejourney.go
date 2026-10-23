@@ -96,8 +96,6 @@ const journeyHelpers = `Add the two helpers a journey opens its page with to ` +
 beside the boot and the migrations your tests already use:
 
     import (
-        "fmt"
-
         "` + testKitImport + `"
         "` + browserKitImport + `"
         "` + cdpKitImport + `"
@@ -117,14 +115,7 @@ beside the boot and the migrations your tests already use:
     // Open opens a browser page on the server, resolving route names.
     func Open(t *testing.T, server *test.Server) *browser.Page {
         t.Helper()
-        routes := func(name string, params ...any) (string, error) {
-            values := make([]string, len(params))
-            for i, p := range params {
-                values[i] = fmt.Sprint(p)
-            }
-            return server.Route(name, values...), nil
-        }
-        return browser.Open(t, Drivers, browser.BaseURL(server.URL), browser.Routes(routes))
+        return browser.Open(t, Drivers, browser.BaseURL(server.URL), browser.Routes(server.Resolve))
     }
 
 Boot and Migrate are the functions your tests boot the application and run

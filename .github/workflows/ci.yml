@@ -77,6 +77,11 @@ jobs:
       # edited overwritten?" differently. It is the component now, and the
       # generator here calls it rather than keeping the second copy.
       #
+      # framework is on it for its test kit alone, framework/test: the trace
+      # format, the native Chrome driver and the page e2e:record, e2e:explain
+      # and the browser tools of aru mcp drive. Copying them here would be the
+      # second implementation of a format every driver writes, ADR 0188.
+      #
       # The five after it arrived together, with the packager, under ADR 0147.
       # Producing an APK, an IPA or a signed executable means resizing an icon
       # to the sizes a platform asks for (x/image), compiling architectures in
@@ -92,7 +97,7 @@ jobs:
       # means when it is a command rather than a sentence.
       - name: dependency budget
         run: |
-          allowed="gopkg.in/yaml.v3 github.com/arandu-io/hesape github.com/arandu-io/mcp github.com/evanw/esbuild golang.org/x/sys"
+          allowed="gopkg.in/yaml.v3 github.com/arandu-io/hesape github.com/arandu-io/framework github.com/arandu-io/mcp github.com/evanw/esbuild golang.org/x/sys"
           allowed="$allowed golang.org/x/image golang.org/x/sync golang.org/x/tools golang.org/x/text golang.org/x/mod github.com/akavel/rsrc"
           extra=""
           # What the binary carries, not what go.sum mentions: `go list -m all`

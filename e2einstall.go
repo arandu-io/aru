@@ -10,7 +10,7 @@ import (
 
 	"github.com/arandu-io/aru/internal/buildcache"
 	"github.com/arandu-io/aru/internal/gomod"
-	"github.com/arandu-io/hesape/arandutest/browser/cdp"
+	"github.com/arandu-io/framework/test/browser/cdp"
 )
 
 // playwrightModule is the driver module that runs the journeys in Chromium,

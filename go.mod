@@ -21,17 +21,16 @@ retract v0.37.0 // Does not pin the skeleton and could clone an incompatible mov
 // edited overwritten?" differently -- which is the one question the escape
 // hatch exists to answer the same way every time.
 //
-// The end-to-end commands reach hesape too, and for the same reason: the trace
-// a failing journey writes, the native Chrome driver and the page a journey
-// drives are the test kit's, so e2e:explain reads the trace with the kit's
-// reader, e2e:record and the browser tools of aru mcp drive Chrome with the
-// kit's driver, and none of them keeps a second copy of either. They are
-// standard library underneath, so the allow-list does not grow.
+// framework is linked for its test kit and nothing else, framework/test and
+// the packages under it: the trace a failing journey writes, the native Chrome
+// driver and the page a journey drives. e2e:explain reads the trace with the
+// kit's reader, e2e:record and the browser tools of aru mcp drive Chrome with
+// the kit's driver, and none of them keeps a second copy of either. The kit is
+// the standard library underneath, and hesape, so nothing else enters.
 //
 // mcp is the protocol `aru mcp` speaks to a developer's assistant over stdio.
 // Its library package imports hesape and the standard library and nothing
-// else: the framework its module requires is reached only by its own tests, so
-// it is in the module graph and never linked into this binary.
+// else: the framework its module requires is reached only by its own tests.
 //
 // esbuild compiles browser assets through its Go API. It is linked only into
 // this CLI, never into an application, and needs no Node runtime or npm.
@@ -50,7 +49,8 @@ retract v0.37.0 // Does not pin the skeleton and could clone an incompatible mov
 
 require (
 	github.com/akavel/rsrc v0.10.2
-	github.com/arandu-io/hesape v0.82.0
+	github.com/arandu-io/framework v0.63.0
+	github.com/arandu-io/hesape v0.83.0
 	github.com/arandu-io/mcp v0.4.2
 	github.com/evanw/esbuild v0.28.2
 	golang.org/x/image v0.46.0

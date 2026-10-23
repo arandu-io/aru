@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	e2etrace "github.com/arandu-io/hesape/arandutest/trace"
+	e2etrace "github.com/arandu-io/framework/test/trace"
 )
 
 // failedTrace writes a trace the way a journey writes one when the server

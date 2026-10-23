@@ -1,7 +1,9 @@
 github.com/akavel/rsrc v0.10.2 h1:Zxm8V5eI1hW4gGaYsJQUhxpjkENuG91ki8B4zCrvEsw=
 github.com/akavel/rsrc v0.10.2/go.mod h1:uLoCtb9J+EyAqh+26kdrTgmzRBFPGOolLWKpdxkKq+c=
-github.com/arandu-io/hesape v0.82.0 h1:uXPg+oVLYxvwuNXYpJFdoeOi3ybasR4aCn3yX8qiYkk=
-github.com/arandu-io/hesape v0.82.0/go.mod h1:EGvD/xu7BKqX/sT4p/XN+igAb5tBagA/VwoEqeVV1b0=
+github.com/arandu-io/framework v0.63.0 h1:25elVZbMmpLDinEW4pIlLCz2eaWt7vgaDe/BIEePHHU=
+github.com/arandu-io/framework v0.63.0/go.mod h1:Scs9k+tV2uoiiEx/Wr/z07mkMJkQOOkQAN5IvQUsLqE=
+github.com/arandu-io/hesape v0.83.0 h1:TyhLMaVBQzpjp9cqRBgs/pLTKpMDMONlyZi6VYz8zMs=
+github.com/arandu-io/hesape v0.83.0/go.mod h1:EGvD/xu7BKqX/sT4p/XN+igAb5tBagA/VwoEqeVV1b0=
 github.com/arandu-io/mcp v0.4.2 h1:mgTpePA2bC2RZDtGSNgP0vArpQz0b+DZnayBXhHTnsE=
 github.com/arandu-io/mcp v0.4.2/go.mod h1:hXzQ6jCizYeV+MGFDnET8iV8IeCl0b591KhbY9LBpZY=
 github.com/evanw/esbuild v0.28.2 h1:A2uETn4jrQTcXaT/shwTDTYBxDjl7fV7nXmUrJxfA2w=

@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arandu-io/hesape/arandutest/browser"
-	"github.com/arandu-io/hesape/arandutest/browser/cdp"
+	"github.com/arandu-io/framework/test/browser"
+	"github.com/arandu-io/framework/test/browser/cdp"
 )
 
 // headless launches Chrome without a window for a test, skipping on a machine

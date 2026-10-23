@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/arandu-io/hesape/arandutest/browser/cdp"
+	"github.com/arandu-io/framework/test/browser/cdp"
 )
 
 // TestInstallBrowsersNamesTheNativeDriversBrowser runs the command in a

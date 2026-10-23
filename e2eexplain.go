@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	e2etrace "github.com/arandu-io/hesape/arandutest/trace"
+	e2etrace "github.com/arandu-io/framework/test/trace"
 )
 
 // e2eExplainUsage is the usage line of e2e:explain, in the dispatch table and

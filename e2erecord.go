@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/arandu-io/aru/internal/gen"
-	"github.com/arandu-io/hesape/arandutest/browser"
-	"github.com/arandu-io/hesape/arandutest/browser/cdp"
+	"github.com/arandu-io/framework/test/browser"
+	"github.com/arandu-io/framework/test/browser/cdp"
 )
 
 // e2eRecordUsage is the usage line of e2e:record.

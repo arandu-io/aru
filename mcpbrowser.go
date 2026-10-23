@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arandu-io/hesape/arandutest/browser"
-	"github.com/arandu-io/hesape/arandutest/browser/cdp"
-	e2etrace "github.com/arandu-io/hesape/arandutest/trace"
+	"github.com/arandu-io/framework/test/browser"
+	"github.com/arandu-io/framework/test/browser/cdp"
+	e2etrace "github.com/arandu-io/framework/test/trace"
 	"github.com/arandu-io/mcp"
 )
 

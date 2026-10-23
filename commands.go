@@ -184,6 +184,13 @@ var commands = []command{
 		run:   runTests,
 	},
 	{
+		name:  "e2e:explain",
+		usage: e2eExplainUsage,
+		desc:  "read a failed journey's trace and say what most probably broke it",
+		help:  e2eExplainHelp,
+		run:   e2eExplain,
+	},
+	{
 		name:  "build",
 		usage: "aru build [--docker] [--tag=<name:version>] [--version=v1.2.3] [--output=bin/app] [--skip-views]",
 		desc:  "compile one static binary, with its checksum, or a container image",

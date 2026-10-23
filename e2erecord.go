@@ -396,7 +396,11 @@ func recordStart(target string, base *url.URL, routes []namedRoute) (string, str
 // on an error page.
 func reachable(address string) error {
 	client := &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	resp, err := client.Get(address)
+	req, err := http.NewRequest(http.MethodGet, address, nil)
+	if err != nil {
+		return fmt.Errorf("e2e:record: %s is not an address: %w", address, err)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("e2e:record: nothing answers at %s. Start the application first, with aru dev, or pass --base", address)
 	}

@@ -896,7 +896,8 @@ var flagsWithoutAFlagSet = map[string]string{
 	"queue:forget": "forwards", "queue:flush": "forwards", "queue:prune-failed": "forwards",
 	"queue:retry-batch": "forwards", "queue:prune-batches": "forwards", "route:list": "forwards",
 	"db:seed": "forwards", "vendor:publish": "forwards", "openapi:check": "forwards",
-	"test": "reads its own flags and hands every other argument to go test",
+	"test":                 "reads its own flags and hands every other argument to go test",
+	"e2e:install-browsers": "hands its arguments to the installer of the driver module",
 }
 
 // TestEveryUsageLineNamesEveryFlag reads each command's flag set and requires

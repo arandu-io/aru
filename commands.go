@@ -191,6 +191,13 @@ var commands = []command{
 		run:   e2eExplain,
 	},
 	{
+		name:  "e2e:install-browsers",
+		usage: e2eInstallUsage,
+		desc:  "install what the project's browser drivers need, or name the browser the native one uses",
+		help:  e2eInstallHelp,
+		run:   e2eInstallBrowsers,
+	},
+	{
 		name:  "build",
 		usage: "aru build [--docker] [--tag=<name:version>] [--version=v1.2.3] [--output=bin/app] [--skip-views]",
 		desc:  "compile one static binary, with its checksum, or a container image",

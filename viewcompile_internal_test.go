@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -77,5 +78,64 @@ func TestViewBuildRefusesWhenItsOwnNamespaceIsBroken(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "home"+viewSuffix) {
 		t.Errorf("the error does not name the view: %v", err)
+	}
+}
+
+// TestAFailedBuildDoesNotLeaveTheLastOutputBehind: the view gained a field
+// and broke in the same edit, and the build that refused it used to leave the
+// output of the previous build in place. go build then compiled the old view,
+// and a controller filling the new field was told the field did not exist.
+// What is left now is a file that stops the build at the view's line.
+func TestAFailedBuildDoesNotLeaveTheLastOutputBehind(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/stale\n\ngo 1.26\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(root, viewsDir, "notes", "index"+viewSuffix)
+	if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(body string) {
+		t.Helper()
+		if err := os.WriteFile(source, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("//go:build kyse\n\npackage notes\n\n@go\ntype IndexData struct{ Title string }\n@endgo\n\n<h1>{{ .Title }}</h1>\n")
+	if err := compileViews(root, &strings.Builder{}); err != nil {
+		t.Fatalf("the first build: %v", err)
+	}
+	target := filepath.Join(root, "storage", "framework", "views", "notes", "index.go")
+	if _, err := os.Stat(target); err != nil {
+		t.Fatalf("the first build wrote nothing: %v", err)
+	}
+
+	// Line 9 closes a section that was never opened.
+	write("//go:build kyse\n\npackage notes\n\n@go\ntype IndexData struct{ Title, Subtitle string }\n@endgo\n\n@endsection\n")
+	if err := compileViews(root, &strings.Builder{}); err == nil {
+		t.Fatal("a view with @endsection and no @section compiled")
+	}
+	stale, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("the compiled output is gone rather than replaced: %v", err)
+	}
+	if strings.Contains(string(stale), "IndexData") {
+		t.Errorf("the output of the previous build is still in place:\n%s", stale)
+	}
+
+	// And the build that follows stops at the view, at the line that failed.
+	tool, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("no go toolchain on PATH")
+	}
+	cmd := exec.Command(tool, "build", "./...")
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("go build accepted the stand-in for a view that did not compile")
+	}
+	if !strings.Contains(string(out), "resources/views/notes/index.kyse.go:9") || !strings.Contains(string(out), "viewDidNotCompile") {
+		t.Errorf("go build does not stop at the view's line:\n%s", out)
 	}
 }

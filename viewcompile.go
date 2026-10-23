@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"path/filepath"
@@ -86,6 +89,9 @@ func compileViews(root string, stdout io.Writer) error {
 			// Every view is compiled even after one fails, so a person fixing
 			// views sees all of them rather than one build at a time.
 			problems = append(problems, err.Error())
+			if err := invalidateCompiled(root, source, "", err); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -118,6 +124,9 @@ func compileViews(root string, stdout io.Writer) error {
 		out, err := kyse.Generate(file, name, dataType, targetRel)
 		if err != nil {
 			problems = append(problems, err.Error())
+			if err := invalidateCompiled(root, source, file.Package, err); err != nil {
+				return err
+			}
 			continue
 		}
 		// The directory is created here, not assumed. The compiled views live
@@ -221,4 +230,49 @@ func pruneCompiled(root string, sources []string) error {
 		}
 	}
 	return nil
+}
+
+// invalidateCompiled replaces the compiled output of a view whose build just
+// failed with kyse.Stale, so the next `go build` stops at the view rather than
+// compiling the output of its last successful build.
+//
+// The output is replaced only when there is one. A view that never compiled
+// has nothing out of date to stand in for, and its absence already fails the
+// build of whatever renders it. pkg is the package the view declared, or empty
+// when the failure came before the package clause was read; then the package
+// is the one the previous output declares.
+func invalidateCompiled(root, source, pkg string, failure error) error {
+	target := kyse.OutputPath(source)
+	previous, err := os.ReadFile(target)
+	if err != nil {
+		return nil
+	}
+	if pkg == "" {
+		f, err := parser.ParseFile(token.NewFileSet(), target, previous, parser.PackageClauseOnly)
+		if err != nil {
+			return nil
+		}
+		pkg = f.Name.Name
+	}
+	sourceRel, err := filepath.Rel(root, source)
+	if err != nil {
+		return err
+	}
+	targetRel, err := filepath.Rel(root, target)
+	if err != nil {
+		return err
+	}
+
+	// The first problem the compiler named is the position the stand-in
+	// points at; the message is the whole failure.
+	line := 1
+	var one *kyse.Error
+	var many kyse.Errors
+	switch {
+	case errors.As(failure, &one):
+		line = one.Line
+	case errors.As(failure, &many) && len(many) > 0:
+		line = many[0].Line
+	}
+	return os.WriteFile(target, kyse.Stale(pkg, sourceRel, targetRel, line, failure.Error()), 0o644)
 }

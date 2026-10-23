@@ -11,11 +11,11 @@ AST and never runs the code, so it works on a project that does not compile —
 which is exactly when someone needs to be told what is wrong.
 
 ```sh
-awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 61  rule functions
+awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 68  rule functions
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/doctor/structure.go \
-	internal/testlayout/testlayout.go | sort -u | wc -l                   # 71  names a report can carry
+	internal/doctor/testsuite.go internal/testlayout/testlayout.go | sort -u | wc -l   # 78  names a report can carry
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/doctor/structure.go \
-	| sort -u | wc -l                                                     # 67  of them declared here
+	internal/doctor/testsuite.go | sort -u | wc -l                       # 74  of them declared here
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/testlayout/testlayout.go \
 	| sort -u | wc -l                                                     # 4  forwarded, declared there
 ```
@@ -63,6 +63,8 @@ The tree decides, not the topic.
 - **`internal/doctor/structure.go`** — the same tree, when the check is about
   where code lives rather than what it lets through: a structural warning (see
   below). The function still goes into the one `rules` slice in `rules.go`.
+- **`internal/doctor/testsuite.go`** — the same tree, when the check reads the
+  application's test suite: `tests/` and every `_test.go` (see below).
 - **`.golangci.yml`** — the check is about `aru`'s own source. Which also means
   it is a check about Go, because an off-the-shelf linter cannot be taught what
   a `Grant` is.
@@ -111,15 +113,15 @@ the CLI accepts the fixture as a project:
 ```sh
 cp -R internal/doctor/testdata/violations /tmp/viol && touch /tmp/viol/arandu.toml
 (cd /tmp/viol && /tmp/aru-src doctor > /tmp/viol.out 2>&1); echo $?   # 1
-tail -1 /tmp/viol.out                                                 # 39 error(s), 76 warning(s)
-grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 64
+tail -1 /tmp/viol.out                                                 # 39 error(s), 88 warning(s)
+grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 70
 ```
 
 `violations` carries a `vendor/` directory holding a slice of the framework:
 the bridge packages it imports, declared the way the framework declares them.
 `import-not-canonical` decides from the framework's own source, at the version
 go.mod requires, and a vendor directory is the one place that source can sit
-inside a fixture and survive the `cp -R` above. Sixteen of the seventy-five
+inside a fixture and survive the `cp -R` above. Sixteen of the eighty-eight
 warnings are that rule. The other fixtures require a framework version no
 module cache here holds, so the rule is silent on them -- which is its declared
 limit, not an accident.
@@ -211,7 +213,7 @@ deliberate two-line diff, not like a line that quietly disappeared.
 
 **5b. Add it to `catalogue` in `internal/doctor/list.go`**, with its severity
 and, for a profile rule, its profile. `TestTheListIsWhatTheSourceReports` reads
-every `Finding` literal in `rules.go` and `structure.go` and fails on a name or a severity the list
+every `Finding` literal in `rules.go`, `structure.go` and `testsuite.go` and fails on a name or a severity the list
 does not carry, in either direction, and on a rule listed out of the order the
 slice runs them.
 
@@ -266,10 +268,35 @@ and near misses in `gaps` and `clean`.
 | `bootstrap-file-beside-app` | a Go file under `bootstrap/` other than `app.go`, sent by its name to the framework's console kernel (`console`, `migrate`, `queue`, `publish`, `background`), to `app/Console/Commands` (upgrade, backfill, oneoff, import) or to `app/Providers` or `config/` | file tree |
 | `program-under-cmd` | a directory under `cmd/` holding Go, `cmd/native` excluded; an OpenAPI generator is pointed at `aru openapi:check` | file tree and imports |
 | `command-outside-commands` | a `Command` literal (the one `routes/console.go` declares, or `hesape/console`'s) whose `Run` names a function declared outside `app/Console/Commands`; a closure is not followed | literal |
-| `program-under-scripts` | a `package main` under `scripts/` that drives a browser (a driver import, `--remote-debugging`, `--headless`, `Page.navigate`) or imports the application's packages | the program's files |
+| `program-under-scripts` | a `package main` under `scripts/` that drives a browser (a driver import, `--remote-debugging`, `--headless`, `Page.navigate`), sent to `tests/E2E`, or imports the application's packages | the program's files |
 
 `aru doctor --list` prints them with the rest, and is what the skeleton's
 `arandu-doctor` skill is checked against.
+
+## The suite rules
+
+Seven rules in `internal/doctor/testsuite.go` read the application's tests.
+They are warnings until 2026-12-15 and errors after it: each `Why` ends with
+that sentence, and the promotion is a change to the file in the first release
+after the date -- no rule reads the clock. Each has positive and negative
+cases in `tests/Unit/doctor/testsuite_test.go`, planted instances in
+`violations` (`tests/Feature/ledger_test.go`, `tests/E2E/checkout_test.go`,
+`tests/AuthContracts/`) and near misses in `gaps` (`tests/`, and a workflow
+that runs `aru test --smoke`).
+
+| rule | reads | limit |
+| --- | --- | --- |
+| `test-sleep` | `time.Sleep` in a `_test.go` or a file of `tests/` | call, through the import |
+| `test-forged-subject` | a `Subject` literal outside `tests/Unit` that is not only the input of a Policy's `Can` or the kit's `As`, and any `ActingAs` | function; a variable is followed through its uses there |
+| `test-css-locator` | `browser.CSS` with an empty reason, a selector handed to a harness's locator method, `querySelector` in a script, under `tests/E2E` and `tests/Browser` | string literals at the call |
+| `test-copied-conformance` | a test file under the four copied directories, or declaring a copied test's name, that does not import the conformance kit | directory and function names |
+| `e2e-not-run-in-ci` | journeys under `tests/E2E` and no CI pipeline line running `aru test --e2e/--smoke` or `go test -tags e2e` | pipeline files, line by line |
+| `skip-without-reason` | `Skip()`, `SkipNow()`, `Skip("")` | the call's arguments |
+| `driver-specific-api-in-test` | a driver import (the kit's `cdp`, `arandu-playwright`, chromedp, rod, playwright-go, selenium, agouti) or `Driver().(T)` outside the test case files directly in `tests/` | imports and assertions |
+
+The kit is matched under its three spellings, `github.com/arandu-io/framework/test`
+first and the deprecated `hesape/arandutest` and `framework/arandutest`
+after it, so a project half way through the move is read whole.
 
 ## The CSRF exemption rule
 

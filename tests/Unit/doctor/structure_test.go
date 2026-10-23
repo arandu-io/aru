@@ -621,7 +621,7 @@ func Console() []*Command {
 			"scripts/gen-icons/main.go":        "package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\"icons\") }\n",
 			"scripts/shared/shared.go":         "package shared\n\nimport _ \"example.test/shape/bootstrap\"\n",
 			"scripts/release.sh":               "#!/bin/sh\necho --headless\n",
-			"tests/Browser/checkout_test.go":   "//go:build browser\n\npackage browser\n\nconst flag = \"--remote-debugging-pipe\"\n",
+			"tests/E2E/checkout_test.go":       "//go:build e2e\n\npackage e2e_test\n\nconst flag = \"--remote-debugging-pipe\"\n",
 			"scripts/sandbox-env/main_test.go": "package main\n\nimport _ \"example.test/shape/bootstrap\"\n\nfunc main() {}\n",
 		}, 0},
 	}

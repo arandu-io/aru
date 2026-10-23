@@ -105,6 +105,13 @@ var rules = []func(*project) []Finding{
 	programsAreNotUnderCmd,
 	commandsLiveInConsoleCommands,
 	scriptsAreNotPrograms,
+	testsDoNotSleep,
+	testsSignInForReal,
+	locatorsSpeakAsTheUser,
+	conformanceIsCalledNotCopied,
+	journeysRunInCI,
+	skipsSayWhy,
+	testsNameNoDriver,
 }
 
 // 0. A file doctor could not read makes every other rule unreliable.

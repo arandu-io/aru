@@ -1,0 +1,8 @@
+name: ci
+on: [pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: go vet -tags e2e ./...
+      - run: aru test --smoke

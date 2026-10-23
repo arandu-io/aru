@@ -2291,7 +2291,7 @@ func reachesTheApplication(files []*file, modulePath string) bool {
 // Reason. A program in scripts/ that reaches the application's packages is a
 // command run outside the binary, with wiring of its own; one that drives a
 // browser is a test whose result is whatever it prints. The first has an
-// owner in app/Console/Commands, the second in tests/Browser, where go test
+// owner in app/Console/Commands, the second in tests/E2E, where go test
 // runs it and answers PASS or FAIL.
 //
 // Scope. Every directory under scripts/ holding a non-test Go file of package
@@ -2314,8 +2314,8 @@ func reachesTheApplication(files []*file, modulePath string) bool {
 // Limit. Local to the program's files: imports, and string literals for a
 // browser driven by hand.
 //
-// Correction: a browser program becomes a Go test package in tests/Browser
-// with the build tag browser, run by `aru test --browser`; any other becomes a
+// Correction: a browser program becomes a journey in tests/E2E with the build
+// tag e2e, driven through the test kit and run by `aru test --e2e`; any other becomes a
 // command in app/Console/Commands listed in routes/console.go.
 func scriptsAreNotPrograms(p *project) []Finding {
 	found := programs(p, "scripts", func(f *file) string { return f.dir })
@@ -2331,10 +2331,10 @@ func scriptsAreNotPrograms(p *project) []Finding {
 			out = append(out, Finding{
 				Rule: "program-under-scripts", Severity: Warning,
 				File: entry.rel, Line: entry.line(entry.ast.Name),
-				Message: dir + " is a Go program that drives a browser, whose place is tests/Browser",
-				Why: "a program that drives the browser is a test whose result is whatever it prints. Make it a Go test " +
-					"package in tests/Browser with the build tag browser; `aru test --browser` runs it and go test " +
-					"answers PASS or FAIL.",
+				Message: dir + " is a Go program that drives a browser, whose place is tests/E2E",
+				Why: "a program that drives the browser is a test whose result is whatever it prints. Make it a journey " +
+					"in tests/E2E with the build tag e2e, driven through github.com/arandu-io/framework/test/browser " +
+					"(aru make:e2e or aru e2e:record write one); `aru test --e2e` runs it and go test answers PASS or FAIL.",
 			})
 		case reachesTheApplication(files, p.modulePath):
 			out = append(out, Finding{

@@ -176,6 +176,13 @@ func emitsByRule() map[string][]string {
 		"programsAreNotUnderCmd":             {"program-under-cmd"},
 		"commandsLiveInConsoleCommands":      {"command-outside-commands"},
 		"scriptsAreNotPrograms":              {"program-under-scripts"},
+		"testsDoNotSleep":                    {"test-sleep"},
+		"testsSignInForReal":                 {"test-forged-subject"},
+		"locatorsSpeakAsTheUser":             {"test-css-locator"},
+		"conformanceIsCalledNotCopied":       {"test-copied-conformance"},
+		"journeysRunInCI":                    {"e2e-not-run-in-ci"},
+		"skipsSayWhy":                        {"skip-without-reason"},
+		"testsNameNoDriver":                  {"driver-specific-api-in-test"},
 	}
 }
 
@@ -291,9 +298,9 @@ func TestTheDocumentedRuleCountIsTheOneThisPackageHas(t *testing.T) {
 }
 
 // ruleFiles are the files of this package that declare the rule names it
-// reports: the rules that guard authorization and data, and the structural
-// warnings about where code lives.
-var ruleFiles = []string{"rules.go", "structure.go"}
+// reports: the rules that guard authorization and data, the structural
+// warnings about where code lives, and the rules about the test suite.
+var ruleFiles = []string{"rules.go", "structure.go", "testsuite.go"}
 
 // declaredRuleNames reads the rule names one file declares, with the expression
 // the documented commands match on.

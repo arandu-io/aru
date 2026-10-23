@@ -916,7 +916,103 @@
     "severity": "warning",
     "file": "scripts/browser-check/main.go",
     "line": 3,
-    "message": "scripts/browser-check is a Go program that drives a browser, whose place is tests/Browser",
-    "why": "a program that drives the browser is a test whose result is whatever it prints. Make it a Go test package in tests/Browser with the build tag browser; `aru test --browser` runs it and go test answers PASS or FAIL."
+    "message": "scripts/browser-check is a Go program that drives a browser, whose place is tests/E2E",
+    "why": "a program that drives the browser is a test whose result is whatever it prints. Make it a journey in tests/E2E with the build tag e2e, driven through github.com/arandu-io/framework/test/browser (aru make:e2e or aru e2e:record write one); `aru test --e2e` runs it and go test answers PASS or FAIL."
+  },
+  {
+    "rule": "test-copied-conformance",
+    "severity": "warning",
+    "file": "tests/AuthContracts/Boundaries_test.go",
+    "line": 6,
+    "message": "this file is a copy of the framework's authentication suite (TestApplicationCodeDoesNotNameSessionGuard)",
+    "why": "the copies in each application drift -- a migration behind, a shape the framework has since changed -- and each proves something different. Call the kit in one line from tests/Conformance: conformance.Boundaries(t, \"../..\"), Schema, Account, ModelPersistence, SessionMatrix and Redaction from github.com/arandu-io/framework/test/conformance, and delete the copy. A warning until 2026-12-15, an error after it."
+  },
+  {
+    "rule": "e2e-not-run-in-ci",
+    "severity": "warning",
+    "file": "tests/E2E/checkout_test.go",
+    "line": 1,
+    "message": "the journeys in tests/E2E run in no CI pipeline",
+    "why": "a journey carries the e2e build tag, so go test ./... does not compile it, and the screen it guards breaks unseen. Run `aru test --smoke` on every pull request and `aru test --e2e` at night; go vet -tags e2e only compiles them. A warning until 2026-12-15, an error after it."
+  },
+  {
+    "rule": "driver-specific-api-in-test",
+    "severity": "warning",
+    "file": "tests/E2E/checkout_test.go",
+    "line": 9,
+    "message": "this test imports github.com/arandu-io/framework/test/browser/cdp, one browser driver's API",
+    "why": "a test that calls one driver's API runs on that driver alone, and the suite can no longer run on the native driver in a pull request and on Playwright at night. Drive the page through the browser package and name the drivers once, in the Registry of tests/TestCase.go. A warning until 2026-12-15, an error after it."
+  },
+  {
+    "rule": "driver-specific-api-in-test",
+    "severity": "warning",
+    "file": "tests/E2E/checkout_test.go",
+    "line": 10,
+    "message": "this test imports github.com/chromedp/chromedp, one browser driver's API",
+    "why": "a test that calls one driver's API runs on that driver alone, and the suite can no longer run on the native driver in a pull request and on Playwright at night. Drive the page through the browser package and name the drivers once, in the Registry of tests/TestCase.go. A warning until 2026-12-15, an error after it."
+  },
+  {
+    "rule": "test-css-locator",
+    "severity": "warning",
+    "file": "tests/E2E/checkout_test.go",
+    "line": 19,
+    "message": "this journey finds an element by CSS with no reason given",
+    "why": "a selector names the markup and not what the person sees: a class renamed for styling breaks the journey while the screen is unchanged, and a button that lost its label passes. Find it by role and name, label, text or data-testid; keep a CSS locator only as browser.CSS with the reason nothing else can say it. A warning until 2026-12-15, an error after it."
+  },
+  {
+    "rule": "test-css-locator",
+    "severity": "warning",
+    "file": "tests/E2E/checkout_test.go",
+    "line": 21,
+    "message": "this journey selects an element with querySelector inside a script",
+    "why": "a selector names the markup and not what the person sees: a class renamed for styling breaks the journey while the screen is unchanged, and a button that lost its label passes. Find it by role and name, label, text or data-testid; keep a CSS locator only as browser.CSS with the reason nothing else can say it. A warning until 2026-12-15, an error after it."
+  },
+  {
+    "rule": "test-css-locator",
+    "severity": "warning",
+    "file": "tests/E2E/checkout_test.go",
+    "line": 23,
+    "message": "this journey finds an element by the CSS selector \"#confirm\"",
+    "why": "a selector names the markup and not what the person sees: a class renamed for styling breaks the journey while the screen is unchanged, and a button that lost its label passes. Find it by role and name, label, text or data-testid; keep a CSS locator only as browser.CSS with the reason nothing else can say it. A warning until 2026-12-15, an error after it."
+  },
+  {
+    "rule": "driver-specific-api-in-test",
+    "severity": "warning",
+    "file": "tests/E2E/checkout_test.go",
+    "line": 25,
+    "message": "this test reaches through the page to one driver's type",
+    "why": "a test that calls one driver's API runs on that driver alone, and the suite can no longer run on the native driver in a pull request and on Playwright at night. Drive the page through the browser package and name the drivers once, in the Registry of tests/TestCase.go. A warning until 2026-12-15, an error after it."
+  },
+  {
+    "rule": "test-forged-subject",
+    "severity": "warning",
+    "file": "tests/Feature/ledger_test.go",
+    "line": 15,
+    "message": "this test writes the Subject a request runs as, instead of signing the account in",
+    "why": "a subject written by the test reaches the handler past the guard and the SubjectResolver, so the roles it carries are the test's and not the account's: the test passes while the screen is broken for the real account. Sign in with test.As(t, server, auth.Subject{ID, Tenant}) and give the account its role where the resolver reads it; a unit test of a Policy may build a Subject to ask Can. A warning until 2026-12-15, an error after it."
+  },
+  {
+    "rule": "test-sleep",
+    "severity": "warning",
+    "file": "tests/Feature/ledger_test.go",
+    "line": 17,
+    "message": "this test sleeps instead of waiting for what it needs",
+    "why": "a sleep is a guess at how long something takes: too short and the test fails on a slow runner, too long and every run pays it. A journey's page waits by itself (visible, htmx settled, network idle); a TTL or an expiry moves the clock with support.SetTestNow, Travel or FreezeTime. A warning until 2026-12-15, an error after it."
+  },
+  {
+    "rule": "skip-without-reason",
+    "severity": "warning",
+    "file": "tests/Feature/ledger_test.go",
+    "line": 20,
+    "message": "this test skips without saying why",
+    "why": "a skip with no reason reads like a pass in a summary, and nobody can tell whether the environment, a bug or a forgotten line switched it off; in CI a test that skips never runs. Say why -- t.Skip(\"needs Postgres: set ARANDU_TEST_DATABASE_URL\") -- or remove the skip. A warning until 2026-12-15, an error after it."
+  },
+  {
+    "rule": "test-forged-subject",
+    "severity": "warning",
+    "file": "tests/Feature/ledger_test.go",
+    "line": 22,
+    "message": "ActingAs puts the subject on the request without signing it in",
+    "why": "a subject written by the test reaches the handler past the guard and the SubjectResolver, so the roles it carries are the test's and not the account's: the test passes while the screen is broken for the real account. Sign in with test.As(t, server, auth.Subject{ID, Tenant}) and give the account its role where the resolver reads it; a unit test of a Policy may build a Subject to ask Can. A warning until 2026-12-15, an error after it."
   }
 ]

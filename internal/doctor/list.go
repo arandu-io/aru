@@ -139,4 +139,11 @@ var catalogue = []RuleInfo{
 	{Name: "program-under-cmd", Severities: warningOnly},
 	{Name: "command-outside-commands", Severities: warningOnly},
 	{Name: "program-under-scripts", Severities: warningOnly},
+	{Name: "test-sleep", Severities: warningOnly},
+	{Name: "test-forged-subject", Severities: warningOnly},
+	{Name: "test-css-locator", Severities: warningOnly},
+	{Name: "test-copied-conformance", Severities: warningOnly},
+	{Name: "e2e-not-run-in-ci", Severities: warningOnly},
+	{Name: "skip-without-reason", Severities: warningOnly},
+	{Name: "driver-specific-api-in-test", Severities: warningOnly},
 }

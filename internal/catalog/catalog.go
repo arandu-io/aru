@@ -409,7 +409,52 @@ func read(dir, module string) (*Catalog, error) {
 		sort.Slice(pkg.Symbols, func(i, j int) bool { return pkg.Symbols[i].Name < pkg.Symbols[j].Name })
 		c.Packages = append(c.Packages, pkg)
 	}
+	if module == Framework {
+		c.addMovedKit()
+	}
 	return c, nil
+}
+
+// MovedKit is where the test kit lived before the framework took it, and
+// KitPath where it lives now.
+const (
+	MovedKit = "github.com/arandu-io/hesape/arandutest"
+	KitPath  = Framework + "/test"
+)
+
+// addMovedKit catalogs the test kit's old home in hesape under the framework
+// that holds it now: every package of KitPath gets its hesape twin, each
+// symbol an alias of the framework's, so a project that imports the old path
+// is told the new one and the fix rewrites it the way it rewrites a bridge.
+//
+// It is added only when the framework read holds the kit. A framework from
+// before the move has nothing to point at, and pointing at it would hand a
+// project an import that does not resolve.
+func (c *Catalog) addMovedKit() {
+	var added []Package
+	for _, pkg := range c.Packages {
+		rest, ok := strings.CutPrefix(pkg.Path, KitPath)
+		if !ok || (rest != "" && !strings.HasPrefix(rest, "/")) {
+			continue
+		}
+		twin := Package{Path: MovedKit + rest}
+		if rest == "" {
+			twin.Bridge = KitPath
+		}
+		c.index[twin.Path] = map[string]Symbol{}
+		for _, s := range pkg.Symbols {
+			moved := Symbol{
+				Package: twin.Path, Name: s.Name, Kind: s.Kind, How: Alias,
+				Canonical: s.Canonical, CanonicalName: s.CanonicalName,
+				File: s.File, Line: s.Line,
+			}
+			twin.Symbols = append(twin.Symbols, moved)
+			c.index[twin.Path][s.Name] = moved
+		}
+		added = append(added, twin)
+	}
+	c.Packages = append(c.Packages, added...)
+	sort.Slice(c.Packages, func(i, j int) bool { return c.Packages[i].Path < c.Packages[j].Path })
 }
 
 // modulePath reads the module line of dir/go.mod.

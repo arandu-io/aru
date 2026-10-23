@@ -1,6 +1,10 @@
 package doctor
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/arandu-io/aru/internal/catalog"
+)
 
 // The import paths a rule below names when it asks whether a call reaches the
 // framework. They are data rather than references: the strings an import
@@ -35,10 +39,14 @@ const (
 // kernel became, and they contribute no native capability for the same
 // reason: what they point at is framework code.
 //
+// The test kit's old home in hesape is listed beside the bridges: the catalog
+// reads it under the framework that holds the kit now, as a bridge to it.
+//
 // TestEveryBridgeIsMapped reads the framework's package documentation and
 // fails when this list and the bridges it declares disagree.
 var bridgeTargets = map[string]string{
-	"github.com/arandu-io/framework/arandutest":              "github.com/arandu-io/hesape/arandutest",
+	"github.com/arandu-io/framework/arandutest": "github.com/arandu-io/framework/test",
+	catalog.MovedKit:                                         catalog.KitPath,
 	"github.com/arandu-io/framework/config":                  "github.com/arandu-io/framework/foundation/bootstrap",
 	frameworkData:                                            "github.com/arandu-io/hesape/database",
 	frameworkEvents:                                          "github.com/arandu-io/hesape/events",

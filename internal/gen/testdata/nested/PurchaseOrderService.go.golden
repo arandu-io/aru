@@ -100,6 +100,21 @@ func (s *PurchaseOrderService) Get(ctx context.Context, actor auth.Subject, id s
 	return found, nil
 }
 
+// Editable returns one purchase_order for the edit form, which is shown only to
+// somebody who may change it. It reads the row as Get does and then asks the
+// update action about the row that was read: a form that opened for anybody
+// who may look would let them type into a save they are refused.
+func (s *PurchaseOrderService) Editable(ctx context.Context, actor auth.Subject, id string) (*models.PurchaseOrder, error) {
+	found, err := s.Get(ctx, actor, id)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := auth.Authorize(ctx, s.policy, actor, policies.PurchaseOrderUpdate, *found); err != nil {
+		return nil, err
+	}
+	return found, nil
+}
+
 // List returns one page of the purchase_orders of one supplier, newest
 // first, and where the previous and the next page are. The supplier is
 // loaded under its own policy first, and the page is filtered by the one that

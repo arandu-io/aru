@@ -445,3 +445,33 @@ func TestGeneratedViewsUseOnlyTheSectionEveryLayoutYields(t *testing.T) {
 		}
 	}
 }
+
+// TestTheEditFormAsksTheUpdateAction: the edit form is the first half of an
+// update, and somebody the policy lets look but not change must not be shown
+// it. The controller reads the record through Editable, and Editable asks the
+// update action about the row it read -- not the view action Get already
+// asked.
+func TestTheEditFormAsksTheUpdateAction(t *testing.T) {
+	for _, tenant := range []bool{true, false} {
+		files := byName(t, spec(tenant))
+		controller, service := files["PurchaseOrderController.go"], files["PurchaseOrderService.go"]
+
+		edit := controller[strings.Index(controller, ") Edit(ctx *hhttp.Context) error {"):]
+		edit = edit[:strings.Index(edit, "\n}\n")]
+		if !strings.Contains(edit, "c.svc.Editable(ctx.Ctx(), who, ctx.Param(") || strings.Contains(edit, "c.svc.Get(") {
+			t.Errorf("tenant=%v: Edit does not read the record through Editable:\n%s", tenant, edit)
+		}
+
+		at := strings.Index(service, ") Editable(ctx context.Context, actor auth.Subject, id string) (*models.PurchaseOrder, error) {")
+		if at < 0 {
+			t.Fatalf("tenant=%v: the service has no Editable:\n%s", tenant, service)
+		}
+		body := service[at:]
+		body = body[:strings.Index(body, "\n}\n")]
+		read := strings.Index(body, "s.Get(ctx, actor, id)")
+		update := strings.Index(body, "auth.Authorize(ctx, s.policy, actor, policies.PurchaseOrderUpdate, *found)")
+		if read < 0 || update < read {
+			t.Errorf("tenant=%v: Editable does not read the row and then ask the update action about it:\n%s", tenant, body)
+		}
+	}
+}

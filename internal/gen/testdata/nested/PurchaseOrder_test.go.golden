@@ -40,6 +40,10 @@ func TestEveryPurchaseOrderReadRequiresAuthorization(t *testing.T) {
 			_, err := svc.Get(ctx, anonymous, "id")
 			return err
 		},
+		"Editable": func() error {
+			_, err := svc.Editable(ctx, anonymous, "id")
+			return err
+		},
 		"List": func() error {
 			_, _, err := svc.List(ctx, anonymous, "supplier", 1)
 			return err

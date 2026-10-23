@@ -248,6 +248,21 @@ func (s *{{.ServiceType}}) Get(ctx context.Context, actor auth.Subject, id strin
 	return found, nil
 }
 
+// Editable returns one {{.Name}} for the edit form, which is shown only to
+// somebody who may change it. It reads the row as Get does and then asks the
+// update action about the row that was read: a form that opened for anybody
+// who may look would let them type into a save they are refused.
+func (s *{{.ServiceType}}) Editable(ctx context.Context, actor auth.Subject, id string) (*models.{{.Entity}}, error) {
+	found, err := s.Get(ctx, actor, id)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := auth.Authorize(ctx, s.policy, actor, policies.{{.Entity}}Update, *found); err != nil {
+		return nil, err
+	}
+	return found, nil
+}
+
 {{- if .Parent}}
 // List returns one page of the {{.Table}} of one {{.ParentParam}}, newest
 // first, and where the previous and the next page are. The {{.ParentParam}} is
@@ -620,10 +635,11 @@ func (c *{{.Controller}}) Store(ctx *hhttp.Context) error {
 	return ctx.RedirectRoute("{{.RouteName "show"}}", created.ID)
 }
 
-// Edit renders the form filled in with the stored record.
+// Edit renders the form filled in with the stored record, to somebody the
+// policy lets update it.
 func (c *{{.Controller}}) Edit(ctx *hhttp.Context) error {
 	who, _ := ctx.User()
-	found, err := c.svc.Get(ctx.Ctx(), who, ctx.Param("{{.MemberParam}}"))
+	found, err := c.svc.Editable(ctx.Ctx(), who, ctx.Param("{{.MemberParam}}"))
 	if err != nil {
 		return err
 	}
@@ -739,6 +755,10 @@ func TestEvery{{.Entity}}ReadRequiresAuthorization(t *testing.T) {
 	calls := map[string]func() error{
 		"Get": func() error {
 			_, err := svc.Get(ctx, anonymous, "id")
+			return err
+		},
+		"Editable": func() error {
+			_, err := svc.Editable(ctx, anonymous, "id")
 			return err
 		},
 		"List": func() error {

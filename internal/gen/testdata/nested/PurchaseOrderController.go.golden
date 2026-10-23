@@ -125,10 +125,11 @@ func (c *PurchaseOrderController) Store(ctx *hhttp.Context) error {
 	return ctx.RedirectRoute("suppliers.purchase-orders.show", created.ID)
 }
 
-// Edit renders the form filled in with the stored record.
+// Edit renders the form filled in with the stored record, to somebody the
+// policy lets update it.
 func (c *PurchaseOrderController) Edit(ctx *hhttp.Context) error {
 	who, _ := ctx.User()
-	found, err := c.svc.Get(ctx.Ctx(), who, ctx.Param("purchase_order"))
+	found, err := c.svc.Editable(ctx.Ctx(), who, ctx.Param("purchase_order"))
 	if err != nil {
 		return err
 	}

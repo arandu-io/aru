@@ -1,8 +1,10 @@
-package gen
+package gen_test
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/arandu-io/aru/internal/gen"
 )
 
 // TestTidyImportsKeepsAMajorVersionImportTheFileUses pins that an import whose
@@ -10,7 +12,7 @@ import (
 // math/rand/v2 binds rand, and a file that calls rand.N keeps the import.
 func TestTidyImportsKeepsAMajorVersionImportTheFileUses(t *testing.T) {
 	src := []byte("package p\n\nimport (\n\t\"math/rand/v2\"\n\t\"strings\"\n)\n\nfunc F() int { return rand.N(10) }\n")
-	out, err := TidyImports(src)
+	out, err := gen.TidyImports(src)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,8 +33,8 @@ func TestAssumedImportNameSkipsTheMajorVersionSuffix(t *testing.T) {
 		"gopkg.in/yaml.v3":       "yaml.v3",
 		"strings":                "strings",
 	} {
-		if got := AssumedImportName(path); got != want {
-			t.Errorf("AssumedImportName(%q) = %q, want %q", path, got, want)
+		if got := gen.AssumedImportName(path); got != want {
+			t.Errorf("gen.AssumedImportName(%q) = %q, want %q", path, got, want)
 		}
 	}
 }

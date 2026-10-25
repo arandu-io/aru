@@ -2349,3 +2349,281 @@ func scriptsAreNotPrograms(p *project) []Finding {
 	}
 	return out
 }
+
+// 50. The order of a listing is never chosen by the request.
+//
+// Reason. A column name the request carries, handed to OrderBy, is the reader
+// choosing what the statement orders by: any column of the table, including
+// the ones the screen never shows -- ordering by a hidden column leaks what it
+// holds one comparison at a time -- and a name that is not a column at all is a
+// 500. In OrderByRaw it is SQL the reader wrote. The listing is the one way to
+// take an order from a request: pagination.NewListing declares once the keys a
+// reader may sort by and the columns they map to, Listing.Parse drops whatever
+// the request names that is not declared, and Builder.Listing applies the
+// result with a tie-break on a unique column, under the Grant.
+//
+// Scope. The application's own Go, tests excluded.
+//
+// Severity. A warning until 2026-12-15.
+//
+// Positive: `sort := ctx.Query("sort")` followed by `q.OrderBy(sort)` in the same
+// function; `q.OrderBy(ctx.Query("sort"), ctx.Query("dir"))`;
+// `q.OrderByRaw("name " + r.URL.Query().Get("dir"))`. One finding per call.
+//
+// Negative: a value the function checks before it uses it -- looked up in a
+// map, compared, switched on, or handed to any function but a case-changing
+// one from the strings package; a name assigned anywhere from something other
+// than a request read; an order taken from a pagination.ListingState.
+//
+// Known false positive: none known; the shapes above are the whole of what is
+// reported, and a value that has been through a function of the application is
+// taken to have been checked by it.
+//
+// Limit. Local to one function: a request value passed to another function and
+// ordered by there is not followed, and neither is one stored in a struct.
+//
+// Correction: declare the listing with pagination.NewListing -- Sorts maps the
+// public keys to columns, DefaultSort and TieBreak fix the rest -- read the
+// request with Listing.ParseURL, and run it with Builder.Listing.
+func orderIsNotChosenByTheRequest(p *project) []Finding {
+	var out []Finding
+	for _, f := range p.files {
+		if !applicationFile(f) {
+			continue
+		}
+		for _, decl := range f.ast.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			out = append(out, requestOrders(f, fn)...)
+		}
+	}
+	return out
+}
+
+// orderMethods are the calls whose first argument is the column or, for the
+// raw one, the clause the statement is ordered by.
+var orderMethods = map[string]bool{
+	"OrderBy": true, "OrderByDesc": true, "OrderByRaw": true, "Latest": true, "Oldest": true,
+}
+
+// stringTransforms are the functions of strings that change a value's spelling
+// and decide nothing about it: the result is as much the request's as the
+// argument was.
+var stringTransforms = map[string]bool{
+	"strings.ToLower": true, "strings.ToUpper": true, "strings.TrimSpace": true,
+	"strings.Trim": true, "strings.TrimPrefix": true, "strings.TrimSuffix": true,
+	"strings.TrimLeft": true, "strings.TrimRight": true, "strings.Title": true,
+}
+
+// requestOrders reports the order calls of one function whose column or clause
+// is a request value that nothing in the function checked.
+func requestOrders(f *file, fn *ast.FuncDecl) []Finding {
+	// Pass one: the variables holding url.Values read from the request, so that
+	// values.Get("sort") is a request read like r.FormValue("sort") is.
+	values := map[string]bool{}
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		assign, ok := n.(*ast.AssignStmt)
+		if !ok || len(assign.Lhs) != len(assign.Rhs) {
+			return true
+		}
+		for i, rhs := range assign.Rhs {
+			call, ok := rhs.(*ast.CallExpr)
+			if !ok || !strings.HasSuffix(callName(call), ".Query") {
+				continue
+			}
+			if id, ok := assign.Lhs[i].(*ast.Ident); ok {
+				values[id.Name] = true
+			}
+		}
+		return true
+	})
+
+	// A request string is a read of the request, or a case change of one.
+	var fromRequest func(e ast.Expr) bool
+	fromRequest = func(e ast.Expr) bool {
+		switch x := e.(type) {
+		case *ast.ParenExpr:
+			return fromRequest(x.X)
+		case *ast.CallExpr:
+			name := callName(x)
+			switch {
+			case stringTransforms[name]:
+				return len(x.Args) > 0 && fromRequest(x.Args[0])
+			case readsTheRequest(name),
+				strings.HasSuffix(name, "Query().Get"):
+				return true
+			}
+			if sel, ok := x.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Get" {
+				if id, ok := sel.X.(*ast.Ident); ok && values[id.Name] {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	// Pass two: the names assigned from a request string, and the names
+	// assigned from anything else too. A name that has ever been given another
+	// value is not demonstrably the request's.
+	fromTheRequest := map[string]ast.Expr{}
+	otherwise := map[string]bool{}
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		switch s := n.(type) {
+		case *ast.AssignStmt:
+			if len(s.Lhs) != len(s.Rhs) {
+				for _, lhs := range s.Lhs {
+					if id, ok := lhs.(*ast.Ident); ok {
+						otherwise[id.Name] = true
+					}
+				}
+				return true
+			}
+			for i, lhs := range s.Lhs {
+				id, ok := lhs.(*ast.Ident)
+				if !ok || id.Name == "_" {
+					continue
+				}
+				if s.Tok != token.DEFINE && s.Tok != token.ASSIGN {
+					otherwise[id.Name] = true
+					continue
+				}
+				if fromRequest(s.Rhs[i]) {
+					if _, again := fromTheRequest[id.Name]; again {
+						otherwise[id.Name] = true
+					}
+					fromTheRequest[id.Name] = s.Rhs[i]
+				} else {
+					otherwise[id.Name] = true
+				}
+			}
+		case *ast.ValueSpec:
+			for _, id := range s.Names {
+				otherwise[id.Name] = true
+			}
+		case *ast.RangeStmt:
+			for _, e := range []ast.Expr{s.Key, s.Value} {
+				if id, ok := e.(*ast.Ident); ok {
+					otherwise[id.Name] = true
+				}
+			}
+		}
+		return true
+	})
+
+	// Pass three: the names the function checks. A name looked up, compared,
+	// switched on, or handed to a function that is not a case change has been
+	// through whatever that function decides.
+	checked := map[string]bool{}
+	mark := func(e ast.Expr) {
+		if id, ok := e.(*ast.Ident); ok {
+			checked[id.Name] = true
+		}
+	}
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.IndexExpr:
+			mark(x.Index)
+		case *ast.BinaryExpr:
+			if x.Op == token.EQL || x.Op == token.NEQ {
+				mark(x.X)
+				mark(x.Y)
+			}
+		case *ast.SwitchStmt:
+			if x.Tag != nil {
+				mark(x.Tag)
+			}
+		case *ast.CaseClause:
+			for _, e := range x.List {
+				mark(e)
+			}
+		case *ast.CallExpr:
+			name := callName(x)
+			if stringTransforms[name] || orderMethods[methodName(x)] {
+				return true
+			}
+			for _, arg := range x.Args {
+				mark(arg)
+			}
+		}
+		return true
+	})
+
+	var out []Finding
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || !orderMethods[methodName(call)] || len(call.Args) == 0 {
+			return true
+		}
+		if _, isSelector := call.Fun.(*ast.SelectorExpr); !isSelector {
+			return true
+		}
+
+		// What the order is made of: the argument itself, or the pieces of a
+		// concatenation or a Sprintf that builds it.
+		var pieces []ast.Expr
+		var gather func(e ast.Expr)
+		gather = func(e ast.Expr) {
+			switch x := e.(type) {
+			case *ast.ParenExpr:
+				gather(x.X)
+			case *ast.BinaryExpr:
+				if x.Op == token.ADD {
+					gather(x.X)
+					gather(x.Y)
+					return
+				}
+				pieces = append(pieces, e)
+			case *ast.CallExpr:
+				switch {
+				case callName(x) == "fmt.Sprintf" && len(x.Args) > 1:
+					for _, arg := range x.Args[1:] {
+						gather(arg)
+					}
+				case stringTransforms[callName(x)] && len(x.Args) > 0:
+					gather(x.Args[0])
+				default:
+					pieces = append(pieces, e)
+				}
+			default:
+				pieces = append(pieces, e)
+			}
+		}
+		gather(call.Args[0])
+
+		for _, piece := range pieces {
+			if id, ok := piece.(*ast.Ident); ok {
+				if source, tainted := fromTheRequest[id.Name]; tainted && !otherwise[id.Name] && !checked[id.Name] {
+					_, line := f.at(source)
+					out = append(out, Finding{
+						Rule: "order-by-request-value", Severity: Warning,
+						File: f.rel, Line: f.line(call),
+						Message: fmt.Sprintf("%s orders by %s, which line %d read from the request", methodName(call), id.Name, line),
+						Why:     orderByRequestWhy,
+					})
+					return true
+				}
+				continue
+			}
+			if fromRequest(piece) {
+				out = append(out, Finding{
+					Rule: "order-by-request-value", Severity: Warning,
+					File: f.rel, Line: f.line(call),
+					Message: fmt.Sprintf("%s orders by a value read straight off the request", methodName(call)),
+					Why:     orderByRequestWhy,
+				})
+				return true
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// orderByRequestWhy is the explanation every finding of order-by-request-value
+// carries.
+const orderByRequestWhy = "a column name from the request lets the reader order by any column of the table, hidden ones " +
+	"included, and a name that is no column is a 500; in a raw clause it is SQL the reader wrote. Declare the listing once with " +
+	"pagination.NewListing (Sorts maps the public keys to columns; DefaultSort and TieBreak fix the rest), read the request " +
+	"with Listing.ParseURL, which drops whatever was not declared, and run it with Builder.Listing under the Grant." + promotion

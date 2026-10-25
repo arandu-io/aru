@@ -183,6 +183,7 @@ func emitsByRule() map[string][]string {
 		"journeysRunInCI":                    {"e2e-not-run-in-ci"},
 		"skipsSayWhy":                        {"skip-without-reason"},
 		"testsNameNoDriver":                  {"driver-specific-api-in-test"},
+		"orderIsNotChosenByTheRequest":       {"order-by-request-value"},
 	}
 }
 

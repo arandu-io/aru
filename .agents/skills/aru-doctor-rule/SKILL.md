@@ -11,11 +11,11 @@ AST and never runs the code, so it works on a project that does not compile —
 which is exactly when someone needs to be told what is wrong.
 
 ```sh
-awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 68  rule functions
+awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 69  rule functions
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/doctor/structure.go \
-	internal/doctor/testsuite.go internal/testlayout/testlayout.go | sort -u | wc -l   # 78  names a report can carry
+	internal/doctor/testsuite.go internal/testlayout/testlayout.go | sort -u | wc -l   # 79  names a report can carry
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/doctor/structure.go \
-	internal/doctor/testsuite.go | sort -u | wc -l                       # 74  of them declared here
+	internal/doctor/testsuite.go | sort -u | wc -l                       # 75  of them declared here
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/testlayout/testlayout.go \
 	| sort -u | wc -l                                                     # 4  forwarded, declared there
 ```
@@ -261,6 +261,7 @@ and near misses in `gaps` and `clean`.
 | `client-outside-clients` | outgoing `net/http` names and `hesape/http/client` under `app/`, outside `app/Clients` | file |
 | `model-rule-touches-io` | database, network or `time.Now` in a function of a model's custom block; scopes on `*Query` and `init` excluded | function |
 | `fragment-without-partial` | `ctx.Fragment` of a literal view outside `partials.` | call |
+| `order-by-request-value` | `OrderBy`, `OrderByDesc`, `OrderByRaw`, `Latest` or `Oldest` whose column or clause is a request read (`ctx.Query`, `r.FormValue`, `r.URL.Query().Get`, `values.Get`), held in a variable or inline, concatenated or through `fmt.Sprintf`, that nothing in the function looked up, compared, switched on or handed to a function; a warning until 2026-12-15, an error after it. The correction is `pagination.NewListing` and `Builder.Listing` | function; a value passed to another function, or kept in a struct, is not followed |
 | `helper-reimplemented` | functions under `app/` named Slugify, or with BRL, CPF or CNPJ beside a validating or formatting word | declaration, by name |
 | `raw-sql-outside-repository` | a body that runs a statement, outside `app/Repositories` and `database/` | body |
 | `generated-not-wired` | a `New*` in Controllers or Services that no other non-test file names; a test double (Fake, Stub, Mock, Spy or Dummy in the constructor, its result type or its file) that a `_test.go` file constructs is exempt | project, by name |

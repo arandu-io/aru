@@ -16,7 +16,7 @@
       "generators": ["make:module", "make:controller --resource"],
       "custom": "a custom block for actions of its own",
       "example": "app/Http/Controllers/NoteController.go",
-      "verifiedBy": ["handler-reaches-data", "handler-reaches-the-model", "controller-reaches-repository", "input-read-by-hand", "validate-called-by-controller", "json-written-by-hand", "invalid-form-answered-by-hand", "session-loaded-in-controller", "redirect-to-literal-path", "controller-too-many-actions", "operation-chosen-by-form-field", "fragment-without-partial"]
+      "verifiedBy": ["handler-reaches-data", "handler-reaches-the-model", "controller-reaches-repository", "input-read-by-hand", "validate-called-by-controller", "json-written-by-hand", "invalid-form-answered-by-hand", "session-loaded-in-controller", "redirect-to-literal-path", "controller-too-many-actions", "operation-chosen-by-form-field", "fragment-without-partial", "order-by-request-value"]
     },
     {
       "kind": "invokable-controller",

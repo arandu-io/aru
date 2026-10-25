@@ -320,6 +320,14 @@
     "why": "each branch is an action without a route of its own: one name in the route table for all of them, the authorization of each written by hand, and an operation the client picks by editing a hidden input. Give each operation its own named action with r.ResourceAction."
   },
   {
+    "rule": "order-by-request-value",
+    "severity": "warning",
+    "file": "app/Http/Controllers/SortedController.go",
+    "line": 17,
+    "message": "OrderBy orders by sort, which line 16 read from the request",
+    "why": "a column name from the request lets the reader order by any column of the table, hidden ones included, and a name that is no column is a 500; in a raw clause it is SQL the reader wrote. Declare the listing once with pagination.NewListing (Sorts maps the public keys to columns; DefaultSort and TieBreak fix the rest), read the request with Listing.ParseURL, which drops whatever was not declared, and run it with Builder.Listing under the Grant. A warning until 2026-12-15, an error after it."
+  },
+  {
     "rule": "import-not-canonical",
     "severity": "warning",
     "file": "app/Http/Requests/ChargeRequest.go",

@@ -14,13 +14,13 @@ code:
 | the view compiler | `internal/kyse` | a `.kyse.go` becomes Go, and the Go it writes has to compile |
 | the language server | `internal/lsp` and `lsp.go` | `aru lsp` serves Kyse diagnostics and completion, the project map and its navigation over standard input and output |
 | the assistant server | `mcp.go`, `mcpbrowser.go` and `internal/contract` | `aru mcp` serves the doctor, the map, the implementation contract (one embedded file the doctor also reads), the generators and a browser page driven with the test kit over MCP on standard input and output |
-| the checker | `internal/doctor` | 68 rule functions reading a project's parsed AST, emitting 74 rule names of their own and 4 borrowed from `internal/testlayout` |
+| the checker | `internal/doctor` | 69 rule functions reading a project's parsed AST, emitting 75 rule names of their own and 4 borrowed from `internal/testlayout` |
 
 ```sh
 grep -c '^\t\tname:' commands.go                                      # 78
 grep -c 'run:   delegate(' commands.go                                # 24
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/doctor/structure.go \
-	internal/doctor/testsuite.go internal/testlayout/testlayout.go | sort -u | wc -l   # 78
+	internal/doctor/testsuite.go internal/testlayout/testlayout.go | sort -u | wc -l   # 79
 ```
 
 The last command reads every file that declares a name because the sentence

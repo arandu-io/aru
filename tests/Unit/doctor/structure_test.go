@@ -36,6 +36,7 @@ var structuralRules = []string{
 	"program-under-cmd",
 	"command-outside-commands",
 	"program-under-scripts",
+	"order-by-request-value",
 }
 
 // structureProject writes a project with the files given, plus a go.mod and a
@@ -84,12 +85,16 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
+	"strings"
 
 	hhttp "github.com/arandu-io/hesape/http"
 	"github.com/arandu-io/hesape/validation"
 )
 
 var (
+	_ = slices.Contains[[]string]
+	_ = strings.ToLower
 	_ = context.Background
 	_ = json.Marshal
 	_ = http.StatusOK
@@ -445,6 +450,70 @@ func (c *C) Row(ctx *hhttp.Context) error {
 func (c *C) Missing(ctx *hhttp.Context) error {
 	data := struct{}{}
 	return ctx.ViewStatus(http.StatusNotFound, "invoices.missing", data)
+}`), 0},
+
+		// order-by-request-value
+		{"a column the request names, held and inline, and a raw clause", "order-by-request-value", controller(`
+func (c *C) Held(ctx *hhttp.Context, q interface{ OrderBy(any, ...string) any }) error {
+	sort := ctx.Query("sort")
+	q.OrderBy(sort)
+	return nil
+}
+
+func (c *C) Inline(ctx *hhttp.Context, q interface{ OrderBy(any, ...string) any }) error {
+	q.OrderBy(ctx.Query("sort"), ctx.Query("dir"))
+	return nil
+}
+
+func (c *C) Raw(r *http.Request, q interface{ OrderByRaw(string, ...any) any }) error {
+	q.OrderByRaw("name " + r.URL.Query().Get("dir"))
+	return nil
+}`), 3},
+		{"the values held first, and the spelling changed", "order-by-request-value", controller(`
+func (c *C) Values(r *http.Request, q interface{ OrderByDesc(any) any }) error {
+	values := r.URL.Query()
+	column := strings.ToLower(values.Get("sort"))
+	q.OrderByDesc(column)
+	return nil
+}`), 1},
+		{"a column the function checks, replaces, looks up, or never took from the request", "order-by-request-value", controller(`
+func (c *C) Checked(ctx *hhttp.Context, q interface{ OrderBy(any, ...string) any }, allowed []string) error {
+	sort := ctx.Query("sort")
+	if !slices.Contains(allowed, sort) {
+		return nil
+	}
+	q.OrderBy(sort)
+	return nil
+}
+
+func (c *C) Replaced(ctx *hhttp.Context, q interface{ OrderBy(any, ...string) any }) error {
+	sort := ctx.Query("sort")
+	if sort != "name" {
+		sort = "created_at"
+	}
+	q.OrderBy(sort)
+	return nil
+}
+
+func (c *C) LookedUp(ctx *hhttp.Context, q interface{ OrderBy(any, ...string) any }, columns map[string]string) error {
+	column := columns[ctx.Query("sort")]
+	q.OrderBy(column)
+	return nil
+}
+
+func (c *C) Switched(ctx *hhttp.Context, q interface{ OrderBy(any, ...string) any }) error {
+	sort := ctx.Query("sort")
+	switch sort {
+	case "name", "email":
+		q.OrderBy(sort)
+	}
+	return nil
+}
+
+func (c *C) Fixed(q interface{ OrderBy(any, ...string) any }, state interface{ SortKey() string }) error {
+	q.OrderBy("created_at", "desc")
+	q.OrderBy(state.SortKey())
+	return nil
 }`), 0},
 
 		// helper-reimplemented

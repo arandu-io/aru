@@ -146,4 +146,5 @@ var catalogue = []RuleInfo{
 	{Name: "e2e-not-run-in-ci", Severities: warningOnly},
 	{Name: "skip-without-reason", Severities: warningOnly},
 	{Name: "driver-specific-api-in-test", Severities: warningOnly},
+	{Name: "order-by-request-value", Severities: warningOnly},
 }

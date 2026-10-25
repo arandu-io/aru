@@ -1,5 +1,9 @@
 # Release Notes
 
+## [v0.80.0](https://github.com/arandu-io/aru/compare/v0.79.0...v0.80.0) - 2026-10-25
+
+**Full Changelog**: https://github.com/arandu-io/aru/compare/v0.79.0...v0.80.0
+
 ## [v0.79.0](https://github.com/arandu-io/aru/compare/v0.78.0...v0.79.0) - 2026-10-24
 
 **Full Changelog**: https://github.com/arandu-io/aru/compare/v0.78.0...v0.79.0

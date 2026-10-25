@@ -147,4 +147,5 @@ var catalogue = []RuleInfo{
 	{Name: "skip-without-reason", Severities: warningOnly},
 	{Name: "driver-specific-api-in-test", Severities: warningOnly},
 	{Name: "order-by-request-value", Severities: warningOnly},
+	{Name: "request-validates-by-hand", Severities: warningOnly},
 }

@@ -261,7 +261,7 @@
     "file": "app/Http/Controllers/ChargeController.go",
     "line": 36,
     "message": "ChargeController.Store validates the request itself: in.Validate",
-    "why": "a job or a command that calls the same service has no controller in front of it, so it skips this validation or repeats it. Pass the bound request to the service and call Validate() at the start of the service method; the router answers the validation.Errors it returns."
+    "why": "a job or a command that calls the same service has no controller in front of it, so it skips this validation or repeats it. Declare the field rules in the request's Rules(), which ctx.Bind runs, and call Validate() at the start of the service method only for what spans fields; the router answers the validation.Errors it returns."
   },
   {
     "rule": "invalid-form-answered-by-hand",
@@ -350,6 +350,54 @@
     "line": 25,
     "message": "the enum rule on kind repeats what ChargeKind already declares",
     "why": "the cases exist in two places and nothing compares them, so a case added to the type and not to this line is accepted by the column and refused by the form -- with no failure anywhere until somebody submits it. Drop the list: `enum` alone reads the cases off ChargeKind, declared at app/Enums/ChargeKind.go."
+  },
+  {
+    "rule": "request-validates-by-hand",
+    "severity": "warning",
+    "file": "app/Http/Requests/PersonRequest.go",
+    "line": 28,
+    "message": "StorePerson.Validate checks \"name\" by hand (empty text); the rule is `required`, declared in StorePerson.Rules()",
+    "why": "Rules is the first step of validation: ctx.Bind runs it over the raw input, says the failure in the language of the request, and the same declaration is what the API schema reads. The same restriction written in Validate comes out in English, only once the service is reached, and drifts from the Rules and the schema. Declare the field in Rules() and keep Validate for what spans fields or asks the data. A warning until 2026-12-15, an error after it."
+  },
+  {
+    "rule": "request-validates-by-hand",
+    "severity": "warning",
+    "file": "app/Http/Requests/PersonRequest.go",
+    "line": 31,
+    "message": "StorePerson.Validate checks \"email\" by hand (a regular expression for email); the rule is `email`, declared in StorePerson.Rules()",
+    "why": "Rules is the first step of validation: ctx.Bind runs it over the raw input, says the failure in the language of the request, and the same declaration is what the API schema reads. The same restriction written in Validate comes out in English, only once the service is reached, and drifts from the Rules and the schema. Declare the field in Rules() and keep Validate for what spans fields or asks the data. A warning until 2026-12-15, an error after it."
+  },
+  {
+    "rule": "request-validates-by-hand",
+    "severity": "warning",
+    "file": "app/Http/Requests/PersonRequest.go",
+    "line": 33,
+    "message": "StorePerson.Validate checks \"age\" by hand (strconv.Atoi that keeps no value); the rule is `integer`, declared in StorePerson.Rules()",
+    "why": "Rules is the first step of validation: ctx.Bind runs it over the raw input, says the failure in the language of the request, and the same declaration is what the API schema reads. The same restriction written in Validate comes out in English, only once the service is reached, and drifts from the Rules and the schema. Declare the field in Rules() and keep Validate for what spans fields or asks the data. A warning until 2026-12-15, an error after it."
+  },
+  {
+    "rule": "request-validates-by-hand",
+    "severity": "warning",
+    "file": "app/Http/Requests/PersonRequest.go",
+    "line": 37,
+    "message": "StorePerson.Validate checks \"kind\" by hand (a list the value must be one of); the rule is `in`, declared in StorePerson.Rules()",
+    "why": "Rules is the first step of validation: ctx.Bind runs it over the raw input, says the failure in the language of the request, and the same declaration is what the API schema reads. The same restriction written in Validate comes out in English, only once the service is reached, and drifts from the Rules and the schema. Declare the field in Rules() and keep Validate for what spans fields or asks the data. A warning until 2026-12-15, an error after it."
+  },
+  {
+    "rule": "request-validates-by-hand",
+    "severity": "warning",
+    "file": "app/Http/Requests/PersonRequest.go",
+    "line": 40,
+    "message": "StorePerson.Validate checks \"bio\" by hand (a length over 500); the rule is `max:500`, declared in StorePerson.Rules()",
+    "why": "Rules is the first step of validation: ctx.Bind runs it over the raw input, says the failure in the language of the request, and the same declaration is what the API schema reads. The same restriction written in Validate comes out in English, only once the service is reached, and drifts from the Rules and the schema. Declare the field in Rules() and keep Validate for what spans fields or asks the data. A warning until 2026-12-15, an error after it."
+  },
+  {
+    "rule": "request-validates-by-hand",
+    "severity": "warning",
+    "file": "app/Http/Requests/PersonRequest.go",
+    "line": 42,
+    "message": "StorePerson.Validate checks \"name\" by hand (validation.MaxLen); the rule is `max:255`, declared in StorePerson.Rules()",
+    "why": "Rules is the first step of validation: ctx.Bind runs it over the raw input, says the failure in the language of the request, and the same declaration is what the API schema reads. The same restriction written in Validate comes out in English, only once the service is reached, and drifts from the Rules and the schema. Declare the field in Rules() and keep Validate for what spans fields or asks the data. A warning until 2026-12-15, an error after it."
   },
   {
     "rule": "test-is-not-run",

@@ -11,11 +11,12 @@ AST and never runs the code, so it works on a project that does not compile —
 which is exactly when someone needs to be told what is wrong.
 
 ```sh
-awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 69  rule functions
+awk '/^var rules = /,/^}/' internal/doctor/rules.go | grep -cE '^\t[a-z]'      # 70  rule functions
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/doctor/structure.go \
-	internal/doctor/testsuite.go internal/testlayout/testlayout.go | sort -u | wc -l   # 79  names a report can carry
+	internal/doctor/testsuite.go internal/doctor/requestrules.go \
+	internal/testlayout/testlayout.go | sort -u | wc -l   # 80  names a report can carry
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/doctor/rules.go internal/doctor/structure.go \
-	internal/doctor/testsuite.go | sort -u | wc -l                       # 75  of them declared here
+	internal/doctor/testsuite.go internal/doctor/requestrules.go | sort -u | wc -l   # 76  of them declared here
 grep -ohE 'Rule: *"[a-z0-9-]+"' internal/testlayout/testlayout.go \
 	| sort -u | wc -l                                                     # 4  forwarded, declared there
 ```
@@ -65,6 +66,10 @@ The tree decides, not the topic.
   below). The function still goes into the one `rules` slice in `rules.go`.
 - **`internal/doctor/testsuite.go`** — the same tree, when the check reads the
   application's test suite: `tests/` and every `_test.go` (see below).
+- **`internal/doctor/requestrules.go`** — the check reads the requests of
+  `app/Http/Requests`: `request-validates-by-hand` reports a `Validate` that writes
+  by hand a restriction the request's `Rules` would declare. It is a warning until
+  2026-12-15 and an error after it, like the suite rules, and says so in its `Why`.
 - **`.golangci.yml`** — the check is about `aru`'s own source. Which also means
   it is a check about Go, because an off-the-shelf linter cannot be taught what
   a `Grant` is.
@@ -213,8 +218,8 @@ deliberate two-line diff, not like a line that quietly disappeared.
 
 **5b. Add it to `catalogue` in `internal/doctor/list.go`**, with its severity
 and, for a profile rule, its profile. `TestTheListIsWhatTheSourceReports` reads
-every `Finding` literal in `rules.go`, `structure.go` and `testsuite.go` and fails on a name or a severity the list
-does not carry, in either direction, and on a rule listed out of the order the
+every `Finding` literal in `rules.go`, `structure.go`, `testsuite.go` and `requestrules.go` and fails on a name or a
+severity the list does not carry, in either direction, and on a rule listed out of the order the
 slice runs them.
 
 **6. Run the fixture and read the output, not the exit code.** A rule that fires
@@ -248,6 +253,7 @@ and near misses in `gaps` and `clean`.
 | --- | --- | --- |
 | `input-read-by-hand` | `ctx.Input`, `FormValue`, `PostFormValue`, `ParseForm`, `ParseMultipartForm`, `json.NewDecoder` in a controller | function, by name |
 | `validate-called-by-controller` | `x.Validate()` with no argument, `validation.Validate` in a controller | function, by name |
+| `request-validates-by-hand` | in a request with a `Validate` and no `Rules`: an `Add` guarded by an empty-text or length test, a regular expression that spells an email, uuid or url, a `strconv` parse that keeps no value, a membership test, and the `validation.Required`, `MaxLen`, `MinLen`, `Email` helpers; a warning until 2026-12-15, `internal/doctor/requestrules.go` | method `Validate`, by name |
 | `json-written-by-hand` | `json.NewEncoder`, and `WriteHeader` beside JSON, in a controller | function |
 | `invalid-form-answered-by-hand` | `http.StatusUnprocessableEntity` or `422` in a controller, outside a comparison | function |
 | `session-loaded-in-controller` | a `Load` on a receiver named after a session, outside `Controllers/Auth` | function, by receiver name |

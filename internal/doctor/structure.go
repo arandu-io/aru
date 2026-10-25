@@ -240,8 +240,10 @@ func inputIsBoundNotRead(p *project) []Finding {
 //
 // Limit. Local to the function, by name.
 //
-// Correction: pass the bound request to the service and call Validate() first
-// thing in the service method; return validation.Errors from there.
+// Correction: declare what each field may be in the request's Rules(), which
+// ctx.Bind runs, and pass the bound request to the service; a Validate() for
+// what spans fields is called first thing in the service method, which returns
+// the validation.Errors.
 func theServiceValidates(p *project) []Finding {
 	isValidation := func(p string) bool {
 		return p == "github.com/arandu-io/framework/validation" || p == "github.com/arandu-io/hesape/validation"
@@ -266,8 +268,9 @@ func theServiceValidates(p *project) []Finding {
 				File: f.rel, Line: f.line(uses[0].node),
 				Message: funcLabel(fn) + " validates the request itself: " + summarize(uses),
 				Why: "a job or a command that calls the same service has no controller in front of it, so it skips " +
-					"this validation or repeats it. Pass the bound request to the service and call Validate() at the " +
-					"start of the service method; the router answers the validation.Errors it returns.",
+					"this validation or repeats it. Declare the field rules in the request's Rules(), which ctx.Bind runs, " +
+					"and call Validate() at the start of the service method only for what spans fields; the router " +
+					"answers the validation.Errors it returns.",
 			})
 		})
 	}

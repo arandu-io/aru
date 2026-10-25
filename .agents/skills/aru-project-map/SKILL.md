@@ -48,7 +48,7 @@ through the cache: the profile would follow the manifest and the bytes with it.
 2. an import only one kind takes (the factories package);
 3. the shape of what it declares: an entity embedding the model core, an
    `init` that registers a migration, a method with the action signature, a
-   `Validate() validation.Errors`, an `Event(string) events.Event`, a function
+   `Rules() validation.Rules` or a `Validate() validation.Errors`, an `Event(string) events.Event`, a function
    answering a `Middleware`;
 4. `graphArtifactForFile`, the folder reading schema 1 uses.
 

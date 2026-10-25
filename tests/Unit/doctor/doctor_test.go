@@ -68,6 +68,10 @@ func TestPlantedViolationsAreCaught(t *testing.T) {
 		"test-outside-the-tests-tree":   "a test beside the code that reads nothing unexported",
 		"package-clause-is-capitalised": "an import that reads as an exported name that is not one",
 		"scaffolding-ships":             "the testing package linked into the application",
+
+		// The same restriction written twice: in Validate, in English and only once the
+		// service is reached, and in a Rules the request does not have.
+		"request-validates-by-hand": "a rule that exists, written again by hand",
 	}
 
 	found := map[string]bool{}

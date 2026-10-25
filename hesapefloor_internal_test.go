@@ -78,7 +78,7 @@ func TestTheFloorReadsWhatGoModMeans(t *testing.T) {
 
 // TestTheListingIsNotWrittenIntoAProjectThatCannotBuildIt: make:module writes a
 // listing read through hesape's pagination.Listing and drawn with kyse's
-// DataTable, so a project pinned below hesape v0.87.0 or kyse v0.45.0 is
+// DataTable, so a project pinned below hesape v0.88.0 or kyse v0.45.0 is
 // refused with the command that moves it, and nothing is written. A project on
 // the releases, a headless project that does not require kyse, and one that
 // replaces the module with a directory are not.
@@ -93,9 +93,9 @@ func TestTheListingIsNotWrittenIntoAProjectThatCannotBuildIt(t *testing.T) {
 			"github.com/arandu-io/hesape v0.85.0", "github.com/arandu-io/kyse v0.44.0",
 			"go get github.com/arandu-io/hesape@" + gen.ListingRelease + " github.com/arandu-io/kyse@" + gen.ListingKyseRelease,
 		}},
-		{"only kyse behind", "require (\n\tgithub.com/arandu-io/hesape v0.87.0\n\tgithub.com/arandu-io/kyse v0.44.0\n)\n", true, []string{"github.com/arandu-io/kyse v0.44.0"}},
-		{"on the releases", "require (\n\tgithub.com/arandu-io/hesape v0.87.0\n\tgithub.com/arandu-io/kyse v0.45.0\n)\n", false, nil},
-		{"headless", "require github.com/arandu-io/hesape v0.87.0\n", false, nil},
+		{"only kyse behind", "require (\n\tgithub.com/arandu-io/hesape v0.88.0\n\tgithub.com/arandu-io/kyse v0.44.0\n)\n", true, []string{"github.com/arandu-io/kyse v0.44.0"}},
+		{"on the releases", "require (\n\tgithub.com/arandu-io/hesape v0.88.0\n\tgithub.com/arandu-io/kyse v0.45.0\n)\n", false, nil},
+		{"headless", "require github.com/arandu-io/hesape v0.88.0\n", false, nil},
 		{"replaced by a directory", "require github.com/arandu-io/hesape v0.85.0\nreplace github.com/arandu-io/hesape => ../hesape\n", false, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {

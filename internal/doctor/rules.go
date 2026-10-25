@@ -113,6 +113,7 @@ var rules = []func(*project) []Finding{
 	skipsSayWhy,
 	testsNameNoDriver,
 	orderIsNotChosenByTheRequest,
+	requestValidatesByHand,
 }
 
 // 0. A file doctor could not read makes every other rule unreliable.

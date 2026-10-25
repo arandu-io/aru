@@ -19,13 +19,13 @@ const ModelCoreRelease = "v0.47.0"
 // pinned below it would receive a query file that does not compile.
 const QueryListingRelease = "v0.86.0"
 
-// ListingRelease is the first hesape release that carries, beside the listing, the
+// ListingRelease is the first hesape release that carries, beside the listing and the request rules, the
 // behaviour of the view layer's script the data table of ListingKyseRelease
 // needs, and ListingKyseRelease is the first kyse release whose DataTable takes
 // a pagination.ListingResult. `aru make:module` writes a listing drawn with both,
 // and refuses a project pinned below either.
 const (
-	ListingRelease     = "v0.87.0"
+	ListingRelease     = "v0.88.0"
 	ListingKyseRelease = "v0.45.0"
 )
 
@@ -43,7 +43,7 @@ const (
 // may stay on without being refused, and a project that has to move anyway
 // should move to the release the generated code was last compiled with rather
 // than to the first one that would have compiled it.
-const HesapeRelease = "v0.87.0"
+const HesapeRelease = "v0.88.0"
 
 // QueryHeaderPrefix opens every file `aru model:build` writes beside an entity.
 //

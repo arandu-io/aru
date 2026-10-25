@@ -25,27 +25,22 @@ type StoreInvoice struct {
 	DeliveryDate  *time.Time `form:"delivery_date"`
 }
 
-// Validate reports the errors per field.
-//
-// It returns all of them rather than the first: a form that rejects one field at
-// a time is a form somebody submits five times.
-func (r StoreInvoice) Validate() validation.Errors {
-	e := validation.Errors{}
-	validation.Required(e, "reference", r.Reference)
-	validation.MaxLen(e, "reference", r.Reference, 255)
-	validation.Required(e, "supplier_email", r.SupplierEmail)
-	validation.Email(e, "supplier_email", r.SupplierEmail)
-	validation.MaxLen(e, "supplier_email", r.SupplierEmail, 254)
-	validation.NotZero(e, "total", r.Total)
-
-	// arandu:begin custom
-	// Domain rules go here: ranges, formats, cross-field checks.
-	// arandu:end custom
-
-	return e
+// Rules declares what each field may be, by the name of its form input. ctx.Bind
+// runs them over the raw input before it converts anything, and a request that
+// fails never reaches the service. The rules are the ones of the validation
+// package, written as a pipe string or as a list.
+func (StoreInvoice) Rules() validation.Rules {
+	return validation.Rules{
+		"reference":      "required|string|max:255",
+		"supplier_email": "required|email|max:254",
+		"total":          "required|integer",
+		"delivery_date":  "nullable|date",
+	}
 }
 
-// Compile-time proof that this request honors the validation contract. The first
-// line of the service is in.Validate(), and this is what keeps that call
-// compiling.
-var _ validation.Validatable = StoreInvoice{}
+// arandu:begin custom
+// What the fields may be together, or against the data, is a Validate method of
+// this request, and the service calls it before it authorizes:
+//
+//	func (r StoreInvoice) Validate() validation.Errors { ... }
+// arandu:end custom

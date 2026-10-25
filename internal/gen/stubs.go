@@ -620,34 +620,29 @@ type {{.Type}} struct {
 {{- end}}
 }
 
-// Validate reports the errors per field.
-//
-// It returns all of them rather than the first: a form that rejects one field at
-// a time is a form somebody submits five times.
-func (r {{.Type}}) Validate() validation.Errors {
-	e := validation.Errors{}
-{{- template "storeRules" .}}
-{{if .Fields}}
-	// arandu:begin custom
-	// Domain rules go here: ranges, formats, cross-field checks.
-	// arandu:end custom
-{{else}}
-	// arandu:begin custom
-	// The rules. The validation package is a short list on purpose --
-	// Required, NotZero, MinLen, MaxLen, Email -- and everything the domain
-	// knows is written here, in Go, by whoever knows it:
-	//
-	//	validation.Required(e, "reference", r.Reference)
-	//	if r.Total <= 0 {
-	//		e.Add("total", "must be greater than zero")
-	//	}
-	// arandu:end custom
-{{end}}
-	return e
+// Rules declares what each field may be, by the name of its form input. ctx.Bind
+// runs them over the raw input before it converts anything, and a request that
+// fails never reaches the service. The rules are the ones of the validation
+// package, written as a pipe string or as a list.
+func ({{.Type}}) Rules() validation.Rules {
+	return validation.Rules{
+{{- if .Fields}}
+{{- template "requestRules" .}}
+{{- else}}
+		// arandu:begin custom
+		// One entry per field, by the name of its input:
+		//
+		//	"reference": "required|string|max:255",
+		//	"total":     "required|integer|min:1",
+		// arandu:end custom
+{{- end}}
+	}
 }
 
-// Compile-time proof that this request honors the validation contract. The first
-// line of the service is in.Validate(), and this is what keeps that call
-// compiling.
-var _ validation.Validatable = {{.Type}}{}
+// arandu:begin custom
+// What the fields may be together, or against the data, is a Validate method of
+// this request, and the service calls it before it authorizes:
+//
+//	func (r {{.Type}}) Validate() validation.Errors { ... }
+// arandu:end custom
 `

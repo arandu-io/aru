@@ -555,7 +555,11 @@ func anatomyOf(f *file) (kind, variant string) {
 		return "controller", ""
 	}
 	if f.declaresMethod(func(fn *ast.FuncDecl) bool {
-		return fn.Name.Name == "Validate" && fn.Type.Params.NumFields() == 0 && resultSelector(fn, "Errors")
+		if fn.Type.Params.NumFields() != 0 {
+			return false
+		}
+		return (fn.Name.Name == "Validate" && resultSelector(fn, "Errors")) ||
+			(fn.Name.Name == "Rules" && resultSelector(fn, "Rules"))
 	}) {
 		return "request", ""
 	}
@@ -591,6 +595,7 @@ var contractKinds = func() map[string]string {
 	add("mcp-resource", "Resource", "github.com/arandu-io/mcp")
 	add("mcp-prompt", "Prompt", "github.com/arandu-io/mcp")
 	add("request", "Validatable", frameworkValidation, hesapeValidation)
+	add("request", "RequestRules", hesapeValidation)
 	add("policy", "Policy", frameworkSecurity, hesapeAuth)
 	add("job", "Handler", "github.com/arandu-io/framework/jobs", hesapePrefix+"queue")
 	add("listener", "Publisher", frameworkEvents, hesapePrefix+"events")

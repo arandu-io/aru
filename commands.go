@@ -447,7 +447,7 @@ window.`,
 	{
 		name:  "make:request",
 		usage: `aru make:request <Name> [--fields "reference:string!,total:money!"] [--force] [--dry-run]`,
-		desc:  "generate one input contract; authorization stays in the Policy",
+		desc:  "generate one input contract with the Rules of its fields; authorization stays in the Policy",
 		run:   makeRequest,
 	},
 	{

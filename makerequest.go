@@ -116,36 +116,30 @@ func requestTypeAlreadyDeclared(dir, name string) (string, bool) {
 }
 
 // usageRequest is not wiring: a request is not a dependency, it is a type. The
-// message exists because validate, Authorize, Grant is the only order that
+// message exists because Rules, Authorize, Grant is the only order that
 // compiles, and the developer needs to see it once.
 func usageRequest(s gen.Stub) string {
-	// The FIRST field this request actually declares, not a name picked when the
-	// message was written. A fixed name would make `aru make:request StoreCredit
-	// --fields amount:money` print an example naming a field the generated type
-	// does not have, and an example that does not compile is copied before it is
-	// read.
-	//
-	// A request with no fields keeps a placeholder, because there is no field to
-	// name and the shape is still what has to be shown.
-	field, input := "Field", "field"
-	if len(s.Fields) > 0 {
-		field, input = s.Fields[0].GoName(), s.Fields[0].Name
-	}
 	return fmt.Sprintf(`
-A request is not wired: it is built and it is checked.
+A request is not wired: it is bound and it is checked.
 
-  app/Http/Controllers -- the controller reads the form into it
+  app/Http/Controllers -- ctx.Bind fills the request and runs its Rules
 
-      in := requests.%s{%s: ctx.Input(%q)}
+      var in requests.%s
+      if err := ctx.Bind(&in); err != nil {
+          return err
+      }
 
-  app/Services -- the service validates it before anything else
+  A rule that fails comes back as validation.Errors, and the service is not reached.
+
+  app/Services -- only a rule that spans fields, or asks the data, is a Validate
+  method of the request, and the service calls it before anything else
 
       if errs := in.Validate(); errs.Any() {
           return models.Invoice{}, errs
       }
 
-Validate is the only thing this type owns. Who may do it is the Policy's answer,
-asked with security.Authorize after this and before the repository. That is why
-there is no authorize() here.
-`, s.Type, field, input)
+Rules is what this type owns, and Validate only when a rule needs more than one
+field. Who may do it is the Policy's answer, asked with security.Authorize after
+this and before the repository. That is why there is no authorize() here.
+`, s.Type)
 }

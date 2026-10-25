@@ -30,10 +30,11 @@ func NewInvoiceService(db *database.DB) *InvoiceService {
 
 // Create walks the mandatory path: validate, Authorize, Grant, Model.
 // There is no other order that compiles.
+//
+// The request was validated by its Rules when ctx.Bind filled it. A rule that
+// spans fields, or asks the data, is a Validate method of the request, called
+// first thing here: if errs := in.Validate(); errs.Any() { return nil, errs }.
 func (s *InvoiceService) Create(ctx context.Context, actor auth.Subject, in requests.InvoiceRequest) (*models.Invoice, error) {
-	if errs := in.Validate(); errs.Any() {
-		return nil, errs
-	}
 
 	var proposed models.Invoice
 	s.fill(&proposed, in)

@@ -10,6 +10,7 @@ package gen
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -352,6 +353,50 @@ func (f Field) MaxLength() int {
 	default:
 		return 255
 	}
+}
+
+// Rules is the rule string the request declares for this field: presence first,
+// then what the value is, then how long it may be.
+//
+// It says what the column holds and nothing more: a field nobody is required to
+// fill adds no presence rule, because a rule other than required skips an empty
+// value, and a nullable time says nullable. Uniqueness is not here -- it asks the
+// database, and a rule that asks the database needs a Grant, which the rules of a
+// request do not have. It belongs in the service.
+func (f Field) Rules() string {
+	var rules []string
+	switch {
+	case f.Required:
+		rules = append(rules, "required")
+	case f.Nullable():
+		rules = append(rules, "nullable")
+	}
+	switch {
+	case f.Type == TypeEmail || f.namesEmail():
+		rules = append(rules, "email")
+	case f.IsString():
+		rules = append(rules, "string")
+	case f.Type == TypeInt || f.Type == TypeMoney:
+		rules = append(rules, "integer")
+	case f.Type == TypeDecimal:
+		rules = append(rules, "numeric")
+	case f.Type == TypeBool:
+		rules = append(rules, "boolean")
+	case f.IsTime():
+		rules = append(rules, "date")
+	case f.Type == TypeUUID:
+		rules = append(rules, "uuid")
+	}
+	if f.IsString() {
+		rules = append(rules, "max:"+strconv.Itoa(f.MaxLength()))
+	}
+	return strings.Join(rules, "|")
+}
+
+// namesEmail reports whether a text field is called what an address is called:
+// "email" or "supplier_email".
+func (f Field) namesEmail() bool {
+	return f.Type == TypeString && (f.Name == "email" || strings.HasSuffix(f.Name, "_email"))
 }
 
 // Module is the whole specification.

@@ -146,6 +146,25 @@ var _ hnotifications.Notification = Overdue{}
 	}
 }
 
+// TestARequestThatOnlyDeclaresRulesIsARequest: a request has no Validate when
+// nothing spans its fields, and the declaration of its rules is what says it
+// is one, wherever the file sits.
+func TestARequestThatOnlyDeclaresRulesIsARequest(t *testing.T) {
+	root := tests.MapProject(t)
+	writeFile(t, filepath.Join(root, "app", "Billing", "SignUp.go"), `package billing
+
+import "github.com/arandu-io/hesape/validation"
+
+type SignUp struct{ Email string `+"`form:\"email\"`"+` }
+
+func (SignUp) Rules() validation.Rules { return validation.Rules{"email": "required|email"} }
+`)
+	m := mapOf(t, root)
+	if got := nodeAt(t, m, "request", "app/Billing/SignUp.go"); got.Label != "SignUp" {
+		t.Errorf("the request is labelled %q", got.Label)
+	}
+}
+
 // TestGeneratedCodeIsNeverAFeature: the query file model:build writes joins
 // the feature of the entity it was written from, is marked as generated, and
 // opens nothing.

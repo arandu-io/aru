@@ -92,10 +92,11 @@ func NewPurchaseOrderService(db *database.DB, parents *SupplierService) *Purchas
 
 // Create walks the mandatory path: validate, Authorize, Grant, Model.
 // There is no other order that compiles.
+//
+// The request was validated by its Rules when ctx.Bind filled it. A rule that
+// spans fields, or asks the data, is a Validate method of the request, called
+// first thing here: if errs := in.Validate(); errs.Any() { return nil, errs }.
 func (s *PurchaseOrderService) Create(ctx context.Context, actor auth.Subject, supplierID string, in requests.PurchaseOrderRequest) (*models.PurchaseOrder, error) {
-	if errs := in.Validate(); errs.Any() {
-		return nil, errs
-	}
 
 	// The supplier is loaded through its own service, so one this
 	// subject may not see is a refusal here and never a row under it.
@@ -193,11 +194,11 @@ func (s *PurchaseOrderService) List(ctx context.Context, actor auth.Subject, sup
 // It reads before writing, so the policy decides against the stored row rather
 // than against what the client claims the row is. Skipping this is how a check
 // passes on attacker-supplied data.
+//
+// The request was validated by its Rules when ctx.Bind filled it; a Validate
+// method of the request, for a rule that spans fields or asks the data, is
+// called first thing here, as Create does.
 func (s *PurchaseOrderService) Update(ctx context.Context, actor auth.Subject, id string, in requests.PurchaseOrderRequest) (*models.PurchaseOrder, error) {
-	if errs := in.Validate(); errs.Any() {
-		return nil, errs
-	}
-
 	stored, err := s.Get(ctx, actor, id)
 	if err != nil {
 		return nil, err

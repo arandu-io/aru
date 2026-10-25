@@ -6,7 +6,8 @@ package gen
 // the developer this framework is for opens a project and looks for
 // app/Http/Controllers.
 //
-// Together they emit the mandatory path: Validate, Authorize, Grant, Model. The
+// Together they emit the mandatory path: the request's Rules, Authorize, Grant,
+// Model. The
 // service owns the database handle and no generated controller reaches it.
 //
 // One consequence of the flat tree runs through all of them: a package holds
@@ -359,11 +360,11 @@ func (s *{{.ServiceType}}) List(ctx context.Context, actor auth.Subject, state p
 // It reads before writing, so the policy decides against the stored row rather
 // than against what the client claims the row is. Skipping this is how a check
 // passes on attacker-supplied data.
+//
+// The request was validated by its Rules when ctx.Bind filled it; a Validate
+// method of the request, for a rule that spans fields or asks the data, is
+// called first thing here, as Create does.
 func (s *{{.ServiceType}}) Update(ctx context.Context, actor auth.Subject, id string, in requests.{{.Request}}) (*models.{{.Entity}}, error) {
-	if errs := in.Validate(); errs.Any() {
-		return nil, errs
-	}
-
 	stored, err := s.Get(ctx, actor, id)
 	if err != nil {
 		return nil, err
@@ -436,10 +437,11 @@ func New{{.ServiceType}}(db *database.DB{{if .Parent}}, parents *{{.ParentServic
 
 {{end}}{{define "serviceCreate"}}// Create walks the mandatory path: validate, Authorize, Grant, Model.
 // There is no other order that compiles.
+//
+// The request was validated by its Rules when ctx.Bind filled it. A rule that
+// spans fields, or asks the data, is a Validate method of the request, called
+// first thing here: if errs := in.Validate(); errs.Any() { return nil, errs }.
 func (s *{{.ServiceType}}) Create(ctx context.Context, actor auth.Subject, {{if .Parent}}{{.ParentArg}} string, {{end}}in requests.{{.Request}}) (*models.{{.Entity}}, error) {
-	if errs := in.Validate(); errs.Any() {
-		return nil, errs
-	}
 {{- if .Parent}}
 
 	// The {{.ParentParam}} is loaded through its own service, so one this
@@ -522,20 +524,21 @@ type {{.Request}} struct {
 {{- template "requestFields" .}}
 }
 
-// Validate reports the errors per field.
-func (r {{.Request}}) Validate() validation.Errors {
-	e := validation.Errors{}
-{{- template "storeRules" .}}
-
-	// arandu:begin custom
-	// Domain rules go here: ranges, formats, cross-field checks.
-	// arandu:end custom
-
-	return e
+// Rules declares what each field may be, by the name of its form input. ctx.Bind
+// runs them over the raw input before it converts anything, and a request that
+// fails never reaches the service.
+func ({{.Request}}) Rules() validation.Rules {
+	return validation.Rules{
+{{- template "requestRules" .}}
+	}
 }
 
-// Compile-time proof that the request honors the validation contract.
-var _ validation.Validatable = {{.Request}}{}
+// arandu:begin custom
+// What the fields may be together, or against the data, is a Validate method of
+// this request, and the service calls it before it authorizes:
+//
+//	func (r {{.Request}}) Validate() validation.Errors { ... }
+// arandu:end custom
 `
 
 // requestRulesTemplate is the request's fields and their validation, whichever
@@ -555,17 +558,9 @@ const requestRulesTemplate = `{{define "requestFields"}}
 {{- range .Fields}}
 	{{.GoName}} {{.ModelType}} {{.FormTag}}
 {{- end}}
-{{- end}}{{define "storeRules"}}
+{{- end}}{{define "requestRules"}}
 {{- range .Fields}}
-{{- if .Required}}
-	{{if .IsString}}validation.Required(e, "{{.Column}}", r.{{.GoName}}){{else}}validation.NotZero(e, "{{.Column}}", r.{{.GoName}}){{end}}
-{{- end}}
-{{- if .IsEmail}}
-	validation.Email(e, "{{.Column}}", r.{{.GoName}})
-{{- end}}
-{{- if .IsString}}
-	validation.MaxLen(e, "{{.Column}}", r.{{.GoName}}, {{.MaxLength}})
-{{- end}}
+		"{{.Column}}": "{{.Rules}}",
 {{- end}}
 {{- end}}`
 

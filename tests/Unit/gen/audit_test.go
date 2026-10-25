@@ -125,22 +125,20 @@ func TestListingIsItsOwnPermission(t *testing.T) {
 	}
 }
 
-// TestARequiredNumberCanBeFilledIn: Required takes a string, and the generator
-// handed it a literal "" for every non-text field. So a required int, date,
+// TestARequiredNumberCanBeFilledIn: Required took a string, and the generator
+// handed it a literal "" for every non-text field, so a required int, date,
 // amount or decimal failed validation with "is required" no matter what was
-// sent, and the generated create endpoint could not be used at all.
+// sent and the generated create endpoint could not be used at all. The rules are
+// strings now, and what has to hold is that each one says what the column holds,
+// so that a number is checked as a number and text as text.
 func TestARequiredNumberCanBeFilledIn(t *testing.T) {
 	request := byName(t, spec(true))["PurchaseOrderRequest.go"]
 
-	if strings.Contains(request, `validation.Required(e, "total", "")`) {
-		t.Fatal("a required amount is still validated against a literal empty string")
+	if !strings.Contains(request, `"required|integer",`) {
+		t.Errorf("a required amount is not declared required and integer:\n%s", request)
 	}
-	if !strings.Contains(request, `validation.NotZero(e, "total", r.Total)`) {
-		t.Error("a required amount is not validated against the value that was sent")
-	}
-	// Text still goes through Required, which trims: "   " is not an answer.
-	if !strings.Contains(request, `validation.Required(e, "reference", r.Reference)`) {
-		t.Error("required text no longer goes through Required")
+	if !strings.Contains(request, `"required|string|max:255",`) {
+		t.Errorf("required text is not declared required, string and capped:\n%s", request)
 	}
 }
 
@@ -290,15 +288,15 @@ func TestValidationAgreesWithTheColumn(t *testing.T) {
 	request := byName(t, spec(true))["PurchaseOrderRequest.go"]
 
 	// reference is a string: VARCHAR(255), so 255.
-	if !strings.Contains(request, `validation.MaxLen(e, "reference", r.Reference, 255)`) {
+	if !strings.Contains(request, `"required|string|max:255"`) {
 		t.Error("a string field is not capped at the width of its column")
 	}
 	// supplier_email is an address: the addr-spec limit, under the column.
-	if !strings.Contains(request, `validation.MaxLen(e, "supplier_email", r.SupplierEmail, 254)`) {
+	if !strings.Contains(request, `"required|email|max:254"`) {
 		t.Error("an email field is not capped at 254")
 	}
 	// notes is long text: TEXT, so the cap is the generous one.
-	if !strings.Contains(request, `validation.MaxLen(e, "notes", r.Notes, 5000)`) {
+	if !strings.Contains(request, `"string|max:5000"`) {
 		t.Error("a text field is capped as if it were a string")
 	}
 }

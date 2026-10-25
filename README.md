@@ -61,9 +61,12 @@ plus `help` and `version`. The native and inspection commands, in the words of `
 
 - **`aru make:module`** — a Model-backed entity with its policy, service,
   request, controller, migration and four screens, compiling and tested from
-  the moment it lands. It writes no skill: the skeleton's skill families
-  describe a module by kind, and a second description per module would be one
-  more thing to keep true.
+  the moment it lands. The listing is wired end to end on the typed listing
+  and the DataTable: search over the text fields, ordering by any field, page
+  size, hidden columns, row selection and one pager, all read from the query
+  string through a whitelist the service declares. It writes no skill: the
+  skeleton's skill families describe a module by kind, and a second
+  description per module would be one more thing to keep true.
 - **`aru generate`** — the same output, from a written specification: the
   model writes the spec, never the Go.
 - **`aru doctor`** — 79 named rules read the AST of a project, without

@@ -34,8 +34,8 @@ import (
 // that is what TestThePinnedTagsMatchTheSkeleton answers.
 var published = map[string]string{
 	"github.com/arandu-io/framework": "v0.66.0",
-	"github.com/arandu-io/hesape":    "v0.85.0",
-	"github.com/arandu-io/kyse":      "v0.44.0",
+	"github.com/arandu-io/hesape":    "v0.87.0",
+	"github.com/arandu-io/kyse":      "v0.45.0",
 }
 
 // generatedModulePath is the module path the fixtures already generate imports
@@ -48,6 +48,13 @@ const generatedModulePath = "example.test/project"
 // dependency graph with the independently published project rather than with a
 // sibling checkout that a build agent does not have.
 const publishedSkeletonModule = "github.com/arandu-io/arandu@v0.42.0"
+
+// harnessLeadsSkeleton is true while `published` is ahead of the skeleton named
+// above, which is the window between a release the generated code needs and the
+// skeleton release that takes it. Set it to false in the same change that moves
+// publishedSkeletonModule to the skeleton requiring these tags, and the equality
+// is required again.
+const harnessLeadsSkeleton = true
 
 // TestTheGeneratedModuleCompiles hands every generator's output to the Go
 // compiler.
@@ -231,6 +238,20 @@ func generatedProject(t *testing.T) (string, map[string]string) {
 	// the field comes back nil, rather than the first day of year one.
 	one("an unset time stored through the generated model", func() (gen.File, error) {
 		return gen.File{Path: "tests/Unit/NullableTime_test.go", Content: []byte(nullableTimeTest)}, nil
+	})
+
+	// The generated listing, run: a query string a hostile reader would write
+	// goes through the service's listing and the Model's Listing, over a driver
+	// that records the statements. What reaches the database is the declared
+	// columns, the default size, and the text as a binding.
+	one("the listing of a generated service under a hostile query string", func() (gen.File, error) {
+		return gen.File{Path: "tests/Unit/ListingHostile_test.go", Content: []byte(listingHostileTest)}, nil
+	})
+
+	// The table of the listing, rendered: the partial the controller answers
+	// alone, drawn from a result the way the controller hands it over.
+	one("the table partial of a generated listing, rendered", func() (gen.File, error) {
+		return gen.File{Path: "tests/Unit/ListingRender_test.go", Content: []byte(listingRenderTest)}, nil
 	})
 
 	one("the writes every generated policy declares", func() (gen.File, error) {
@@ -464,6 +485,15 @@ func TestThePinnedTagsMatchTheSkeleton(t *testing.T) {
 		got := requiredVersion(body, module)
 		if got == "" {
 			t.Errorf("%s does not require %s, and the compile harness pins it at %s", publishedSkeletonModule, module, want)
+			continue
+		}
+		// While the harness leads, a skeleton that is behind is the known state
+		// and not a stale constant: the generated listing needs the newer tags,
+		// and aru refuses to write it into a project that has not taken them.
+		// A skeleton that is ahead of the harness is always a stale constant.
+		if harnessLeadsSkeleton && gomod.Less(got, want) {
+			t.Logf("the skeleton %s requires %s %s, behind the %s the generated code is compiled against: pending the next skeleton",
+				publishedSkeletonModule, module, got, want)
 			continue
 		}
 		if got != want {
@@ -1091,5 +1121,197 @@ func TestAnUnsetTimeIsStoredAsNull(t *testing.T) {
 		return
 	}
 	t.Fatalf("no insert reached the database: %q", recorded.statements)
+}
+`
+
+// listingHostileTest runs the listing of the purchase order service with the
+// query string of a hostile reader, over a driver that records each statement
+// and the values bound to it.
+//
+// The driver answers every count with a hundred, so the page query runs too. The
+// claims are about what the database is handed: no statement carries the
+// hostile sort or the text of the search -- the text is a binding, the sort is a
+// declared column -- and the page size is the listing's default, not the million
+// the request asked for.
+const listingHostileTest = `package unit_test
+
+import (
+	"context"
+	"database/sql"
+	"database/sql/driver"
+	"fmt"
+	"io"
+	"net/url"
+	"regexp"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/arandu-io/hesape/auth"
+	"github.com/arandu-io/hesape/database"
+
+	models "` + generatedModulePath + `/app/Models"
+	policies "` + generatedModulePath + `/app/Policies"
+	services "` + generatedModulePath + `/app/Services"
+)
+
+var listed struct {
+	sync.Mutex
+	statements []string
+	args       [][]driver.NamedValue
+}
+
+type listingDriver struct{}
+type listingConn struct{}
+type listingRows struct {
+	columns []string
+	values  []driver.Value
+	done    bool
+}
+
+func (listingDriver) Open(string) (driver.Conn, error) { return listingConn{}, nil }
+
+func (listingConn) Prepare(string) (driver.Stmt, error) { return nil, driver.ErrSkip }
+func (listingConn) Close() error                        { return nil }
+func (listingConn) Begin() (driver.Tx, error)           { return listingConn{}, nil }
+func (listingConn) Commit() error                       { return nil }
+func (listingConn) Rollback() error                     { return nil }
+
+func (listingConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	listed.Lock()
+	defer listed.Unlock()
+	listed.statements = append(listed.statements, query)
+	listed.args = append(listed.args, args)
+	if strings.Contains(strings.ToLower(query), "count(") {
+		return &listingRows{columns: []string{"aggregate"}, values: []driver.Value{int64(100)}}, nil
+	}
+	return &listingRows{}, nil
+}
+
+func (r *listingRows) Columns() []string { return r.columns }
+func (r *listingRows) Close() error      { return nil }
+func (r *listingRows) Next(dest []driver.Value) error {
+	if r.done || r.values == nil {
+		return io.EOF
+	}
+	copy(dest, r.values)
+	r.done = true
+	return nil
+}
+
+func init() { sql.Register("listing-recording", listingDriver{}) }
+
+func TestTheListingKeepsAHostileQueryStringOutOfTheStatements(t *testing.T) {
+	raw, err := sql.Open("listing-recording", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	db := database.Wrap(raw, database.DialectSQLite)
+
+	svc := services.NewPurchaseOrderService(db)
+	state := svc.Listing().Parse(url.Values{
+		"sort":     {"id; drop table purchase_orders; --"},
+		"dir":      {"desc; delete from purchase_orders"},
+		"per_page": {"1000000"},
+		"page":     {"999999999999"},
+		"q":        {"x'; drop table purchase_orders; --"},
+		"hide":     {"tenant_id"},
+	})
+
+	g := auth.SystemGrant(policies.PurchaseOrderList, "tenant-a")
+	if _, _, err := models.PurchaseOrders(db).Listing(context.Background(), g, state, "/anywhere"); err != nil {
+		t.Fatalf("a hostile query string failed the listing instead of falling back to the defaults: %v", err)
+	}
+
+	listed.Lock()
+	defer listed.Unlock()
+	if len(listed.statements) == 0 {
+		t.Fatal("the listing ran no statement")
+	}
+	order := regexp.MustCompile(` + "`" + `(?i)order by (.*?)( limit |$)` + "`" + `)
+	declared := map[string]bool{"id": true, "created_at": true, "reference": true, "supplier_email": true,
+		"total": true, "approved": true, "notes": true, "delivery_date": true}
+	for i, statement := range listed.statements {
+		lower := strings.ToLower(statement)
+		if strings.Contains(lower, "drop table") || strings.Contains(lower, "delete from") || strings.Contains(statement, "--") {
+			t.Errorf("a statement carries the hostile text of the request: %s", statement)
+		}
+		for _, bound := range listed.args[i] {
+			if text := fmt.Sprint(bound.Value); text == "1000000" {
+				t.Errorf("the page size of the request reached the statement as a binding: %s %v", statement, listed.args[i])
+			}
+		}
+		if m := order.FindStringSubmatch(statement); m != nil {
+			for _, term := range strings.Split(m[1], ",") {
+				column := strings.Trim(strings.Fields(strings.TrimSpace(term))[0], "\"` + "`" + `")
+				if !declared[column] {
+					t.Errorf("the statement orders by %q, which the listing does not declare: %s", column, statement)
+				}
+			}
+		}
+	}
+}
+`
+
+// listingRenderTest draws the table partial of the purchase order listing with a
+// result in the state a reader's query string produces -- a search, an order and
+// the second page of four -- and reads the markup back: the region the
+// controller targets, the search box, the order arrows, and the one pager
+// ("Page 2 of 4"), each built from the state and not from loose parameters.
+const listingRenderTest = `package unit_test
+
+import (
+	"context"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+
+	"github.com/arandu-io/hesape/pagination"
+	"github.com/arandu-io/hesape/view"
+
+	services "` + generatedModulePath + `/app/Services"
+	purchaseorders "` + generatedModulePath + `/storage/framework/views/purchase-orders"
+	_ "` + generatedModulePath + `/storage/framework/views/partials"
+)
+
+func TestTheListingTableIsDrawnFromTheResult(t *testing.T) {
+	listing := services.NewPurchaseOrderService(nil).Listing()
+	state := listing.Parse(url.Values{"q": {"acme"}, "sort": {"total"}, "dir": {"desc"}, "page": {"2"}, "per_page": {"10"}})
+	page := pagination.NewLengthAwarePage(1, 31, state.PerPage(), state.Page(), state.PageOptions("/purchase-orders"))
+
+	data := purchaseorders.PurchaseOrdersIndexData{
+		Page: view.Page{Title: "Purchase orders"},
+		PurchaseOrders: []purchaseorders.PurchaseOrderRow{
+			{ID: "po-1", URL: "/purchase-orders/po-1", Reference: "PO-0011", SupplierEmail: "acme@example.test", Total: "1200", Created: "2026-10-25 10:00"},
+		},
+		Result:  pagination.NewListingResult(state, page, nil),
+		ListURL: "/purchase-orders",
+		NewURL:  "/purchase-orders/create",
+	}
+
+	rec := httptest.NewRecorder()
+	if err := view.NewRenderer().Render(context.Background(), rec, 200, "partials.purchase-orders-table", data); err != nil {
+		t.Fatalf("the table partial did not render: %v", err)
+	}
+	body := rec.Body.String()
+
+	for _, want := range []string{
+		"id=\"" + purchaseorders.PurchaseOrdersTableID + "\"",
+		"name=\"q\"",
+		"value=\"acme\"",
+		"PO-0011",
+		"Page 2 of 4",
+		"sort=total",
+		"hx-push-url=\"true\"",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the table does not contain %q:\n%s", want, body)
+		}
+	}
+	if n := strings.Count(body, "Page 2 of 4"); n != 1 {
+		t.Errorf("the page is announced %d times, want one pager", n)
+	}
 }
 `

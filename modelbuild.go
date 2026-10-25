@@ -58,6 +58,11 @@ func buildModels(root string, stdout, _ io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("model:build: %w", err)
 	}
+	if len(changes) > 0 {
+		if err := requireQueryListing("model:build", root); err != nil {
+			return err
+		}
+	}
 	if err := modelbuild.Apply(root, changes); err != nil {
 		return fmt.Errorf("model:build: %w", err)
 	}

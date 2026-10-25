@@ -58,6 +58,9 @@ func makeModule(args []string, stdout, stderr io.Writer) error {
 	if err := requireModelCore("make:module", root); err != nil {
 		return err
 	}
+	if err := requireListing("make:module", root); err != nil {
+		return err
+	}
 	modulePath, err := readModulePath(root)
 	if err != nil {
 		return err

@@ -14,6 +14,21 @@ import (
 // so the commands that write them refuse it.
 const ModelCoreRelease = "v0.47.0"
 
+// QueryListingRelease is the first hesape release whose model.Builder has
+// ApplyListing and Listing, which the generated query forwards to. A project
+// pinned below it would receive a query file that does not compile.
+const QueryListingRelease = "v0.86.0"
+
+// ListingRelease is the first hesape release that carries, beside the listing, the
+// behaviour of the view layer's script the data table of ListingKyseRelease
+// needs, and ListingKyseRelease is the first kyse release whose DataTable takes
+// a pagination.ListingResult. `aru make:module` writes a listing drawn with both,
+// and refuses a project pinned below either.
+const (
+	ListingRelease     = "v0.87.0"
+	ListingKyseRelease = "v0.45.0"
+)
+
 // HesapeRelease is the hesape release a new project requires, which is the one
 // everything here writes is compiled and tested against, and the one the
 // instructions printed to a user tell them to take.
@@ -28,7 +43,7 @@ const ModelCoreRelease = "v0.47.0"
 // may stay on without being refused, and a project that has to move anyway
 // should move to the release the generated code was last compiled with rather
 // than to the first one that would have compiled it.
-const HesapeRelease = "v0.85.0"
+const HesapeRelease = "v0.87.0"
 
 // QueryHeaderPrefix opens every file `aru model:build` writes beside an entity.
 //
@@ -163,7 +178,7 @@ func isGoIdentifier(s string) bool {
 	return true
 }
 
-// queryTemplate is the whole generated surface: 48 methods that build, 20 that
+// queryTemplate is the whole generated surface: 49 methods that build, 21 that
 // return rows, 19 that return a value, 6 more on a soft-deleting table, and 14
 // on the collection. tests/Unit/gen pins the counts, so a method appearing or
 // disappearing is a reviewed change rather than drift.
@@ -567,6 +582,23 @@ func (q *{{.Query}}) SimplePaginate(ctx context.Context, g auth.Grant, perPage, 
 func (q *{{.Query}}) CursorPaginate(ctx context.Context, g auth.Grant, perPage int, cursor *pagination.Cursor, opts pagination.Options, columns ...any) ({{.Collection}}, *pagination.CursorPage, error) {
 	rows, meta, err := q.b.CursorPaginate(ctx, g, perPage, cursor, opts, columns...)
 	return {{.Collection}}Of(rows), meta, err
+}
+
+// ApplyListing narrows and orders the query as a listing state asks: the search,
+// the facets and the sort with its tie-break. Every column comes from the spec
+// the state was read with, never from the request.
+func (q *{{.Query}}) ApplyListing(state pagination.ListingState) *{{.Query}} {
+	q.b.ApplyListing(state)
+	return q
+}
+
+// Listing runs the query as a listing state asks and returns the rows of the
+// page beside the result a table is drawn from: the state, the page with its
+// total and the count of every facet value. Every statement it issues carries
+// the tenant of g.
+func (q *{{.Query}}) Listing(ctx context.Context, g auth.Grant, state pagination.ListingState, path string, columns ...any) ({{.Collection}}, *pagination.ListingResult, error) {
+	rows, result, err := q.b.Listing(ctx, g, state, path, columns...)
+	return {{.Collection}}Of(rows), result, err
 }
 
 func (q *{{.Query}}) Chunk(ctx context.Context, g auth.Grant, count int, callback func({{.Collection}}, int) (bool, error)) error {

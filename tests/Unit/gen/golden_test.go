@@ -57,14 +57,14 @@ func TestGolden(t *testing.T) {
 		name   string
 		tenant bool
 		// files is how many the module is: the twelve of every module, the
-		// factory and the seeder, and the tenant-isolation feature test only a
-		// table with a tenant column has. None of them is a skill: the
+		// factory and the seeder, the table partial of the listing, and the
+		// tenant-isolation feature test only a table with a tenant column has. None of them is a skill: the
 		// skeleton's families describe a module by kind.
 		files int
 	}{
-		{"tenant", true, 15},
-		{"global", false, 14},
-		{"nested", true, 15},
+		{"tenant", true, 16},
+		{"global", false, 15},
+		{"nested", true, 16},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			m := spec(c.tenant)
@@ -175,8 +175,10 @@ func TestEveryServiceMethodAuthorizesBeforeTheModel(t *testing.T) {
 	}
 
 	for _, method := range []string{"Create", "Get", "List"} {
+		// The parenthesis is part of the name: Listing, the accessor of the
+		// listing's spec, begins with the same letters as List.
 		declaration := "func (s *PurchaseOrderService) " + method
-		i := strings.Index(service, declaration)
+		i := strings.Index(service, declaration+"(")
 		if i < 0 {
 			t.Errorf("%s is missing", declaration)
 			continue
@@ -372,6 +374,12 @@ func TestEveryGeneratedViewFitsTheLayout(t *testing.T) {
 	seen := 0
 	for _, f := range files {
 		if !strings.HasSuffix(f.Path, ".kyse.go") {
+			continue
+		}
+		// The table of the listing is a partial: a piece of the index, drawn
+		// with the index's data under another name. It is not a page, extends no
+		// layout and has no chrome of its own to declare.
+		if strings.HasPrefix(f.Path, filepath.Join("resources", "views", "partials")+string(filepath.Separator)) {
 			continue
 		}
 		seen++

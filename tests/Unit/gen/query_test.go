@@ -29,10 +29,10 @@ func TestTheGeneratedQuerySurfaceIsPinned(t *testing.T) {
 		softDeletes                     bool
 		chainable, rows, values, ofRows int
 	}{
-		{false, 48, 20, 19, 14},
+		{false, 49, 21, 19, 14},
 		// The six only a soft-deleting table has: three that build, one that
 		// returns a row and two that return a count.
-		{true, 51, 21, 21, 14},
+		{true, 52, 22, 21, 14},
 	} {
 		spec := querySpec("Invoice")
 		spec.SoftDeletes = c.softDeletes

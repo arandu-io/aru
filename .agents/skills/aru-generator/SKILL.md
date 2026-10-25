@@ -214,7 +214,7 @@ beside it, and prints its wiring.
 
 | command | writes | the shape |
 | --- | --- | --- |
-| `make:module <name> [--parent=<resource>]` | the twelve files, factory, seeder, and for `--tenant` `tests/Feature/<Entity>TenantScope_test.go` | `--parent` nests: the table carries `<parent>_id` in the type of the parent's key (`gen.ParentKeyOf` reads it off the parent's model and the migration that creates its table, and refuses when the parent is not written yet or is keyed by a non-text type), the service takes the parent's service and loads the parent through `Get` before `Create` and `List`, the controller reads the parent on the collection routes and the record on the member routes; the factory names no parent in its default state and gains `For<Parent>(id)`, the seeder loads the tenant's first parent or makes one through the parent's factory, and the tenant test stores a parent before its rows |
+| `make:module <name> [--parent=<resource>]` | the twelve files, the table partial `resources/views/partials/<resource>-table.kyse.go`, factory, seeder, and for `--tenant` `tests/Feature/<Entity>TenantScope_test.go` | `--parent` nests: the table carries `<parent>_id` in the type of the parent's key (`gen.ParentKeyOf` reads it off the parent's model and the migration that creates its table, and refuses when the parent is not written yet or is keyed by a non-text type), the service takes the parent's service and loads the parent through `Get` before `Create` and `List`, the controller reads the parent on the collection routes and the record on the member routes; the factory names no parent in its default state and gains `For<Parent>(id)`, the seeder loads the tenant's first parent or makes one through the parent's factory, and the tenant test stores a parent before its rows |
 | `make:model <Name> [-c] [-a]` | the entity, and the parts asked for | `-c` is the resource controller of `make:controller --resource`; `--all` adds the service and builds the controller with it |
 | `make:service <Name>` | `app/Services/<Name>Service.go`, `tests/Unit/<Name>Service_test.go` | one `Create(ctx, actor auth.Subject, in requests.X)`: validate, Authorize, Grant, Model; refuses without the model, policy and request; `fill` copies what the request and the model share by name and type |
 | `make:resource <Name>` | `app/Http/Resources/<Name>Resource.go` and test | `ToArray` lists every db column but the tenant; a collection answers each row through it; the test writes through `ctx.JSON` and compares keys exactly |
@@ -312,11 +312,30 @@ it is also `internal/doctor/testdata/clean`. Break one and you break the other.
   during a rollout the previous binary does not fill it in.
 - **Validation agrees with the column.** A value that passes validation has to
   fit the column it is written to (`audit_test.go:219`).
-- **The generated `List` pages through the Model.** It is the model's
-  `Latest()`, a tiebreak on the key and `SimplePaginate`, with no column taken
-  from the request and no SQL written in the service.
-  `TestTheListingPagesThroughTheModel` (`tests/Unit/gen/audit_test.go`) is what
-  stops the hand-rolled keyset from coming back.
+- **The generated `List` is the typed listing.** The service declares the
+  listing once, `pagination.NewListing` (the text fields searched, every field
+  and `created_at` sortable under their own names, the page sizes 10, 25 and 50,
+  newest first with a tie-break on `id`, every field after the first hideable),
+  exposes it as `Listing()`, and `List` takes the `pagination.ListingState` the
+  controller read through it and runs the Model's `Listing` under the Grant. The
+  controller reads the query string with `c.svc.Listing().ParseURL`, which drops
+  whatever the spec did not declare, so no column, direction or size comes from
+  the request; it answers the table alone (`ctx.Fragment` of
+  `partials.<resource>-table`) when `ctx.Targets` names the table and the whole
+  page otherwise. The index view hands the `*pagination.ListingResult` to
+  `components.DataTable` (`Result`, `Searchable`, `HeaderMenu`, `FullPager`,
+  `SelectName`) and draws no pager beside it. A facet needs a column with a short
+  list of text values, which a field the generator knows (a boolean is stored
+  as a number on one engine and as `true` on another) is not, so none is
+  generated: the service's comment shows the `Facets` line to add.
+  `TestTheListingPagesThroughTheModel` and
+  `TestTheListingColumnsAreTheSameInTheServiceAndTheView`
+  (`tests/Unit/gen/audit_test.go`) and the generated
+  `TestThe<Entity>ListingDropsWhatItDoesNotDeclare` are what stop a request
+  value from reaching the order again; `aru doctor` warns
+  (`order-by-request-value`) on one that does in hand-written code. Generating
+  it requires hesape v0.87.0 and kyse v0.45.0; the commands refuse a project
+  pinned below.
 - **A generated controller loads no session, issues no token and maps no
   error.** Who is asking is `ctx.User()`, put there by the sign-in guard the
   printed route sits behind; the input is `ctx.Bind` into the request; the page

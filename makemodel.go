@@ -95,6 +95,15 @@ func makeModel(args []string, stdout, stderr io.Writer) error {
 	if *all {
 		parts = gen.Everything()
 	}
+	// The query beside the entity forwards to the builder's Listing, and the
+	// service --all writes is the listing drawn end to end.
+	floor := requireQueryListing
+	if parts.Service {
+		floor = requireListing
+	}
+	if err := floor("make:model", root); err != nil {
+		return err
+	}
 
 	// Both spellings of the name are accepted: the developer this is for types
 	// the class name, PurchaseOrder, and the generator needs purchase_order.

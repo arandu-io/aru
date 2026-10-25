@@ -86,6 +86,14 @@ func TestGeneratedViewsImportTheirNativeComponent(t *testing.T) {
 		if !strings.HasSuffix(file.Path, ".kyse.go") && !strings.HasSuffix(file.Path, "Controller.go") {
 			continue
 		}
+		// The table partial draws the index's data and imports only the
+		// component: it has no page of its own to build the chrome of.
+		if strings.Contains(file.Path, "partials") {
+			if !strings.Contains(string(file.Content), `"github.com/arandu-io/kyse/components"`) {
+				t.Errorf("%s does not import the native component", file.Path)
+			}
+			continue
+		}
 		examined++
 		body := string(file.Content)
 		if strings.Contains(body, `"github.com/arandu-io/framework/view"`) {

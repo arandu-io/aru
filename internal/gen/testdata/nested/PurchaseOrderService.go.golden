@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/arandu-io/hesape/auth"
@@ -14,10 +15,60 @@ import (
 	policies "example.test/project/app/Policies"
 )
 
-// purchaseOrderPerPage is how many purchase_orders one page of the listing holds. A
-// listing is always a page, never everything: an unbounded query is how one
-// page load takes a database down.
-const purchaseOrderPerPage = 25
+// purchaseOrderListing declares, once, what the listing of purchase orders may search,
+// order by, page by and hide. A listing is always a page, never everything: an
+// unbounded query is how one page load takes a database down.
+//
+// Nothing the request carries names a column. The controller reads the request
+// through this value, and it drops whatever it does not declare -- a sort that
+// is not a key below, a page size that is not offered, a direction that is
+// neither asc nor desc -- so a hostile query string falls back to the default
+// instead of reaching the query. Every column below is written here, in code.
+//
+// The Search columns hold text. A facet -- a filter over a column with a short
+// list of values, such as a status -- is one more entry of Facets, with the
+// values listed in the spec:
+//
+//	Facets: []pagination.FacetSpec{{Key: "status", Column: "status", Values: []string{"open", "done"}}},
+//
+// and a DataTableFilter of the same Key in the index view draws it.
+var purchaseOrderListing = func() *pagination.Listing {
+	listing, err := pagination.NewListing(pagination.ListingSpec{
+		Search: []string{
+			"reference",
+			"supplier_email",
+			"notes",
+		},
+		Sorts: map[string]string{
+			"reference":      "reference",
+			"supplier_email": "supplier_email",
+			"total":          "total",
+			"approved":       "approved",
+			"notes":          "notes",
+			"delivery_date":  "delivery_date",
+			"created_at":     "created_at",
+		},
+		DefaultSort:     "created_at",
+		DefaultDir:      pagination.SortDesc,
+		TieBreak:        "id",
+		PageSizes:       []int{10, 25, 50},
+		DefaultPageSize: 25,
+		Hideable: []string{
+			"supplier_email",
+			"total",
+			"approved",
+			"notes",
+			"delivery_date",
+			"created_at",
+		},
+	})
+	if err != nil {
+		// A spec the package refuses is a mistake in this file, and it is found
+		// when the program starts and not on the first request.
+		panic(fmt.Sprintf("services: the purchase orders listing: %v", err))
+	}
+	return listing
+}()
 
 // PurchaseOrderService holds the business rules. It receives its dependencies through
 // the constructor -- explicit wiring, no container.
@@ -115,11 +166,17 @@ func (s *PurchaseOrderService) Editable(ctx context.Context, actor auth.Subject,
 	return found, nil
 }
 
-// List returns one page of the purchase_orders of one supplier, newest
-// first, and where the previous and the next page are. The supplier is
-// loaded under its own policy first, and the page is filtered by the one that
-// was loaded -- not by the id the path carried.
-func (s *PurchaseOrderService) List(ctx context.Context, actor auth.Subject, supplierID string, page int) (models.PurchaseOrderCollection, *pagination.Page, error) {
+// Listing is what the listing of purchase orders accepts. The controller reads the
+// request through it and hands the state it returns to List.
+func (s *PurchaseOrderService) Listing() *pagination.Listing { return purchaseOrderListing }
+
+// List returns one page of the purchase_orders of one supplier as the listing
+// state asks -- the search, the order, the page and its size -- and the result
+// a table is drawn from, newest first unless the state orders otherwise. path
+// is the address the listing is served at, which its links are built on. The
+// supplier is loaded under its own policy first, and the page is
+// filtered by the one that was loaded -- not by the id the path carried.
+func (s *PurchaseOrderService) List(ctx context.Context, actor auth.Subject, supplierID string, state pagination.ListingState, path string) (models.PurchaseOrderCollection, *pagination.ListingResult, error) {
 	parent, err := s.parents.Get(ctx, actor, supplierID)
 	if err != nil {
 		return nil, nil, err
@@ -128,8 +185,7 @@ func (s *PurchaseOrderService) List(ctx context.Context, actor auth.Subject, sup
 	if err != nil {
 		return nil, nil, err
 	}
-	return models.PurchaseOrders(s.db).Where("supplier_id", parent.ID).Latest().OrderBy("id").
-		SimplePaginate(ctx, g, purchaseOrderPerPage, page, pagination.Options{})
+	return models.PurchaseOrders(s.db).Where("supplier_id", parent.ID).Listing(ctx, g, state, path)
 }
 
 // Update changes the mutable fields.

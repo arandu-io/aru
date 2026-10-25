@@ -1,10 +1,10 @@
 package controllers
 
 import (
+	"net/http"
 	"strconv"
 
 	hhttp "github.com/arandu-io/hesape/http"
-	"github.com/arandu-io/hesape/pagination"
 	hcontrollers "github.com/arandu-io/hesape/routing/controllers"
 	"github.com/arandu-io/hesape/view"
 
@@ -60,13 +60,23 @@ var (
 	_ hcontrollers.Destroyer = (*PurchaseOrderController)(nil)
 )
 
-// Index renders the listing, one page at a time.
+// Index renders the listing: the search, the order, the facets, the page and its
+// size, and the columns the reader hid, all read from the query string.
+//
+// The query string is read through the service's listing, which keeps what it
+// declares and drops the rest, so nothing here names a column or a size. The
+// table is the one part of the page the server also answers alone: a control of
+// the table asks for it by naming it as the htmx target, and every other request
+// to the same address -- a direct visit, a boosted link, a history restore --
+// gets the whole page.
 func (c *PurchaseOrderController) Index(ctx *hhttp.Context) error {
 	// The supplier the person navigated to. The service loads it under
 	// its own policy and lists by the one it loaded.
 	parent := ctx.Param("supplier")
 	who, _ := ctx.User()
-	found, page, err := c.svc.List(ctx.Ctx(), who, parent, pagination.ResolveCurrentPage(ctx.Request.URL, ""))
+	listURL := ctx.URL("suppliers.purchase-orders.index", parent)
+	state := c.svc.Listing().ParseURL(ctx.Request.URL)
+	found, result, err := c.svc.List(ctx.Ctx(), who, parent, state, listURL)
 	if err != nil {
 		return err
 	}
@@ -75,12 +85,17 @@ func (c *PurchaseOrderController) Index(ctx *hhttp.Context) error {
 	for _, p := range found {
 		rows = append(rows, c.row(ctx, p))
 	}
-	return ctx.View("purchase-orders.index", views.PurchaseOrdersIndexData{
+	data := views.PurchaseOrdersIndexData{
 		Page:           view.New(ctx, "Purchase orders"),
 		PurchaseOrders: rows,
+		Result:         result,
+		ListURL:        listURL,
 		NewURL:         ctx.URL("suppliers.purchase-orders.create", parent),
-		NextURL:        page.SetPath(ctx.URL("suppliers.purchase-orders.index", parent)).NextPageURL(),
-	})
+	}
+	if ctx.Targets(views.PurchaseOrdersTableID) {
+		return ctx.Fragment(http.StatusOK, "partials.purchase-orders-table", data)
+	}
+	return ctx.View("purchase-orders.index", data)
 }
 
 // Show renders one record.

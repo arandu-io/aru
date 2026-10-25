@@ -18,27 +18,97 @@ import (
 // -- and it once compared created_at while ordering by whatever q.Sort named, so
 // pages skipped rows and repeated rows, silently and with no error.
 //
-// The page is the Model's now: an order the code fixes, a tiebreak on the key so
-// two rows created in the same instant keep their place, and the paginator the
-// Builder already has. Nothing from the request names a column.
+// The page is the Model's now, and so is what the request may ask of it: the
+// service declares the listing once -- the columns searched and ordered by, the
+// page sizes, the default order and its tie-break on the key -- the controller
+// reads the query string through it, and the Model's Listing runs the page, the
+// total and the facet counts under the Grant. Nothing from the request names a
+// column, a direction or a size.
 func TestTheListingPagesThroughTheModel(t *testing.T) {
 	for _, tenant := range []bool{true, false} {
 		files := byName(t, spec(tenant))
 		service := files["PurchaseOrderService.go"]
+		// gofmt aligns the values of a literal, so the spacing is not the claim.
+		flat := strings.Join(strings.Fields(service), " ")
 
-		if !strings.Contains(service, `models.PurchaseOrders(s.db).Latest().OrderBy("id").`) ||
-			!strings.Contains(service, "SimplePaginate(ctx, g, purchaseOrderPerPage, page, pagination.Options{})") {
-			t.Errorf("tenant=%v: the listing does not page through the Model's paginator in a fixed order", tenant)
+		for _, want := range []string{
+			"pagination.NewListing(pagination.ListingSpec{",
+			`DefaultSort: "created_at"`,
+			"DefaultDir: pagination.SortDesc",
+			`TieBreak: "id"`,
+			"models.PurchaseOrders(s.db).Listing(ctx, g, state, path)",
+			"func (s *PurchaseOrderService) Listing() *pagination.Listing",
+		} {
+			if !strings.Contains(flat, want) {
+				t.Errorf("tenant=%v: the service does not declare and run the listing (no %q)", tenant, want)
+			}
 		}
-		for _, handRolled := range []string{"q.Sort", "q.Cursor", "Sortable", "after.Where("} {
+		for _, handRolled := range []string{"q.Sort", "q.Cursor", "Sortable", "after.Where(", "SimplePaginate", "OrderBy(", "PerPage ="} {
 			if strings.Contains(service, handRolled) {
-				t.Errorf("tenant=%v: the service still pages by hand: %s", tenant, handRolled)
+				t.Errorf("tenant=%v: the service still pages or orders by hand: %s", tenant, handRolled)
 			}
 		}
 
 		controller := files["PurchaseOrderController.go"]
-		if strings.Contains(controller, `ctx.Query("sort")`) || strings.Contains(controller, `ctx.Query("limit")`) {
-			t.Errorf("tenant=%v: the controller hands a request value to the listing's order or size", tenant)
+		if !strings.Contains(controller, "c.svc.Listing().ParseURL(ctx.Request.URL)") {
+			t.Errorf("tenant=%v: the controller does not read the query string through the service's listing", tenant)
+		}
+		for _, raw := range []string{`ctx.Query("sort")`, `ctx.Query("limit")`, `ctx.Query("per_page")`, `ctx.Query("dir")`, "ResolveCurrentPage"} {
+			if strings.Contains(controller, raw) {
+				t.Errorf("tenant=%v: the controller hands a request value to the listing's order or size: %s", tenant, raw)
+			}
+		}
+	}
+}
+
+// TestTheListingColumnsAreTheSameInTheServiceAndTheView: the table's column keys
+// are the public keys the service's listing declares, for the sort and for the
+// columns that can be hidden. A key the listing does not know changes nothing --
+// the sort arrow would draw and do nothing -- so the two are compared here, from
+// the same field list.
+func TestTheListingColumnsAreTheSameInTheServiceAndTheView(t *testing.T) {
+	files := byName(t, spec(true))
+	service, view := files["PurchaseOrderService.go"], files["index.kyse.go"]
+	flat := strings.Join(strings.Fields(service), " ")
+
+	for _, column := range []string{"reference", "supplier_email", "total", "approved", "notes", "delivery_date", "created_at"} {
+		if !strings.Contains(flat, `"`+column+`": "`+column+`",`) {
+			t.Errorf("the service's listing does not declare a sort for %q", column)
+		}
+		if !strings.Contains(view, `Key: "`+column+`", Sortable: true`) {
+			t.Errorf("the index view has no sortable column for %q", column)
+		}
+	}
+	// Searched: the columns that hold text, and only those.
+	searched := service[strings.Index(service, "Search: []string{"):]
+	searched = searched[:strings.Index(searched, "},")]
+	for _, column := range []string{"reference", "supplier_email", "notes"} {
+		if !strings.Contains(searched, `"`+column+`"`) {
+			t.Errorf("the listing does not search %q, which holds text", column)
+		}
+	}
+	for _, column := range []string{"total", "approved", "delivery_date"} {
+		if strings.Contains(searched, `"`+column+`"`) {
+			t.Errorf("the listing searches %q, which does not hold text", column)
+		}
+	}
+	// The first column is the link to the record and is not hideable.
+	hideable := service[strings.Index(service, "Hideable: []string{"):]
+	hideable = hideable[:strings.Index(hideable, "},")]
+	if strings.Contains(hideable, `"reference"`) {
+		t.Error("the listing lets the column that links to the record be hidden")
+	}
+	for _, other := range []string{"total", "created_at"} {
+		if !strings.Contains(hideable, `"`+other+`"`) {
+			t.Errorf("the listing does not let %q be hidden", other)
+		}
+	}
+
+	// One pager: the table's own. A second one beside it is two sources of the
+	// page being shown.
+	for name, body := range files {
+		if strings.HasSuffix(name, ".kyse.go") && strings.Contains(body, "components.Pagination(") {
+			t.Errorf("%s draws a pager of its own beside the table's", name)
 		}
 	}
 }
@@ -119,7 +189,7 @@ func TestNoGeneratedFileWritesAnAddress(t *testing.T) {
 				// module path and carries the resource as its last segment. It
 				// is an import, not an address, and it is the one place the
 				// resource legitimately appears inside a quoted string.
-				if strings.Contains(line, `views "`) {
+				if strings.Contains(line, `views "`) || strings.Contains(line, "/storage/framework/views/") {
 					continue
 				}
 				if strings.Contains(line, "/purchase-orders") || strings.Contains(line, "/auth/login") {

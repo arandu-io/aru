@@ -3,10 +3,13 @@ package unit_test
 import (
 	"context"
 	"errors"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/arandu-io/hesape/auth"
 	"github.com/arandu-io/hesape/database/model"
+	"github.com/arandu-io/hesape/pagination"
 
 	models "example.test/project/app/Models"
 	policies "example.test/project/app/Policies"
@@ -45,7 +48,7 @@ func TestEveryPurchaseOrderReadRequiresAuthorization(t *testing.T) {
 			return err
 		},
 		"List": func() error {
-			_, _, err := svc.List(ctx, anonymous, 1)
+			_, _, err := svc.List(ctx, anonymous, svc.Listing().Parse(nil), "")
 			return err
 		},
 		"Delete": func() error {
@@ -77,6 +80,47 @@ func TestThePurchaseOrderPolicyDeniesWhatItDoesNotKnow(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("an action with no rule was allowed: the policy falls through to allowed")
+	}
+}
+
+// TestThePurchaseOrderListingDropsWhatItDoesNotDeclare feeds the listing the query
+// string a hostile reader would write -- a sort that is a statement, a direction
+// that is not one, a page size and a page nobody offered, a search made only of
+// wildcards, columns that were never hideable -- and asks what it kept. It keeps
+// the defaults: the request cannot name a column, a size or a page the listing
+// did not declare, and it needs no database to prove it.
+func TestThePurchaseOrderListingDropsWhatItDoesNotDeclare(t *testing.T) {
+	listing := services.NewPurchaseOrderService(nil).Listing()
+
+	state := listing.Parse(url.Values{
+		"sort":     {"id; drop table users; --"},
+		"dir":      {"sideways"},
+		"per_page": {"1000000"},
+		"page":     {"-4"},
+		"q":        {strings.Repeat("%", 1000)},
+		"hide":     {"id", "tenant_id", "password"},
+	})
+
+	for _, order := range state.Order() {
+		// A column the spec declares sortable, or the tie-break on the key.
+		if !listing.Sortable(order.Column) && order.Column != "id" {
+			t.Errorf("the listing orders by %q, a column its spec does not declare", order.Column)
+		}
+	}
+	if state.SortKey() != "created_at" || state.Direction() != pagination.SortDesc {
+		t.Errorf("the sort is %q %s, want the default: created_at desc", state.SortKey(), state.Direction())
+	}
+	if state.PerPage() != listing.DefaultPageSize() {
+		t.Errorf("the page size is %d, want the default %d", state.PerPage(), listing.DefaultPageSize())
+	}
+	if state.Page() != 1 {
+		t.Errorf("the page is %d, want 1", state.Page())
+	}
+	if len([]rune(state.Search())) > 200 {
+		t.Errorf("the search kept %d characters, want at most 200", len([]rune(state.Search())))
+	}
+	if hidden := state.Hidden(); len(hidden) != 0 {
+		t.Errorf("the listing hid %v, columns it never declared hideable", hidden)
 	}
 }
 

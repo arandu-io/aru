@@ -1,6 +1,7 @@
 package gen
 
-// The four screens: the listing, one record, the empty form and the filled one.
+// The five views: the listing, the table the listing draws, one record, the
+// empty form and the filled one.
 //
 // They are written in kyse, under resources/views/<resource>/ -- with the
 // directives kyse has and no others. The set is closed: what does not fit a
@@ -43,6 +44,7 @@ package <%.ViewsPackage%>
 import (
 	"fmt"
 
+	"github.com/arandu-io/hesape/pagination"
 	"github.com/arandu-io/hesape/view"
 	"github.com/arandu-io/kyse/components"
 )
@@ -56,18 +58,30 @@ type <%.ViewData "index"%> struct {
 	view.Page
 	// <%.Plural%> is the page of records.
 	<%.Plural%> []<%.RowStruct%>
+	// Result is what the service's List returned beside the rows: the listing
+	// state that was read, the page with its total, and the count of every facet
+	// value. The table is drawn from it and nothing else about the listing is
+	// copied out, so the pager, the search box and the sort arrows can never
+	// disagree about what is on screen.
+	Result *pagination.ListingResult
+	// ListURL is the address of the listing itself, which every control of the
+	// table is built on. It is addressed by route name in the controller rather
+	// than written here as a path.
+	ListURL string
 	// NewURL is where the "new" button goes: the create screen, addressed by
 	// route name in the controller rather than written here as a path. A view
 	// has no route table, so a link written here could only be a literal -- and
 	// a literal keeps rendering after the route moves.
 	NewURL string
-	// NextURL is the following page of the listing. It is empty on the last
-	// page, and the link is not rendered then.
-	NextURL string
 }
 
 // Compile-time proof that this page fits the layout it extends.
 var _ view.Layout = <%.ViewData "index"%>{}
+
+// <%.TableIDConst%> is the id of the element the table is drawn into. A control
+// of the table names it as the htmx target, and <%.Controller%>.Index reads it
+// from HX-Target to answer the table alone instead of the whole page.
+const <%.TableIDConst%> = "<%.TableID%>"
 
 // <%.RowStruct%> is one record, formatted by the controller: what the listing
 // and the record show, and what the edit form starts at.
@@ -83,9 +97,13 @@ type <%.RowStruct%> struct {
 	Created string
 }
 
-// <%.Entity%>IndexTable adapts the server page to the native Kyse DataTable.
-// The Service pages the listing; the component owns only the rows and column
-// presentation of the page it was handed.
+// <%.Entity%>IndexTable adapts the page the service listed to the Kyse DataTable.
+//
+// The state of the listing -- the search, the order, the page and its size, the
+// hidden columns -- is the result's, and every address the table draws is built
+// from it. What is written here is only the columns and how a row becomes cells.
+// A column's Key is the public key the listing declares in the service, for the
+// sort and for hiding: a key the listing does not declare changes nothing.
 func <%.Entity%>IndexTable(data <%.ViewData "index"%>) components.DataTableProps {
 	rows := make([]components.TableRow, 0, len(data.<%.Plural%>))
 	for _, <%.Unexported%> := range data.<%.Plural%> {
@@ -103,13 +121,19 @@ func <%.Entity%>IndexTable(data <%.ViewData "index"%>) components.DataTableProps
 		})
 	}
 	return components.DataTableProps{
-		ID: "<%.Resource%>-index",
+		ID: <%.TableIDConst%>,
 		Label: data.Title,
-		ColumnsLabel: "Columns",
+		URL: data.ListURL,
+		Result: data.Result,
+		PageData: data.Page,<%if .SearchFields%>
+		Searchable: true,<%end%>
+		HeaderMenu: true,
+		FullPager: true,
+		SelectName: "ids",
 		Columns: []components.TableColumn{
-			{Label: "<%.FirstField.Label%>", Key: "<%.FirstField.Column%>"},
-<%range .RestFields%>			{Label: "<%.Label%>", Key: "<%.Column%>", Hideable: true},
-<%end%>			{Label: "Created", Key: "created_at", Hideable: true},
+			{Label: "<%.FirstField.Label%>", Key: "<%.FirstField.Column%>", Sortable: true},
+<%range .RestFields%>			{Label: "<%.Label%>", Key: "<%.Column%>", Sortable: true, Hideable: true},
+<%end%>			{Label: "Created", Key: "created_at", Sortable: true, Hideable: true},
 		},
 		Rows: rows,
 		Empty: components.EmptyProps{
@@ -134,14 +158,45 @@ func <%.Entity%>IndexTable(data <%.ViewData "index"%>) components.DataTableProps
 		<a class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" href="{{ .NewURL }}">New <%.Human%></a>
 	</div>
 
+	{{-- The table is a file of its own, because it is the one part of this page
+	     the server also answers alone: a search, a sort, a facet, a page step or
+	     a column switch replaces it and nothing else. @include hands this page's
+	     data over unchanged. The pager is the table's own; there is no second
+	     one beside it. --}}
 	<div class="mt-8">
-		{!! components.DataTable(<%.Entity%>IndexTable(.)) !!}
+		@include('<%.TablePartial%>')
 	</div>
-
-	@if(d.NextURL != "")
-		<a class="mt-6 inline-block text-sm underline underline-offset-2" href="{{ .NextURL }}">Next page</a>
-	@endif
 @endsection
+`
+
+// viewTableTemplate is the table of the listing, drawn on its own.
+//
+// It lives in resources/views/partials, because it is a piece of a page and not
+// a page: the index draws it with @include, and the controller answers it alone
+// when a control of the table asks for it. Both draw from this one template, so
+// the fragment can never differ from the table inside the page. Its data is the
+// index's own, under another name, so @include hands it over unchanged.
+const viewTableTemplate = `//go:build kyse
+
+// Package partials holds the parts of a screen the server answers on their own.
+package partials
+
+import (
+	"github.com/arandu-io/kyse/components"
+
+	<%.ViewsPackage%> "<%.ViewsImport%>"
+)
+
+@go
+// <%.Plural%>TableData is what the table of the <%.Humans%> listing draws.
+//
+// It is the listing page's own data. The page draws this file with @include,
+// which hands its data over unchanged, and <%.Controller%>.Index fills the same
+// struct when it answers the table alone, so both draw from one template.
+type <%.Plural%>TableData = <%.ViewsPackage%>.<%.ViewData "index"%>
+@endgo
+
+{!! components.DataTable(<%.ViewsPackage%>.<%.Entity%>IndexTable(.)) !!}
 `
 
 const viewShowTemplate = `//go:build kyse

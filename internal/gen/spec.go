@@ -729,6 +729,36 @@ func (m Module) RestFields() []Field {
 	return m.Fields[1:]
 }
 
+// SearchFields are the fields the listing's search looks in: the ones that hold
+// text. A number or a date is not searched with "contains", and an empty list
+// leaves the listing without a search box.
+func (m Module) SearchFields() []Field {
+	var out []Field
+	for _, f := range m.Fields {
+		if f.IsString() {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// TableID is the id of the element the listing's table is drawn into, which is
+// also what the controller reads from HX-Target to tell a request for the table
+// from a request for the page.
+func (m Module) TableID() string { return m.Resource() + "-table" }
+
+// TablePartial is the name of the view that draws the listing's table alone:
+// the one the index includes and the controller answers to a control of the
+// table. It lives in resources/views/partials, as a fragment does.
+func (m Module) TablePartial() string { return "partials." + m.Resource() + "-table" }
+
+// TableIDConst is the constant of the compiled views that holds TableID.
+func (m Module) TableIDConst() string { return m.Plural() + "TableID" }
+
+// ListingVar is the package-level listing of the service. The services package
+// holds every module's files, so the name carries the entity.
+func (m Module) ListingVar() string { return m.Unexported() + "Listing" }
+
 // Receiver is the short receiver name used in generated methods.
 func (m Module) Receiver() string {
 	initial := strings.ToLower(m.Entity()[:1])

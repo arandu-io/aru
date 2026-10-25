@@ -210,6 +210,7 @@ const serviceTemplate = `package services
 
 import (
 	"context"
+	"fmt"
 {{- if .HasEmail}}
 	"strings"
 {{- end}}
@@ -224,10 +225,57 @@ import (
 	requests "{{.RequestsImport}}"
 )
 
-// {{.Unexported}}PerPage is how many {{.Table}} one page of the listing holds. A
-// listing is always a page, never everything: an unbounded query is how one
-// page load takes a database down.
-const {{.Unexported}}PerPage = 25
+// {{.ListingVar}} declares, once, what the listing of {{.Humans}} may search,
+// order by, page by and hide. A listing is always a page, never everything: an
+// unbounded query is how one page load takes a database down.
+//
+// Nothing the request carries names a column. The controller reads the request
+// through this value, and it drops whatever it does not declare -- a sort that
+// is not a key below, a page size that is not offered, a direction that is
+// neither asc nor desc -- so a hostile query string falls back to the default
+// instead of reaching the query. Every column below is written here, in code.
+//
+// The Search columns hold text. A facet -- a filter over a column with a short
+// list of values, such as a status -- is one more entry of Facets, with the
+// values listed in the spec:
+//
+//	Facets: []pagination.FacetSpec{{"{{"}}Key: "status", Column: "status", Values: []string{"open", "done"}{{"}}"}},
+//
+// and a DataTableFilter of the same Key in the index view draws it.
+var {{.ListingVar}} = func() *pagination.Listing {
+	listing, err := pagination.NewListing(pagination.ListingSpec{
+{{- if .SearchFields}}
+		Search: []string{
+{{- range .SearchFields}}
+			{{quote .Column}},
+{{- end}}
+		},
+{{- end}}
+		Sorts: map[string]string{
+{{- range .Fields}}
+			{{quote .Column}}: {{quote .Column}},
+{{- end}}
+			"created_at": "created_at",
+		},
+		DefaultSort: "created_at",
+		DefaultDir:  pagination.SortDesc,
+		TieBreak:    "id",
+		PageSizes:   []int{10, 25, 50},
+		DefaultPageSize: 25,
+		Hideable: []string{
+{{- range .RestFields}}
+			{{quote .Column}},
+{{- end}}
+			"created_at",
+		},
+	})
+	if err != nil {
+		// A spec the package refuses is a mistake in this file, and it is found
+		// when the program starts and not on the first request.
+		panic(fmt.Sprintf("services: the {{.Humans}} listing: %v", err))
+	}
+	return listing
+}()
 
 {{template "serviceStruct" .}}{{template "serviceCreate" .}}// Get returns one {{.Name}}.
 //
@@ -263,12 +311,19 @@ func (s *{{.ServiceType}}) Editable(ctx context.Context, actor auth.Subject, id 
 	return found, nil
 }
 
+// Listing is what the listing of {{.Humans}} accepts. The controller reads the
+// request through it and hands the state it returns to List.
+func (s *{{.ServiceType}}) Listing() *pagination.Listing { return {{.ListingVar}} }
+
 {{- if .Parent}}
-// List returns one page of the {{.Table}} of one {{.ParentParam}}, newest
-// first, and where the previous and the next page are. The {{.ParentParam}} is
-// loaded under its own policy first, and the page is filtered by the one that
-// was loaded -- not by the id the path carried.
-func (s *{{.ServiceType}}) List(ctx context.Context, actor auth.Subject, {{.ParentArg}} string, page int) (models.{{.Entity}}Collection, *pagination.Page, error) {
+
+// List returns one page of the {{.Table}} of one {{.ParentParam}} as the listing
+// state asks -- the search, the order, the page and its size -- and the result
+// a table is drawn from, newest first unless the state orders otherwise. path
+// is the address the listing is served at, which its links are built on. The
+// {{.ParentParam}} is loaded under its own policy first, and the page is
+// filtered by the one that was loaded -- not by the id the path carried.
+func (s *{{.ServiceType}}) List(ctx context.Context, actor auth.Subject, {{.ParentArg}} string, state pagination.ListingState, path string) (models.{{.Entity}}Collection, *pagination.ListingResult, error) {
 	parent, err := s.parents.Get(ctx, actor, {{.ParentArg}})
 	if err != nil {
 		return nil, nil, err
@@ -277,19 +332,25 @@ func (s *{{.ServiceType}}) List(ctx context.Context, actor auth.Subject, {{.Pare
 	if err != nil {
 		return nil, nil, err
 	}
-	return models.{{.Constructor}}(s.db).Where("{{.ParentColumn}}", parent.ID).Latest().OrderBy("id").
-		SimplePaginate(ctx, g, {{.Unexported}}PerPage, page, pagination.Options{})
+	return models.{{.Constructor}}(s.db).Where("{{.ParentColumn}}", parent.ID).Listing(ctx, g, state, path)
 }
 {{- else}}
-// List returns one page of {{.Table}}, newest first, and where the
-// previous and the next page are.
-func (s *{{.ServiceType}}) List(ctx context.Context, actor auth.Subject, page int) (models.{{.Entity}}Collection, *pagination.Page, error) {
+
+// List returns one page of {{.Table}} as the listing state asks -- the search,
+// the order, the page and its size -- and the result a table is drawn from,
+// newest first unless the state orders otherwise. path is the address the
+// listing is served at, which its links are built on.
+//
+// The state is the one {{.ServiceType}}.Listing read: a state read by another
+// listing is refused, because it knows none of these columns.
+func (s *{{.ServiceType}}) List(ctx context.Context, actor auth.Subject, state pagination.ListingState, path string) (models.{{.Entity}}Collection, *pagination.ListingResult, error) {
 	g, err := auth.Authorize(ctx, s.policy, actor, policies.{{.Entity}}List, models.{{.Entity}}{})
 	if err != nil {
 		return nil, nil, err
 	}
-	return models.{{.Constructor}}(s.db).Latest().OrderBy("id").
-		SimplePaginate(ctx, g, {{.Unexported}}PerPage, page, pagination.Options{})
+	// Listing runs the page, the total and the count of every facet value, each
+	// under this Grant and so each filtered by its tenant.
+	return models.{{.Constructor}}(s.db).Listing(ctx, g, state, path)
 }
 {{- end}}
 
@@ -511,13 +572,13 @@ const requestRulesTemplate = `{{define "requestFields"}}
 const controllerTemplate = `package controllers
 
 import (
+	"net/http"
 {{- if .NeedsStrconv}}
 	"strconv"
+{{- end}}
 
-{{end}}
 	hcontrollers "github.com/arandu-io/hesape/routing/controllers"
 	hhttp "github.com/arandu-io/hesape/http"
-	"github.com/arandu-io/hesape/pagination"
 	"github.com/arandu-io/hesape/view"
 
 	requests "{{.RequestsImport}}"
@@ -574,7 +635,15 @@ var (
 	_ hcontrollers.Destroyer = (*{{.Controller}})(nil)
 )
 
-// Index renders the listing, one page at a time.
+// Index renders the listing: the search, the order, the facets, the page and its
+// size, and the columns the reader hid, all read from the query string.
+//
+// The query string is read through the service's listing, which keeps what it
+// declares and drops the rest, so nothing here names a column or a size. The
+// table is the one part of the page the server also answers alone: a control of
+// the table asks for it by naming it as the htmx target, and every other request
+// to the same address -- a direct visit, a boosted link, a history restore --
+// gets the whole page.
 func (c *{{.Controller}}) Index(ctx *hhttp.Context) error {
 {{- if .Parent}}
 	// The {{.ParentParam}} the person navigated to. The service loads it under
@@ -582,7 +651,9 @@ func (c *{{.Controller}}) Index(ctx *hhttp.Context) error {
 	parent := ctx.Param("{{.ParentParam}}")
 {{- end}}
 	who, _ := ctx.User()
-	found, page, err := c.svc.List(ctx.Ctx(), who, {{if .Parent}}parent, {{end}}pagination.ResolveCurrentPage(ctx.Request.URL, ""))
+	listURL := ctx.URL("{{.RouteName "index"}}"{{if .Parent}}, parent{{end}})
+	state := c.svc.Listing().ParseURL(ctx.Request.URL)
+	found, result, err := c.svc.List(ctx.Ctx(), who, {{if .Parent}}parent, {{end}}state, listURL)
 	if err != nil {
 		return err
 	}
@@ -591,12 +662,17 @@ func (c *{{.Controller}}) Index(ctx *hhttp.Context) error {
 	for _, {{.Receiver}} := range found {
 		rows = append(rows, c.row(ctx, {{.Receiver}}))
 	}
-	return ctx.View("{{.ViewName "index"}}", views.{{.ViewData "index"}}{
+	data := views.{{.ViewData "index"}}{
 		Page: view.New(ctx, "{{.HumansTitle}}"),
 		{{.Plural}}: rows,
+		Result:     result,
+		ListURL:    listURL,
 		NewURL:     ctx.URL("{{.RouteName "create"}}"{{if .Parent}}, parent{{end}}),
-		NextURL:    page.SetPath(ctx.URL("{{.RouteName "index"}}"{{if .Parent}}, parent{{end}})).NextPageURL(),
-	})
+	}
+	if ctx.Targets(views.{{.TableIDConst}}) {
+		return ctx.Fragment(http.StatusOK, "{{.TablePartial}}", data)
+	}
+	return ctx.View("{{.ViewName "index"}}", data)
 }
 
 // Show renders one record.
@@ -738,10 +814,13 @@ const testTemplate = `package unit_test
 import (
 	"context"
 	"errors"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/arandu-io/hesape/auth"
 	"github.com/arandu-io/hesape/database/model"
+	"github.com/arandu-io/hesape/pagination"
 
 	models "{{.ModelsImport}}"
 	policies "{{.PoliciesImport}}"
@@ -780,7 +859,7 @@ func TestEvery{{.Entity}}ReadRequiresAuthorization(t *testing.T) {
 			return err
 		},
 		"List": func() error {
-			_, _, err := svc.List(ctx, anonymous, {{if .Parent}}"{{.ParentParam}}", {{end}}1)
+			_, _, err := svc.List(ctx, anonymous, {{if .Parent}}"{{.ParentParam}}", {{end}}svc.Listing().Parse(nil), "")
 			return err
 		},
 		"Delete": func() error {
@@ -812,6 +891,47 @@ func TestThe{{.Entity}}PolicyDeniesWhatItDoesNotKnow(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("an action with no rule was allowed: the policy falls through to allowed")
+	}
+}
+
+// TestThe{{.Entity}}ListingDropsWhatItDoesNotDeclare feeds the listing the query
+// string a hostile reader would write -- a sort that is a statement, a direction
+// that is not one, a page size and a page nobody offered, a search made only of
+// wildcards, columns that were never hideable -- and asks what it kept. It keeps
+// the defaults: the request cannot name a column, a size or a page the listing
+// did not declare, and it needs no database to prove it.
+func TestThe{{.Entity}}ListingDropsWhatItDoesNotDeclare(t *testing.T) {
+	listing := services.New{{.ServiceType}}(nil{{if .Parent}}, services.New{{.ParentServiceType}}(nil){{end}}).Listing()
+
+	state := listing.Parse(url.Values{
+		"sort":     {"id; drop table users; --"},
+		"dir":      {"sideways"},
+		"per_page": {"1000000"},
+		"page":     {"-4"},
+		"q":        {strings.Repeat("%", 1000)},
+		"hide":     {"id", "tenant_id", "password"},
+	})
+
+	for _, order := range state.Order() {
+		// A column the spec declares sortable, or the tie-break on the key.
+		if !listing.Sortable(order.Column) && order.Column != "id" {
+			t.Errorf("the listing orders by %q, a column its spec does not declare", order.Column)
+		}
+	}
+	if state.SortKey() != "created_at" || state.Direction() != pagination.SortDesc {
+		t.Errorf("the sort is %q %s, want the default: created_at desc", state.SortKey(), state.Direction())
+	}
+	if state.PerPage() != listing.DefaultPageSize() {
+		t.Errorf("the page size is %d, want the default %d", state.PerPage(), listing.DefaultPageSize())
+	}
+	if state.Page() != 1 {
+		t.Errorf("the page is %d, want 1", state.Page())
+	}
+	if len([]rune(state.Search())) > 200 {
+		t.Errorf("the search kept %d characters, want at most 200", len([]rune(state.Search())))
+	}
+	if hidden := state.Hidden(); len(hidden) != 0 {
+		t.Errorf("the listing hid %v, columns it never declared hideable", hidden)
 	}
 }
 // arandu:begin custom

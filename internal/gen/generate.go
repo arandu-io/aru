@@ -127,6 +127,14 @@ func Generate(m Module) ([]File, error) {
 		out = append(out, File{Path: filepath.Join(views, v.name+".kyse.go"), Content: content})
 	}
 
+	// The table of the listing, as a partial: a piece of a page, answered alone
+	// to a control of the table and included by the index.
+	table, err := render("table.kyse.go", viewTableTemplate, m)
+	if err != nil {
+		return nil, fmt.Errorf("table: %w", err)
+	}
+	out = append(out, File{Path: filepath.Join("resources", "views", "partials", m.Resource()+"-table.kyse.go"), Content: table})
+
 	return out, nil
 }
 

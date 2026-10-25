@@ -36,9 +36,10 @@ func (Invoices) Description() string { return "Invoices." }
 // MimeType is what the content is.
 func (Invoices) MimeType() string { return "text/plain" }
 
-// Read lists the first page through the service, as who is asking.
+// Read lists the first page, in the listing's default order, through the service
+// as who is asking.
 func (res Invoices) Read(ctx context.Context, s auth.Subject) (mcp.Response, error) {
-	found, _, err := res.svc.List(ctx, s, 1)
+	found, _, err := res.svc.List(ctx, s, res.svc.Listing().Parse(nil), "")
 	if err != nil {
 		return mcp.Response{}, err
 	}

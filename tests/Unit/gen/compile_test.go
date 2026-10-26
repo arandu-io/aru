@@ -47,14 +47,14 @@ const generatedModulePath = "example.test/project"
 // a person. Keeping the literal here makes the generator harness compare its
 // dependency graph with the independently published project rather than with a
 // sibling checkout that a build agent does not have.
-const publishedSkeletonModule = "github.com/arandu-io/arandu@v0.42.0"
+const publishedSkeletonModule = "github.com/arandu-io/arandu@v0.43.0"
 
 // harnessLeadsSkeleton is true while `published` is ahead of the skeleton named
 // above, which is the window between a release the generated code needs and the
 // skeleton release that takes it. Set it to false in the same change that moves
 // publishedSkeletonModule to the skeleton requiring these tags, and the equality
 // is required again.
-const harnessLeadsSkeleton = true
+const harnessLeadsSkeleton = false
 
 // TestTheGeneratedModuleCompiles hands every generator's output to the Go
 // compiler.

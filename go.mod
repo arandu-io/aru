@@ -2,7 +2,10 @@ module github.com/arandu-io/aru
 
 go 1.26.10
 
-retract v0.37.0 // Does not pin the skeleton and could clone an incompatible moving project baseline.
+retract (
+	v0.81.0
+	v0.37.0 // Does not pin the skeleton and could clone an incompatible moving project baseline.
+)
 
 // The CLI lives in its own module on purpose. If it lived inside the framework,
 // every project that imports the framework would drag the CLI's dependencies

@@ -1,5 +1,23 @@
 # Release Notes
 
+## Unreleased
+
+### Fixed
+
+- `native:build` for Android: the manifest declares `uiMode` among the
+  configuration changes the activity handles itself, so the system changing
+  between the light and the dark mode no longer destroys and recreates the
+  activity -- the application keeps running and is told, which is what lets a
+  window follow the system's scheme at run time.
+- `native:build` for Android: the theme no longer paints the window white and
+  the bars a fixed translucent black. The window background is the light or the
+  dark palette's ground (`values` and `values-night`, with the release variants
+  `values-v21`, `values-v23` and `values-night-v21`), so an application opened in
+  the dark mode does not flash white before its first frame, and the system bars
+  are transparent, painted by the application with its own background. A light
+  device gets dark status icons from the first frame. The manifest and the theme
+  resources are checked by tests.
+
 ## [v0.81.3](https://github.com/arandu-io/aru/compare/v0.81.2...v0.81.3) - 2026-10-26
 
 **Full Changelog**: https://github.com/arandu-io/aru/compare/v0.81.2...v0.81.3

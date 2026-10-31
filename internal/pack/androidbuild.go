@@ -51,24 +51,72 @@ type manifestData struct {
 	PackageQueries []string
 }
 
+// The ground the window shows before the application has drawn anything, and
+// what the system's bars look like over it.
+//
+// The window background is the first thing a person sees when the application
+// opens, and it is the system's to paint: Ayra's own fill only arrives with the
+// first frame. A background fixed at white was a flash of white on a phone in
+// the dark mode, so the theme has a night variant, and the system picks the one
+// that matches its own setting -- which the activity keeps current, because the
+// manifest declares uiMode among the changes it handles itself.
+//
+// The bars are transparent: the application draws behind them and paints them
+// with its own background, and a fixed translucent black over a white page is a
+// grey band the application did not ask for. A light day gets dark icons on
+// them from the first frame; the shell takes over from there and follows the
+// scheme the application is in.
 const (
-	themes = `<?xml version="1.0" encoding="utf-8"?>
-<resources>
-	<style name="Theme.AyraApp" parent="android:style/Theme.NoTitleBar">
-		<item name="android:windowBackground">@android:color/white</item>
-	</style>
-</resources>`
-	themesV21 = `<?xml version="1.0" encoding="utf-8"?>
-<resources>
-	<style name="Theme.AyraApp" parent="android:style/Theme.NoTitleBar">
-		<item name="android:windowBackground">@android:color/white</item>
-
-		<item name="android:windowDrawsSystemBarBackgrounds">true</item>
-		<item name="android:navigationBarColor">#40000000</item>
-		<item name="android:statusBarColor">#40000000</item>
-	</style>
-</resources>`
+	// androidLightGround and androidDarkGround are the backgrounds of Ayra's light
+	// and dark palettes (theme.New), which a product's own theme lays over.
+	androidLightGround = "#FFFFFFFF"
+	androidDarkGround  = "#FF0A0A0A"
 )
+
+// androidTheme is Theme.AyraApp over a ground. bars adds the transparent system
+// bars, which the oldest releases do not have, and lightStatus the dark status
+// bar icons a light ground wants.
+func androidTheme(ground string, bars, lightStatus bool) string {
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<style name="Theme.AyraApp" parent="android:style/Theme.NoTitleBar">
+		<item name="android:windowBackground">` + ground + `</item>
+`)
+	if bars {
+		b.WriteString(`
+		<item name="android:windowDrawsSystemBarBackgrounds">true</item>
+		<item name="android:navigationBarColor">@android:color/transparent</item>
+		<item name="android:statusBarColor">@android:color/transparent</item>
+`)
+	}
+	if lightStatus {
+		b.WriteString(`		<item name="android:windowLightStatusBar">true</item>
+`)
+	}
+	b.WriteString(`	</style>
+</resources>`)
+	return b.String()
+}
+
+// androidThemeFile is one theme resource, by the directory it lives in.
+type androidThemeFile struct {
+	dir, xml string
+}
+
+// androidThemes are the theme resources of the package, in the directories the
+// system picks between. Android resolves a resource whole from the best
+// matching directory -- the night one first, then the newest release at or below
+// the device -- so every directory carries the full style.
+func androidThemes() []androidThemeFile {
+	return []androidThemeFile{
+		{"values", androidTheme(androidLightGround, false, false)},
+		{"values-v21", androidTheme(androidLightGround, true, false)},
+		{"values-v23", androidTheme(androidLightGround, true, true)},
+		{"values-night", androidTheme(androidDarkGround, false, false)},
+		{"values-night-v21", androidTheme(androidDarkGround, true, false)},
+	}
+}
 
 func init() {
 	if runtime.GOOS == "windows" {
@@ -305,10 +353,9 @@ func archiveAndroid(tmpDir string, bi *buildInfo, perms []string) (err error) {
 	aarw := newZipWriter(aar)
 	defer aarw.Close()
 	aarw.Create("R.txt")
-	themesXML := aarw.Create("res/values/themes.xml")
-	_, _ = themesXML.Write([]byte(themes))
-	themesXML21 := aarw.Create("res/values-v21/themes.xml")
-	_, _ = themesXML21.Write([]byte(themesV21))
+	for _, theme := range androidThemes() {
+		_, _ = aarw.Create("res/" + theme.dir + "/themes.xml").Write([]byte(theme.xml))
+	}
 	permissions, features := getPermissions(perms)
 	// Disable input emulation on ChromeOS.
 	manifestBody, err := androidArchiveManifest(manifestData{
@@ -420,13 +467,14 @@ func exeAndroid(tmpDir string, tools *androidTools, bi *buildInfo, extraJars, pe
 		}
 		iconSnip = `android:icon="@mipmap/ic_launcher"`
 	}
-	err = os.WriteFile(filepath.Join(valDir, "themes.xml"), []byte(themes), 0o660)
-	if err != nil {
-		return err
-	}
-	err = os.WriteFile(filepath.Join(v21Dir, "themes.xml"), []byte(themesV21), 0o660)
-	if err != nil {
-		return err
+	for _, theme := range androidThemes() {
+		dir := filepath.Join(resDir, theme.dir)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(dir, "themes.xml"), []byte(theme.xml), 0o660); err != nil {
+			return err
+		}
 	}
 	resZip := filepath.Join(tmpDir, "resources.zip")
 	aapt2 := filepath.Join(tools.buildtools, "aapt2")
@@ -1063,7 +1111,7 @@ func androidManifest(data manifestData) ([]byte, error) {
 		<activity android:name="io.arandu.ayra.AyraActivity"
 			android:label="{{xml .AppName}}"
 			android:theme="@style/Theme.AyraApp"
-			android:configChanges="screenSize|screenLayout|smallestScreenSize|orientation|keyboardHidden"
+			android:configChanges="screenSize|screenLayout|smallestScreenSize|orientation|keyboardHidden|uiMode"
 			android:windowSoftInputMode="adjustResize"
 			android:launchMode="singleInstance"
 			android:exported="true">

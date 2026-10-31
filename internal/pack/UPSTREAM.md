@@ -121,6 +121,43 @@ project makes -- one per architecture, with cgo -- and none of it was reachable
 by the trim. `tests/Unit/buildcache` refuses a new `exec.Command("go", ...)`
 in any source that ships.
 
+### 9. Packages bring their own Java, and libraries are files the project names
+
+**Changed:** the Java compiled into an APK was the runtime's alone, and the
+only thing a package of the graph could add to a package was a precompiled
+`.jar` beside its Go. A package may now carry `android/*.java` and an
+`android/AndroidManifest.xml`, compiled with the runtime's Java and merged into
+the application's manifest only when the package is in the graph. Libraries are
+`.aar` and `.jar` files given with `-android-lib`: their classes join the
+compiler's path and the dex, their manifests are merged (permissions, features,
+queries, application children, with `${placeholders}` resolved and the tools
+attributes dropped), their resources are compiled with the application's, and
+the R classes their code reads are generated from the link. The dex step runs
+after the link, writes as many files as the methods need, and every one is
+appended to the package.
+
+**Not done, and left to the project:** resolving a library's dependencies. A
+set of `.aar` files has to be coherent -- one generation of AndroidX, the
+Android variant of a multiplatform library -- and a naive transitive resolution
+produced exactly the sets that fail (`com.android.support` beside AndroidX, a
+`-jvm` jar beside the Android archive). A resolver that reads Gradle's module
+metadata is a decision for the owner, and it would add a network dependency to a
+build that has none.
+
+**Also:** `google-services.json` becomes the string resources the Firebase
+libraries read, for the client whose package is the application id; the
+`notifications` permission package maps to `POST_NOTIFICATIONS` and, on iOS, to
+the remote-notification background mode and a check that the provisioning
+profile carries `aps-environment`.
+
+**Verified on the artifact:** an APK built from an application that imports the
+push and live packages carries the service and the permission in its manifest,
+the package's classes and the library's in its dex, and the Java-to-Go symbols
+exported by `libayra.so`; the same build against the real `firebase-messaging`
+set adds the library's provider and receiver and the resources made from
+`google-services.json`; an iOS simulator application built from the same source
+carries `UIBackgroundModes`.
+
 ## What was left behind
 
 The end-to-end tests, which drive a browser and an emulator through two more

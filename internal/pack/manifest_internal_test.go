@@ -86,6 +86,23 @@ func androidCorpus() map[string]manifestData {
 			TargetSDK: 35,
 			AppName:   "Faturas & Cobranças",
 		},
+		// What the packages and the libraries add to the application's own
+		// manifest: a permission, a service, a setting, an element of the
+		// manifest that is none of those, and what the application may query.
+		"with-merged-manifests": {
+			AppID:       "dev.local.probe",
+			Version:     Semver{Major: 1, Minor: 2, Patch: 3, VersionCode: 4},
+			MinSDK:      21,
+			TargetSDK:   35,
+			Permissions: []string{"android.permission.INTERNET", "android.permission.POST_NOTIFICATIONS"},
+			AppName:     "Probe",
+			TopLevel:    []string{`<permission android:name="dev.local.probe.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" android:protectionLevel="signature"/>`},
+			QueriesXML:  []string{`<intent><action android:name="android.intent.action.VIEW"/></intent>`},
+			Components: []string{
+				`<service android:name="io.arandu.ayra.push.AyraMessagingService" android:exported="false"><intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT"/></intent-filter></service>`,
+				`<meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="ayra_default"/>`,
+			},
+		},
 	}
 }
 
@@ -135,12 +152,16 @@ func iosCorpus() map[string]iosManifestData {
 	markup := base
 	markup.AppName = "Faturas & Cobranças"
 
+	push := base
+	push.BackgroundModes = []string{"remote-notification"}
+
 	return map[string]iosManifestData{
 		"plain":                  base,
 		"two-schemes":            twoSchemes,
 		"above-the-floor":        aboveTheFloor,
 		"the-other-platform":     television,
 		"name-with-markup-in-it": markup,
+		"remote-notifications":   push,
 	}
 }
 

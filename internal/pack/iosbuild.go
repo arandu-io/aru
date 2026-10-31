@@ -21,6 +21,7 @@ import (
 
 	"github.com/arandu-io/aru/internal/buildcache"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/tools/go/packages"
 )
 
 const (
@@ -118,7 +119,15 @@ func buildIOS(tmpDir, target string, bi *buildInfo) error {
 			}
 		}
 
-		if err := signApple(bi.appID, tmpDir, embedded, appDir, provisions); err != nil {
+		// A push notification needs the profile the application is signed with
+		// to carry the aps-environment entitlement. A profile without it signs
+		// and installs, and registering for notifications then fails on the
+		// device with no message that says why -- so it is checked here.
+		var required []string
+		if slices.Contains(graphPermissions(bi), "notifications") {
+			required = append(required, apsEnvironment)
+		}
+		if err := signApple(bi.appID, tmpDir, embedded, appDir, provisions, required...); err != nil {
 			return err
 		}
 		return zipDir(out, tmpDir, "Payload")
@@ -128,7 +137,11 @@ func buildIOS(tmpDir, target string, bi *buildInfo) error {
 }
 
 // signApple is shared between iOS and macOS.
-func signApple(appID, tmpDir, embedded, app string, provisions []string) error {
+//
+// required names entitlements the profile has to carry: a profile that lacks one
+// is skipped, and if no profile is left the error says which entitlement was
+// missing rather than that no profile matched.
+func signApple(appID, tmpDir, embedded, app string, provisions []string, required ...string) error {
 	provInfo := filepath.Join(tmpDir, "provision.plist")
 	var avail []string
 	var profileErrors []error
@@ -137,6 +150,7 @@ func signApple(appID, tmpDir, embedded, app string, provisions []string) error {
 		return err
 	}
 	matchedBundle := false
+	missingRequired := false
 	for _, prov := range provisions {
 		// Decode the provision file to a plist.
 		_, err = runCmd(exec.Command("security", "cms", "-D", "-i", prov, "-o", provInfo))
@@ -205,6 +219,11 @@ func signApple(appID, tmpDir, embedded, app string, provisions []string) error {
 			profileErrors = append(profileErrors, fmt.Errorf("read entitlements from %q: %w", prov, err))
 			continue
 		}
+		if missing := missingEntitlement(entitlements, required); missing != "" {
+			profileErrors = append(profileErrors, fmt.Errorf("the profile %q has no %s entitlement, which this application needs: enable Push Notifications for the identifier %q in the developer account and download the profile again", prov, missing, appID))
+			missingRequired = true
+			continue
+		}
 		entFile := filepath.Join(tmpDir, "entitlements.plist")
 		if err := os.WriteFile(entFile, []byte(entitlements), 0o660); err != nil {
 			return err
@@ -221,7 +240,9 @@ func signApple(appID, tmpDir, embedded, app string, provisions []string) error {
 		return err
 	}
 	var result error
-	if matchedBundle {
+	if missingRequired {
+		result = fmt.Errorf("sign: no provisioning profile for %q carries every entitlement the application needs", appID)
+	} else if matchedBundle {
 		result = fmt.Errorf("sign: no installed code-signing identity matches the provisioning profiles for bundle id %q", appID)
 	} else {
 		result = fmt.Errorf("sign: no valid provisioning profile found for bundle id %q among %v", appID, avail)
@@ -534,6 +555,8 @@ type iosManifestData struct {
 	SupportPlatform      string
 	RequiredCapabilities []string
 	Schemes              []string
+	// BackgroundModes are the UIBackgroundModes the application declares.
+	BackgroundModes []string
 }
 
 // iosManifestFor answers what a build says about itself.
@@ -570,8 +593,44 @@ func iosManifestFor(bi *buildInfo) iosManifestData {
 		SupportPlatform:      supportPlatform,
 		RequiredCapabilities: requiredCapabilities,
 		Schemes:              bi.schemes,
+		BackgroundModes:      iosBackgroundModes(bi),
 	}
 }
+
+// graphPermissions answers the permissions the application's packages ask for,
+// by the name of the permission package that asks.
+//
+// It is the same reading the Android build makes, shared so that a permission
+// package means the same thing on both platforms: it is a declaration in the
+// import graph, and what each platform does with it is its own.
+func graphPermissions(bi *buildInfo) []string {
+	if bi.graph == nil {
+		return nil
+	}
+	prefix := bi.runtime.path + "/permission/"
+	var found []string
+	_ = walkGraph(bi.graph, func(p *packages.Package) (bool, error) {
+		if name, ok := strings.CutPrefix(p.PkgPath, prefix); ok && !slices.Contains(found, name) {
+			found = append(found, name)
+		}
+		return true, nil
+	})
+	return found
+}
+
+// iosBackgroundModes answers what the application needs to be woken for. A
+// push notification that carries data and no alert reaches the application only
+// when it has declared the remote-notification mode.
+func iosBackgroundModes(bi *buildInfo) []string {
+	if slices.Contains(graphPermissions(bi), "notifications") {
+		return []string{"remote-notification"}
+	}
+	return nil
+}
+
+// apsEnvironment is the entitlement a profile carries when its application
+// identifier was enabled for push notifications.
+const apsEnvironment = "aps-environment"
 
 // iosInfoPlist writes the property list an iOS application is described by.
 func iosInfoPlist(data iosManifestData) ([]byte, error) {
@@ -624,7 +683,9 @@ func iosInfoPlist(data iosManifestData) ([]byte, error) {
 	<key>UIRequiresFullScreen</key>
 	<true/>
 	<key>UILaunchScreen</key>
-	<true/>
+	<true/>{{if .BackgroundModes}}
+	<key>UIBackgroundModes</key>
+	<array>{{range .BackgroundModes}}<string>{{xml .}}</string>{{end}}</array>{{end}}
     {{if .Schemes}}
 	<key>CFBundleURLTypes</key>
 	<array>
@@ -921,4 +982,15 @@ func zipDir(dst, base, dir string) (err error) {
 		return err
 	}
 	return zipf.Close()
+}
+
+// missingEntitlement answers the first of the required entitlements that the
+// property list does not have, and nothing when it has them all.
+func missingEntitlement(entitlements string, required []string) string {
+	for _, key := range required {
+		if !strings.Contains(entitlements, "<key>"+key+"</key>") {
+			return key
+		}
+	}
+	return ""
 }

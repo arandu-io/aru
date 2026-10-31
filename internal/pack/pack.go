@@ -94,6 +94,26 @@ type Options struct {
 	MinSDK    int
 	TargetSDK int
 
+	// Libraries are the Android libraries the application's Java calls: .aar and
+	// .jar files, or directories holding them. Their classes are compiled
+	// against and put in the dex, their manifests are merged into the
+	// application's and their resources are compiled in. The project chooses
+	// them and the packager downloads nothing: what a library is, and the terms
+	// it is used under, are the project's.
+	Libraries []string
+
+	// GoogleServices is the path of the project's google-services.json, which
+	// the Firebase libraries read their configuration from. Empty looks for the
+	// file beside the application's package, and finding none builds without
+	// it. The file holds the project's keys and is never part of the packager's
+	// output but as the string resources it is turned into.
+	GoogleServices string
+
+	// Placeholders give a value to the ${name} written in the manifests that
+	// packages and libraries carry. applicationId, pushChannelId and
+	// pushChannelName have values of their own, which these replace.
+	Placeholders map[string]string
+
 	// BuildMode is exe for something that runs and archive for something
 	// another build embeds. Empty is exe.
 	BuildMode string
@@ -236,6 +256,8 @@ func (o Options) apply(stdout, stderr io.Writer) func() {
 		signKey, signPass                                            string
 		notaryID, notaryPass, notaryTeamID                           string
 		schemes, pkgQueries                                          string
+		libraries, googleServices                                    string
+		placeholders                                                 map[string]string
 		appArgs                                                      []string
 		minsdk, targetsdk                                            int
 		printCommands, keepWorkdir                                   bool
@@ -246,6 +268,8 @@ func (o Options) apply(stdout, stderr io.Writer) func() {
 		*signKey, *signPass,
 		*notaryID, *notaryPass, *notaryTeamID,
 		*schemes, *pkgQueries,
+		*androidLibs, *googleServicesPath,
+		manifestPlaceholders,
 		appArgs,
 		*minsdk, *targetsdk,
 		*printCommands, *keepWorkdir,
@@ -270,6 +294,9 @@ func (o Options) apply(stdout, stderr io.Writer) func() {
 	*notaryTeamID = o.NotaryTeamID
 	*schemes = strings.Join(o.Schemes, ",")
 	*pkgQueries = strings.Join(o.Queries, ",")
+	*androidLibs = strings.Join(o.Libraries, string(os.PathListSeparator))
+	*googleServicesPath = o.GoogleServices
+	manifestPlaceholders = o.Placeholders
 	*minsdk = o.MinSDK
 	*targetsdk = o.TargetSDK
 	appArgs = o.Args
@@ -284,6 +311,8 @@ func (o Options) apply(stdout, stderr io.Writer) func() {
 		*signKey, *signPass = previous.signKey, previous.signPass
 		*notaryID, *notaryPass, *notaryTeamID = previous.notaryID, previous.notaryPass, previous.notaryTeamID
 		*schemes, *pkgQueries = previous.schemes, previous.pkgQueries
+		*androidLibs, *googleServicesPath = previous.libraries, previous.googleServices
+		manifestPlaceholders = previous.placeholders
 		appArgs = previous.appArgs
 		*minsdk, *targetsdk = previous.minsdk, previous.targetsdk
 		*printCommands, *keepWorkdir = previous.printCommands, previous.keepWorkdir
@@ -325,6 +354,13 @@ var (
 	notaryTeamID  = new(string)
 	schemes       = new(string)
 	pkgQueries    = new(string)
+
+	// androidLibs holds the library paths joined with the platform's path list
+	// separator, because a path may contain a comma and may not contain that.
+	androidLibs        = new(string)
+	googleServicesPath = new(string)
+	// manifestPlaceholders are the values the manifests' ${name} take.
+	manifestPlaceholders map[string]string
 
 	// appArgs is what the application is started with. It was read from the
 	// command line, and is a variable here for the same reason as the rest.

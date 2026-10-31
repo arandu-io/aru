@@ -43,6 +43,20 @@ type buildInfo struct {
 	schemes        []string
 	packageQueries []string
 
+	// libraries are the paths of the Android libraries named for this build,
+	// googleServices the path of the project's google-services.json and
+	// placeholders the values a manifest's ${name} take.
+	libraries      []string
+	googleServices string
+	placeholders   map[string]string
+
+	// androidJava, androidFragments and androidLibs are what the Android build
+	// reads out of the graph and the libraries: the Java and manifest fragments
+	// the packages carry, and the libraries opened for this build.
+	androidJava      []string
+	androidFragments []manifestSource
+	androidLibs      androidLibraries
+
 	// runtime is the package the application's window is opened by, found in
 	// the graph below.
 	runtime runtimePackage
@@ -115,6 +129,9 @@ func newBuildInfo(pkgPath string) (*buildInfo, error) {
 		notaryTeamID:   *notaryTeamID,
 		schemes:        getCommaList(*schemes),
 		packageQueries: getCommaList(*pkgQueries),
+		libraries:      splitPaths(*androidLibs),
+		googleServices: or(*googleServicesPath, defaultGoogleServices(pkgMetadata.Dir)),
+		placeholders:   manifestPlaceholders,
 		runtime:        runtimePkg,
 		graph:          graph,
 	}
@@ -198,6 +215,27 @@ func getCommaList(s string) (list []string) {
 		}
 	}
 	return list
+}
+
+// splitPaths splits a list of paths joined with the platform's separator.
+func splitPaths(list string) []string {
+	var paths []string
+	for _, p := range filepath.SplitList(list) {
+		if p = strings.TrimSpace(p); p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths
+}
+
+// defaultGoogleServices answers the google-services.json beside the
+// application's package when there is one, and nothing when there is not.
+func defaultGoogleServices(dir string) string {
+	path := filepath.Join(dir, "google-services.json")
+	if fileExists(path) {
+		return path
+	}
+	return ""
 }
 
 type packageMetadata struct {

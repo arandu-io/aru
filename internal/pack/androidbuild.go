@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"text/template"
@@ -49,6 +51,12 @@ type manifestData struct {
 	AppName        string
 	Schemes        []string
 	PackageQueries []string
+
+	// What the packages' and libraries' manifests add: whole elements, written
+	// as they were, with their placeholders resolved. See mergeManifests.
+	TopLevel   []string
+	QueriesXML []string
+	Components []string
 }
 
 // The ground the window shows before the application has drawn anything, and
@@ -161,6 +169,16 @@ func buildAndroid(tmpDir string, bi *buildInfo) error {
 			return false, err
 		}
 		extraJars = append(extraJars, jars...)
+		// A package may carry Java and a manifest fragment of its own, in an
+		// android directory beside its Go. They are read only when the package
+		// is in the graph, so an application that never imports it carries none
+		// of it.
+		if java, err := filepath.Glob(filepath.Join(dir, "android", "*.java")); err == nil && len(java) > 0 {
+			bi.androidJava = append(bi.androidJava, java...)
+		}
+		if body, err := os.ReadFile(filepath.Join(dir, "android", "AndroidManifest.xml")); err == nil {
+			bi.androidFragments = append(bi.androidFragments, manifestSource{name: p.PkgPath, body: body})
+		}
 		switch {
 		case p.PkgPath == "net":
 			perms = append(perms, "network")
@@ -171,6 +189,15 @@ func buildAndroid(tmpDir string, bi *buildInfo) error {
 	})
 	if err != nil {
 		return err
+	}
+
+	libs, err := openLibraries(filepath.Join(tmpDir, "libraries"), bi.libraries)
+	if err != nil {
+		return err
+	}
+	bi.androidLibs = libs
+	if len(bi.androidJava) > 0 && len(libs) == 0 {
+		fmt.Fprintf(output, "note: %d package(s) of the application carry Java that may call a library, and none was given with -android-lib\n", len(bi.androidJava))
 	}
 
 	if err := compileAndroid(tmpDir, tools, bi); err != nil {
@@ -290,18 +317,35 @@ func compileAndroid(tmpDir string, tools *androidTools, bi *buildInfo) (err erro
 		if err := os.MkdirAll(classes, 0o755); err != nil {
 			return err
 		}
-		javac := exec.Command(
-			javac,
+		// The runtime's own Java is compiled with the Java of the packages that
+		// carry some, in one pass, because the two call each other: the runtime
+		// tells a package about intents, and the package is told through it.
+		sources := append(append([]string(nil), javaFiles...), bi.androidJava...)
+		sourcepath := []string{appDir}
+		for _, f := range bi.androidJava {
+			if dir := filepath.Dir(f); !slices.Contains(sourcepath, dir) {
+				sourcepath = append(sourcepath, dir)
+			}
+		}
+		args := []string{
 			"-target", "1.8",
 			"-source", "1.8",
-			"-sourcepath", appDir,
+			"-sourcepath", strings.Join(sourcepath, string(os.PathListSeparator)),
 			"-bootclasspath", tools.androidjar,
 			"-d", classes,
-		)
-		javac.Args = append(javac.Args, javaFiles...)
+		}
+		if jars := bi.androidLibs.classpath(); len(jars) > 0 {
+			args = append(args, "-classpath", strings.Join(jars, string(os.PathListSeparator)))
+		}
+		javac := exec.Command(javac, append(args, sources...)...)
 		builds.Go(func() error {
-			_, err := runCmd(javac)
-			return err
+			if _, err := runCmd(javac); err != nil {
+				if len(bi.androidLibs) == 0 && len(bi.androidJava) > 0 {
+					return fmt.Errorf("%w\n\nA package of this application carries Java that needs a library, and none was given: pass the .aar and .jar files it calls with -android-lib", err)
+				}
+				return err
+			}
+			return nil
 		})
 	}
 	return builds.Wait()
@@ -401,11 +445,17 @@ func exeAndroid(tmpDir string, tools *androidTools, bi *buildInfo, extraJars, pe
 		return nil
 	})
 	classFiles = append(classFiles, extraJars...)
+	classFiles = append(classFiles, bi.androidLibs.classpath()...)
 	dexDir := filepath.Join(tmpDir, "apk")
 	if err := os.MkdirAll(dexDir, 0o755); err != nil {
 		return err
 	}
 	minSDK := max(bi.minsdk, 16)
+	// A library says the oldest Android it runs on, and the application cannot
+	// claim an older one than the libraries it carries.
+	for _, lib := range bi.androidLibs {
+		minSDK = max(minSDK, lib.minSDK())
+	}
 	// https://developer.android.com/distribute/best-practices/develop/target-sdk
 	targetSDK := 35
 	if bi.targetsdk > 0 {
@@ -413,22 +463,6 @@ func exeAndroid(tmpDir string, tools *androidTools, bi *buildInfo, extraJars, pe
 	}
 	if minSDK > targetSDK {
 		targetSDK = minSDK
-	}
-	if len(classFiles) > 0 {
-		d8 := exec.Command(
-			filepath.Join(tools.buildtools, "d8"),
-			"--lib", tools.androidjar,
-			"--output", dexDir,
-			"--min-api", strconv.Itoa(minSDK),
-		)
-		d8.Args = append(d8.Args, classFiles...)
-		if _, err := runCmd(d8); err != nil {
-			major, minor, ok := determineJDKVersion()
-			if ok && (major != 1 || minor != 8) {
-				return fmt.Errorf("unsupported JDK version %d.%d, expected 1.8\nd8 error: %v", major, minor, err)
-			}
-			return err
-		}
 	}
 
 	// Compile resources.
@@ -476,6 +510,19 @@ func exeAndroid(tmpDir string, tools *androidTools, bi *buildInfo, extraJars, pe
 			return err
 		}
 	}
+	if bi.googleServices != "" {
+		body, err := os.ReadFile(bi.googleServices)
+		if err != nil {
+			return fmt.Errorf("reading the google-services.json: %w", err)
+		}
+		values, err := googleServicesResources(body, bi.appID)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(valDir, "google_services.xml"), values, 0o660); err != nil {
+			return err
+		}
+	}
 	resZip := filepath.Join(tmpDir, "resources.zip")
 	aapt2 := filepath.Join(tools.buildtools, "aapt2")
 	_, err = runCmd(exec.Command(
@@ -485,6 +532,16 @@ func exeAndroid(tmpDir string, tools *androidTools, bi *buildInfo, extraJars, pe
 		"--dir", resDir))
 	if err != nil {
 		return err
+	}
+	// Each library's resources are compiled to a zip of their own, and linked
+	// with the application's below.
+	resZips := []string{resZip}
+	for i, dir := range bi.androidLibs.resourceDirs() {
+		zipFile := filepath.Join(tmpDir, fmt.Sprintf("library-%03d.zip", i))
+		if _, err := runCmd(exec.Command(aapt2, "compile", "-o", zipFile, "--dir", dir)); err != nil {
+			return err
+		}
+		resZips = append(resZips, zipFile)
 	}
 
 	// Link APK.
@@ -501,6 +558,14 @@ func exeAndroid(tmpDir string, tools *androidTools, bi *buildInfo, extraJars, pe
 		AppName:        appName,
 		Schemes:        bi.schemes,
 		PackageQueries: bi.packageQueries,
+	}
+	merged, err := mergeAndroidManifests(bi, &manifestSrc)
+	if err != nil {
+		return err
+	}
+	if merged {
+		// What the manifests added may ask for a newer Android than the floor.
+		manifestSrc.MinSDK = minSDK
 	}
 	manifestBody, err := androidManifest(manifestSrc)
 	if err != nil {
@@ -522,10 +587,42 @@ func exeAndroid(tmpDir string, tools *androidTools, bi *buildInfo, extraJars, pe
 	if isBundle {
 		args = append(args, "--proto-format")
 	}
-	args = append(args, resZip)
+	// The R classes the libraries' code reads their resources through are
+	// written beside the link, for the packages the libraries declare.
+	generated := filepath.Join(tmpDir, "generated")
+	if len(bi.androidLibs.resourceDirs()) > 0 {
+		if err := os.MkdirAll(generated, 0o755); err != nil {
+			return err
+		}
+		args = append(args, "--auto-add-overlay", "--java", generated)
+		if pkgs := bi.androidLibs.packages(); len(pkgs) > 0 {
+			args = append(args, "--extra-packages", strings.Join(pkgs, ":"))
+		}
+	}
+	args = append(args, resZips...)
 
 	if _, err := runCmd(exec.Command(aapt2, args...)); err != nil {
 		return err
+	}
+
+	if err := compileResourceClasses(tmpDir, generated, tools, &classFiles); err != nil {
+		return err
+	}
+	if len(classFiles) > 0 {
+		d8 := exec.Command(
+			filepath.Join(tools.buildtools, "d8"),
+			"--lib", tools.androidjar,
+			"--output", dexDir,
+			"--min-api", strconv.Itoa(minSDK),
+		)
+		d8.Args = append(d8.Args, classFiles...)
+		if _, err := runCmd(d8); err != nil {
+			major, minor, ok := determineJDKVersion()
+			if ok && (major != 1 || minor != 8) {
+				return fmt.Errorf("unsupported JDK version %d.%d, expected 1.8\nd8 error: %v", major, minor, err)
+			}
+			return err
+		}
 	}
 
 	// The Go standard library archive/zip doesn't support appending to zip
@@ -608,14 +705,35 @@ func exeAndroid(tmpDir string, tools *androidTools, bi *buildInfo, extraJars, pe
 		}
 	}
 
-	// Append classes.dex.
+	// Append the dex files. d8 writes more than one when the methods do not fit
+	// in one, which a library as large as a push service's can cause.
 	if len(classFiles) > 0 {
-		classesFolder := "classes.dex"
-		if isBundle {
-			classesFolder = "dex/classes.dex"
-		}
-		if err := appendToZip(classesFolder, filepath.Join(dexDir, "classes.dex")); err != nil {
+		dexFiles, err := filepath.Glob(filepath.Join(dexDir, "classes*.dex"))
+		if err != nil {
 			return err
+		}
+		sort.Strings(dexFiles)
+		for _, dex := range dexFiles {
+			folder := filepath.Base(dex)
+			if isBundle {
+				folder = "dex/" + folder
+			}
+			if err := appendToZip(folder, dex); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Native libraries the archives carry, for the architectures built.
+	for _, lib := range bi.androidLibs {
+		for _, native := range lib.native {
+			for _, a := range bi.archs {
+				if allArchs[a].jniArch == native.abi {
+					if err := appendToZip(filepath.Join("lib", native.abi, filepath.Base(native.file)), native.file); err != nil {
+						return err
+					}
+				}
+			}
 		}
 	}
 
@@ -1104,9 +1222,13 @@ func androidManifest(data manifestData) ([]byte, error) {
         {{end}}
     </queries>
 	{{end}}
-	<uses-sdk android:minSdkVersion="{{.MinSDK}}" android:targetSdkVersion="{{.TargetSDK}}" />
+	<uses-sdk android:minSdkVersion="{{.MinSDK}}" android:targetSdkVersion="{{.TargetSDK}}" />{{if .QueriesXML}}
+	<queries>{{range .QueriesXML}}
+		{{.}}{{end}}
+	</queries>{{end}}
 {{range .Permissions}}	<uses-permission android:name="{{xml .}}"/>
 {{end}}{{range .Features}}	<uses-feature android:{{.}} android:required="false"/>
+{{end}}{{range .TopLevel}}	{{.}}
 {{end}}	<application {{.IconSnip}} android:label="{{xml .AppName}}">
 		<activity android:name="io.arandu.ayra.AyraActivity"
 			android:label="{{xml .AppName}}"
@@ -1127,7 +1249,8 @@ func androidManifest(data manifestData) ([]byte, error) {
 				<data android:scheme="{{xml .}}"></data>
 			</intent-filter>
 			{{end}}
-		</activity>
+		</activity>{{range .Components}}
+		{{.}}{{end}}
 	</application>
 </manifest>`)
 	if err != nil {

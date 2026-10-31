@@ -25,6 +25,9 @@ var AndroidPermissions = map[string][]string{
 	"microphone": {
 		"android.permission.RECORD_AUDIO",
 	},
+	"notifications": {
+		"android.permission.POST_NOTIFICATIONS",
+	},
 }
 
 var AndroidFeatures = map[string][]string{

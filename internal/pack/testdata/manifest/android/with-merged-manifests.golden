@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+	package="dev.local.probe"
+	android:versionCode="4"
+	android:versionName="1.2.3.4">
+	
+	<uses-sdk android:minSdkVersion="21" android:targetSdkVersion="35" />
+	<queries>
+		<intent><action android:name="android.intent.action.VIEW"/></intent>
+	</queries>
+	<uses-permission android:name="android.permission.INTERNET"/>
+	<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+	<permission android:name="dev.local.probe.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" android:protectionLevel="signature"/>
+	<application  android:label="Probe">
+		<activity android:name="io.arandu.ayra.AyraActivity"
+			android:label="Probe"
+			android:theme="@style/Theme.AyraApp"
+			android:configChanges="screenSize|screenLayout|smallestScreenSize|orientation|keyboardHidden"
+			android:windowSoftInputMode="adjustResize"
+			android:launchMode="singleInstance"
+			android:exported="true">
+			<intent-filter>
+				<action android:name="android.intent.action.MAIN" />
+				<category android:name="android.intent.category.LAUNCHER" />
+			</intent-filter>
+			
+		</activity>
+		<service android:name="io.arandu.ayra.push.AyraMessagingService" android:exported="false"><intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT"/></intent-filter></service>
+		<meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="ayra_default"/>
+	</application>
+</manifest>

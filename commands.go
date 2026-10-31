@@ -233,7 +233,8 @@ window.`,
 	{
 		name: "native:build",
 		usage: "aru native:build [-target os/arch] [-output path] [-name text] [-appid id] [-version 1.0.0.1] " +
-			"[-icon icon.png] [-package] [-signkey path] [-signpass secret] [-x] | -list",
+			"[-icon icon.png] [-package] [-signkey path] [-signpass secret] [-android-lib path] " +
+			"[-google-services file] [-placeholder name=value] [-x] | -list",
 		desc: "compile the native application for one platform",
 		run:  nativeBuild,
 	},

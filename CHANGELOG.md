@@ -1,5 +1,31 @@
 # Release Notes
 
+## Unreleased
+
+### Added
+
+- `native:build` packages an application whose Java needs libraries.
+  `-android-lib` names `.aar` and `.jar` files, or directories of them; their
+  classes go on the compiler's path and into the dex (in as many dex files as
+  the methods need), their manifests are merged into the application's, their
+  resources are compiled and the R classes their code reads are generated.
+  Nothing is downloaded or carried by `aru`: the libraries and the terms they
+  are used under are the project's.
+- A package may carry Java and a manifest fragment in an `android` directory
+  beside its Go; they are compiled and merged only when the package is in the
+  application's graph. `-placeholder name=value` gives a value to the `${name}`
+  such a manifest asks for, and `applicationId`, `pushChannelId` and
+  `pushChannelName` have values of their own.
+- `-google-services` takes the project's `google-services.json` (or the one
+  beside `cmd/native`) and writes the string resources the Firebase libraries
+  read their configuration from, for the client whose package is the
+  application id.
+- The `notifications` permission package: `POST_NOTIFICATIONS` on Android; on
+  iOS the remote-notification background mode, and a provisioning profile with
+  no `aps-environment` entitlement is refused before the application is signed.
+- A library that asks for a newer Android than the packager's floor raises the
+  floor.
+
 ## [v0.82.1](https://github.com/arandu-io/aru/compare/v0.82.0...v0.82.1) - 2026-11-02
 
 **Full Changelog**: https://github.com/arandu-io/aru/compare/v0.82.0...v0.82.1

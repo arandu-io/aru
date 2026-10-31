@@ -27,6 +27,13 @@ type packageOptions struct {
 	signKey  string
 	signPass string
 	verbose  bool
+
+	// androidLibs, googleServices and placeholders are Android's: the libraries
+	// the Java calls, the project's Firebase configuration, and the values the
+	// merged manifests take.
+	androidLibs    []string
+	googleServices string
+	placeholders   []string
 }
 
 // packageNative writes the artifact the platform installs.
@@ -55,6 +62,15 @@ func packageNative(root string, o packageOptions, stdout, stderr io.Writer) erro
 		output = filepath.Join(root, "bin", appName+artifactSuffix(o.platform))
 	}
 
+	placeholders := map[string]string{}
+	for _, kv := range o.placeholders {
+		key, value, ok := strings.Cut(kv, "=")
+		if !ok || key == "" {
+			return fmt.Errorf("native:build: -placeholder %q is not name=value", kv)
+		}
+		placeholders[key] = value
+	}
+
 	options := pack.Options{
 		Package:       nativePackage,
 		Target:        o.platform,
@@ -66,6 +82,10 @@ func packageNative(root string, o packageOptions, stdout, stderr io.Writer) erro
 		SignKey:       o.signKey,
 		SignPass:      o.signPass,
 		PrintCommands: o.verbose,
+
+		Libraries:      o.androidLibs,
+		GoogleServices: o.googleServices,
+		Placeholders:   placeholders,
 	}
 	if o.arch != "" {
 		options.Arch = []string{o.arch}

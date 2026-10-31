@@ -59,6 +59,16 @@ plus `help` and `version`. The native and inspection commands, in the words of `
 | `imports:catalog` | print the import path each exported framework symbol should be named by, or rewrite the project's imports to it |
 | `about` | report what the project is configured and wired with: versions, drivers, modules |
 
+- **`aru native:build -package`** — writes the artifact a platform installs. A
+  package of the application's graph may carry Java and a manifest fragment in
+  an `android` directory beside its Go, and they are compiled and merged only
+  when the package is imported. The libraries that Java calls are files the
+  project names with `-android-lib` (`.aar`, `.jar`, or a directory of them);
+  `-google-services` takes the project's `google-services.json`, turned into the
+  string resources the Firebase libraries read, and `-placeholder name=value`
+  fills the `${name}` a merged manifest asks for. Nothing is downloaded. On iOS a
+  push application gets the remote-notification mode, and a provisioning profile
+  without the `aps-environment` entitlement is refused before signing.
 - **`aru make:module`** — a Model-backed entity with its policy, service,
   request, controller, migration and four screens, compiling and tested from
   the moment it lands. The listing is wired end to end on the typed listing

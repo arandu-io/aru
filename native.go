@@ -137,6 +137,10 @@ func nativeBuild(args []string, stdout, stderr io.Writer) error {
 			signKey:  *options.signKey,
 			signPass: *options.signPass,
 			verbose:  *options.verbose,
+
+			androidLibs:    *options.androidLibs,
+			googleServices: *options.googleServices,
+			placeholders:   *options.placeholders,
 		}, stdout, stderr)
 	}
 
@@ -182,24 +186,34 @@ type nativeBuildOptions struct {
 	signKey  *string
 	signPass *string
 	verbose  *bool
+
+	androidLibs    *stringList
+	googleServices *string
+	placeholders   *stringList
 }
 
 func newNativeBuildOptions(output io.Writer) nativeBuildOptions {
 	flags := flag.NewFlagSet("native:build", flag.ContinueOnError)
 	flags.SetOutput(output)
+	androidLibs, placeholders := new(stringList), new(stringList)
+	flags.Var(androidLibs, "android-lib", "an Android library the application's Java calls: an .aar or .jar, or a directory of them (repeatable)")
+	flags.Var(placeholders, "placeholder", "a value for ${name} in the manifests the packages and libraries carry, as name=value (repeatable)")
 	return nativeBuildOptions{
-		flags:    flags,
-		target:   flags.String("target", "", "the platform to build for (default: this machine)"),
-		output:   flags.String("output", "", "where to write the artifact (default: bin/native-<target>)"),
-		list:     flags.Bool("list", false, "list the platforms this can build for, and what each needs"),
-		pack:     flags.Bool("package", false, "write the artifact the platform installs rather than a bare binary"),
-		appID:    flags.String("appid", "", "the identifier the platform files the application under"),
-		appName:  flags.String("name", "", "what a person sees under the icon (default: the project directory)"),
-		version:  flags.String("version", "", "major.minor.patch.code (default: 1.0.0.1)"),
-		icon:     flags.String("icon", "", "a PNG the packager resizes into every size the platform asks for"),
-		signKey:  flags.String("signkey", "", "the keystore or provisioning profile to sign with"),
-		signPass: flags.String("signpass", "", "the password that decrypts the signing key"),
-		verbose:  flags.Bool("x", false, "print the commands the packager runs"),
+		androidLibs:    androidLibs,
+		placeholders:   placeholders,
+		googleServices: flags.String("google-services", "", "the project's google-services.json (default: the one beside cmd/native, if any)"),
+		flags:          flags,
+		target:         flags.String("target", "", "the platform to build for (default: this machine)"),
+		output:         flags.String("output", "", "where to write the artifact (default: bin/native-<target>)"),
+		list:           flags.Bool("list", false, "list the platforms this can build for, and what each needs"),
+		pack:           flags.Bool("package", false, "write the artifact the platform installs rather than a bare binary"),
+		appID:          flags.String("appid", "", "the identifier the platform files the application under"),
+		appName:        flags.String("name", "", "what a person sees under the icon (default: the project directory)"),
+		version:        flags.String("version", "", "major.minor.patch.code (default: 1.0.0.1)"),
+		icon:           flags.String("icon", "", "a PNG the packager resizes into every size the platform asks for"),
+		signKey:        flags.String("signkey", "", "the keystore or provisioning profile to sign with"),
+		signPass:       flags.String("signpass", "", "the password that decrypts the signing key"),
+		verbose:        flags.Bool("x", false, "print the commands the packager runs"),
 	}
 }
 
@@ -350,5 +364,15 @@ func listNativeTargets(stdout io.Writer) error {
 		fmt.Fprintf(stdout, "  %s%-*s %s\n", mark, width, name, target.note)
 	}
 	fmt.Fprintln(stdout, "\n  ! needs a toolchain installed first; the tool says which when it is missing")
+	return nil
+}
+
+// stringList is a flag that may be given more than once.
+type stringList []string
+
+func (l *stringList) String() string { return strings.Join(*l, ",") }
+
+func (l *stringList) Set(value string) error {
+	*l = append(*l, value)
 	return nil
 }

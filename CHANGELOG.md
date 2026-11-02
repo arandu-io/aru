@@ -1,5 +1,39 @@
 # Release Notes
 
+## v0.84.0 - 2026-11-02
+
+### Added
+
+- `aru native:icons <image>` draws every icon an application needs from one picture,
+  a PNG, a JPEG or an SVG, with its background or without. `internal/icons` is Go
+  and nothing else: no Node, no ImageMagick, no C library. The mark is measured, its
+  margins cut away, and it is centred and scaled until the circle that holds all of
+  it is as wide as the platform asks, so one picture comes out the same size
+  everywhere. Android gets the adaptive icon (the foreground inside the 66 of 108
+  units every launcher mask leaves visible, a background colour and the monochrome
+  layer of Android 13's themed icon), the flat and round icons of the releases before
+  8, the status bar icon `ic_stat` (white on transparent, named in the manifest as
+  Firebase's default notification icon) and the Android 12 splash screen in the light
+  and the dark appearance. iOS gets the default, dark and tinted icons of iOS 18 in
+  an `AppIcon.appiconset`. The web gets the favicons, the touch icon and the manifest
+  icons with the maskable ones; the desktop gets `icon.ico` and `icon.icns`, the
+  latter without `iconutil`.
+- `native:build` draws those icons itself from `-icon`. `-icon-background` and
+  `-icon-dark-background` say what the mark sits on (white and black when the picture
+  has no ground of its own), and `-icon-dark` names a picture for the dark appearance;
+  without one the mark is turned over when it is grey and would be lost on the dark
+  ground. `native:icons` takes `-background`, `-dark-background`, `-dark` and `-output`.
+- The SVG reader draws paths, basic shapes, groups, transforms and solid fills and
+  strokes. It refuses gradients, filters, masks, text and references by name rather
+  than draw something else.
+
+### Fixed
+
+- The Android adaptive icon used the whole picture as both its background and its
+  foreground, drawn over all 108 units, so the mark was neither inside the safe zone
+  nor centred under a circular or squircle mask, and the themed icon, the status bar
+  icon and the splash screen had nothing of their own.
+
 ## [v0.83.1](https://github.com/arandu-io/aru/compare/v0.83.0...v0.83.1) - 2026-11-02
 
 **Full Changelog**: https://github.com/arandu-io/aru/compare/v0.83.0...v0.83.1

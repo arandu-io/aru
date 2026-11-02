@@ -1,15 +1,6 @@
 # Release Notes
 
-## Unreleased
-
-### Fixed
-
-- `native:build`: the manifest merge adds together the meta-data of a component
-  that several libraries declare. Firebase finds its parts through one
-  `ComponentDiscoveryService` that every library declares with its own registrar;
-  the merge kept the first declaration, so the service the system started listed
-  one registrar and `FirebaseMessaging.getInstance()` threw "Firebase Messaging
-  component is not present".
+## v0.83.0 - 2026-11-02
 
 ### Added
 
@@ -34,6 +25,15 @@
   no `aps-environment` entitlement is refused before the application is signed.
 - A library that asks for a newer Android than the packager's floor raises the
   floor.
+
+### Fixed
+
+- `native:build`: the manifest merge adds together the meta-data of a component
+  that several libraries declare. Firebase finds its parts through one
+  `ComponentDiscoveryService` that every library declares with its own registrar;
+  the merge kept the first declaration, so the service the system started listed
+  one registrar and `FirebaseMessaging.getInstance()` threw "Firebase Messaging
+  component is not present".
 
 ## [v0.82.1](https://github.com/arandu-io/aru/compare/v0.82.0...v0.82.1) - 2026-11-02
 

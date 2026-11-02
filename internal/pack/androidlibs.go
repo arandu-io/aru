@@ -206,8 +206,7 @@ func extractZipFile(f *zip.File, target string) error {
 	// The size is bounded by what the archive declares, so a small file that
 	// inflates into gigabytes is cut off rather than filling the disk.
 	if _, err := io.Copy(w, io.LimitReader(r, int64(f.UncompressedSize64)+1)); err != nil {
-		w.Close()
-		return err
+		return errors.Join(err, w.Close())
 	}
 	return w.Close()
 }

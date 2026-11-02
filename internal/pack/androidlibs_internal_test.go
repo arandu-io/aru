@@ -167,7 +167,9 @@ func aar(t *testing.T, dir, name string, files map[string]string) string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		w.Write([]byte(body))
+		if _, err := w.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
@@ -215,8 +217,11 @@ func TestADirectoryContributesItsLibrariesInNameOrder(t *testing.T) {
 	src, work := t.TempDir(), t.TempDir()
 	aar(t, src, "b.aar", map[string]string{"classes.jar": "x"})
 	aar(t, src, "a.aar", map[string]string{"classes.jar": "x"})
-	os.WriteFile(filepath.Join(src, "c.jar"), []byte("jar"), 0o644)
-	os.WriteFile(filepath.Join(src, "notes.txt"), []byte("ignored"), 0o644)
+	for name, body := range map[string]string{"c.jar": "jar", "notes.txt": "ignored"} {
+		if err := os.WriteFile(filepath.Join(src, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	libs, err := openLibraries(work, []string{src})
 	if err != nil {
@@ -248,7 +253,9 @@ func TestALibraryThatIsNotThereIsAnError(t *testing.T) {
 		t.Error("a missing library was accepted")
 	}
 	src := t.TempDir()
-	os.WriteFile(filepath.Join(src, "x.txt"), []byte("x"), 0o644)
+	if err := os.WriteFile(filepath.Join(src, "x.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := openLibraries(t.TempDir(), []string{filepath.Join(src, "x.txt")}); err == nil {
 		t.Error("a file that is neither an aar nor a jar was accepted")
 	}

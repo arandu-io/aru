@@ -258,10 +258,17 @@ func buildStubLibrary(t *testing.T, work, javac, androidJar string) string {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	for name, body := range map[string][]byte{"AndroidManifest.xml": []byte(stubManifest), "classes.jar": jarBytes} {
-		w, _ := zw.Create(name)
-		w.Write(body)
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(body); err != nil {
+			t.Fatal(err)
+		}
 	}
-	zw.Close()
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
 	path := filepath.Join(work, "stub-messaging.aar")
 	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
@@ -298,7 +305,9 @@ func readAPK(t *testing.T, apk string) map[string][]byte {
 			t.Fatal(err)
 		}
 		body, err := io.ReadAll(r)
-		r.Close()
+		if cerr := r.Close(); err == nil {
+			err = cerr
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -367,7 +376,9 @@ func TestAnIOSSimulatorAppOfAPushApplicationDeclaresTheBackgroundMode(t *testing
 		t.Fatal(err)
 	}
 	if sum, err := os.ReadFile(filepath.Join(src, "go.sum")); err == nil {
-		os.WriteFile(filepath.Join(app, "go.sum"), sum, 0o644)
+		if err := os.WriteFile(filepath.Join(app, "go.sum"), sum, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	main := `package main
 

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fixed
+
+- `native:build`: the manifest merge adds together the meta-data of a component
+  that several libraries declare. Firebase finds its parts through one
+  `ComponentDiscoveryService` that every library declares with its own registrar;
+  the merge kept the first declaration, so the service the system started listed
+  one registrar and `FirebaseMessaging.getInstance()` threw "Firebase Messaging
+  component is not present".
+
 ### Added
 
 - `native:build` packages an application whose Java needs libraries.

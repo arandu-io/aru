@@ -151,3 +151,83 @@ func TestALightDeviceGetsDarkStatusIconsFromTheFirstFrame(t *testing.T) {
 		}
 	}
 }
+
+// TestTheSplashScreenOfAndroid12PointsAtTheIconAndItsGround: the two items that
+// replace the system's own splash, in the light and the dark directory, over
+// the same bars as the themes they stand in for.
+func TestTheSplashScreenOfAndroid12PointsAtTheIconAndItsGround(t *testing.T) {
+	themes := androidSplashThemes()
+	if len(themes) != 2 {
+		t.Fatalf("there are %d splash themes, want one light and one night", len(themes))
+	}
+	for _, theme := range themes {
+		items := style(t, theme.xml)
+		if got := items["android:windowSplashScreenBackground"]; got != "@color/ic_splash_background" {
+			t.Errorf("%s: the splash ground is %q", theme.dir, got)
+		}
+		if got := items["android:windowSplashScreenAnimatedIcon"]; got != "@drawable/ic_splash" {
+			t.Errorf("%s: the splash icon is %q", theme.dir, got)
+		}
+		if got := items["android:statusBarColor"]; got != "@android:color/transparent" {
+			t.Errorf("%s: the bars lost their transparency: %q", theme.dir, got)
+		}
+		wantWindow := androidLightGround
+		wantLightStatus := "true"
+		if strings.Contains(theme.dir, "night") {
+			wantWindow, wantLightStatus = androidDarkGround, ""
+		}
+		if got := items["android:windowBackground"]; got != wantWindow {
+			t.Errorf("%s: the window ground is %q, want %q", theme.dir, got, wantWindow)
+		}
+		if got := items["android:windowLightStatusBar"]; got != wantLightStatus {
+			t.Errorf("%s: windowLightStatusBar is %q, want %q", theme.dir, got, wantLightStatus)
+		}
+	}
+	// The themes every application has do not name resources only an icon makes.
+	for _, theme := range androidThemes() {
+		if strings.Contains(theme.xml, "ic_splash") {
+			t.Errorf("%s names the splash icon, which an application without an icon does not have", theme.dir)
+		}
+	}
+}
+
+// TestTheManifestNamesTheIconsItGot: the round icon beside the launcher icon,
+// and the drawable a notification is marked with.
+func TestTheManifestNamesTheIconsItGot(t *testing.T) {
+	manifest, err := androidManifest(manifestData{
+		AppID:      "sh.example.app",
+		MinSDK:     21,
+		TargetSDK:  35,
+		AppName:    "Example",
+		IconSnip:   `android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"`,
+		Components: []string{notificationIconElement},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Application struct {
+			Icon      string `xml:"icon,attr"`
+			RoundIcon string `xml:"roundIcon,attr"`
+			Meta      []struct {
+				Name     string `xml:"name,attr"`
+				Resource string `xml:"resource,attr"`
+			} `xml:"meta-data"`
+		} `xml:"application"`
+	}
+	if err := xml.Unmarshal(manifest, &doc); err != nil {
+		t.Fatalf("the manifest is not markup: %v", err)
+	}
+	if doc.Application.Icon != "@mipmap/ic_launcher" || doc.Application.RoundIcon != "@mipmap/ic_launcher_round" {
+		t.Errorf("the icons are %q and %q", doc.Application.Icon, doc.Application.RoundIcon)
+	}
+	found := false
+	for _, m := range doc.Application.Meta {
+		if m.Name == "com.google.firebase.messaging.default_notification_icon" && m.Resource == "@drawable/ic_stat" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the manifest does not name the notification icon: %+v", doc.Application.Meta)
+	}
+}

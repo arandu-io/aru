@@ -1,63 +1,37 @@
 package pack
 
 import (
-	"image"
-	"image/color"
-	"image/png"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 
-	"golang.org/x/image/draw"
-	"golang.org/x/sync/errgroup"
+	"github.com/arandu-io/aru/internal/icons"
 )
 
-type iconVariant struct {
-	path string
-	size int
-	fill bool
+// iconSet is the application's icons, drawn from the picture it named or from
+// appicon.png, or appicon.svg, beside its package. It answers nil, with no error, for an
+// application that has no icon: each platform then ships its own placeholder.
+func (bi *buildInfo) iconSet() (*icons.Set, error) {
+	if _, err := os.Stat(bi.iconPath); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return icons.New(bi.iconPath, bi.iconOptions)
 }
 
-func buildIcons(baseDir, icon string, variants []iconVariant) error {
-	f, err := os.Open(icon)
-	if err != nil {
-		return err
+// writeIcons writes generated files under dir.
+func writeIcons(dir string, files []icons.File) error {
+	for _, f := range files {
+		path := filepath.Join(dir, filepath.FromSlash(f.Path))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, f.Data, 0o600); err != nil {
+			return err
+		}
 	}
-	defer f.Close()
-	img, _, err := image.Decode(f)
-	if err != nil {
-		return err
-	}
-	var resizes errgroup.Group
-	for _, v := range variants {
-		v := v
-		resizes.Go(func() (err error) {
-			path := filepath.Join(baseDir, v.path)
-			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-				return err
-			}
-			f, err := os.Create(path)
-			if err != nil {
-				return err
-			}
-			defer func() {
-				if cerr := f.Close(); err == nil {
-					err = cerr
-				}
-			}()
-			return png.Encode(f, resizeIcon(v, img))
-		})
-	}
-	return resizes.Wait()
-}
-
-func resizeIcon(v iconVariant, img image.Image) *image.NRGBA {
-	scaled := image.NewNRGBA(image.Rectangle{Max: image.Point{X: v.size, Y: v.size}})
-	op := draw.Src
-	if v.fill {
-		op = draw.Over
-		draw.Draw(scaled, scaled.Bounds(), &image.Uniform{color.White}, image.Point{}, draw.Src)
-	}
-	draw.CatmullRom.Scale(scaled, scaled.Bounds(), img, img.Bounds(), op, nil)
-
-	return scaled
+	return nil
 }

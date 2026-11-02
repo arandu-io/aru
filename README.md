@@ -39,7 +39,7 @@ compiled against is still the one it is running.
 | migrations | `migrate` `migrate:rollback` `migrate:status` `migrate:fresh` |
 | queues | `queue:work` `queue:listen` `queue:restart` `queue:pause` `queue:resume` `queue:clear` `queue:monitor` `queue:failed` `queue:retry` `queue:forget` `queue:flush` `queue:prune-failed` `queue:retry-batch` `queue:prune-batches` |
 | fonts | `font:add` `font:search` `font:info` `font:list` `font:remove` |
-| native application | `native:run` `native:dev` `native:build` |
+| native application | `native:run` `native:dev` `native:build` `native:icons` |
 | modules, editor, assistant and inspection | `vendor:publish` `openapi:check` `skills:sync` `lsp` `mcp` `action:list` `imports:catalog` `about` |
 | everything else | `key:generate` `schedule:list` `schedule:run` `route:list` `db:seed` `model:build` `view:build` |
 
@@ -50,6 +50,7 @@ plus `help` and `version`. The native and inspection commands, in the words of `
 | `native:run` | build the native application and open its window |
 | `native:dev` | rebuild the native application and reopen it on every change |
 | `native:build` | compile the native application for one platform |
+| `native:icons` | draw the icons of every platform, light and dark, from one image |
 | `vendor:publish` | show what the registered modules would publish into the project, and write it |
 | `openapi:check` | fail when a committed OpenAPI contract differs from the one the route table produces |
 | `skills:sync` | show how the project's skills differ from the skeleton's and its modules', and bring them in step |
@@ -69,6 +70,29 @@ plus `help` and `version`. The native and inspection commands, in the words of `
   fills the `${name}` a merged manifest asks for. Nothing is downloaded. On iOS a
   push application gets the remote-notification mode, and a provisioning profile
   without the `aps-environment` entitlement is refused before signing.
+- **`aru native:icons <image>`** — draws every icon an application needs from one
+  picture, a PNG, a JPEG or an SVG, with its background or without, and
+  `native:build` does the same by itself from `-icon`. Nothing outside the Go
+  toolchain is involved: no Node, no ImageMagick, no C library. The mark is
+  measured, not trusted: its margins are cut away, and it is centred and scaled
+  until the circle that holds all of it is as wide as the platform wants, so one
+  picture comes out the same size everywhere. Android gets the adaptive icon
+  (foreground well inside the 66 of 108 units every launcher mask leaves visible, a
+  background colour, and the monochrome layer of the themed icon of Android 13),
+  the flat and round icons of the releases before 8, the status bar icon
+  (`ic_stat`, white on transparent, named in the manifest as Firebase's default
+  notification icon) and the splash screen of Android 12 in the light and the
+  dark appearance. iOS gets the default, dark and tinted icons of iOS 18 in an
+  `AppIcon.appiconset`. The web gets favicons, the touch icon and the manifest
+  icons with the maskable ones, and the desktop `icon.ico` and `icon.icns`.
+  `-icon-background` and `-icon-dark-background` (`-background` and
+  `-dark-background` in `native:icons`) say what the mark sits on, white and
+  black when the picture carries no ground of its own; `-icon-dark` (`-dark`)
+  names a picture for the dark appearance, and without one the mark is turned
+  over when it is grey and would be lost on the dark ground. The SVG reader
+  draws paths, basic shapes, groups, transforms and solid fills and strokes, and
+  refuses gradients, filters, masks, text and references by name rather than
+  draw something else.
 - **`aru make:module`** — a Model-backed entity with its policy, service,
   request, controller, migration and four screens, compiling and tested from
   the moment it lands. The listing is wired end to end on the typed listing

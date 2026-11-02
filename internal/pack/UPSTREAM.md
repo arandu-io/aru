@@ -158,6 +158,24 @@ set adds the library's provider and receiver and the resources made from
 `google-services.json`; an iOS simulator application built from the same source
 carries `UIBackgroundModes`.
 
+### 10. Every icon is drawn from one picture by `internal/icons`
+
+**Changed:** the tool resized the one PNG it was given into the sizes of each
+platform. On Android that PNG was both the background and the foreground of the
+adaptive icon, drawn over the whole 108 units, so the mark was neither inside
+the safe zone nor centred under a circular or squircle mask, and the system's
+themed icon, the status bar icon and the splash screen had nothing of their own.
+`internal/icons` draws them: it measures the mark, centres it, and fits the circle
+that holds it to the width each platform asks for (66 of 108 units for the
+adaptive foreground), reads an SVG as well as a PNG or a JPEG, and writes the
+adaptive icon with its monochrome layer, the status bar icon, the splash icon in
+the light and the dark appearance, the default, dark and tinted icons of iOS 18,
+the Windows icon and the macOS icns (no longer through `iconutil`).
+
+**Kept:** `-icon` names the picture, and a project without one still ships the
+platform's placeholder. The theme resources of Android 12 are written only for
+an application that has an icon, because they name resources only the icon makes.
+
 ## What was left behind
 
 The end-to-end tests, which drive a browser and an emulator through two more

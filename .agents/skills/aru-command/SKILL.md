@@ -11,7 +11,7 @@ command is in its entry: the name a person types, the usage line, the one-line
 description `aru help` prints, and the function that runs it.
 
 ```sh
-grep -c '^\t\tname:' commands.go        # 78
+grep -c '^\t\tname:' commands.go        # 79
 ```
 
 It is a slice and not a map on purpose. The order of `aru help` is part of the
@@ -25,7 +25,7 @@ registered?**
 - **No** — it runs here. `key:generate`, `new`, every `make:*`, `generate`,
   `schema`, `doctor`, `build`, `model:build`, `view:build`, `lsp`, `action:list`,
   `imports:catalog`, `skills:sync`, `about`, `trace`, the three `e2e:*`, the five
-  `font:*` and the three `native:*` commands need nothing the project registered -- or, for
+  `font:*` and the four `native:*` commands need nothing the project registered -- or, for
   `about`, read what it registered from the source, the way the doctor does.
   `skills:sync` sits beside `vendor:publish` in the table and does not forward
   like it: where a skill comes from is the skeleton this binary pins and the

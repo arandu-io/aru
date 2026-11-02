@@ -141,6 +141,10 @@ func nativeBuild(args []string, stdout, stderr io.Writer) error {
 			androidLibs:    *options.androidLibs,
 			googleServices: *options.googleServices,
 			placeholders:   *options.placeholders,
+
+			iconBackground:     *options.iconBackground,
+			iconDark:           *options.iconDark,
+			iconDarkBackground: *options.iconDarkBg,
 		}, stdout, stderr)
 	}
 
@@ -190,6 +194,8 @@ type nativeBuildOptions struct {
 	androidLibs    *stringList
 	googleServices *string
 	placeholders   *stringList
+
+	iconBackground, iconDark, iconDarkBg *string
 }
 
 func newNativeBuildOptions(output io.Writer) nativeBuildOptions {
@@ -210,7 +216,10 @@ func newNativeBuildOptions(output io.Writer) nativeBuildOptions {
 		appID:          flags.String("appid", "", "the identifier the platform files the application under"),
 		appName:        flags.String("name", "", "what a person sees under the icon (default: the project directory)"),
 		version:        flags.String("version", "", "major.minor.patch.code (default: 1.0.0.1)"),
-		icon:           flags.String("icon", "", "a PNG the packager resizes into every size the platform asks for"),
+		icon:           flags.String("icon", "", "the image every icon of the platform is drawn from: a PNG, a JPEG or an SVG (default: appicon.png or appicon.svg beside cmd/native)"),
+		iconBackground: flags.String("icon-background", "", "the colour the icon's mark sits on, as #rrggbb (default: the image's own, or white)"),
+		iconDark:       flags.String("icon-dark", "", "an image for the dark appearance (default: the same mark, turned over when it is grey)"),
+		iconDarkBg:     flags.String("icon-dark-background", "", "the colour the mark sits on in the dark appearance, as #rrggbb (default: black)"),
 		signKey:        flags.String("signkey", "", "the keystore or provisioning profile to sign with"),
 		signPass:       flags.String("signpass", "", "the password that decrypts the signing key"),
 		verbose:        flags.Bool("x", false, "print the commands the packager runs"),

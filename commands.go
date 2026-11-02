@@ -233,10 +233,17 @@ window.`,
 	{
 		name: "native:build",
 		usage: "aru native:build [-target os/arch] [-output path] [-name text] [-appid id] [-version 1.0.0.1] " +
-			"[-icon icon.png] [-package] [-signkey path] [-signpass secret] [-android-lib path] " +
+			"[-icon image] [-icon-background #rrggbb] [-icon-dark image] [-icon-dark-background #rrggbb] [-package] [-signkey path] [-signpass secret] [-android-lib path] " +
 			"[-google-services file] [-placeholder name=value] [-x] | -list",
 		desc: "compile the native application for one platform",
 		run:  nativeBuild,
+	},
+	{
+		name:  "native:icons",
+		usage: nativeIconsUsage,
+		desc:  "draw the icons of every platform, light and dark, from one image",
+		help:  nativeIconsHelp,
+		run:   nativeIcons,
 	},
 	{
 		// route:list, the conventional name, for the same reason as

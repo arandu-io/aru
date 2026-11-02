@@ -85,6 +85,11 @@ const (
 // bars, which the oldest releases do not have, and lightStatus the dark status
 // bar icons a light ground wants.
 func androidTheme(ground string, bars, lightStatus bool) string {
+	return androidThemeWith(ground, bars, lightStatus, "")
+}
+
+// androidThemeWith is androidTheme with more items, written as they are.
+func androidThemeWith(ground string, bars, lightStatus bool, extra string) string {
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="utf-8"?>
 <resources>
@@ -102,10 +107,35 @@ func androidTheme(ground string, bars, lightStatus bool) string {
 		b.WriteString(`		<item name="android:windowLightStatusBar">true</item>
 `)
 	}
+	b.WriteString(extra)
 	b.WriteString(`	</style>
 </resources>`)
 	return b.String()
 }
+
+// androidSplashItems point the splash screen of Android 12 at the icon the
+// icon generator drew and the ground it chose for each appearance. Both are
+// resources the system resolves by itself, the night directory first when the
+// device is in the dark, so one pair of items serves both.
+const androidSplashItems = `		<item name="android:windowSplashScreenBackground">@color/ic_splash_background</item>
+		<item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
+`
+
+// androidSplashThemes are the themes of the releases that have a splash screen
+// of their own, which is Android 12 and later. They are only written for an
+// application with an icon, because the items name resources only the icon
+// generator makes.
+func androidSplashThemes() []androidThemeFile {
+	return []androidThemeFile{
+		{"values-v31", androidThemeWith(androidLightGround, true, true, androidSplashItems)},
+		{"values-night-v31", androidThemeWith(androidDarkGround, true, false, androidSplashItems)},
+	}
+}
+
+// notificationIconElement tells Firebase which drawable a notification it
+// draws itself is marked with: without it the system shows the launcher icon,
+// which the status bar paints as a grey square.
+const notificationIconElement = `<meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat" />`
 
 // androidThemeFile is one theme resource, by the directory it lives in.
 type androidThemeFile struct {
@@ -469,39 +499,31 @@ func exeAndroid(tmpDir string, tools *androidTools, bi *buildInfo, extraJars, pe
 	resDir := filepath.Join(tmpDir, "res")
 	valDir := filepath.Join(resDir, "values")
 	v21Dir := filepath.Join(resDir, "values-v21")
-	v26mipmapDir := filepath.Join(resDir, `mipmap-anydpi-v26`)
-	for _, dir := range []string{valDir, v21Dir, v26mipmapDir} {
+	for _, dir := range []string{valDir, v21Dir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
 	}
 	iconSnip := ""
-	if _, err := os.Stat(bi.iconPath); err == nil {
-		err := buildIcons(resDir, bi.iconPath, []iconVariant{
-			{path: filepath.Join("mipmap-hdpi", "ic_launcher.png"), size: 72},
-			{path: filepath.Join("mipmap-xhdpi", "ic_launcher.png"), size: 96},
-			{path: filepath.Join("mipmap-xxhdpi", "ic_launcher.png"), size: 144},
-			{path: filepath.Join("mipmap-xxxhdpi", "ic_launcher.png"), size: 192},
-			{path: filepath.Join("mipmap-mdpi", "ic_launcher_adaptive.png"), size: 108},
-			{path: filepath.Join("mipmap-hdpi", "ic_launcher_adaptive.png"), size: 162},
-			{path: filepath.Join("mipmap-xhdpi", "ic_launcher_adaptive.png"), size: 216},
-			{path: filepath.Join("mipmap-xxhdpi", "ic_launcher_adaptive.png"), size: 324},
-			{path: filepath.Join("mipmap-xxxhdpi", "ic_launcher_adaptive.png"), size: 432},
-		})
-		if err != nil {
-			return err
-		}
-		err = os.WriteFile(filepath.Join(v26mipmapDir, `ic_launcher.xml`), []byte(`<?xml version="1.0" encoding="utf-8"?>
-<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@mipmap/ic_launcher_adaptive" />
-    <foreground android:drawable="@mipmap/ic_launcher_adaptive" />
-</adaptive-icon>`), 0o660)
-		if err != nil {
-			return err
-		}
-		iconSnip = `android:icon="@mipmap/ic_launcher"`
+	set, err := bi.iconSet()
+	if err != nil {
+		return err
 	}
-	for _, theme := range androidThemes() {
+	if set != nil {
+		files, err := set.Android()
+		if err != nil {
+			return err
+		}
+		if err := writeIcons(resDir, files); err != nil {
+			return err
+		}
+		iconSnip = `android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"`
+	}
+	themes := androidThemes()
+	if set != nil {
+		themes = append(themes, androidSplashThemes()...)
+	}
+	for _, theme := range themes {
 		dir := filepath.Join(resDir, theme.dir)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
@@ -566,6 +588,9 @@ func exeAndroid(tmpDir string, tools *androidTools, bi *buildInfo, extraJars, pe
 	if merged {
 		// What the manifests added may ask for a newer Android than the floor.
 		manifestSrc.MinSDK = minSDK
+	}
+	if set != nil {
+		manifestSrc.Components = append(manifestSrc.Components, notificationIconElement)
 	}
 	manifestBody, err := androidManifest(manifestSrc)
 	if err != nil {

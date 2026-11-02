@@ -61,10 +61,22 @@ type Options struct {
 	// increase it.
 	Version string
 
-	// Icon is a PNG the packager resizes into every size a platform asks for.
-	// Empty ships the platform's placeholder, which is what an application
-	// nobody has drawn an icon for should look like.
+	// Icon is the picture the packager draws every icon from: a PNG, a JPEG or
+	// an SVG, with its background or without. The sizes, the adaptive layers of
+	// Android, the dark and tinted icons of iOS and the icons of the desktop
+	// are all made from it. Empty ships the platform's placeholder, which is
+	// what an application nobody has drawn an icon for should look like.
 	Icon string
+
+	// IconBackground and IconDarkBackground are the colours the icon's mark
+	// sits on, as #rrggbb. Empty takes the colour the picture was exported on,
+	// or white, and black for the dark one.
+	IconBackground     string
+	IconDarkBackground string
+
+	// IconDark is a picture for the dark appearance. Empty draws the same mark,
+	// turned over when it is grey and would be lost on the dark ground.
+	IconDark string
 
 	// SignKey is the keystore on Android and the provisioning profile on
 	// Apple's platforms; SignPass decrypts it. Without them the artifact is
@@ -253,6 +265,7 @@ func (o Options) apply(stdout, stderr io.Writer) func() {
 	previous := struct {
 		target, archNames, buildMode, destPath, appID, name, version string
 		linkMode, extraLdflags, extraTags, iconPath                  string
+		iconBackground, iconDarkBackground, iconDark                 string
 		signKey, signPass                                            string
 		notaryID, notaryPass, notaryTeamID                           string
 		schemes, pkgQueries                                          string
@@ -265,6 +278,7 @@ func (o Options) apply(stdout, stderr io.Writer) func() {
 	}{
 		*target, *archNames, *buildMode, *destPath, *appID, *name, *version,
 		*linkMode, *extraLdflags, *extraTags, *iconPath,
+		*iconBackground, *iconDarkBackground, *iconDark,
 		*signKey, *signPass,
 		*notaryID, *notaryPass, *notaryTeamID,
 		*schemes, *pkgQueries,
@@ -287,6 +301,7 @@ func (o Options) apply(stdout, stderr io.Writer) func() {
 	*extraLdflags = o.Ldflags
 	*extraTags = o.Tags
 	*iconPath = o.Icon
+	*iconBackground, *iconDarkBackground, *iconDark = o.IconBackground, o.IconDarkBackground, o.IconDark
 	*signKey = o.SignKey
 	*signPass = o.SignPass
 	*notaryID = o.NotaryID
@@ -308,6 +323,7 @@ func (o Options) apply(stdout, stderr io.Writer) func() {
 		*target, *archNames, *buildMode = previous.target, previous.archNames, previous.buildMode
 		*destPath, *appID, *name, *version = previous.destPath, previous.appID, previous.name, previous.version
 		*linkMode, *extraLdflags, *extraTags, *iconPath = previous.linkMode, previous.extraLdflags, previous.extraTags, previous.iconPath
+		*iconBackground, *iconDarkBackground, *iconDark = previous.iconBackground, previous.iconDarkBackground, previous.iconDark
 		*signKey, *signPass = previous.signKey, previous.signPass
 		*notaryID, *notaryPass, *notaryTeamID = previous.notaryID, previous.notaryPass, previous.notaryTeamID
 		*schemes, *pkgQueries = previous.schemes, previous.pkgQueries
@@ -347,13 +363,17 @@ var (
 	extraLdflags  = new(string)
 	extraTags     = new(string)
 	iconPath      = new(string)
-	signKey       = new(string)
-	signPass      = new(string)
-	notaryID      = new(string)
-	notaryPass    = new(string)
-	notaryTeamID  = new(string)
-	schemes       = new(string)
-	pkgQueries    = new(string)
+
+	iconBackground     = new(string)
+	iconDarkBackground = new(string)
+	iconDark           = new(string)
+	signKey            = new(string)
+	signPass           = new(string)
+	notaryID           = new(string)
+	notaryPass         = new(string)
+	notaryTeamID       = new(string)
+	schemes            = new(string)
+	pkgQueries         = new(string)
 
 	// androidLibs holds the library paths joined with the platform's path list
 	// separator, because a path may contain a comma and may not contain that.

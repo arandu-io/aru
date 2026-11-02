@@ -34,6 +34,12 @@ type packageOptions struct {
 	androidLibs    []string
 	googleServices string
 	placeholders   []string
+
+	// iconBackground, iconDark and iconDarkBackground say more about the icon:
+	// the colours its mark sits on, and a picture for the dark appearance.
+	iconBackground     string
+	iconDark           string
+	iconDarkBackground string
 }
 
 // packageNative writes the artifact the platform installs.
@@ -72,13 +78,18 @@ func packageNative(root string, o packageOptions, stdout, stderr io.Writer) erro
 	}
 
 	options := pack.Options{
-		Package:       nativePackage,
-		Target:        o.platform,
-		Output:        output,
-		AppID:         appID,
-		Name:          appName,
-		Version:       o.version,
-		Icon:          o.icon,
+		Package: nativePackage,
+		Target:  o.platform,
+		Output:  output,
+		AppID:   appID,
+		Name:    appName,
+		Version: o.version,
+		Icon:    o.icon,
+
+		IconBackground:     o.iconBackground,
+		IconDark:           o.iconDark,
+		IconDarkBackground: o.iconDarkBackground,
+
 		SignKey:       o.signKey,
 		SignPass:      o.signPass,
 		PrintCommands: o.verbose,

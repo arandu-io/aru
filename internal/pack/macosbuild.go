@@ -11,6 +11,7 @@ import (
 	"text/template"
 
 	"github.com/arandu-io/aru/internal/buildcache"
+	"github.com/arandu-io/aru/internal/icons"
 )
 
 func buildMac(tmpDir string, bi *buildInfo) error {
@@ -33,7 +34,11 @@ func buildMac(tmpDir string, bi *buildInfo) error {
 		return errors.New("app id is empty; use -appid to set it")
 	}
 
-	if err := builder.setIcon(bi.iconPath); err != nil {
+	set, err := bi.iconSet()
+	if err != nil {
+		return err
+	}
+	if err := builder.setIcon(set); err != nil {
 		return err
 	}
 
@@ -86,42 +91,14 @@ type macBuilder struct {
 	Entitlements []byte
 }
 
-func (b *macBuilder) setIcon(path string) (err error) {
-	if _, err := os.Stat(path); err != nil {
+// setIcon draws the icon the bundle carries. The file is written here, in Go,
+// and not by the Mac's iconutil, so a bundle is the same on a machine that has
+// no such tool and the icon is the same one the other platforms get.
+func (b *macBuilder) setIcon(set *icons.Set) (err error) {
+	if set == nil {
 		return nil
 	}
-
-	out := filepath.Join(b.TempDir, "iconset.iconset")
-	if err := os.MkdirAll(out, 0o777); err != nil {
-		return err
-	}
-
-	err = buildIcons(out, path, []iconVariant{
-		{path: "icon_512x512@2x.png", size: 1024},
-		{path: "icon_512x512.png", size: 512},
-		{path: "icon_256x256@2x.png", size: 512},
-		{path: "icon_256x256.png", size: 256},
-		{path: "icon_128x128@2x.png", size: 256},
-		{path: "icon_128x128.png", size: 128},
-		{path: "icon_64x64@2x.png", size: 128},
-		{path: "icon_64x64.png", size: 64},
-		{path: "icon_32x32@2x.png", size: 64},
-		{path: "icon_32x32.png", size: 32},
-		{path: "icon_16x16@2x.png", size: 32},
-		{path: "icon_16x16.png", size: 16},
-	})
-	if err != nil {
-		return err
-	}
-
-	cmd := exec.Command("iconutil",
-		"-c", "icns", out,
-		"-o", filepath.Join(b.TempDir, "icon.icns"))
-	if _, err := runCmd(cmd); err != nil {
-		return err
-	}
-
-	b.Icons, err = os.ReadFile(filepath.Join(b.TempDir, "icon.icns"))
+	b.Icons, err = set.ICNS()
 	return err
 }
 

@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/arandu-io/aru/internal/buildcache"
+	"github.com/arandu-io/aru/internal/icons"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -32,6 +33,7 @@ type buildInfo struct {
 	pkgDir         string
 	pkgPath        string
 	iconPath       string
+	iconOptions    icons.Options
 	tags           string
 	target         string
 	version        Semver
@@ -80,6 +82,11 @@ func newBuildInfo(pkgPath string) (*buildInfo, error) {
 	}
 	appID := getAppID(pkgMetadata)
 	appIcon := filepath.Join(pkgMetadata.Dir, "appicon.png")
+	if _, err := os.Stat(appIcon); err != nil {
+		if vector := filepath.Join(pkgMetadata.Dir, "appicon.svg"); fileExists(vector) {
+			appIcon = vector
+		}
+	}
 	if *iconPath != "" {
 		appIcon = *iconPath
 	}
@@ -119,6 +126,7 @@ func newBuildInfo(pkgPath string) (*buildInfo, error) {
 		pkgDir:         pkgMetadata.Dir,
 		pkgPath:        pkgPath,
 		iconPath:       appIcon,
+		iconOptions:    icons.Options{Dark: *iconDark, Background: *iconBackground, DarkBackground: *iconDarkBackground},
 		tags:           *extraTags,
 		target:         *target,
 		version:        ver,

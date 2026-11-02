@@ -20,6 +20,7 @@ import (
 	"github.com/akavel/rsrc/binutil"
 	"github.com/akavel/rsrc/coff"
 	"github.com/arandu-io/aru/internal/buildcache"
+	"github.com/arandu-io/aru/internal/icons"
 	"golang.org/x/text/encoding/unicode"
 )
 
@@ -48,11 +49,15 @@ func buildWindows(tmpDir string, bi *buildInfo) error {
 		return fmt.Errorf("invalid minsdk (%d) it's higher than Windows 10", sdk)
 	}
 
+	set, err := bi.iconSet()
+	if err != nil {
+		return err
+	}
 	for _, arch := range bi.archs {
 		builder.Coff = coff.NewRSRC()
 		_ = builder.Coff.Arch(arch)
 
-		if err := builder.embedIcon(bi.iconPath); err != nil {
+		if err := builder.embedIcon(set); err != nil {
 			return err
 		}
 
@@ -362,19 +367,9 @@ func (b *bufferCoff) Size() int64 {
 	return int64(b.Len())
 }
 
-func (b *windowsBuilder) embedIcon(path string) (err error) {
-	iconFile, err := os.Open(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return fmt.Errorf("can't read the icon located at %s: %v", path, err)
-	}
-	defer iconFile.Close()
-
-	iconImage, err := png.Decode(iconFile)
-	if err != nil {
-		return fmt.Errorf("can't decode the PNG file (%s): %v", path, err)
+func (b *windowsBuilder) embedIcon(set *icons.Set) (err error) {
+	if set == nil {
+		return nil
 	}
 
 	sizes := []int{16, 32, 48, 64, 128, 256}
@@ -388,7 +383,7 @@ func (b *windowsBuilder) embedIcon(path string) (err error) {
 	for _, size := range sizes {
 		var iconBuffer bufferCoff
 
-		if err := png.Encode(&iconBuffer, resizeIcon(iconVariant{size: size, fill: false}, iconImage)); err != nil {
+		if err := png.Encode(&iconBuffer, set.WindowsImage(size)); err != nil {
 			return fmt.Errorf("can't encode image: %v", err)
 		}
 

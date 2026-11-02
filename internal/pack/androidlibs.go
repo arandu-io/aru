@@ -291,7 +291,13 @@ var (
 // resolved. An element is the same as another when it has the same kind and the
 // same android:name. Nothing is replaced, removed or reconciled -- the tools
 // attributes that ask for that are dropped -- so two libraries that disagree
-// about one component are not told apart, and the first one wins.
+// about one component are not told apart, and the first one wins -- with one
+// exception that a library set cannot do without: the meta-data of a component
+// that two sources declare are added together, by name. Firebase finds its
+// parts that way: every library that has one declares the same
+// ComponentDiscoveryService with its own registrar in it, and the service the
+// system starts has to list them all, or the messaging component is "not
+// present" the first time it is asked for.
 //
 // An unresolved placeholder is an error and not an empty string: a manifest
 // that says android:value="" for the one setting a service reads is a package
@@ -299,6 +305,9 @@ var (
 func mergeManifests(sources []manifestSource, values map[string]string) (mergedManifest, error) {
 	var out mergedManifest
 	seen := map[string]bool{}
+	// placed is where each component is in out.Components, for the merge of
+	// the meta-data of a component declared twice.
+	placed := map[string]int{}
 	once := func(kind, key string) bool {
 		id := kind + "\x00" + key
 		if seen[id] {
@@ -347,8 +356,18 @@ func mergeManifests(sources []manifestSource, values map[string]string) (mergedM
 						return out, fmt.Errorf("manifest of %s: %w", src.name, err)
 					}
 					ct = qualifyComponent(c.tag, ct, src.pkg)
+					key := c.tag + "\x00" + nameOf(ct)
 					if once(c.tag, nameOf(ct)+"\x00"+firstTag(ct)) {
+						if at, found := placed[key]; found {
+							// The same component from another source, with another
+							// opening tag: the first one stays, plus what is new in it.
+							out.Components[at] = addMetaData(out.Components[at], ct)
+							continue
+						}
+						placed[key] = len(out.Components)
 						out.Components = append(out.Components, ct)
+					} else if at, found := placed[key]; found {
+						out.Components[at] = addMetaData(out.Components[at], ct)
 					}
 				}
 			default:
@@ -359,6 +378,33 @@ func mergeManifests(sources []manifestSource, values map[string]string) (mergedM
 		}
 	}
 	return out, nil
+}
+
+var metaDataTag = regexp.MustCompile(`(?s)<meta-data\b[^>]*?(?:/>|>.*?</meta-data>)`)
+
+// addMetaData puts into element the meta-data of other that element does not
+// have, by android:name, before element's closing tag. An element that is
+// written as one empty tag has nowhere to put them and is returned as it was.
+func addMetaData(element, other string) string {
+	have := map[string]bool{}
+	for _, m := range metaDataTag.FindAllString(element, -1) {
+		have[nameOf(m)] = true
+	}
+	var add []string
+	for _, m := range metaDataTag.FindAllString(other, -1) {
+		if n := nameOf(m); n != "" && !have[n] {
+			have[n] = true
+			add = append(add, m)
+		}
+	}
+	if len(add) == 0 {
+		return element
+	}
+	end := strings.LastIndex(element, "</")
+	if end < 0 || strings.HasSuffix(strings.TrimSpace(firstTag(element)), "/>") {
+		return element
+	}
+	return element[:end] + "\t" + strings.Join(add, "\n\t") + "\n" + element[end:]
 }
 
 // nameOf answers the android:name of the element whose text this is, from its

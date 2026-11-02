@@ -89,6 +89,35 @@ func TestTwoManifestsDeclaringTheSameThingDeclareItOnce(t *testing.T) {
 	}
 }
 
+// Firebase finds its parts through one service that every library declares with
+// its own registrar in it. The service the system starts has to list them all.
+func TestTheRegistrarsOfASharedServiceAreAddedTogether(t *testing.T) {
+	declare := func(registrar string) manifestSource {
+		return manifestSource{name: registrar, pkg: "com.google.firebase", body: []byte(`<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.google.firebase">
+<application>
+<service android:name="com.google.firebase.components.ComponentDiscoveryService" android:exported="false" android:directBootAware="true">
+<meta-data android:name="com.google.firebase.components:` + registrar + `" android:value="com.google.firebase.components.ComponentRegistrar"/>
+</service>
+</application></manifest>`)}
+	}
+	merged, err := mergeManifests([]manifestSource{declare("com.google.firebase.CommonKtx"), declare("com.google.firebase.messaging.Registrar"), declare("com.google.firebase.CommonKtx"), declare("com.google.firebase.installations.Registrar")}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(merged.Components) != 1 {
+		t.Fatalf("one service, got %d: %v", len(merged.Components), merged.Components)
+	}
+	service := merged.Components[0]
+	for _, want := range []string{"CommonKtx", "messaging.Registrar", "installations.Registrar"} {
+		if strings.Count(service, want) != 1 {
+			t.Errorf("%s must be in the service once:\n%s", want, service)
+		}
+	}
+	if !strings.HasSuffix(strings.TrimSpace(service), "</service>") {
+		t.Errorf("the service is not closed:\n%s", service)
+	}
+}
+
 // TestAMetaDataOfTheSameNameButAnotherValueIsKept: the first wins by name for
 // components, but two settings that differ are two statements, and dropping the
 // second silently is how a library ends up configured by another's value.

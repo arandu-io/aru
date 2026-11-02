@@ -2,10 +2,6 @@
 
 ## [v0.84.0](https://github.com/arandu-io/aru/compare/v0.83.1...v0.84.0) - 2026-11-02
 
-**Full Changelog**: https://github.com/arandu-io/aru/compare/v0.83.1...v0.84.0
-
-## v0.84.0 - 2026-11-02
-
 ### Added
 
 - `aru native:icons <image>` draws every icon an application needs from one picture,
@@ -37,6 +33,8 @@
   foreground, drawn over all 108 units, so the mark was neither inside the safe zone
   nor centred under a circular or squircle mask, and the themed icon, the status bar
   icon and the splash screen had nothing of their own.
+
+**Full Changelog**: https://github.com/arandu-io/aru/compare/v0.83.1...v0.84.0
 
 ## [v0.83.1](https://github.com/arandu-io/aru/compare/v0.83.0...v0.83.1) - 2026-11-02
 

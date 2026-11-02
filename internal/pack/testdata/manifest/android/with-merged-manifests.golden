@@ -15,7 +15,7 @@
 		<activity android:name="io.arandu.ayra.AyraActivity"
 			android:label="Probe"
 			android:theme="@style/Theme.AyraApp"
-			android:configChanges="screenSize|screenLayout|smallestScreenSize|orientation|keyboardHidden"
+			android:configChanges="screenSize|screenLayout|smallestScreenSize|orientation|keyboardHidden|uiMode"
 			android:windowSoftInputMode="adjustResize"
 			android:launchMode="singleInstance"
 			android:exported="true">

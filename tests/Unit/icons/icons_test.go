@@ -585,8 +585,25 @@ func TestGoldens(t *testing.T) {
 	}
 }
 
+// goldenTolerance is how far a channel may stray from the golden. The drawing
+// is floating point, and arm64 fuses a multiply and an add that amd64 rounds
+// twice, so the same code lands a few channel steps apart on the machine that
+// wrote a golden and on the one that checks it (18 bytes of 4194304, at most 3
+// apart, in the dark iOS icon). A real change of the drawing moves far more
+// pixels, and by far more than this.
+const goldenTolerance = 4
+
 func samePixels(t *testing.T, name string, want, got []byte) bool {
 	t.Helper()
 	a, b := decode(t, name+" golden", want), decode(t, name, got)
-	return a.Bounds() == b.Bounds() && bytes.Equal(a.Pix, b.Pix)
+	if a.Bounds() != b.Bounds() || len(a.Pix) != len(b.Pix) {
+		return false
+	}
+	for i := range a.Pix {
+		d := int(a.Pix[i]) - int(b.Pix[i])
+		if d < -goldenTolerance || d > goldenTolerance {
+			return false
+		}
+	}
+	return true
 }

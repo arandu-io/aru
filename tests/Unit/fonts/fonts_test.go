@@ -34,7 +34,7 @@ func TestTheStylesheetNamesTheFontsOwnHash(t *testing.T) {
 		Role: fonts.Display, Family: "Young Serif", Weight: "400",
 		FileList: []string{"young-serif-400-latin.woff2|U+0000-00FF|abcdef012345"},
 		Metrics:  fonts.Metrics{Ascent: 104.6, Descent: 36.6},
-	}})
+	}}, "")
 
 	if !strings.Contains(css, `url("/_arandu/assets/abcdef012345/young-serif-400-latin.woff2")`) {
 		t.Fatalf("the src does not carry the font's own hash:\n%s", css)
@@ -48,13 +48,35 @@ func TestTheStylesheetNamesTheFontsOwnHash(t *testing.T) {
 	}
 }
 
+// TestTheStylesheetNamesTheApplicationsAssetPrefix: the framework serves assets
+// under the prefix of the application's own name, and a url() under another
+// prefix is answered only by the compatibility route.
+func TestTheStylesheetNamesTheApplicationsAssetPrefix(t *testing.T) {
+	installed := []fonts.Installed{{
+		Role: fonts.Display, Family: "Young Serif", Weight: "400",
+		FileList: []string{"young-serif-400-latin.woff2|U+0000-00FF|abcdef012345"},
+	}}
+
+	branded := fonts.Stylesheet(installed, "/_perata/assets/")
+	if !strings.Contains(branded, `url("/_perata/assets/abcdef012345/young-serif-400-latin.woff2")`) {
+		t.Fatalf("the src does not carry the application's prefix:\n%s", branded)
+	}
+	if strings.Contains(branded, `url("/_arandu/`) {
+		t.Error("a url() still names the default prefix")
+	}
+
+	if got := fonts.Stylesheet(installed, ""); !strings.Contains(got, `url("/_arandu/assets/abcdef012345/`) {
+		t.Errorf("no prefix is not the default one:\n%s", got)
+	}
+}
+
 // TestAFaceWithNoMetricsGetsNoFallback: a made-up override shifts the layout in
 // a direction nobody measured, which is worse than the reflow it replaces.
 func TestAFaceWithNoMetricsGetsNoFallback(t *testing.T) {
 	css := fonts.Stylesheet([]fonts.Installed{{
 		Role: fonts.Display, Family: "Nameless", Weight: "400",
 		FileList: []string{"nameless-400-latin.woff2||aaaaaaaaaaaa"},
-	}})
+	}}, "")
 
 	if strings.Contains(css, "ascent-override") {
 		t.Fatal("an override was invented for a face whose metrics were never read")

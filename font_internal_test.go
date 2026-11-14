@@ -211,6 +211,8 @@ func fontProject(t *testing.T) string {
 		}
 	}
 	t.Chdir(root)
+	// An APP_NAME in the developer's shell would rename every URL under test.
+	t.Setenv("APP_NAME", "")
 	return root
 }
 
@@ -227,4 +229,61 @@ func writeFontSource(t *testing.T, root, name, body string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// TestTheFontURLsFollowTheApplicationsName vendors a font in a project that
+// names itself, and in one that does not.
+//
+// The framework serves assets under the prefix of the brand APP_NAME gives, so
+// a stylesheet generated with the default prefix for an application called
+// Peráta would name the one address the server only keeps for compatibility.
+// The environment wins over .env, .env over .env.example, and an empty value is
+// no name, as it is when the framework boots.
+func TestTheFontURLsFollowTheApplicationsName(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		env     string
+		dotenv  string
+		example string
+		want    string
+	}{
+		{name: "no name", want: "/_arandu/assets/"},
+		{name: "name in .env", dotenv: "APP_NAME=Peráta\n", want: "/_perata/assets/"},
+		{name: "quoted name with a space", dotenv: "APP_NAME=\"My App\"\n", want: "/_my_app/assets/"},
+		{name: "name in .env.example only", example: "APP_NAME=Peráta\n", want: "/_perata/assets/"},
+		{name: ".env over .env.example", dotenv: "APP_NAME=Tayi\n", example: "APP_NAME=Peráta\n", want: "/_tayi/assets/"},
+		{name: "environment over .env", env: "Kuaa", dotenv: "APP_NAME=Tayi\n", want: "/_kuaa/assets/"},
+		{name: "empty value is no name", dotenv: "APP_NAME=\n", example: "APP_NAME=Peráta\n", want: "/_perata/assets/"},
+		{name: "the default name is the default prefix", dotenv: "APP_NAME=Arandu\n", want: "/_arandu/assets/"},
+		{name: "a name with no letter is the default prefix", dotenv: "APP_NAME=---\n", want: "/_arandu/assets/"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := fontProject(t)
+			t.Setenv("APP_NAME", tc.env)
+			for file, body := range map[string]string{".env": tc.dotenv, ".env.example": tc.example} {
+				if body == "" {
+					continue
+				}
+				if err := os.WriteFile(filepath.Join(root, file), []byte(body), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			source := writeFontSource(t, root, "text.woff2", "the text cut")
+			if err := fontAdd([]string{"--file", source, "--family", "Arandu", "--weight", "400", "--as", "body"}, io.Discard, io.Discard); err != nil {
+				t.Fatal(err)
+			}
+
+			css, err := os.ReadFile(filepath.Join(root, fontCSS))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(css), `url("`+tc.want) {
+				t.Errorf("the stylesheet does not name %s:\n%s", tc.want, css)
+			}
+			if tc.want != "/_arandu/assets/" && strings.Contains(string(css), `url("/_arandu/`) {
+				t.Errorf("a url() still names the default prefix:\n%s", css)
+			}
+		})
+	}
 }

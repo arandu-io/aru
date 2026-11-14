@@ -199,7 +199,7 @@ func TestTheFallbackFollowsTheCategoryAndNotTheRole(t *testing.T) {
 		Category: "Sans Serif",
 		FileList: []string{"montserrat-400-800-latin.woff2|U+0000-00FF|abc123abc123"},
 		Metrics:  fonts.Metrics{Ascent: 96.8, Descent: 25.1},
-	}})
+	}}, "")
 
 	if strings.Contains(sans, "Georgia") {
 		t.Error("a geometric sans falls back to a serif")
@@ -216,7 +216,7 @@ func TestTheFallbackFollowsTheCategoryAndNotTheRole(t *testing.T) {
 		Category: "Serif",
 		FileList: []string{"young-serif-400-latin.woff2|U+0000-00FF|abc123abc123"},
 		Metrics:  fonts.Metrics{Ascent: 104.6, Descent: 36.6},
-	}})
+	}}, "")
 	if !strings.Contains(serif, `local("Georgia")`) {
 		t.Errorf("a serif does not fall back to one:\n%s", serif)
 	}
@@ -232,7 +232,7 @@ func TestAnUnknownCategoryFallsBackToASans(t *testing.T) {
 			Role: fonts.Display, Family: "X", Weight: "400", Category: category,
 			FileList: []string{"x-400.woff2||aaaaaaaaaaaa"},
 			Metrics:  fonts.Metrics{Ascent: 100, Descent: 25},
-		}})
+		}}, "")
 		if strings.Contains(css, "Georgia") {
 			t.Errorf("%q fell back to a serif", category)
 		}

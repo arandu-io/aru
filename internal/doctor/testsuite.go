@@ -27,12 +27,11 @@ const promotedOn = "2026-12-15"
 // promotion is the sentence every suite rule's Why ends with.
 const promotion = " A warning until " + promotedOn + ", an error after it."
 
-// testKitRoots are the import paths of the test kit: the canonical one, and
-// the two older spellings a project may still import.
+// testKitRoots are the import paths of the test kit. The two older homes of
+// the kit are no longer packages, and the import catalog is what moves a
+// project off them.
 var testKitRoots = []string{
 	"github.com/arandu-io/framework/test",
-	"github.com/arandu-io/hesape/arandutest",
-	"github.com/arandu-io/framework/arandutest",
 }
 
 // kitPackage reports whether path is the kit package at sub ("/browser",

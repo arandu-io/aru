@@ -302,9 +302,10 @@ that runs `aru test --smoke`).
 | `skip-without-reason` | `Skip()`, `SkipNow()`, `Skip("")` | the call's arguments |
 | `driver-specific-api-in-test` | a driver import (the kit's `cdp`, `arandu-playwright`, chromedp, rod, playwright-go, selenium, agouti) or `Driver().(T)` outside the test case files directly in `tests/` | imports and assertions |
 
-The kit is matched under its three spellings, `github.com/arandu-io/framework/test`
-first and the deprecated `hesape/arandutest` and `framework/arandutest`
-after it, so a project half way through the move is read whole.
+The kit is matched under its one import path, `github.com/arandu-io/framework/test`.
+Its two older homes, `hesape/arandutest` and `framework/arandutest`, are no
+longer packages: `aru imports:catalog --fix` moves a project off them, and the
+doctor does not read them as the kit.
 
 ## The CSRF exemption rule
 

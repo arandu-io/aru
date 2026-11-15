@@ -35,11 +35,11 @@ func kitFramework(t *testing.T, withKit bool) string {
 	return dir
 }
 
-// TestTheKitsOldHomeIsCataloguedUnderTheFramework: a framework that holds the
-// kit catalogs hesape/arandutest and its packages as aliases of
-// framework/test, so the fix moves an old import; one from before the move
-// catalogs nothing there.
-func TestTheKitsOldHomeIsCataloguedUnderTheFramework(t *testing.T) {
+// TestTheKitsOldHomesAreCataloguedUnderTheFramework: a framework that holds the
+// kit catalogs hesape/arandutest and its packages, and framework/arandutest,
+// as aliases of framework/test, so the fix moves an old import; one from before
+// the move catalogs nothing there.
+func TestTheKitsOldHomesAreCataloguedUnderTheFramework(t *testing.T) {
 	c, err := catalog.Read(kitFramework(t, true))
 	if err != nil {
 		t.Fatal(err)
@@ -48,6 +48,7 @@ func TestTheKitsOldHomeIsCataloguedUnderTheFramework(t *testing.T) {
 		{catalog.MovedKit, "Serve", catalog.KitPath},
 		{catalog.MovedKit, "Server", catalog.KitPath},
 		{catalog.MovedKit + "/browser", "Page", catalog.KitPath + "/browser"},
+		{catalog.MovedKitBridge, "Serve", catalog.KitPath},
 	} {
 		s, ok := c.Lookup(want.pkg, want.name)
 		if !ok || !s.Moved() || s.Canonical != want.canonical || s.CanonicalName != want.name {
@@ -74,11 +75,23 @@ func TestTheKitsOldHomeIsCataloguedUnderTheFramework(t *testing.T) {
 		t.Errorf("the old import was not moved to the framework's kit:\n%s", out)
 	}
 
+	src = "package feature_test\n\nimport (\n\t\"testing\"\n\n\t\"github.com/arandu-io/framework/arandutest\"\n)\n\nfunc TestX(t *testing.T) { _ = arandutest.Serve() }\n"
+	out, renames, err = c.Rewrite("y_test.go", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `"github.com/arandu-io/framework/test"`) || !strings.Contains(string(out), "test.Serve()") ||
+		strings.Contains(string(out), "arandutest") || len(renames) == 0 {
+		t.Errorf("the framework's old forwarding package was not moved to the kit:\n%s", out)
+	}
+
 	before, err := catalog.Read(kitFramework(t, false))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if before.Covers(catalog.MovedKit) {
-		t.Errorf("a framework without the kit catalogs %s, pointing at a package it does not have", catalog.MovedKit)
+	for _, old := range []string{catalog.MovedKit, catalog.MovedKitBridge} {
+		if before.Covers(old) {
+			t.Errorf("a framework without the kit catalogs %s, pointing at a package it does not have", old)
+		}
 	}
 }

@@ -118,15 +118,15 @@ the CLI accepts the fixture as a project:
 ```sh
 cp -R internal/doctor/testdata/violations /tmp/viol && touch /tmp/viol/arandu.toml
 (cd /tmp/viol && /tmp/aru-src doctor > /tmp/viol.out 2>&1); echo $?   # 1
-tail -1 /tmp/viol.out                                                 # 39 error(s), 88 warning(s)
-grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 70
+tail -1 /tmp/viol.out                                                 # 39 error(s), 95 warning(s)
+grep -oE '^[^ ]+:[0-9]+: \[[a-z-]+\]' /tmp/viol.out | grep -oE '\[[a-z-]+\]' | sort -u | wc -l   # 72
 ```
 
 `violations` carries a `vendor/` directory holding a slice of the framework:
 the bridge packages it imports, declared the way the framework declares them.
 `import-not-canonical` decides from the framework's own source, at the version
 go.mod requires, and a vendor directory is the one place that source can sit
-inside a fixture and survive the `cp -R` above. Sixteen of the eighty-eight
+inside a fixture and survive the `cp -R` above. Sixteen of the ninety-five
 warnings are that rule. The other fixtures require a framework version no
 module cache here holds, so the rule is silent on them -- which is its declared
 limit, not an accident.
@@ -174,7 +174,7 @@ should read.
 **3. Fill in every field of the finding, and treat `Why` as the one that
 matters.**
 
-This is the shape, from `internal/doctor/rules.go:408`:
+This is the shape, from `internal/doctor/rules.go:443`:
 
 ```go
 Finding{
@@ -188,7 +188,7 @@ Finding{
 `Message` says what is wrong at that line. `Why` says what a user of the
 application would experience. A finding that only says what is forbidden gets
 suppressed; one that says what breaks gets fixed.
-`TestFindingsAreActionable` (`tests/Unit/doctor/doctor_test.go:91`) enforces
+`TestFindingsAreActionable` (`tests/Unit/doctor/doctor_test.go:95`) enforces
 this mechanically: a non-empty `File`, a non-empty `Message`, a `Why` of at
 least 40 characters, and a `Message` that does not contain the word
 "violation" — because a message that says a rule was violated instead of what
@@ -235,7 +235,8 @@ says so, and it is the only version policy this package has.
 
 ## Structural warnings
 
-Twenty-three rules in `internal/doctor/structure.go` report where code lives, not
+Twenty-four rules in `internal/doctor/structure.go`, and one more in
+`internal/doctor/requestrules.go`, report where code lives, not
 what it lets through: a second way to do something the application tree
 already has an owner for. They are all `Warning` and stay so until the
 applications' reports show a rule is never wrong; promotion to `Error` is a
@@ -367,7 +368,7 @@ It parses; it does not type-check and it does not resolve constants.
   skill that names the skeleton as its source: before that, a project that
   never had those skills and one that deleted them look the same.
 - **A build tag is invisible**, so a file the compiler excludes is still read —
-  except the views, which `doctor.go:443` skips by name for exactly that reason:
+  except the views, which `doctor.go:518` skips by name for exactly that reason:
   a `.kyse.go` ends in `.go` and is not Go, and parsing one would report every
   view in the project.
 

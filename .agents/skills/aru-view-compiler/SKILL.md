@@ -13,8 +13,8 @@ rather than a blank page.
 
 ```sh
 wc -l internal/kyse/*.go
-#  36 expr_internal_test.go   2459 generate.go   390 kyse.go
-# 701 parse.go   684 scope.go   208 scope_internal_test.go
+#  36 expr_internal_test.go   3215 generate.go   669 kyse.go
+# 1042 parse.go   684 scope.go   208 scope_internal_test.go
 ```
 
 The one thing to hold on to while changing any of it: **the person reads the
@@ -26,7 +26,7 @@ wrote, in a file whose header says not to edit it.
 ## The pipeline
 
 `Generate(f *File, name, dataType, output string) ([]byte, error)`, at
-`internal/kyse/generate.go:43`, in order:
+`internal/kyse/generate.go:47`, in order:
 
 1. refuse a view that reads page data and declares no type for it;
 2. `validateExpressions`, `yieldInsideASection`, `pageDirectiveInAComponent`;
@@ -53,7 +53,7 @@ Four rounds of work went into closing that, and each round fixed the previous
 one's blind spot.
 
 **Round one: the variables got a prefix.** `hygienePrefix = "kyse__"`
-(`generate.go:150`), and seven names under it: `kyse__w`, `kyse__data`,
+(`generate.go:154`), and seven names under it: `kyse__w`, `kyse__data`,
 `kyse__d`, `kyse__ok`, `kyse__err`, `kyse__sections`, `kyse__props`, plus
 counter-suffixed temporaries so no two live at once. What found it:
 `@foreach(.Steps as s)` renamed the temporary a URL escape writes into, and the
@@ -74,7 +74,7 @@ every import withdrew a name the view was already using — `view.URL("app.css")
 in a link, `view.Page` embedded in the struct a page draws — so a layout that had
 asked for its stylesheet since the day it was generated stopped building, with
 `undefined: view` against the line the person wrote. `republishedPackages`
-(`generate.go:261`) gives a package its plain name back **only when the view's
+(`generate.go:265`) gives a package its plain name back **only when the view's
 own source calls it**. The table first held `view` alone, on the reasoning that
 no view names the other five from its markup — and markup was the wrong place to
 look: an `@go` block is Go the person writes, and a component declaring
@@ -82,7 +82,7 @@ look: an `@go` block is Go the person writes, and a component declaring
 table now, and the rule is the rename rather than the list.
 
 ```sh
-sed -n '261,268p' internal/kyse/generate.go | grep -cE '^\t"'    # 6
+awk '/^var republishedPackages/,/^}/' internal/kyse/generate.go | grep -cE '^\t"'    # 6
 ```
 
 **Round four: stop trusting the list.** `checkScopes` (`internal/kyse/scope.go`)
@@ -107,10 +107,10 @@ cannot — because the language chose the name — it belongs in `goUniverse`
 instead.
 
 ```sh
-sed -n '1918,1970p' internal/kyse/generate.go | grep -cE '^\t"'   # 44
+awk '/^var goUniverse/,/^}/' internal/kyse/generate.go | grep -cE '^\t"'   # 44
 ```
 
-`goUniverse` (`generate.go:1918`) is the universe block of the language
+`goUniverse` (`generate.go:2616`) is the universe block of the language
 specification, not the subset the output happens to write today: `nil` guards
 every write, `len` counts the subject of a `@forelse`, `string` types a
 temporary. A binding that spells one shadows it for the whole loop body. Listing
@@ -118,7 +118,7 @@ the language's whole universe means a name added to the generated code tomorrow
 is already covered; guarding them one at a time as somebody trips over them is a
 list that is always one failure behind.
 
-`loopBinding` (`generate.go:2005`) is the other end, and it refuses five things,
+`loopBinding` (`generate.go:2703`) is the other end, and it refuses five things,
 each with the message a person can act on: a name from `goUniverse`, the name of
 the function this view compiles to, anything starting with `kyse__`, a package
 the view itself calls outside the loop, and anything that is not a Go identifier
@@ -251,11 +251,11 @@ build with the type error at the line of the `.kyse.go`. Do not loosen this to
 ## The directive set is closed
 
 ```sh
-sed -n '212,220p' internal/kyse/kyse.go | grep -c ':'      # 7 block directives
-sed -n '223,233p' internal/kyse/kyse.go | grep -c 'true'   # 9 inline directives
+awk '/^var blockDirectives/,/^}/' internal/kyse/kyse.go | grep -c '":'     # 7 block directives
+awk '/^var inlineDirectives/,/^}/' internal/kyse/kyse.go | grep -c 'true'  # 10 inline directives
 ```
 
-`Directives()` returns all 23 names — each block directive plus its `end`, plus
+`Directives()` returns all 24 names — each block directive plus its `end`, plus
 the inline ones. A directive set that grows on demand becomes a language, and a
 language has to be maintained forever. What does not fit is written in Go inside
 `@go`.
@@ -304,7 +304,7 @@ diffed byte for byte before and after.
 
 ## Where the output goes
 
-`OutputPath` (`kyse.go:280`) mirrors the source tree under storage:
+`OutputPath` (`kyse.go:312`) mirrors the source tree under storage:
 
 ```
 resources/views/auth/login.kyse.go  ->  storage/framework/views/auth/login.go
@@ -316,7 +316,7 @@ every review. The one fallback: a module with no `resources/views` — a compone
 library keeps its views at its own root — compiles in place, because there the
 output is what `go get` serves.
 
-`compileViews` (`viewcompile.go:51`) carries four decisions worth knowing before
+`compileViews` (`viewcompile.go:54`) carries four decisions worth knowing before
 changing it: layouts are compiled first so a page that declares no `@go` block
 inherits the layout's type; every view is compiled even after one fails, so a
 person fixing views sees all of them; a build that changes nothing writes
@@ -354,7 +354,7 @@ checker sees one.
   halves of `checkScopes`: it refuses what it should, and it accepts what the
   generator really emits.
 - **`FuzzParse`** (`tests/Fuzz/kyse/fuzz_test.go:60`) runs arbitrary bytes at the
-  parser, with 78 files of corpus beside it.
+  parser, with 79 files of corpus beside it.
 
 So: add the failing view to the corpus, watch it fail, then fix it. A change to
 the generator that nothing compiles is a change nobody has checked.
@@ -377,12 +377,12 @@ build tag, so it parses the file the compiler skips and fails with
 purpose, including a Go file with no closing brace that the doctor has to report
 honestly.
 
-In this repository all five `.kyse.go` files happen to live under `testdata/`,
+In this repository all six `.kyse.go` files happen to live under `testdata/`,
 so the first filter covers them today — which is a fact about where the fixtures
 are, not a reason to drop the second:
 
 ```sh
-find . -name '*.kyse.go' | wc -l                             # 5
+find . -name '*.kyse.go' | wc -l                             # 6
 find . -name '*.kyse.go' -not -path '*/testdata/*'           # nothing
 gofmt -l $(find . -name '*.go' -not -name '*.kyse.go'); echo $?   # 2
 ```

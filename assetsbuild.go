@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -98,6 +99,38 @@ func buildScripts(root string, stdout io.Writer) error {
 	return nil
 }
 
+// The native assets an application imports as `arandu:<name>`.
+//
+// The extension is its own file and not part of the script because the script
+// is the core alone: the CSRF token is sent by the extension, and a page that
+// leaves it out sends none.
+const (
+	coreAsset      = "ypy.min.js"
+	extensionAsset = "ypy-csrf.min.js"
+)
+
+var nativeAssets = []string{coreAsset, extensionAsset, "ui.js", "basecoat.bundle.js", "theme.js"}
+
+// coreBeforeExtension refuses an importer that writes the extension before the
+// script, which is what the order of the imports in one file decides.
+//
+// An importer that does not name the script at all is left to the check inside
+// the bundle: the script may be imported by a file that runs first.
+func coreBeforeExtension(importer string) error {
+	body, err := os.ReadFile(importer)
+	if err != nil {
+		return nil
+	}
+	text := string(body)
+	core := strings.Index(text, "arandu:"+coreAsset)
+	extension := strings.Index(text, "arandu:"+extensionAsset)
+	if core >= 0 && extension >= 0 && extension < core {
+		return fmt.Errorf("assets: %s imports arandu:%s before arandu:%s; the extension registers itself on the ypy global, so the script has to come first",
+			filepath.Base(importer), extensionAsset, coreAsset)
+	}
+	return nil
+}
+
 // localAssetPlugin owns resolution rather than falling back to package.json,
 // node_modules, tsconfig path aliases or network URLs. Every file import names
 // its extension. Native imports read the consumer's resolved module, not the
@@ -110,10 +143,13 @@ func localAssetPlugin(root string) api.Plugin {
 		build.OnResolve(api.OnResolveOptions{Filter: ".*"}, func(args api.OnResolveArgs) (api.OnResolveResult, error) {
 			if strings.HasPrefix(args.Path, "arandu:") {
 				name := strings.TrimPrefix(args.Path, "arandu:")
-				switch name {
-				case "ypy.min.js", "ui.js", "basecoat.bundle.js", "theme.js":
-				default:
-					return api.OnResolveResult{}, fmt.Errorf("unknown native asset %q", args.Path)
+				if !slices.Contains(nativeAssets, name) {
+					return api.OnResolveResult{}, fmt.Errorf("unknown native asset %q; the native assets are %s", args.Path, strings.Join(nativeAssets, ", "))
+				}
+				if name == extensionAsset {
+					if err := coreBeforeExtension(args.Importer); err != nil {
+						return api.OnResolveResult{}, err
+					}
 				}
 				once.Do(func() { nativeDir, nativeErr = nativeAssetsDir(root) })
 				if nativeErr != nil {
@@ -161,6 +197,12 @@ func localAssetPlugin(root string) api.Plugin {
 					// The vendored browser distribution declares a script global.
 					// Modules need to publish that value explicitly after bundling.
 					contents += "\nwindow.ypy = ypy;\n"
+				case extensionAsset:
+					// The extension registers itself on the script's global, so it
+					// has to run after the script has published it. A bundle that
+					// orders them the other way would fail in the browser with a
+					// reference error that names neither file.
+					contents = "if (typeof ypy === \"undefined\") { throw new Error(\"arandu:" + extensionAsset + " registers itself on the ypy global, so arandu:" + coreAsset + " has to be imported before it\"); }\n" + contents
 				case "basecoat.bundle.js":
 					// Preserve the upstream notice from the resolved version,
 					// including distributions whose leading comment lacks '!'.

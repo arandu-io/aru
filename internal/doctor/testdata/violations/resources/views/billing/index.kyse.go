@@ -19,7 +19,7 @@ type BillingIndexData struct {
 <div class="note">{!! .Note !!}</div>
 
 <!-- Violation, and the expensive kind: a directive that fetches. This should be
-     an HTMX fragment -- the moment it loads data of its own, the application has
+     a YPY fragment -- the moment it loads data of its own, the application has
      two ways to do it, with two loading states and two places to forget the CSRF
      token. -->
 <div x-data="{ open: false, invoices: [], async load() { const r = await fetch('/api/invoices'); this.invoices = await r.json() } }">

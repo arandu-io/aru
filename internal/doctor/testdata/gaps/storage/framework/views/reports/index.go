@@ -115,7 +115,7 @@ func renderInternalDoctorTestdataGapsResourcesViewsReportsIndex(kyse__w kyse__io
 		_, kyse__err = kyse__io.WriteString(kyse__w, "<!-- The same menu, spelled the way the behaviours file reads it, and silent.\n")
 	}
 	if kyse__err == nil {
-		_, kyse__err = kyse__io.WriteString(kyse__w, "     A rule that fired here would be a rule teaching people to mute it: hx- is\n")
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     A rule that fired here would be a rule teaching people to mute it: ypy- is\n")
 	}
 	if kyse__err == nil {
 		_, kyse__err = kyse__io.WriteString(kyse__w, "     not the family, data- is not the family, and neither is an attribute that\n")
@@ -127,7 +127,7 @@ func renderInternalDoctorTestdataGapsResourcesViewsReportsIndex(kyse__w kyse__io
 		_, kyse__err = kyse__io.WriteString(kyse__w, "<div data-menu>\n")
 	}
 	if kyse__err == nil {
-		_, kyse__err = kyse__io.WriteString(kyse__w, "\t<button data-menu-trigger aria-expanded=\"false\" hx-get=\"/reports/menu\">Menu</button>\n")
+		_, kyse__err = kyse__io.WriteString(kyse__w, "\t<button data-menu-trigger aria-expanded=\"false\" ypy-get=\"/reports/menu\">Menu</button>\n")
 	}
 	if kyse__err == nil {
 		_, kyse__err = kyse__io.WriteString(kyse__w, "\t<div data-x-id=\"not-a-directive\" class=\"combobox-initialized\"></div>\n")

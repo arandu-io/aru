@@ -83,7 +83,7 @@ func renderInternalDoctorTestdataViolationsResourcesViewsBillingIndex(kyse__w ky
 		_, kyse__err = kyse__io.WriteString(kyse__w, "<!-- Violation, and the expensive kind: a directive that fetches. This should be\n")
 	}
 	if kyse__err == nil {
-		_, kyse__err = kyse__io.WriteString(kyse__w, "     an HTMX fragment -- the moment it loads data of its own, the application has\n")
+		_, kyse__err = kyse__io.WriteString(kyse__w, "     a YPY fragment -- the moment it loads data of its own, the application has\n")
 	}
 	if kyse__err == nil {
 		_, kyse__err = kyse__io.WriteString(kyse__w, "     two ways to do it, with two loading states and two places to forget the CSRF\n")

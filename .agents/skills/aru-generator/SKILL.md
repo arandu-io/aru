@@ -350,8 +350,8 @@ it is also `internal/doctor/testdata/clean`. Break one and you break the other.
   make:factory` says so when it reads a model that does not chain it.
 - **A form input asks the page for its message.** `view.Page` has `FieldError`,
   so no page data declares one, and the show screen's delete button sends no
-  `hx-headers`: the layout's `<body>` already sends the token on every htmx
-  request.
+  token header of its own: the `ypy-csrf` extension sends the token the layout's
+  meta tag holds on every request that is not a GET.
 
 ## The generated module carries no skill
 

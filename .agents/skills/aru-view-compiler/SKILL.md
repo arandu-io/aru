@@ -140,41 +140,63 @@ A view writes `{{ }}` and says nothing about escaping. `echo` (in
 | a `style` attribute or a `style` element | `view.TextCSS(...)`, refusable at render time |
 | a JSON attribute, outside a string | `view.TextAttr(view.TextJS(...))` — one whole JSON literal, then the attribute escape |
 | a JSON attribute, inside a string | escaped for the JSON string, then for the attribute |
-| `hx-trigger` | `view.TextAttr(...)`, refused at render time when the value holds a `[` |
+| a YPY trigger | `view.TextAttr(...)`, refused at render time when the value holds a `[` |
+| the whole value of `ypy-confirm` | `view.TextAttr(...)`, refused at render time when the value opens with `js:` or `javascript:` |
 
-**The JSON attributes** are `hx-vals`, `hx-headers`, `hx-request` and
+**The JSON attributes** are `ypy-vals`, `ypy-headers`, `ypy-config` and
 `data-kyse-props`, an exact list (`attributeHoldsJSON`). The HTML parser decodes
 `&#34;` back into a quote before the JSON parser reads the value, so the
 attribute escape alone let `x", "role": "admin` close the string and add keys.
 The scanner follows the JSON inside the value, with character references
 decoded, and picks the escape by where the interpolation lands. A value right
 after a backslash inside a JSON string is refused at build time. When the
-attribute's value opens with `js:` or `javascript:`, HTMX evaluates it, and the
+attribute's value opens with `js:` or `javascript:`, YPY evaluates it, and the
 interpolation is refused as a script position.
 
-**`hx-trigger`** is escaped as an attribute and checked at render time: a `[`
-opens the filter HTMX evaluates, so a value holding one is refused, and a value
-written inside a filter the view itself opened is refused at build time.
-Components write their events here, which is why every value is not refused.
+**`ypy-vals`, `ypy-headers` and `ypy-config` are objects only when the value
+opens with a brace.** YPY parses a value that starts with `{` as JSON and reads
+anything else as a list of pairs in a syntax of its own (`a:1 "b":'c d'`), where
+a quote that JSON escaping kept inside a string still ends the value and starts
+a pair. So the view has to write the opening brace itself before any value
+(`attributeReadsAsObject`): a whole value `ypy-vals="{{ .X }}"`, a value behind
+a space or another character, an unfinished `js:` prefix, and the `:append`
+spelling — which YPY joins with an ancestor's value as text — are refused as
+`posAmbiguous`.
 
-**`data-hx-*` is classified exactly like `hx-*`.** HTMX reads every attribute
-through its `data-` alias as well, so the prefix is taken off an HTMX name
-before it is classified — `data-hx-post` is an address, `data-hx-on:click` is a
-script, `data-hx-vals` is JSON.
+**A YPY trigger** — `ypy-trigger`, `ypy-validate-trigger` and
+`ypy-multipart:close` (`attributeHoldsTrigger`) — is escaped as an attribute and
+checked at render time: a `[` opens the filter YPY evaluates, so a value holding
+one is refused, and a value written inside a filter the view itself opened is
+refused at build time. Components write their events here, which is why every
+value is not refused.
+
+**`ypy-confirm`** is text until it opens with `js:` or `javascript:`, and then
+YPY runs the rest. A value that is the whole attribute is checked at render time
+(`posTextFront`); one behind an unfinished prefix is refused at build time.
+
+**`data-ypy-*` is classified exactly like `ypy-*`, and so are the `:inherited`
+and `:append` spellings.** YPY reads every attribute through its `data-` alias
+as well, so the prefix is taken off a YPY name before it is classified —
+`data-ypy-post` is an address, `data-ypy-on:click` is a script,
+`data-ypy-vals:inherited` is JSON. `htmlScanner.reads` is where that happens.
 
 **An address is read as the browser reads it.** The front of a URL attribute is
 read with character references decoded and tabs and newlines removed, and a
-value takes the URL check while the front is still empty. `hx-push-url` and
-`hx-replace-url` are addresses too.
+value takes the URL check while the front is still empty. The request verbs,
+`ypy-action`, `ypy-query`, `ypy-push-url`, `ypy-replace-url`, `ypy-lazy`,
+`ypy-validate`, `ypy-validate-fields` and the stream, SSE, WebSocket and
+multipart connections are addresses too, and an address the view opens with
+`js:` is a script, because YPY runs it.
 
 And these positions produce no escape at all, so the value is refused instead,
 all at build time:
 
 - **an unquoted attribute value** — it ends at the first space, and no escape
   puts a space back inside it;
-- **an attribute whose value is code** — `on*`, `hx-on*`, `x-on:`, `@`,
-  `x-bind:`, `:`, the ten closed `x-` directives, and `hx-vars`, which HTMX
-  always evaluates. A character reference in an attribute is decoded before the
+- **an attribute whose value is code** — `on*`, `ypy-on*`, `x-on:`, `@`,
+  `x-bind:`, `:`, the ten closed `x-` directives, and the expressions of the
+  YPY extensions: `ypy-live*`, `ypy-signals*`, `ypy-computed*`, `ypy-attr*`,
+  `ypy-class*`, `ypy-text` and `ypy-show`. A character reference in an attribute is decoded before the
   script is read, so an escaped quote arrives as the quote it started as;
 - **an attribute the browser acts on rather than displays** — `srcdoc`, the
   `content` of a `meta http-equiv` (whichever order the two attributes are
@@ -191,7 +213,7 @@ all at build time:
 - **where an attribute name goes** — whole or in part: `{{ .N }}="{{ .V }}"`,
   `{{ .N }}="1"`, a bare `{{ .N }}`, `data-{{ .N }}`. The escape of every value
   is chosen from the name of its attribute, and a name that is data is one the
-  compiler never read, so `onclick`, `hx-post` or `href` would carry their value
+  compiler never read, so `onclick`, `ypy-post` or `href` would carry their value
   as inert text. An attribute whose name is data is written with `@attributes`,
   whose `view.Attributes` refuses an active or address name at render time.
 

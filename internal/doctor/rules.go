@@ -2498,13 +2498,13 @@ func relativeTo(root, path string) string {
 // and every other one a plugin adds -- and a list that has to be extended per
 // plugin is a list that goes stale, which is the failure this rule was corrected
 // for. Nothing else claims the prefix: HTML gives custom attributes `data-`, and
-// the other library on the page spells its own `hx-`.
+// the client library of the stack spells its own `ypy-`.
 //
 // The `@name` shorthand is the same attribute in its short spelling, and it
 // cannot collide with the template's own directives: those take arguments in
 // parentheses that end the line, so `@name="value"` is never one of them. The
-// character before the name is what separates the families -- without it `hx-get`
-// reads as `x-get` and `data-x-id` as `x-id`, and the difference between an
+// character before the name is what separates the families -- without it
+// `data-x-id` reads as `x-id`, and the difference between an
 // attribute that routes a swap and one that holds a value is this rule's whole
 // subject.
 //
@@ -2519,7 +2519,7 @@ var clientDirective = regexp.MustCompile(`(?s)(?:^|[^\w:@-])(x-[\w.:-]+|@[\w.:-]
 // wrote in the wrong stack and a second fetch path with its own CSRF handling
 // both have to be reported, and telling them apart in the message is the
 // difference between a person reaching for ui.js and a person reaching for an
-// HTMX fragment.
+// YPY fragment.
 var reachesTheServer = []struct {
 	token string
 	what  string
@@ -2538,8 +2538,8 @@ var reachesTheServer = []struct {
 // State on this stack is the server's. A handler reads the form, decides, and
 // answers markup that is already correct, so there is no second copy in the
 // browser to keep in step and nothing to reconcile when the two disagree. An
-// `hx-` attribute is not a counter-example and cannot become one: hx-post,
-// hx-target and hx-swap say where to ask and what to replace, and nothing reads
+// `ypy-` attribute is not a counter-example and cannot become one: ypy-post,
+// ypy-target and ypy-swap say where to ask and what to replace, and nothing reads
 // a value back out of one.
 //
 // What the browser does own is what dies with the tab and the server never needs
@@ -2560,7 +2560,7 @@ var reachesTheServer = []struct {
 // permissive one.
 //
 // What decided the widening is that a generated project cannot run one. The
-// layout links a stylesheet, HTMX, the theme script and the behaviours file;
+// layout links a stylesheet, YPY, the theme script and the behaviours file;
 // asking the asset table for a directive framework panics rather than answering a
 // URL that would 404, so the ordinary way to add the script tag takes the page
 // down at render. And the policy the skeleton wires is script-src 'self' with no

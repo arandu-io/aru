@@ -363,8 +363,8 @@ func writesJSON(f *file, fn *ast.FuncDecl) bool {
 //
 // Reason. The router turns validation.Errors into a redirect back with what
 // was typed and the messages in the flash. A controller that answers 422
-// itself is a second path: htmx discards a 422 swap by default, and a reload
-// of that answer submits the form again.
+// itself is a second path: the typed values and the messages do not travel in
+// the flash, and a reload of that answer submits the form again.
 //
 // Scope. Every function declared in a file under app/Http/Controllers, tests
 // excluded.
@@ -438,9 +438,9 @@ func aRejectedFormIsARedirect(p *project) []Finding {
 				Rule: "invalid-form-answered-by-hand", Severity: Warning,
 				File: f.rel, Line: f.line(first),
 				Message: funcLabel(fn) + " answers a rejected form with 422 itself",
-				Why: "htmx discards a 422 swap by default, so the person sees the form unchanged, and a reload of the " +
-					"answer submits the form again. Return the validation.Errors: the router redirects back with what " +
-					"was typed and the messages in the flash.",
+				Why: "a 422 answered by hand is a second path beside the router's: what was typed and the messages do not " +
+					"travel in the flash, and a reload of the answer submits the form again. Return the validation.Errors: " +
+					"the router redirects back with what was typed and the messages in the flash.",
 			})
 		})
 	}

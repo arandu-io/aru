@@ -32,10 +32,10 @@ type ReportsIndexData struct {
 </div>
 
 <!-- The same menu, spelled the way the behaviours file reads it, and silent.
-     A rule that fired here would be a rule teaching people to mute it: hx- is
+     A rule that fired here would be a rule teaching people to mute it: ypy- is
      not the family, data- is not the family, and neither is an attribute that
      merely ends in one of the names. -->
 <div data-menu>
-	<button data-menu-trigger aria-expanded="false" hx-get="/reports/menu">Menu</button>
+	<button data-menu-trigger aria-expanded="false" ypy-get="/reports/menu">Menu</button>
 	<div data-x-id="not-a-directive" class="combobox-initialized"></div>
 </div>

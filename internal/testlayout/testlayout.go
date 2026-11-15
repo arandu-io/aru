@@ -65,7 +65,7 @@ func Categories() []Category {
 		{Dir: "tests/Unit", Proves: "one rule, with nothing running"},
 		{Dir: "tests/Feature", Proves: "the HTTP answer in process, the policy and the JSON"},
 		{Dir: "tests/Contract", Proves: "the answers against the exported OpenAPI document"},
-		{Dir: E2EDir, Tag: E2ETag, Proves: "the real journey: server, database, browser, JavaScript and htmx"},
+		{Dir: E2EDir, Tag: E2ETag, Proves: "the real journey: server, database, browser, JavaScript and YPY"},
 		{Dir: "tests/Conformance", Proves: "the framework's and the modules' kits, one call each"},
 	}
 }

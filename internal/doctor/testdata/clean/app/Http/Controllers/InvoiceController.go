@@ -44,7 +44,7 @@ func (c InvoiceController) Index(ctx *http.Context) error {
 	})
 }
 
-// Show renders one invoice as a fragment, for HTMX.
+// Show renders one invoice as a fragment, for YPY.
 func (c InvoiceController) Show(ctx *http.Context) error {
 	actor, err := http.Actor(ctx)
 	if err != nil {

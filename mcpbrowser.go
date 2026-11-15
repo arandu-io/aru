@@ -335,7 +335,7 @@ func e2eTools(s *e2eSession) []mcp.Tool {
 			handle: needPage(func(_ context.Context, s *e2eSession, _ mcp.Request) (mcp.Response, error) { return s.tree() })},
 		e2eTool{session: s, name: "e2e_click",
 			description: "Click the one visible element the locator finds -- role and name, label, text or test id -- after " +
-				"waiting for it to be visible, enabled and still, and wait for the page to settle (htmx, network, animations). " +
+				"waiting for it to be visible, enabled and still, and wait for the page to settle (YPY, network, animations). " +
 				"Answers the accessibility tree after the click.",
 			schema: mcp.Object(locatorFields()...),
 			handle: needPage(func(_ context.Context, s *e2eSession, r mcp.Request) (mcp.Response, error) {

@@ -152,10 +152,10 @@ func TestAssetBuildUsesConsumerNativeVersionAndGeneratedGoCompiles(t *testing.T)
 	assetFixture(t, root, "go.mod", "module example.test/app\n\ngo 1.26\n\nrequire github.com/arandu-io/hesape v0.0.0\nreplace github.com/arandu-io/hesape => "+filepath.ToSlash(native)+"\n")
 	assetFixture(t, native, "go.mod", "module github.com/arandu-io/hesape\n\ngo 1.26\n")
 	assetFixture(t, native, "view/view.go", "package view\nfunc RegisterAsset(name, kind string, body []byte) {}\n")
-	assetFixture(t, native, "view/assets/htmx.min.js", "var htmx = {version: 'consumer-version'};")
-	assetFixture(t, native, "view/assets/ui.js", "window.sequence = window.htmx.version;")
+	assetFixture(t, native, "view/assets/ypy.min.js", "var ypy = {version: 'consumer-version'};")
+	assetFixture(t, native, "view/assets/ui.js", "window.sequence = window.ypy.version;")
 	assetFixture(t, native, "view/assets/basecoat.bundle.js", "/* Copyright Fixture, MIT */\nwindow.fixture = true;")
-	assetFixture(t, root, "resources/js/app.js", "import 'arandu:htmx.min.js'; import 'arandu:ui.js'; import 'arandu:basecoat.bundle.js';")
+	assetFixture(t, root, "resources/js/app.js", "import 'arandu:ypy.min.js'; import 'arandu:ui.js'; import 'arandu:basecoat.bundle.js';")
 	if err := buildScripts(root, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
@@ -164,12 +164,12 @@ func TestAssetBuildUsesConsumerNativeVersionAndGeneratedGoCompiles(t *testing.T)
 		t.Fatal(err)
 	}
 	code := string(generated)
-	for _, want := range []string{"consumer-version", "window.htmx=", "Copyright Fixture, MIT"} {
+	for _, want := range []string{"consumer-version", "window.ypy=", "Copyright Fixture, MIT"} {
 		if !strings.Contains(code, want) {
 			t.Errorf("lost native contract %s", want)
 		}
 	}
-	if strings.Index(code, "window.htmx=") > strings.Index(code, "window.sequence=") {
+	if strings.Index(code, "window.ypy=") > strings.Index(code, "window.sequence=") {
 		t.Fatal("native dependency executed after its consumer")
 	}
 	// -trimpath keeps the temporary directory out of the build cache key, so
@@ -195,5 +195,75 @@ func TestAssetSyntaxFailurePreservesLastGoodBuild(t *testing.T) {
 	after, _ := os.ReadFile(filepath.Join(root, bundleOutput))
 	if !bytes.Equal(before, after) {
 		t.Fatal("failed build changed the served bundle")
+	}
+}
+
+// nativeAssetProject writes a consumer module and a native module whose assets
+// stand in for the framework's, and returns the consumer's root.
+func nativeAssetProject(t *testing.T, app string) string {
+	t.Helper()
+	root, native := t.TempDir(), t.TempDir()
+	assetFixture(t, root, "go.mod", "module example.test/app\n\ngo 1.26\n\nrequire github.com/arandu-io/hesape v0.0.0\nreplace github.com/arandu-io/hesape => "+filepath.ToSlash(native)+"\n")
+	assetFixture(t, native, "go.mod", "module github.com/arandu-io/hesape\n\ngo 1.26\n")
+	assetFixture(t, native, "view/view.go", "package view\nfunc RegisterAsset(name, kind string, body []byte) {}\n")
+	assetFixture(t, native, "view/assets/ypy.min.js", "var ypy = {registerExtension(name, hooks) {}};")
+	assetFixture(t, native, "view/assets/ypy-csrf.min.js", "ypy.registerExtension('ypy-csrf', {});")
+	assetFixture(t, root, "resources/js/app.js", app)
+	return root
+}
+
+// The CSRF extension is a native asset, and importing it after the script
+// produces a bundle in which it registers itself on the global the script
+// published.
+func TestAssetBuildBundlesTheCSRFExtensionAfterTheScript(t *testing.T) {
+	t.Setenv("GOWORK", "off")
+	t.Setenv("GOPROXY", "off")
+	t.Setenv("GOTOOLCHAIN", "local")
+	root := nativeAssetProject(t, "import 'arandu:ypy.min.js'; import 'arandu:ypy-csrf.min.js';")
+	if err := buildScripts(root, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	generated, err := os.ReadFile(filepath.Join(root, bundleOutput))
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := string(generated)
+	published := strings.Index(code, "window.ypy=")
+	registered := strings.LastIndex(code, "registerExtension(")
+	if published < 0 || registered < 0 || registered < published {
+		t.Errorf("the extension does not register after the script publishes its global: published at %d, registered at %d\n%s", published, registered, code)
+	}
+	if !strings.Contains(code, "has to be imported before it") {
+		t.Errorf("the extension carries no check for the script's global:\n%s", code)
+	}
+}
+
+// The other order is refused at build time, in words that say what to swap.
+func TestAssetBuildRefusesTheCSRFExtensionBeforeTheScript(t *testing.T) {
+	t.Setenv("GOWORK", "off")
+	t.Setenv("GOPROXY", "off")
+	t.Setenv("GOTOOLCHAIN", "local")
+	root := nativeAssetProject(t, "import 'arandu:ypy-csrf.min.js'; import 'arandu:ypy.min.js';")
+	err := buildScripts(root, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("the extension before the script was bundled")
+	}
+	for _, want := range []string{"arandu:ypy-csrf.min.js", "before arandu:ypy.min.js", "the script has to come first"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q: %v", want, err)
+		}
+	}
+}
+
+// A native asset that does not exist is refused with the list of the ones that
+// do.
+func TestAssetBuildNamesTheNativeAssetsWhenOneIsUnknown(t *testing.T) {
+	t.Setenv("GOWORK", "off")
+	t.Setenv("GOPROXY", "off")
+	t.Setenv("GOTOOLCHAIN", "local")
+	root := nativeAssetProject(t, "import 'arandu:missing.js';")
+	err := buildScripts(root, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "ypy-csrf.min.js") {
+		t.Fatalf("the refusal does not list the native assets: %v", err)
 	}
 }

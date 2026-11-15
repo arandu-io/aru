@@ -40,14 +40,14 @@ func TestAJSONAttributeEscapesForWhereTheValueLandsInTheJSON(t *testing.T) {
 	for _, c := range []struct {
 		what, markup, want string
 	}{
-		{"the CSRF header a layout sends", `<body hx-headers='{"X-CSRF-Token": "{{ .Q }}"}'></body>`, inString},
-		{"a value inside a string", `<div hx-vals='{"q": "{{ .Q }}"}'></div>`, inString},
-		{"quotes written as character references", `<div hx-vals="{&quot;q&quot;: &quot;{{ .Q }}&quot;}"></div>`, inString},
+		{"the CSRF header a layout sends", `<body ypy-headers='{"X-CSRF-Token": "{{ .Q }}"}'></body>`, inString},
+		{"a value inside a string", `<div ypy-vals='{"q": "{{ .Q }}"}'></div>`, inString},
+		{"quotes written as character references", `<div ypy-vals="{&quot;q&quot;: &quot;{{ .Q }}&quot;}"></div>`, inString},
 		{"the props of a client behaviour", `<div data-kyse-props='{"target": "{{ .Q }}"}'></div>`, inString},
-		{"a value outside a string", `<div hx-vals='{"page": {{ .Q }}}'></div>`, literal},
-		{"the whole value", `<div hx-vals="{{ .Q }}"></div>`, literal},
-		{"a request setting", `<div hx-request='{"timeout": {{ .Q }}}'></div>`, literal},
-		{"after a string that holds an escaped quote", `<div hx-vals='{"a\"b": {{ .Q }}}'></div>`, literal},
+		{"a value outside a string", `<div ypy-vals='{"page": {{ .Q }}}'></div>`, literal},
+		{"the whole value of the props of a client behaviour", `<div data-kyse-props="{{ .Q }}"></div>`, literal},
+		{"a request setting", `<div ypy-config='{"timeout": {{ .Q }}}'></div>`, literal},
+		{"after a string that holds an escaped quote", `<div ypy-vals='{"a\"b": {{ .Q }}}'></div>`, literal},
 	} {
 		t.Run(c.what, func(t *testing.T) {
 			out, err := generateProbe(t, c.markup)
@@ -70,12 +70,11 @@ func TestAJSONAttributeThatIsAScriptRefusesTheValue(t *testing.T) {
 	for _, c := range []struct {
 		what, markup, says string
 	}{
-		{"js: in front", `<div hx-vals='js:{q: "{{ .Q }}"}'></div>`, "is a script rather than text"},
-		{"javascript: after a space", `<div hx-headers=' javascript:{q: {{ .Q }}}'></div>`, "is a script rather than text"},
-		{"js: spelled with a character reference", `<div hx-vals='&#106;s:{q: "{{ .Q }}"}'></div>`, "is a script rather than text"},
-		{"a no-break space before js:", `<div hx-request='&nbsp;js:{timeout: {{ .Q }}}'></div>`, "is a script rather than text"},
-		{"the attribute HTMX always evaluates", `<div hx-vars="q:{{ .Q }}"></div>`, "is a script rather than text"},
-		{"right after a backslash in a string", `<div hx-vals='{"q": "\{{ .Q }}"}'></div>`, "right after a backslash"},
+		{"js: in front", `<div ypy-vals='js:{q: "{{ .Q }}"}'></div>`, "is a script rather than text"},
+		{"javascript: after a space", `<div ypy-headers=' javascript:{q: {{ .Q }}}'></div>`, "is a script rather than text"},
+		{"js: spelled with a character reference", `<div ypy-vals='&#106;s:{q: "{{ .Q }}"}'></div>`, "is a script rather than text"},
+		{"a no-break space before js:", `<div ypy-config='&nbsp;js:{timeout: {{ .Q }}}'></div>`, "is a script rather than text"},
+		{"right after a backslash in a string", `<div ypy-vals='{"q": "\{{ .Q }}"}'></div>`, "right after a backslash"},
 	} {
 		t.Run(c.what, func(t *testing.T) {
 			out, err := generateProbe(t, c.markup)
@@ -111,9 +110,9 @@ package views
 type D struct{ Q string }
 @endgo
 
-<div hx-vals='{"q": "{{ .Q }}"}'></div>
-<body hx-headers='{"X-CSRF-Token": "{{ .Q }}"}'></body>
-<div hx-vals="{&quot;q&quot;: &quot;{{ .Q }}&quot;}"></div>
+<div ypy-vals='{"q": "{{ .Q }}"}'></div>
+<body ypy-headers='{"X-CSRF-Token": "{{ .Q }}"}'></body>
+<div ypy-vals="{&quot;q&quot;: &quot;{{ .Q }}&quot;}"></div>
 <div data-kyse-props='{"q": {{ .Q }}}'></div>
 `)
 	payloads := []string{
@@ -179,7 +178,7 @@ func main() {
 func attributeValuesIn(markup string) []string {
 	var out []string
 	for i := 0; i < len(markup); i++ {
-		for _, name := range []string{"hx-vals=", "hx-headers=", "data-kyse-props="} {
+		for _, name := range []string{"ypy-vals=", "ypy-headers=", "data-kyse-props="} {
 			if !strings.HasPrefix(markup[i:], name) {
 				continue
 			}

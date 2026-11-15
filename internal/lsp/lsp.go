@@ -773,7 +773,7 @@ func (p *project) completionItems(source string, at position) []completionItem {
 		return []completionItem{}
 	}
 	if htmlAttributeNamePosition(source, at) {
-		return htmxCompletionItems()
+		return ypyCompletionItems()
 	}
 
 	insertPrefix := "@"
@@ -797,15 +797,15 @@ const (
 	completionItemKindKeyword  = 14
 )
 
-// htmxAttribute is one row of the table htmxgen writes.
+// ypyAttribute is one row of the table ypygen writes.
 //
 // The table is generated rather than typed because the hand-written one covered
 // thirteen of the thirty-five attributes and had no way of saying so.
-type htmxAttribute struct {
+type ypyAttribute struct {
 	name          string
 	detail        string
 	documentation string
-	// deprecated marks an attribute HTMX still answers to and no longer
+	// deprecated marks an attribute YPY still answers to and no longer
 	// recommends. It is offered, and it is offered struck through: leaving it
 	// out would make an attribute already written in a view look unknown.
 	deprecated bool
@@ -815,9 +815,9 @@ type htmxAttribute struct {
 // should draw struck through.
 const completionItemTagDeprecated = 1
 
-func htmxCompletionItems() []completionItem {
-	items := make([]completionItem, len(htmxAttributes))
-	for index, attribute := range htmxAttributes {
+func ypyCompletionItems() []completionItem {
+	items := make([]completionItem, len(ypyAttributes))
+	for index, attribute := range ypyAttributes {
 		items[index] = completionItem{
 			Label:         attribute.name,
 			Kind:          completionItemKindProperty,

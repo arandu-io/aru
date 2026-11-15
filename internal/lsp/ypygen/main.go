@@ -1,23 +1,27 @@
-// Command htmxgen writes the HTMX attribute table the language server offers.
+// Command ypygen writes the YPY attribute table the language server offers.
 //
-// The table was typed by hand once and covered thirteen of the thirty-five
-// attributes, which is the failure mode a hand-maintained list has: it is
-// correct on the day it is written and silently short forever after. This reads
-// the editor metadata HTMX publishes for its own tooling and emits the same
-// facts as Go.
+// The table was typed by hand once and covered thirteen of the attributes the
+// runtime reads, which is the failure mode a hand-maintained list has: it is
+// correct on the day it is written and silently short forever after. This
+// reads the editor metadata YPY publishes for its own tooling and emits the
+// same facts as Go.
 //
-// It refuses to emit an attribute the served runtime does not understand.
-// Completion that offers an attribute the bundle in the page ignores is worse
-// than no completion, because nothing reports it: the markup is valid HTML, the
-// build is green, and the element simply does nothing. The check is textual --
-// every `hx-` name the bundle mentions is collected, and an attribute is either
-// one of those or one of the five built from the verb list -- so it answers
-// about the file that is actually served rather than about a version number
-// written down somewhere.
+// It refuses to emit an attribute the served runtime does not read. Completion
+// that offers an attribute the bundle in the page ignores is worse than no
+// completion, because nothing reports it: the markup is valid HTML, the build is
+// green, and the element simply does nothing. The metadata describes the core
+// and every extension, and the application serves the core alone, so what the
+// bundle does not read is left out and listed on the standard error stream. The
+// check is textual and answers about the file that is actually served rather
+// than about a version number written down somewhere: an attribute is read
+// when the bundle spells its name as a whole string, when it is a request verb
+// the bundle builds from its list of them, when the bundle spells the
+// attribute's prefix and its last word apart, or when it is the name inside a
+// selector.
 //
 // Usage:
 //
-//	go run ./internal/lsp/htmxgen -metadata <web-types.json> -runtime <htmx.min.js> -out <file.go>
+//	go run ./internal/lsp/ypygen -metadata <ypy.web-types.json> -runtime <ypy.min.js> -out <file.go>
 //
 // The metadata and runtime paths are arguments because neither file belongs to
 // this repository: they are read where they are, and nothing of them is
@@ -31,22 +35,23 @@ import (
 	"go/format"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
 
 func main() {
-	metadata := flag.String("metadata", "", "path to the HTMX web-types JSON")
-	runtime := flag.String("runtime", "", "path to the htmx.min.js the project serves")
+	metadata := flag.String("metadata", "", "path to the YPY web-types JSON")
+	runtime := flag.String("runtime", "", "path to the ypy.min.js the project serves")
 	out := flag.String("out", "", "path of the Go file to write")
 	flag.Parse()
 
 	if *metadata == "" || *runtime == "" || *out == "" {
-		fmt.Fprintln(os.Stderr, "usage: htmxgen -metadata <web-types.json> -runtime <htmx.min.js> -out <file.go>")
+		fmt.Fprintln(os.Stderr, "usage: ypygen -metadata <ypy.web-types.json> -runtime <ypy.min.js> -out <file.go>")
 		os.Exit(2)
 	}
 	if err := run(*metadata, *runtime, *out); err != nil {
-		fmt.Fprintln(os.Stderr, "htmxgen:", err)
+		fmt.Fprintln(os.Stderr, "ypygen:", err)
 		os.Exit(1)
 	}
 }
@@ -77,25 +82,27 @@ func run(metadataPath, runtimePath, outPath string) error {
 	attributes := append([]webTypeAttribute(nil), metadata.Contributions.HTML.Attributes...)
 	sort.Slice(attributes, func(i, j int) bool { return attributes[i].Name < attributes[j].Name })
 
-	names := servedNames(served)
-	var unknown []string
+	reads := newReader(served)
+	var unread []string
 	rows := make([]row, 0, len(attributes))
 	for _, attribute := range attributes {
-		if !servedUnderstands(served, names, attribute.Name) {
-			unknown = append(unknown, attribute.Name)
+		label, found := reads.label(attribute.Name)
+		if !found {
+			unread = append(unread, attribute.Name)
 			continue
 		}
 		rows = append(rows, row{
-			Name:          attribute.Name,
+			Name:          label,
 			Detail:        firstSentence(attribute.Description, attribute.Name),
-			Documentation: documentation(attribute),
+			Documentation: flatten(firstParagraph(attribute.Description)),
 			Deprecated:    attribute.Deprecated,
 		})
 	}
-	if len(unknown) > 0 {
-		return fmt.Errorf("the served runtime does not understand %s, so offering them would suggest markup that does nothing",
-			strings.Join(unknown, ", "))
+	if len(rows) == 0 {
+		return fmt.Errorf("the runtime %s reads none of the %d attributes %s declares", runtimePath, len(attributes), metadataPath)
 	}
+	fmt.Fprintf(os.Stderr, "ypygen: %d attributes written; %d left out because %s does not read them: %s\n",
+		len(rows), len(unread), runtimePath, strings.Join(unread, ", "))
 
 	source, err := format.Source(render(metadata.Version, servedVersion, rows))
 	if err != nil {
@@ -116,7 +123,6 @@ type webTypes struct {
 type webTypeAttribute struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	DocURL      string `json:"doc-url"`
 	Deprecated  bool   `json:"deprecated"`
 }
 
@@ -127,44 +133,83 @@ type row struct {
 	Deprecated    bool
 }
 
-// verbAttributes are the five names the runtime builds rather than spells.
-//
-// htmx keeps its request verbs in one list and prefixes each with `hx-` at
-// load, so `hx-get` never appears in the bundle as a string. Searching for the
-// name alone would report the five most used attributes as unsupported.
-var verbAttributes = map[string]bool{
-	"hx-get": true, "hx-post": true, "hx-put": true, "hx-delete": true, "hx-patch": true,
+// verbs are the request verbs the runtime keeps in one list and prefixes with
+// `ypy-` when it reads them, so `ypy-get` never appears in the bundle as a
+// string. Searching for the name alone would report the most used attributes
+// as unread.
+var verbs = []string{"get", "post", "put", "patch", "delete", "query"}
+
+// reader answers what the served bundle reads.
+type reader struct {
+	bundle    string
+	verbsList bool
 }
 
-var (
-	verbList     = regexp.MustCompile(`"get","post","put","delete","patch"`)
-	attributeRef = regexp.MustCompile(`hx-[a-z]+(?:-[a-z]+)*`)
-)
-
-// servedNames collects every `hx-` name the bundle mentions.
-//
-// A name is read out of whatever encloses it rather than matched as a whole
-// quoted string, because the bundle spells several of them inside a selector --
-// `[hx-preserve]`, `[hx-history-elt]` -- where the quotes are around the
-// brackets. Asking for the quoted form reported four supported attributes as
-// unknown.
-func servedNames(bundle string) map[string]bool {
-	names := map[string]bool{}
-	for _, match := range attributeRef.FindAllString(bundle, -1) {
-		names[match] = true
+func newReader(bundle string) reader {
+	quoted := make([]string, len(verbs))
+	for i, verb := range verbs {
+		quoted[i] = `"` + verb + `"`
 	}
-	return names
+	return reader{bundle: bundle, verbsList: strings.Contains(bundle, strings.Join(quoted, ","))}
 }
 
-// servedUnderstands reports whether the bundle acts on the attribute.
-func servedUnderstands(bundle string, names map[string]bool, name string) bool {
-	if verbAttributes[name] {
-		return verbList.MatchString(bundle)
+// spelled reports whether the bundle holds text as a whole string, in any of
+// the three quotes a script has.
+func (r reader) spelled(text string) bool {
+	for _, quote := range []string{`"`, `'`, "`"} {
+		if strings.Contains(r.bundle, quote+text+quote) {
+			return true
+		}
 	}
-	return names[name]
+	return false
 }
 
-var versionPattern = regexp.MustCompile(`version:"([0-9][0-9A-Za-z.\-]*)"`)
+// label returns the name to offer for an attribute of the metadata, and whether
+// the bundle reads it.
+//
+// A family the metadata writes with a star -- `ypy-status:*`, one attribute per
+// status -- is offered by its prefix, which is what a person types before the
+// part that varies. The other ways a name is read are the verbs, a name built
+// from a prefix and a last word that the bundle spells apart (`ypy-error-` and
+// `target`), and a name that appears only inside a selector, as the attributes
+// without a value do.
+func (r reader) label(name string) (string, bool) {
+	if prefix, family := strings.CutSuffix(name, "*"); family {
+		return prefix, r.spelled(prefix)
+	}
+	switch {
+	case r.spelled(name):
+		return name, true
+	case r.verbsList && slices.Contains(verbs, strings.TrimPrefix(name, "ypy-")) && strings.HasPrefix(name, "ypy-"):
+		return name, true
+	case r.composed(name), r.selected(name):
+		return name, true
+	}
+	return name, false
+}
+
+// composed reports whether the bundle spells the name in two parts: everything
+// up to the last hyphen, hyphen included, and the word after it.
+func (r reader) composed(name string) bool {
+	at := strings.LastIndex(name, "-")
+	if at <= len("ypy-")-1 {
+		return false
+	}
+	return r.spelled(name[:at+1]) && r.spelled(name[at+1:])
+}
+
+// selected reports whether the name is written as an attribute selector, with
+// or without a test on its value.
+func (r reader) selected(name string) bool {
+	for _, end := range []string{"]", "=", " ", ",", "~", "|", "^", "$", "*"} {
+		if strings.Contains(r.bundle, "["+name+end) {
+			return true
+		}
+	}
+	return false
+}
+
+var versionPattern = regexp.MustCompile(`this\.version="([0-9][0-9A-Za-z.\-]*)"`)
 
 // runtimeVersion reads the version the bundle reports about itself.
 //
@@ -210,7 +255,7 @@ func firstParagraph(description string) string {
 
 const detailLimit = 96
 
-// dropSelfReference removes the "The hx-thing attribute" opening a description
+// dropSelfReference removes the "The ypy-thing attribute" opening a description
 // has, because the popup already shows the name on the same row.
 //
 // Every character spent repeating the label is one the summary does not get,
@@ -253,35 +298,25 @@ func firstSentence(description, name string) string {
 	return string(runes) + "…"
 }
 
-// documentation is the paragraph plus the page it came from, so a reader who
-// needs the whole rule has the address of it.
-func documentation(attribute webTypeAttribute) string {
-	text := flatten(firstParagraph(attribute.Description))
-	if attribute.DocURL != "" {
-		text += "\n\n" + attribute.DocURL
-	}
-	return text
-}
-
 func render(metadataVersion, servedVersion string, rows []row) []byte {
 	var out strings.Builder
-	out.WriteString("// Code generated by internal/lsp/htmxgen. DO NOT EDIT.\n\n")
+	out.WriteString("// Code generated by internal/lsp/ypygen. DO NOT EDIT.\n\n")
 	out.WriteString("package lsp\n\n")
-	fmt.Fprintf(&out, `// htmxMetadataVersion is the HTMX release whose published editor metadata
+	fmt.Fprintf(&out, `// ypyMetadataVersion is the YPY release whose published editor metadata
 // these descriptions were read from.
-const htmxMetadataVersion = %q
+const ypyMetadataVersion = %q
 
-// htmxRuntimeVersion is the release of the bundle every name below was checked
+// ypyRuntimeVersion is the release of the bundle every name below was checked
 // against.
 //
 // The two differ when the metadata read is newer than the bundle served, and
 // that is the case this table is generated rather than typed: every name here
 // was found in the served bundle, so a description written for a later release
 // still describes an attribute that release understands.
-const htmxRuntimeVersion = %q
+const ypyRuntimeVersion = %q
 
-// htmxAttributes is every attribute HTMX declares, in name order.
-var htmxAttributes = []htmxAttribute{
+// ypyAttributes is every attribute the served runtime reads, in name order.
+var ypyAttributes = []ypyAttribute{
 `, metadataVersion, servedVersion)
 	for _, item := range rows {
 		fmt.Fprintf(&out, "\t{name: %q, detail: %q, documentation: %q", item.Name, item.Detail, item.Documentation)

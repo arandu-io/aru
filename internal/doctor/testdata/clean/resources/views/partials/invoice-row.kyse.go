@@ -3,7 +3,7 @@
 package views
 
 @go
-// InvoiceRowData is one row, rendered as an HTMX fragment.
+// InvoiceRowData is one row, rendered as an YPY fragment.
 type InvoiceRowData struct {
 	Invoice models.Invoice
 }

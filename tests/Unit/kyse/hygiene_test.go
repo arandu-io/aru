@@ -70,7 +70,7 @@ type Row struct {
 <h1>{{ .Title }}</h1>
 @foreach(.Rows as BINDING)
 <a href="{{ BINDING.URL }}">{{ BINDING.Label }}</a>
-<span hx-trigger="{{ BINDING.Event }}">{{ .Title }}</span>
+<span ypy-trigger="{{ BINDING.Event }}">{{ .Title }}</span>
 <p style="color: {{ BINDING.Color }}">{{ BINDING.Label }}</p>
 <script>var label = "{{ BINDING.Label }}";</script>
 @include('partials.footer')

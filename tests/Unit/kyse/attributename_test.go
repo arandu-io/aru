@@ -14,11 +14,11 @@ import (
 // and the name is read off the markup the view wrote. When the name is data,
 // what the compiler read is not the name the browser reads: `<div {{ .N }}=
 // "{{ .V }}">` is compiled as an attribute with no name, so the value gets the
-// escape of inert text -- and with N set to onclick, hx-post or href the page
+// escape of inert text -- and with N set to onclick, ypy-post or href the page
 // carries a handler, a request or a javascript: address, with nothing at
 // render time to catch it. The same holds for a value the view wrote itself
 // behind a name from data, and for a name the view only began: data-{{ .N }}
-// becomes data-hx-post, which HTMX reads as hx-post.
+// becomes data-ypy-post, which YPY reads as ypy-post.
 //
 // Each case is one of the shapes, written with the probe that showed it. The
 // view is refused at build time and the refusal names the line and the one
@@ -33,7 +33,7 @@ func TestAValueWrittenWhereAnAttributeNameGoesRefusesTheView(t *testing.T) {
 			`<div {{ .N }}="{{ .V }}"></div>`, 9,
 		},
 		{
-			"a name from data and its value from data, as hx-post=/account/delete",
+			"a name from data and its value from data, as ypy-post=/account/delete",
 			`<button type="button" {{ .N }}="{{ .V }}">Go</button>`, 9,
 		},
 		{
@@ -45,11 +45,11 @@ func TestAValueWrittenWhereAnAttributeNameGoesRefusesTheView(t *testing.T) {
 			`<div {{ .N }}="alert(1)"></div>`, 9,
 		},
 		{
-			"a name from data with no value, as autofocus or hx-get",
+			"a name from data with no value, as autofocus or ypy-get",
 			`<input type="checkbox" {{ .N }}>`, 9,
 		},
 		{
-			"a name the view began and data finished, as data-hx-post",
+			"a name the view began and data finished, as data-ypy-post",
 			`<div data-{{ .N }}="{{ .V }}"></div>`, 9,
 		},
 		{

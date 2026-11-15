@@ -79,8 +79,9 @@ type <%.ViewData "index"%> struct {
 var _ view.Layout = <%.ViewData "index"%>{}
 
 // <%.TableIDConst%> is the id of the element the table is drawn into. A control
-// of the table names it as the htmx target, and <%.Controller%>.Index reads it
-// from HX-Target to answer the table alone instead of the whole page.
+// of the table names it as the YPY target, and <%.Controller%>.Index asks the
+// request for it (ctx.Targets reads the id out of the YPY-Target header, which
+// holds tag#id) to answer the table alone instead of the whole page.
 const <%.TableIDConst%> = "<%.TableID%>"
 
 // <%.RowStruct%> is one record, formatted by the controller: what the listing
@@ -209,9 +210,10 @@ import "github.com/arandu-io/hesape/view"
 // <%.ViewData "show"%> is what <%.Controller%>.Show hands this page.
 type <%.ViewData "show"%> struct {
 	// Page is the state the layout draws, the CSRF token included. The delete
-	// button sends no token of its own: an hx-delete carries no form body, so
-	// the header is what reaches the server, and the hx-headers the layout puts
-	// on <body> is inherited by every htmx request on the page.
+	// button sends no token of its own: a ypy-delete carries no form body, so
+	// the header is what reaches the server, and the ypy-csrf extension sends
+	// the token the layout puts in its meta tag on every request of the page
+	// that is not a GET.
 	view.Page
 	// <%.Entity%> is the record.
 	<%.Entity%> <%.RowStruct%>
@@ -243,7 +245,7 @@ var _ view.Layout = <%.ViewData "show"%>{}
 		<h1 class="text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
 		<div class="flex items-center gap-3">
 			<a class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-900" href="{{ .EditURL }}">Edit</a>
-			<button class="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950" type="button" hx-delete="{{ .DeleteURL }}" hx-confirm="Delete this <%.Human%>?">Delete</button>
+			<button class="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950" type="button" ypy-delete="{{ .DeleteURL }}" ypy-confirm="Delete this <%.Human%>?">Delete</button>
 		</div>
 	</div>
 
@@ -309,7 +311,7 @@ var _ view.Layout = <%.ViewData "create"%>{}
 
 	<h1 class="mt-2 text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
 
-	<form class="mt-8 space-y-6" method="post" action="{{ .StoreURL }}" hx-post="{{ .StoreURL }}">
+	<form class="mt-8 space-y-6" method="post" action="{{ .StoreURL }}" ypy-post="{{ .StoreURL }}">
 		@csrf
 		<%template "fields" .%>
 		<div class="flex items-center gap-3">
@@ -366,10 +368,10 @@ var _ view.Layout = <%.ViewData "edit"%>{}
 
 	<h1 class="mt-2 text-3xl font-semibold tracking-tight">{{ .Title }}</h1>
 
-	<!-- hx-put, and no action: a browser form can only send GET and POST, and
-	the update route is PUT. HTMX sends the real method, which is why this
+	<!-- ypy-put, and no action: a browser form can only send GET and POST, and
+	the update route is PUT. YPY sends the real method, which is why this
 	stack does not need a hidden _method field. -->
-	<form class="mt-8 space-y-6" hx-put="{{ .UpdateURL }}">
+	<form class="mt-8 space-y-6" ypy-put="{{ .UpdateURL }}">
 		@csrf
 		<%template "fields" .%>
 		<div class="flex items-center gap-3">

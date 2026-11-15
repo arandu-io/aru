@@ -269,7 +269,7 @@
     "file": "app/Http/Controllers/ChargeController.go",
     "line": 44,
     "message": "ChargeController.Reject answers a rejected form with 422 itself",
-    "why": "htmx discards a 422 swap by default, so the person sees the form unchanged, and a reload of the answer submits the form again. Return the validation.Errors: the router redirects back with what was typed and the messages in the flash."
+    "why": "a 422 answered by hand is a second path beside the router's: what was typed and the messages do not travel in the flash, and a reload of the answer submits the form again. Return the validation.Errors: the router redirects back with what was typed and the messages in the flash."
   },
   {
     "rule": "json-written-by-hand",
@@ -1053,7 +1053,7 @@
     "file": "tests/Feature/ledger_test.go",
     "line": 17,
     "message": "this test sleeps instead of waiting for what it needs",
-    "why": "a sleep is a guess at how long something takes: too short and the test fails on a slow runner, too long and every run pays it. A journey's page waits by itself (visible, htmx settled, network idle); a TTL or an expiry moves the clock with support.SetTestNow, Travel or FreezeTime. A warning until 2026-12-15, an error after it."
+    "why": "a sleep is a guess at how long something takes: too short and the test fails on a slow runner, too long and every run pays it. A journey's page waits by itself (visible, YPY settled, network idle); a TTL or an expiry moves the clock with support.SetTestNow, Travel or FreezeTime. A warning until 2026-12-15, an error after it."
   },
   {
     "rule": "skip-without-reason",

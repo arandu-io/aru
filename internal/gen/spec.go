@@ -788,8 +788,9 @@ func (m Module) SearchFields() []Field {
 }
 
 // TableID is the id of the element the listing's table is drawn into, which is
-// also what the controller reads from HX-Target to tell a request for the table
-// from a request for the page.
+// also what the controller asks the request for -- the YPY-Target header holds
+// the tag and the id of the target, and ctx.Targets matches the id -- to tell a
+// request for the table from a request for the page.
 func (m Module) TableID() string { return m.Resource() + "-table" }
 
 // TablePartial is the name of the view that draws the listing's table alone:

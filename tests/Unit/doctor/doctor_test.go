@@ -288,7 +288,7 @@ func TestAnInertDirectiveIsCaughtToo(t *testing.T) {
 // The clean fixture spells its tabs the way ui.js reads them -- data- attributes
 // and the selected one in ARIA -- and a rule that fired there would be a rule
 // teaching people to mute it. It is also the guard against the cheap way to
-// widen this rule wrong: `hx-get` is not `x-get`, and `data-x-id` is not `x-id`.
+// widen this rule wrong: `ypy-get` is not `x-get`, and `data-x-id` is not `x-id`.
 func TestTheShapeTheBehavioursFileReadsIsSilent(t *testing.T) {
 	findings, err := doctor.Run(fixture(t, "clean"), doctor.Conventional)
 	if err != nil {

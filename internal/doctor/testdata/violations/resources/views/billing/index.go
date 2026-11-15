@@ -44,7 +44,7 @@ func renderInternalDoctorTestdataViolationsResourcesViewsBillingIndex(w io.Write
 		_, err = io.WriteString(w, "</h1>\n")
 	}
 	if err == nil {
-		_, err = io.WriteString(w, "<!-- Violation: Alpine reaching the server. This should be an HTMX fragment --\n")
+		_, err = io.WriteString(w, "<!-- Violation: Alpine reaching the server. This should be a YPY fragment --\n")
 	}
 	if err == nil {
 		_, err = io.WriteString(w, "     x-data holds client state, and the moment it fetches, the application has\n")

@@ -95,7 +95,7 @@ func stringArg(call *ast.CallExpr, i int) (string, bool) {
 // Reason. time.Sleep in a test is a guess at how long something takes: too
 // short and the test fails on a slow runner, too long and every run pays it,
 // and either way it proves nothing about the order things happen in. A
-// journey's page waits by itself -- visible and still, htmx settled, network
+// journey's page waits by itself -- visible and still, YPY settled, network
 // idle -- and a TTL or an expiry moves the fake clock instead of the real one.
 //
 // Scope. Every _test.go file, and every file of tests/.
@@ -132,7 +132,7 @@ func testsDoNotSleep(p *project) []Finding {
 				File: f.rel, Line: f.line(call),
 				Message: "this test sleeps instead of waiting for what it needs",
 				Why: "a sleep is a guess at how long something takes: too short and the test fails on a slow runner, too long " +
-					"and every run pays it. A journey's page waits by itself (visible, htmx settled, network idle); a TTL or an " +
+					"and every run pays it. A journey's page waits by itself (visible, YPY settled, network idle); a TTL or an " +
 					"expiry moves the clock with support.SetTestNow, Travel or FreezeTime." + promotion,
 			})
 		})

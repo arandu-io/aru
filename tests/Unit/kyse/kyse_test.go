@@ -951,11 +951,11 @@ type D struct{ V string }
 <div class="{{ .V }}">x</div>
 <a href="{{ .V }}">x</a>
 <a href="/posts/{{ .V }}">x</a>
-<button hx-get="{{ .V }}">x</button>
+<button ypy-get="{{ .V }}">x</button>
 <div style="color: {{ .V }}">x</div>
 <style>.a { color: {{ .V }} }</style>
 <script>var n = {{ .V }};</script>
-<div hx-trigger="{{ .V }}">x</div>
+<div ypy-trigger="{{ .V }}">x</div>
 `
 	file, err := kyse.Parse("resources/views/home.kyse.go", source)
 	if err != nil {
@@ -971,11 +971,11 @@ type D struct{ V string }
 		"attr",    // class="{{ }}"
 		"url",     // href="{{ }}" -- the front of the value, where a scheme goes
 		"attr",    // href="/posts/{{ }}" -- the view already settled the scheme
-		"url",     // hx-get="{{ }}" -- an address to the HTML parser is an attribute
+		"url",     // ypy-get="{{ }}" -- an address to the HTML parser is an attribute
 		"css",     // style="color: {{ }}"
 		"css",     // inside <style>
 		"js",      // inside <script>
-		"trigger", // hx-trigger="{{ }}" -- examined for a filter first,
+		"trigger", // ypy-trigger="{{ }}" -- examined for a filter first,
 		"attr",    // and then escaped as the attribute it is
 	}
 	if got := escapersIn(string(out)); !reflect.DeepEqual(got, want) {

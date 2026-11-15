@@ -62,7 +62,7 @@ var (
 // The query string is read through the service's listing, which keeps what it
 // declares and drops the rest, so nothing here names a column or a size. The
 // table is the one part of the page the server also answers alone: a control of
-// the table asks for it by naming it as the htmx target, and every other request
+// the table asks for it by naming it as the YPY target, and every other request
 // to the same address -- a direct visit, a boosted link, a history restore --
 // gets the whole page.
 func (c *PurchaseOrderController) Index(ctx *hhttp.Context) error {

@@ -39,7 +39,7 @@ func (c *ChargeController) Store(ctx *fhttp.Context) error {
 	return c.svc.Create(ctx.Ctx(), in)
 }
 
-// Reject answers the rejected form with 422 itself, which htmx discards.
+// Reject answers the rejected form with 422 itself, which YPY would swap into the form and a reload would submit again.
 func (c *ChargeController) Reject(ctx *fhttp.Context) error {
 	return ctx.Status(http.StatusUnprocessableEntity)
 }

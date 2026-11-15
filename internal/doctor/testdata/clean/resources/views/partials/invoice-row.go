@@ -13,7 +13,7 @@ import (
 
 //line internal/doctor/testdata/clean/resources/views/partials/invoice-row.kyse.go:5
 
-// InvoiceRowData is one row, rendered as an HTMX fragment.
+// InvoiceRowData is one row, rendered as an YPY fragment.
 type InvoiceRowData struct {
 	Invoice models.Invoice
 }

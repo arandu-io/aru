@@ -430,12 +430,12 @@ func TestPartiallyTypedDirectiveCompletionKeepsTheExistingAtSignAtUTF16Position(
 	t.Fatal("partial completion request received no response")
 }
 
-func TestCompletionDescribesHTMXAttributesInsideAnOpeningTag(t *testing.T) {
+func TestCompletionDescribesYPYAttributesInsideAnOpeningTag(t *testing.T) {
 	const uri = "file:///workspace/resources/views/home.kyse.go"
 	input := frames(
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
-		`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go","languageId":"kyse","version":1,"text":"<button hx-"}}}`,
-		`{"jsonrpc":"2.0","id":"attributes","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go"},"position":{"line":0,"character":11}}}`,
+		`{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go","languageId":"kyse","version":1,"text":"<button ypy-"}}}`,
+		`{"jsonrpc":"2.0","id":"attributes","method":"textDocument/completion","params":{"textDocument":{"uri":"file:///workspace/resources/views/home.kyse.go"},"position":{"line":0,"character":12}}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"shutdown"}`,
 		`{"jsonrpc":"2.0","method":"exit"}`,
 	)
@@ -469,62 +469,68 @@ func TestCompletionDescribesHTMXAttributesInsideAnOpeningTag(t *testing.T) {
 			t.Fatalf("decode completion items: %v", err)
 		}
 		if len(items) < 10 {
-			t.Fatalf("HTMX completion count = %d, want the request and swap attributes", len(items))
+			t.Fatalf("YPY completion count = %d, want the request and swap attributes", len(items))
 		}
 		for _, item := range items {
-			if item.Label != "hx-get" {
+			if item.Label != "ypy-get" {
 				continue
 			}
 			if item.Kind != 10 {
-				t.Errorf("hx-get kind = %d, want property (10)", item.Kind)
+				t.Errorf("ypy-get kind = %d, want property (10)", item.Kind)
 			}
 			if item.Detail == "" || item.Documentation == "" {
-				t.Errorf("hx-get editor copy = detail %q, documentation %q", item.Detail, item.Documentation)
+				t.Errorf("ypy-get editor copy = detail %q, documentation %q", item.Detail, item.Documentation)
 			}
-			if !strings.Contains(item.Documentation, "https://htmx.org/attributes/hx-get/") {
-				t.Errorf("hx-get documentation does not name the page it came from: %q", item.Documentation)
+			if !strings.Contains(item.Documentation, "GET") {
+				t.Errorf("ypy-get documentation does not describe the request: %q", item.Documentation)
 			}
-			if item.InsertText != "hx-get" || item.SortText == "" {
-				t.Errorf("hx-get insertion = %q sort=%q", item.InsertText, item.SortText)
+			if item.InsertText != "ypy-get" || item.SortText == "" {
+				t.Errorf("ypy-get insertion = %q sort=%q", item.InsertText, item.SortText)
 			}
 			if len(item.Tags) != 0 {
-				t.Errorf("hx-get tags = %v, want none: it is not deprecated", item.Tags)
+				t.Errorf("ypy-get tags = %v, want none: it is not deprecated", item.Tags)
 			}
 			return
 		}
-		t.Fatal("completion did not offer hx-get")
+		t.Fatal("completion did not offer ypy-get")
 	}
-	t.Fatal("HTMX completion request received no response for " + uri)
+	t.Fatal("YPY completion request received no response for " + uri)
 }
 
-// htmxAttributeNames is every attribute HTMX 2 declares, written out here so
-// the suite states the set independently of the table it checks.
+// ypyAttributeNames is every attribute the served core runtime reads, written
+// out here so the suite states the set independently of the table it checks.
 //
-// The table is generated from the metadata HTMX publishes, and a generator that
+// The table is generated from the metadata YPY publishes, and a generator that
 // silently emitted half of them would be a table the server offers without
 // anything noticing -- which is what the hand-written thirteen were. Comparing
 // against a second copy of the list is the only way this check says anything.
-var htmxAttributeNames = []string{
-	"hx-boost", "hx-confirm", "hx-delete", "hx-disable", "hx-disabled-elt",
-	"hx-disinherit", "hx-encoding", "hx-ext", "hx-get", "hx-headers",
-	"hx-history", "hx-history-elt", "hx-include", "hx-indicator", "hx-inherit",
-	"hx-on", "hx-params", "hx-patch", "hx-post", "hx-preserve",
-	"hx-prompt", "hx-push-url", "hx-put", "hx-replace-url", "hx-request",
-	"hx-select", "hx-select-oob", "hx-swap", "hx-swap-oob", "hx-sync",
-	"hx-target", "hx-trigger", "hx-validate", "hx-vals", "hx-vars",
+// The attributes the extensions read are not here: the application serves the
+// core alone, and offering one would suggest markup that does nothing.
+// ypy-status: is the family of one attribute per status code, offered by its
+// prefix.
+var ypyAttributeNames = []string{
+	"ypy-action", "ypy-announce", "ypy-boost", "ypy-busy", "ypy-config",
+	"ypy-confirm", "ypy-delete", "ypy-disable", "ypy-encoding", "ypy-error-focus",
+	"ypy-error-swap", "ypy-error-target", "ypy-fallback", "ypy-focus", "ypy-get",
+	"ypy-headers", "ypy-history-elt", "ypy-ignore", "ypy-include", "ypy-indicator",
+	"ypy-main", "ypy-method", "ypy-morph-force", "ypy-morph-skip", "ypy-morph-skip-children",
+	"ypy-on", "ypy-patch", "ypy-post", "ypy-preserve", "ypy-preserve-attrs",
+	"ypy-push-url", "ypy-put", "ypy-query", "ypy-replace-url", "ypy-scroll",
+	"ypy-select", "ypy-select-oob", "ypy-status:", "ypy-swap", "ypy-swap-oob",
+	"ypy-sync", "ypy-target", "ypy-trigger", "ypy-validate", "ypy-vals",
 }
 
-func TestCompletionOffersEveryHTMXAttributeAndMarksTheDeprecatedOne(t *testing.T) {
-	items := htmxCompletionAt(t, "<button hx-", 0, 11)
+func TestCompletionOffersEveryYPYAttributeTheRuntimeReads(t *testing.T) {
+	items := ypyCompletionAt(t, "<button ypy-", 0, 12)
 
 	offered := make(map[string]completionShape, len(items))
 	for _, item := range items {
 		offered[item.Label] = item
 	}
-	if len(offered) != len(htmxAttributeNames) {
-		t.Errorf("HTMX completion offered %d attributes, want %d", len(offered), len(htmxAttributeNames))
+	if len(offered) != len(ypyAttributeNames) {
+		t.Errorf("YPY completion offered %d attributes, want %d", len(offered), len(ypyAttributeNames))
 	}
-	for _, name := range htmxAttributeNames {
+	for _, name := range ypyAttributeNames {
 		item, found := offered[name]
 		if !found {
 			t.Errorf("completion did not offer %s", name)
@@ -536,40 +542,36 @@ func TestCompletionOffersEveryHTMXAttributeAndMarksTheDeprecatedOne(t *testing.T
 		if item.InsertText != name {
 			t.Errorf("%s inserts %q", name, item.InsertText)
 		}
+		// None of the core attributes is deprecated, and a tag here would draw
+		// an attribute the runtime recommends struck through.
+		if tags := item.Tags; len(tags) != 0 {
+			t.Errorf("%s tags = %v, want none", name, tags)
+		}
 	}
 	for label := range offered {
-		if !slices.Contains(htmxAttributeNames, label) {
-			t.Errorf("completion offered %q, which HTMX does not declare", label)
+		if !slices.Contains(ypyAttributeNames, label) {
+			t.Errorf("completion offered %q, which the runtime does not read", label)
 		}
 	}
-
-	// hx-vars is the one HTMX deprecated in favour of hx-vals. It stays on the
-	// list because a view that already uses it must not read as unknown, and it
-	// carries the tag so the editor draws it struck through.
-	if tags := offered["hx-vars"].Tags; len(tags) != 1 || tags[0] != 1 {
-		t.Errorf("hx-vars tags = %v, want the deprecated tag [1]", tags)
-	}
-	for _, name := range htmxAttributeNames {
-		if name == "hx-vars" {
-			continue
-		}
-		if tags := offered[name].Tags; len(tags) != 0 {
-			t.Errorf("%s tags = %v, want none", name, tags)
+	// The extensions are left out, whatever the metadata says about them.
+	for _, name := range []string{"ypy-lazy", "ypy-live", "ypy-signals", "ypy-stream", "ypy-poll"} {
+		if _, found := offered[name]; found {
+			t.Errorf("completion offered %s, which only an extension the application does not serve reads", name)
 		}
 	}
 }
 
-// TestHTMXCompletionOffersNoAlpineOrAngularAttribute is the negative the list
+// TestYPYCompletionOffersNoAlpineOrAngularAttribute is the negative the list
 // itself cannot state.
 //
 // The table is built by reading a file, and a generator that read the wrong
 // section of it would produce a plausible list of attributes from a framework
 // this stack refuses to serve. Naming the prefixes is what makes the check fail
 // on that rather than pass on any list at all.
-func TestHTMXCompletionOffersNoAlpineOrAngularAttribute(t *testing.T) {
-	for _, item := range htmxCompletionAt(t, "<button hx-", 0, 11) {
-		if !strings.HasPrefix(item.Label, "hx-") {
-			t.Errorf("HTMX completion offered %q, which is not an HTMX attribute", item.Label)
+func TestYPYCompletionOffersNoAlpineOrAngularAttribute(t *testing.T) {
+	for _, item := range ypyCompletionAt(t, "<button ypy-", 0, 12) {
+		if !strings.HasPrefix(item.Label, "ypy-") {
+			t.Errorf("YPY completion offered %q, which is not a YPY attribute", item.Label)
 		}
 		for _, foreign := range []string{"x-", "v-", "ng-", "data-x-", "@click", ":class"} {
 			if strings.HasPrefix(item.Label, foreign) {
@@ -589,13 +591,13 @@ type completionShape struct {
 	Tags          []int  `json:"tags"`
 }
 
-// htmxCompletionAt drives one completion request over the protocol and returns
+// ypyCompletionAt drives one completion request over the protocol and returns
 // what came back.
 //
 // It goes through Serve rather than calling into the package, because what an
 // editor receives is the JSON and not the Go value: a field that does not
 // marshal is invisible to a test that skips the encoding.
-func htmxCompletionAt(t *testing.T, text string, line, character int) []completionShape {
+func ypyCompletionAt(t *testing.T, text string, line, character int) []completionShape {
 	t.Helper()
 	return runCompletion(t, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`, text, line, character)
 }
@@ -643,15 +645,15 @@ func runCompletionIn(t *testing.T, initialize, uri, languageID, text string, lin
 	return nil
 }
 
-func TestHTMXCompletionStaysOutOfTextAndAttributeValues(t *testing.T) {
+func TestYPYCompletionStaysOutOfTextAndAttributeValues(t *testing.T) {
 	for _, test := range []struct {
 		name      string
 		text      string
 		character int
 	}{
-		{name: "text", text: "<p>hx-", character: 6},
-		{name: "attribute value", text: `<button title="hx-`, character: 18},
-		{name: "closing tag", text: "</hx-", character: 5},
+		{name: "text", text: "<p>ypy-", character: 7},
+		{name: "attribute value", text: `<button title="ypy-`, character: 19},
+		{name: "closing tag", text: "</ypy-", character: 6},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			input := frames(
@@ -683,7 +685,7 @@ func TestHTMXCompletionStaysOutOfTextAndAttributeValues(t *testing.T) {
 					t.Fatalf("decode completion items: %v", err)
 				}
 				for _, item := range items {
-					if strings.HasPrefix(item.Label, "hx-") {
+					if strings.HasPrefix(item.Label, "ypy-") {
 						t.Fatalf("completion offered %q outside an HTML attribute name", item.Label)
 					}
 				}

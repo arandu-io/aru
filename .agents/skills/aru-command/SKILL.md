@@ -188,13 +188,13 @@ belongs to the application.
 These already exist; you do not write them for a new command, you make them
 pass.
 
-- **`TestEveryCommandIsImplemented`** (`main_internal_test.go:127`) runs every
+- **`TestEveryCommandIsImplemented`** (`main_internal_test.go:166`) runs every
   entry in the slice with no arguments and fails if the output contains
   `not implemented`. A command that is a stub is caught the moment it is listed.
-- **`TestCommandNamesAreUnique`** (`main_internal_test.go:559`) guards the
+- **`TestCommandNamesAreUnique`** (`main_internal_test.go:636`) guards the
   dispatch table itself: `lookup` returns the first match, so a duplicate name
   silently disables the second.
-- **`TestUsageIsSober`** (`main_internal_test.go:36`) reads `aru help` and fails
+- **`TestUsageIsSober`** (`main_internal_test.go:37`) reads `aru help` and fails
   on `!`, `🚀`, `✨` or `🎉`. The tone rule is checked at the one place users
   read it.
 - **`TestEveryCommandAnswersHelp`** (`flags_internal_test.go`) runs every entry

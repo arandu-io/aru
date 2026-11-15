@@ -415,21 +415,28 @@ func read(dir, module string) (*Catalog, error) {
 	return c, nil
 }
 
-// MovedKit is where the test kit lived before the framework took it, and
-// KitPath where it lives now.
+// The two import paths the test kit had before it lived in KitPath, and
+// KitPath itself. MovedKit is the hesape package, with its subpackages;
+// MovedKitBridge is the framework package that forwarded to the kit, which
+// held only the root.
 const (
-	MovedKit = "github.com/arandu-io/hesape/arandutest"
-	KitPath  = Framework + "/test"
+	MovedKit       = "github.com/arandu-io/hesape/arandutest"
+	MovedKitBridge = Framework + "/arandutest"
+	KitPath        = Framework + "/test"
 )
 
-// addMovedKit catalogs the test kit's old home in hesape under the framework
-// that holds it now: every package of KitPath gets its hesape twin, each
-// symbol an alias of the framework's, so a project that imports the old path
-// is told the new one and the fix rewrites it the way it rewrites a bridge.
+// addMovedKit catalogs the test kit's old homes under the framework that holds
+// it now: every package of KitPath gets its hesape twin, and the root gets the
+// twin of the framework's old forwarding package, each symbol an alias of the
+// framework's, so a project that imports an old path is told the new one and
+// the fix rewrites it the way it rewrites a bridge. A symbol the kit renamed
+// or never had is not catalogued, and a project using it is left to the
+// compiler.
 //
 // It is added only when the framework read holds the kit. A framework from
 // before the move has nothing to point at, and pointing at it would hand a
-// project an import that does not resolve.
+// project an import that does not resolve. A framework that still declares the
+// forwarding package keeps its own entry for it.
 func (c *Catalog) addMovedKit() {
 	var added []Package
 	for _, pkg := range c.Packages {
@@ -437,21 +444,30 @@ func (c *Catalog) addMovedKit() {
 		if !ok || (rest != "" && !strings.HasPrefix(rest, "/")) {
 			continue
 		}
-		twin := Package{Path: MovedKit + rest}
+		homes := []string{MovedKit + rest}
 		if rest == "" {
-			twin.Bridge = KitPath
+			homes = append(homes, MovedKitBridge)
 		}
-		c.index[twin.Path] = map[string]Symbol{}
-		for _, s := range pkg.Symbols {
-			moved := Symbol{
-				Package: twin.Path, Name: s.Name, Kind: s.Kind, How: Alias,
-				Canonical: s.Canonical, CanonicalName: s.CanonicalName,
-				File: s.File, Line: s.Line,
+		for _, home := range homes {
+			if _, declared := c.index[home]; declared {
+				continue
 			}
-			twin.Symbols = append(twin.Symbols, moved)
-			c.index[twin.Path][s.Name] = moved
+			twin := Package{Path: home}
+			if rest == "" {
+				twin.Bridge = KitPath
+			}
+			c.index[twin.Path] = map[string]Symbol{}
+			for _, s := range pkg.Symbols {
+				moved := Symbol{
+					Package: twin.Path, Name: s.Name, Kind: s.Kind, How: Alias,
+					Canonical: s.Canonical, CanonicalName: s.CanonicalName,
+					File: s.File, Line: s.Line,
+				}
+				twin.Symbols = append(twin.Symbols, moved)
+				c.index[twin.Path][s.Name] = moved
+			}
+			added = append(added, twin)
 		}
-		added = append(added, twin)
 	}
 	c.Packages = append(c.Packages, added...)
 	sort.Slice(c.Packages, func(i, j int) bool { return c.Packages[i].Path < c.Packages[j].Path })

@@ -39,13 +39,14 @@ const (
 // kernel became, and they contribute no native capability for the same
 // reason: what they point at is framework code.
 //
-// The test kit's old home in hesape is listed beside the bridges: the catalog
-// reads it under the framework that holds the kit now, as a bridge to it.
+// The test kit's two old homes, one in hesape and one in the framework, are
+// listed beside the bridges: the catalog reads them under the framework that
+// holds the kit now, as bridges to it.
 //
 // TestEveryBridgeIsMapped reads the framework's package documentation and
 // fails when this list and the bridges it declares disagree.
 var bridgeTargets = map[string]string{
-	"github.com/arandu-io/framework/arandutest": "github.com/arandu-io/framework/test",
+	catalog.MovedKitBridge:                                   catalog.KitPath,
 	catalog.MovedKit:                                         catalog.KitPath,
 	"github.com/arandu-io/framework/config":                  "github.com/arandu-io/framework/foundation/bootstrap",
 	frameworkData:                                            "github.com/arandu-io/hesape/database",

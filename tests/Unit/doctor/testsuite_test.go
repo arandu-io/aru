@@ -95,7 +95,7 @@ func TestTestCopiedConformance(t *testing.T) {
 			[]string{"tests/NativeAuth/x_test.go:1"}},
 		{"a copied test by name", map[string]string{"tests/Feature/x_test.go": "package feature_test\n\nimport \"testing\"\n\nfunc TestAccountContract(t *testing.T) {}\n"},
 			[]string{"tests/Feature/x_test.go:5"}},
-		{"the kit, called", map[string]string{"tests/Conformance/x_test.go": "package conformance_test\n\nimport (\n\t\"testing\"\n\n\t\"github.com/arandu-io/hesape/arandutest/conformance\"\n)\n\nfunc TestAccountContract(t *testing.T) { conformance.Boundaries(t, \"../..\") }\n"}, nil},
+		{"the kit, called", map[string]string{"tests/Conformance/x_test.go": "package conformance_test\n\nimport (\n\t\"testing\"\n\n\t\"github.com/arandu-io/framework/test/conformance\"\n)\n\nfunc TestAccountContract(t *testing.T) { conformance.Boundaries(t, \"../..\") }\n"}, nil},
 		{"an application's own test", map[string]string{"tests/Feature/x_test.go": "package feature_test\n\nimport \"testing\"\n\nfunc TestInvoicesAreListed(t *testing.T) {}\n"}, nil},
 	})
 }

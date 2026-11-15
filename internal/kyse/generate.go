@@ -581,7 +581,7 @@ func (g *generator) write(line int, format string, args ...any) {
 // the page, and refuses it when the position will not hold it.
 //
 // The build knows the position and never the value, so this is the half that
-// has to happen at render time. It is an HTMX trigger, where a component
+// has to happen at render time. It is a YPY trigger, where a component
 // writes the events it listens for and only a square bracket turns the value
 // into a script. Refusing the value rather than repairing it is the choice
 // everywhere else too -- rewriting would change what the page says
@@ -617,6 +617,41 @@ func (g *generator) checked(line int, expr, denied, reason, escape string) {
 	}
 	fmt.Fprintf(&g.out, "\t\t\t_, %s = %s.WriteString(%s, %s)\n", varErr, pkgIO, varWriter, written)
 	g.out.WriteString("\t\t}\n\t}\n")
+}
+
+// refusedWhen writes one interpolation that is the whole front of an attribute
+// value, and refuses at render time a value that would make the attribute read
+// the rest of it another way.
+//
+// The build knows the position and never the value, and this position is the
+// one that depends on it: whether what YPY reads is text or a script is
+// decided by the first characters the value holds. The text of the value is
+// refused when condition, written over the name of the temporary that holds it,
+// is true. What passes is escaped for the attribute, because the check is on
+// the value and the escape is on the markup around it.
+func (g *generator) refusedWhen(line int, expr string, condition func(value string) string, reason string) {
+	g.checks = true
+	value := g.temp()
+	fmt.Fprintf(&g.out, "\tif %s == nil {\n", varErr)
+	g.at(line)
+	fmt.Fprintf(&g.out, "\t\tif %s := %s.Text(%s); %s {\n", value, pkgView, expr, condition(value))
+	g.self()
+	fmt.Fprintf(&g.out, "\t\t\t%s = %s.New(%s)\n", varErr, pkgErrors,
+		strconv.Quote(fmt.Sprintf("%s:%d: %s", g.file.Path, line, reason)))
+	g.out.WriteString("\t\t} else {\n")
+	fmt.Fprintf(&g.out, "\t\t\t_, %s = %s.WriteString(%s, %s.TextAttr(%s))\n", varErr, pkgIO, varWriter, pkgView, value)
+	g.out.WriteString("\t\t}\n\t}\n")
+}
+
+// conditionScriptPrefix is true of a text that opens, after the spaces a
+// script engine trims, with a prefix YPY runs the rest of the value after.
+func conditionScriptPrefix(value string) string {
+	lead := pkgStrings + ".ToLower(" + pkgStrings + ".TrimSpace(" + pkgStrings + ".TrimLeft(" + value + ", \"\\ufeff\")))"
+	return pkgStrings + ".HasPrefix(" + lead + ", \"js:\") || " + pkgStrings + ".HasPrefix(" + lead + ", \"javascript:\")"
+}
+
+func reasonScriptPrefix(attr string) string {
+	return fmt.Sprintf("the value interpolated into %s opens with a script prefix, and YPY runs what follows it as a script", attr)
 }
 
 // refusable writes one interpolation whose escaper may refuse the value, and
@@ -714,7 +749,7 @@ func (g *generator) self() { g.out.WriteString(markerSelf + "\n") }
 // emit writes the file: the body first, then the header above it.
 //
 // The order is backwards on purpose. The import block depends on what the walk
-// over the nodes found -- a value written into an HTMX trigger is examined at
+// over the nodes found -- a value written into a YPY trigger is examined at
 // render time, and the check needs two imports a view without one must not
 // carry, because an unused import is a compile error. Only the walk
 // knows, so the walk runs first and the header is written over it.
@@ -1159,7 +1194,7 @@ func (g *generator) echo(n Node) {
 	switch g.scan.position() {
 	case posAttributeName:
 		g.refuse(n.Line, "this value is written where the name of an attribute goes",
-			"the escape of a value is chosen from the name of the attribute it sits in, and a name that is data is one this compiler never reads -- onclick, hx-post or href would carry their value as inert text, a value the view wrote as well. An attribute name carries no character references either, so no escape keeps the name one name.\n"+
+			"the escape of a value is chosen from the name of the attribute it sits in, and a name that is data is one this compiler never reads -- onclick, ypy-post or href would carry their value as inert text, a value the view wrote as well. An attribute name carries no character references either, so no escape keeps the name one name.\n"+
 				"    Choose between fixed attributes with @if, or pass the attributes as a map to @attributes, which refuses a name the browser acts on.")
 
 	case posTrigger:
@@ -1183,6 +1218,15 @@ func (g *generator) echo(n Node) {
 		// outside a string, and the quotes the attribute is written between are
 		// kept by the escape of the attribute around it.
 		g.write(n.Line, pkgView+".TextAttr("+pkgView+".TextJS(%s))", expr)
+
+	case posTextFront:
+		g.refusedWhen(n.Line, expr, conditionScriptPrefix, reasonScriptPrefix(g.scan.attr))
+
+	case posAmbiguous:
+		g.refuse(n.Line, fmt.Sprintf("this value is written into %q where how the value begins decides how it is read", g.scan.attr),
+			"YPY reads this attribute as one JSON object only when its value opens with a brace and nothing before it, as a list of pairs written in another syntax when it opens with anything else, and as a script when it opens with `js:`. "+
+				"Nothing in front of this value settles which, and a JSON escape keeps a value one string but not one pair -- a quote escaped for JSON still ends the value a pair reads. An `:append` spelling is joined with an ancestor's value as text before it is read, which is the same problem.\n"+
+				"    Open the value with a brace, or with text of your own that is not `js:`, and use the plain spelling of the attribute.")
 
 	case posJSONString:
 		if g.scan.value.escaped {
@@ -1572,10 +1616,17 @@ const (
 	// of a meta http-equiv, the value an SVG animation writes into another
 	// attribute.
 	posActive
-	// posTrigger is an HTMX trigger outside a filter. Its value is escaped as
+	// posTrigger is a YPY trigger outside a filter. Its value is escaped as
 	// an attribute and refused at render time when it would open or close a
-	// filter, the part of a trigger HTMX evaluates.
+	// filter, the part of a trigger YPY evaluates.
 	posTrigger
+	// posTextFront is the start of the value of an attribute YPY runs as a
+	// script when it opens with `js:`. The value written there is refused at
+	// render time when it does.
+	posTextFront
+	// posAmbiguous is a value in an attribute whose reading depends on how it
+	// begins, behind text that leaves that open or that decided the other way.
+	posAmbiguous
 	// posAddressOpen is an address whose scheme or host is still open behind
 	// text the view wrote, so the value would finish one that no check reads
 	// whole.
@@ -1615,7 +1666,7 @@ var (
 
 // The reasons a refusal gives, which are what somebody reads when a page stops.
 const (
-	reasonTrigger = "the value interpolated into an HTMX trigger holds a square bracket, and HTMX evaluates what a trigger holds between square brackets as a script"
+	reasonTrigger = "the value interpolated into a YPY trigger holds a square bracket, and YPY evaluates what a trigger holds between square brackets as a script"
 )
 
 // scanState is the state of the HTML tokenizer, cut to what deciding a position
@@ -1698,9 +1749,12 @@ type attrValue struct {
 	// lands inside a string, and whether it lands right after a backslash
 	// there.
 	inString, escaped bool
-	// filter records that an HTMX trigger has a square bracket open, inside
+	// filter records that a YPY trigger has a square bracket open, inside
 	// which what it holds is a script.
 	filter bool
+	// pairs records that the front decided an attribute is read as a list of
+	// pairs rather than as one JSON object.
+	pairs bool
 }
 
 // frontData stands for an interpolation in attrValue.front. It is a character
@@ -1732,17 +1786,35 @@ func (s htmlScanner) settled() htmlScanner {
 // reads is the name of the attribute being read, as the program that reads it
 // looks it up.
 //
-// HTMX resolves every one of its attributes through a data- alias as well, so
-// `data-hx-post` is fetched exactly as `hx-post` is and `data-hx-on:click` runs
-// exactly as `hx-on:click` does. Classifying the name as written would put
+// YPY resolves every one of its attributes through a data- alias as well, so
+// `data-ypy-post` is fetched exactly as `ypy-post` is and `data-ypy-on:click`
+// runs exactly as `ypy-on:click` does. Classifying the name as written would put
 // every one of them six characters from the escape it needs. The alias is
-// HTMX's alone, which is why only that prefix is taken off: `data-src` is an
+// YPY's alone, which is why only that prefix is taken off: `data-src` is an
 // ordinary attribute to the browser, whatever a script may later do with it.
+//
+// A YPY attribute also reads under its inheritance spellings -- `ypy-vals:inherited`,
+// `ypy-vals:append` and `ypy-vals:inherited:append` are the same attribute with
+// the same kind of value -- so those suffixes are taken off as well. An
+// attribute that is not YPY's keeps its name whole: a suffix after a colon is
+// part of the name of any other.
 func (s *htmlScanner) reads() string {
-	if strings.HasPrefix(s.attr, "data-hx-") {
-		return strings.TrimPrefix(s.attr, "data-")
+	name := s.attr
+	if strings.HasPrefix(name, "data-ypy-") {
+		name = strings.TrimPrefix(name, "data-")
 	}
-	return s.attr
+	if !strings.HasPrefix(name, "ypy-") {
+		return name
+	}
+	name = strings.TrimSuffix(name, ":append")
+	return strings.TrimSuffix(name, ":inherited")
+}
+
+// appends reports whether the attribute being read is written in its append
+// spelling, where YPY joins the value with the one an ancestor holds as text
+// before it reads the result.
+func (s *htmlScanner) appends() bool {
+	return (strings.HasPrefix(s.attr, "ypy-") || strings.HasPrefix(s.attr, "data-ypy-")) && strings.HasSuffix(s.attr, ":append")
 }
 
 // position answers where an interpolation written now would land.
@@ -1765,12 +1837,23 @@ func (s *htmlScanner) position() htmlPosition {
 	case stateAttrValueDouble, stateAttrValueSingle:
 		name := s.reads()
 		switch {
-		case attributeHoldsCode(name), s.value.script, name == "hx-trigger" && s.value.filter:
+		case attributeHoldsCode(name), s.value.script, attributeHoldsTrigger(name) && s.value.filter:
 			return posCode
-		case name == "hx-trigger":
+		case attributeHoldsTrigger(name):
 			return posTrigger
 		case attributeActs(s.tag, name, s.equiv):
 			return posActive
+		// YPY reads the value of these as an object only when it opens with a
+		// brace, and as a list of pairs written in another syntax otherwise --
+		// so which escape is right depends on how the value begins, and the view
+		// has to have written that first character before a value stands in it.
+		case attributeReadsAsObject(name) && (s.value.pairs || s.appends() || !s.value.decided):
+			return posAmbiguous
+		// A confirmation is text, unless it opens with a script prefix.
+		case attributeIsConfirmation(name) && !s.value.decided && s.value.front != "":
+			return posAmbiguous
+		case attributeIsConfirmation(name) && !s.value.decided:
+			return posTextFront
 		case attributeHoldsJSON(name) && s.value.inString:
 			return posJSONString
 		case attributeHoldsJSON(name):
@@ -1817,14 +1900,23 @@ func attributeHoldsURL(name string) bool {
 	case "action", "background", "cite", "data", "formaction", "href",
 		"manifest", "ping", "poster", "src", "xlink:href":
 		return true
-	// The verbs that make a request. They are the reason the escape cannot be
-	// chosen by the runtime alone: to the HTML parser these are attributes like
-	// any other, and only the compiler knows the value is fetched.
-	case "hx-delete", "hx-get", "hx-patch", "hx-post", "hx-put":
+	// The verbs that make a request, and the two spellings that name the method
+	// and the address apart. They are the reason the escape cannot be chosen by
+	// the runtime alone: to the HTML parser these are attributes like any
+	// other, and only the compiler knows the value is fetched.
+	case "ypy-action", "ypy-delete", "ypy-get", "ypy-patch", "ypy-post", "ypy-put", "ypy-query":
 		return true
 	// The two that write an address into the history, where it is the
 	// address the back button and a reload go to.
-	case "hx-push-url", "hx-replace-url":
+	case "ypy-push-url", "ypy-replace-url":
+		return true
+	// What the extensions fetch or connect to on their own: a lazy region, the
+	// server side of a field check, and the connections that stream a page.
+	// ypy-validate is an address on a field and a switch on a form, so the
+	// value written into it is held to the stricter of the two.
+	case "ypy-lazy", "ypy-validate", "ypy-validate-fields",
+		"ypy-stream", "ypy-stream.delete", "ypy-stream.patch", "ypy-stream.post", "ypy-stream.put",
+		"ypy-sse:connect", "ypy-sse-connect", "ypy-ws:connect", "ypy-ws-connect", "ypy-multipart:connect":
 		return true
 	}
 	return false
@@ -1842,8 +1934,16 @@ func attributeHoldsCode(name string) bool {
 	// Every HTML attribute beginning with `on` is an event handler.
 	case strings.HasPrefix(name, "on"):
 		return true
-	// The same, in the two forms the client libraries spell it.
-	case strings.HasPrefix(name, "hx-on"), strings.HasPrefix(name, "x-on:"), strings.HasPrefix(name, "@"):
+	// The same, in the forms the client libraries spell it. The YPY ones are
+	// the handler, and the expressions its signals and its live regions run:
+	// each of them is a family of its own, open on the name of what it
+	// listens to, declares or sets.
+	case strings.HasPrefix(name, "ypy-on"), strings.HasPrefix(name, "x-on:"), strings.HasPrefix(name, "@"):
+		return true
+	case strings.HasPrefix(name, "ypy-live"), strings.HasPrefix(name, "ypy-signals"),
+		strings.HasPrefix(name, "ypy-computed"), strings.HasPrefix(name, "ypy-attr"),
+		strings.HasPrefix(name, "ypy-class"), strings.HasPrefix(name, "ypy-text"),
+		strings.HasPrefix(name, "ypy-show"):
 		return true
 	// A binding, whose value is the expression whose result becomes the
 	// attribute. The bare colon is the shorthand for the long form.
@@ -1856,24 +1956,48 @@ func attributeHoldsCode(name string) bool {
 	case "x-data", "x-effect", "x-for", "x-html", "x-if", "x-init",
 		"x-model", "x-modelable", "x-show", "x-text":
 		return true
-	// The HTMX attribute shaped like JSON and evaluated as a script every
-	// time, whatever it opens with.
-	case "hx-vars":
-		return true
 	}
 	return false
 }
 
 // attributeHoldsJSON reports whether this attribute's value is parsed as JSON.
 //
-// The list is closed and exact. Three are HTMX's -- what a request sends, the
+// The list is closed and exact. Three are YPY's -- what a request sends, the
 // headers it carries and how it is made -- and one is the client behaviour's
-// own props. The three HTMX ones are evaluated as a script instead when the
+// own props. The three YPY ones are evaluated as a script instead when the
 // value opens with `js:` or `javascript:`, which is a question about the value
 // the scanner answers rather than one the name can.
 func attributeHoldsJSON(name string) bool {
+	return attributeReadsAsObject(name) || name == "data-kyse-props"
+}
+
+// attributeReadsAsObject reports whether YPY reads this attribute's value as
+// one JSON object when it opens with a brace, and as a list of pairs in a
+// syntax of its own -- `a:1 "b":'c d'` -- when it does not.
+//
+// The second reading is the reason a JSON escape is not enough here: it keeps
+// a value one JSON string, and that string, read as a pair, ends at its first
+// escaped quote and goes on to be a key and a value of its own. The client
+// behaviour's props are JSON and nothing else, which is why they are not on
+// this list.
+func attributeReadsAsObject(name string) bool {
 	switch name {
-	case "hx-headers", "hx-request", "hx-vals", "data-kyse-props":
+	case "ypy-config", "ypy-headers", "ypy-vals":
+		return true
+	}
+	return false
+}
+
+// attributeIsConfirmation reports whether this attribute is text that YPY runs
+// as a script instead when it opens with `js:` or `javascript:`.
+func attributeIsConfirmation(name string) bool { return name == "ypy-confirm" }
+
+// attributeHoldsTrigger reports whether this attribute's value is a list of
+// trigger specifications, each of which may carry a filter between square
+// brackets that YPY evaluates as a script.
+func attributeHoldsTrigger(name string) bool {
+	switch name {
+	case "ypy-trigger", "ypy-validate-trigger", "ypy-multipart:close":
 		return true
 	}
 	return false
@@ -2063,7 +2187,10 @@ func (s *htmlScanner) readValue(run string) {
 		// resolves it, wherever they are, so they are not there to the reader.
 		s.readFront(strings.NewReplacer("\t", "", "\n", "", "\r", "").Replace(html.UnescapeString(run)))
 
-	case name == "hx-trigger":
+	case attributeIsConfirmation(name):
+		s.readFront(html.UnescapeString(run))
+
+	case attributeHoldsTrigger(name):
 		for _, r := range html.UnescapeString(run) {
 			switch r {
 			case '[':
@@ -2097,7 +2224,7 @@ func (s *htmlScanner) readValue(run string) {
 // one still compare equal.
 func (s *htmlScanner) readFront(text string) {
 	name := s.reads()
-	if s.value.decided || !attributeHoldsURL(name) && !attributeHoldsJSON(name) {
+	if s.value.decided || !attributeHoldsURL(name) && !attributeHoldsJSON(name) && !attributeIsConfirmation(name) {
 		return
 	}
 	s.value.front += text
@@ -2107,7 +2234,7 @@ func (s *htmlScanner) readFront(text string) {
 	case attributeHoldsURL(name):
 		decided, s.value.script = addressDecided(s.value.front)
 
-	case attributeHoldsJSON(name):
+	case attributeHoldsJSON(name), attributeIsConfirmation(name):
 		// The reader trims the value and then looks for one of two prefixes
 		// that turn the rest into a script it evaluates. A front that is still
 		// empty, or still part of one of them, decides nothing yet.
@@ -2116,6 +2243,11 @@ func (s *htmlScanner) readFront(text string) {
 		case strings.HasPrefix(lead, "js:"), strings.HasPrefix(lead, "javascript:"):
 			s.value.script, decided = true, true
 		case lead == "", strings.HasPrefix("js:", lead), strings.HasPrefix("javascript:", lead):
+		// What YPY parses as JSON is a value that opens with a brace and
+		// nothing before it; one that opens with anything else, a space
+		// included, is read as pairs.
+		case attributeReadsAsObject(name) && !strings.HasPrefix(s.value.front, "{"):
+			s.value.pairs, decided = true, true
 		default:
 			decided = true
 		}
@@ -2176,7 +2308,7 @@ func addressDecided(front string) (decided, script bool) {
 			return true, false
 		case r == ':':
 			scheme := strings.ToLower(t[:i])
-			return true, scheme == "javascript" || scheme == "vbscript"
+			return true, scheme == "javascript" || scheme == "vbscript" || scheme == "js"
 		case r == '/', r == '\\':
 			if i > 0 {
 				return true, false

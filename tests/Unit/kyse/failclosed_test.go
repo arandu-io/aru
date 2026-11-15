@@ -145,7 +145,7 @@ func Attributes(attrs map[string]string) (string, error) {
 	sort.Strings(names)
 	var out strings.Builder
 	for _, name := range names {
-		if strings.HasPrefix(name, "on") || strings.HasPrefix(name, "hx-") || strings.HasPrefix(name, "data-hx-") {
+		if strings.HasPrefix(name, "on") || strings.HasPrefix(name, "ypy-") || strings.HasPrefix(name, "data-ypy-") {
 			return "", fmt.Errorf("view: %q is refused", name)
 		}
 		out.WriteString(" " + name + "=\"" + template.HTMLEscapeString(attrs[name]) + "\"")
@@ -220,7 +220,7 @@ type Comment struct{ Author, Avatar, Body string }
 // attackerAuthor is a display name chosen to be read as attributes of the
 // element a truncated component leaves open: a same-origin POST that sends
 // itself on load, carrying fields the server would take as the visitor's own.
-const attackerAuthor = ` hx-post=/profile hx-trigger=load hx-vals={"role":"admin"} x`
+const attackerAuthor = ` ypy-post=/profile ypy-trigger=load ypy-vals={"role":"admin"} x`
 
 // A component whose value is refused returns nothing, and never the markup it
 // had written up to the refusal.
@@ -229,7 +229,7 @@ const attackerAuthor = ` hx-post=/profile hx-trigger=load hx-vals={"role":"admin
 // refused, with the closing quote never written, so the first quote the page
 // writes after the component closes that value instead -- and the text between
 // that quote and the next is read as attributes. A display name written there
-// becomes an hx-post the browser sends on load, with the page's own CSRF header.
+// becomes an ypy-post the browser sends on load, with the page's own CSRF header.
 func TestARefusedComponentReturnsNothing(t *testing.T) {
 	root := t.TempDir()
 	writeRuntimeModule(t, root)
@@ -302,7 +302,7 @@ func main() {
 `)
 
 	got := runModule(t, root)
-	const escaped = ` hx-post=/profile hx-trigger=load hx-vals={&#34;role&#34;:&#34;admin&#34;} x`
+	const escaped = ` ypy-post=/profile ypy-trigger=load ypy-vals={&#34;role&#34;:&#34;admin&#34;} x`
 	want := "<ul>\n" +
 		"\t<li>\n<span class=\"avatar\"><img src=\"https://cdn.example/ana.png\" alt=\"Ana\"></span>\n\n" +
 		"<strong title=\"Ana\">Ana</strong><p>hello</p></li>\n" +
@@ -314,7 +314,7 @@ func main() {
 
 	// The same property stated without the expected bytes: outside a quoted
 	// value, no attribute the page writes is one the author typed.
-	if names := attributeNamesIn(got); containsHX(names) {
+	if names := attributeNamesIn(got); containsYPY(names) {
 		t.Errorf("an attribute a visitor wrote reached the markup: %v\n%s", names, got)
 	}
 }
@@ -369,9 +369,9 @@ func attributeNamesIn(markup string) []string {
 	return names
 }
 
-func containsHX(names []string) bool {
+func containsYPY(names []string) bool {
 	for _, n := range names {
-		if strings.HasPrefix(n, "hx-") || strings.HasPrefix(n, "data-hx-") {
+		if strings.HasPrefix(n, "ypy-") || strings.HasPrefix(n, "data-ypy-") {
 			return true
 		}
 	}

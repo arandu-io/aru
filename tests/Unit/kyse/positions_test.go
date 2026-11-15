@@ -14,7 +14,8 @@ import (
 // escapeCall matches each escape the generator writes around an interpolation,
 // longest form first so a JSON escape is not read as the two calls inside it.
 var escapeCall = regexp.MustCompile(
-	`kyse__view\.TextAttr\(kyse__view\.TextJS\(` + // json
+	`kyse__view\.Text\(kyse__d\.\w+\); kyse__strings\.HasPrefix\(kyse__strings\.ToLower\(` + // text checked for a script prefix
+		`|kyse__view\.TextAttr\(kyse__view\.TextJS\(` + // json
 		`|kyse__view\.TextJS\(kyse__view\.Text\(` + // json string
 		`|kyse__template\.HTMLEscapeString\(kyse__view\.Text\(` + // body
 		`|kyse__view\.TextAttr\(kyse__d\.` + // attr
@@ -36,8 +37,12 @@ func escapesOf(generated string) []string {
 	}
 	var out []string
 	for _, m := range escapeCall.FindAllString(generated, -1) {
-		if strings.HasSuffix(m, `"[]")`) {
+		switch {
+		case strings.HasSuffix(m, `"[]")`):
 			out = append(out, "trigger")
+			continue
+		case strings.Contains(m, "ToLower"):
+			out = append(out, "confirm")
 			continue
 		}
 		out = append(out, names[m])
@@ -45,13 +50,13 @@ func escapesOf(generated string) []string {
 	return out
 }
 
-// Every position the HTML syntax, HTMX and SVG give an attribute value, and the
+// Every position the HTML syntax, YPY and SVG give an attribute value, and the
 // escape or refusal each one gets.
 //
 // The table is what a probe of the compiler found, turned into assertions. The
 // rows marked as refusals are the ones that used to compile to an escape that
-// does not hold there: HTMX reads every attribute through a data- alias, so
-// data-hx-post is fetched and data-hx-on runs; a trigger filter, srcdoc, the
+// does not hold there: YPY reads every attribute through a data- alias, so
+// data-ypy-post is fetched and data-ypy-on runs; a trigger filter, srcdoc, the
 // content of a meta http-equiv and an SVG animation are all acted on; and an
 // address whose front a value can still finish is one the URL check never
 // reads whole.
@@ -69,12 +74,12 @@ func TestEveryAttributePositionTakesItsEscapeOrIsRefused(t *testing.T) {
 		refused      string
 	}{
 		{"href", `<a href="{{ .U }}">x</a>`, []string{"url"}, ""},
-		{"hx-get", `<div hx-get="{{ .U }}"></div>`, []string{"url"}, ""},
-		{"data-hx-get", `<div data-hx-get="{{ .U }}"></div>`, []string{"url"}, ""},
-		{"data-hx-post", `<button data-hx-post="{{ .U }}"></button>`, []string{"url"}, ""},
-		{"data-hx-delete", `<button data-hx-delete="{{ .U }}"></button>`, []string{"url"}, ""},
-		{"hx-push-url", `<div hx-push-url="{{ .U }}"></div>`, []string{"url"}, ""},
-		{"data-hx-replace-url", `<div data-hx-replace-url="{{ .U }}"></div>`, []string{"url"}, ""},
+		{"ypy-get", `<div ypy-get="{{ .U }}"></div>`, []string{"url"}, ""},
+		{"data-ypy-get", `<div data-ypy-get="{{ .U }}"></div>`, []string{"url"}, ""},
+		{"data-ypy-post", `<button data-ypy-post="{{ .U }}"></button>`, []string{"url"}, ""},
+		{"data-ypy-delete", `<button data-ypy-delete="{{ .U }}"></button>`, []string{"url"}, ""},
+		{"ypy-push-url", `<div ypy-push-url="{{ .U }}"></div>`, []string{"url"}, ""},
+		{"data-ypy-replace-url", `<div data-ypy-replace-url="{{ .U }}"></div>`, []string{"url"}, ""},
 		{"formaction", `<button formaction="{{ .U }}"></button>`, []string{"url"}, ""},
 		{"a ping", `<a ping="{{ .U }}" href="/">x</a>`, []string{"url"}, ""},
 		{"object data", `<object data="{{ .U }}"></object>`, []string{"url"}, ""},
@@ -86,7 +91,7 @@ func TestEveryAttributePositionTakesItsEscapeOrIsRefused(t *testing.T) {
 
 		{"a path the view wrote", `<a href="/posts/{{ .U }}">x</a>`, []string{"attr"}, ""},
 		{"a path from a checked address", `<a href="{{ .U }}/items/{{ .V }}">x</a>`, []string{"url", "attr"}, ""},
-		{"a query after a checked address", `<div hx-get="{{ .U }}?page={{ .V }}"></div>`, []string{"url", "attr"}, ""},
+		{"a query after a checked address", `<div ypy-get="{{ .U }}?page={{ .V }}"></div>`, []string{"url", "attr"}, ""},
 		{"a fragment", `<a href="#{{ .U }}">x</a>`, []string{"attr"}, ""},
 		{"a query", `<a href="?cursor={{ .U }}">x</a>`, []string{"attr"}, ""},
 		{"a scheme the view wrote", `<a href="mailto:{{ .U }}">x</a>`, []string{"attr"}, ""},
@@ -101,20 +106,19 @@ func TestEveryAttributePositionTakesItsEscapeOrIsRefused(t *testing.T) {
 		{"a value inside a javascript address", `<a href="javascript:show('{{ .Q }}')">x</a>`, nil, script},
 		{"a javascript scheme spelled with references", `<a href="&#x6a;ava&#9;script:{{ .Q }}">x</a>`, nil, script},
 
-		{"hx-on", `<div hx-on:click="{{ .U }}"></div>`, nil, script},
-		{"data-hx-on", `<div data-hx-on:click="{{ .U }}"></div>`, nil, script},
-		{"data-hx-on with dashes", `<div data-hx-on--after-request="{{ .U }}"></div>`, nil, script},
-		{"hx-trigger", `<div hx-trigger="{{ .Q }}"></div>`, []string{"trigger"}, ""},
-		{"data-hx-trigger after a closed filter", `<div data-hx-trigger="click[ctrlKey] from:{{ .Q }}"></div>`, []string{"trigger"}, ""},
-		{"hx-trigger inside a filter", `<div hx-trigger="keyup[key=='{{ .Q }}']"></div>`, nil, script},
-		{"data-hx-trigger", `<div data-hx-trigger="click[{{ .Q }}]"></div>`, nil, script},
-		{"hx-vars", `<div hx-vars="q:{{ .Q }}"></div>`, nil, script},
-		{"data-hx-vars", `<div data-hx-vars="q:{{ .Q }}"></div>`, nil, script},
+		{"ypy-on", `<div ypy-on:click="{{ .U }}"></div>`, nil, script},
+		{"data-ypy-on", `<div data-ypy-on:click="{{ .U }}"></div>`, nil, script},
+		{"data-ypy-on with dashes", `<div data-ypy-on--after-request="{{ .U }}"></div>`, nil, script},
+		{"ypy-trigger", `<div ypy-trigger="{{ .Q }}"></div>`, []string{"trigger"}, ""},
+		{"data-ypy-trigger after a closed filter", `<div data-ypy-trigger="click[ctrlKey] from:{{ .Q }}"></div>`, []string{"trigger"}, ""},
+		{"ypy-trigger inside a filter", `<div ypy-trigger="keyup[key=='{{ .Q }}']"></div>`, nil, script},
+		{"data-ypy-trigger", `<div data-ypy-trigger="click[{{ .Q }}]"></div>`, nil, script},
+		{"a name the old library read as a script is plain text now", `<div ypy-vars="q:{{ .Q }}"></div>`, []string{"attr"}, ""},
 
-		{"hx-vals", `<div hx-vals='{"q": "{{ .Q }}"}'></div>`, []string{"jsonstring"}, ""},
-		{"data-hx-vals", `<div data-hx-vals='{"q": "{{ .Q }}"}'></div>`, []string{"jsonstring"}, ""},
-		{"data-hx-headers", `<div data-hx-headers='{"X-A": {{ .Q }}}'></div>`, []string{"json"}, ""},
-		{"data-hx-vals evaluated", `<div data-hx-vals='js:{q: {{ .Q }}}'></div>`, nil, script},
+		{"ypy-vals", `<div ypy-vals='{"q": "{{ .Q }}"}'></div>`, []string{"jsonstring"}, ""},
+		{"data-ypy-vals", `<div data-ypy-vals='{"q": "{{ .Q }}"}'></div>`, []string{"jsonstring"}, ""},
+		{"data-ypy-headers", `<div data-ypy-headers='{"X-A": {{ .Q }}}'></div>`, []string{"json"}, ""},
+		{"data-ypy-vals evaluated", `<div data-ypy-vals='js:{q: {{ .Q }}}'></div>`, nil, script},
 
 		{"srcdoc", `<iframe srcdoc="{{ .Q }}"></iframe>`, nil, acts},
 		{"the content of a meta refresh", `<meta http-equiv="refresh" content="0;url={{ .U }}">`, nil, acts},
@@ -170,8 +174,8 @@ func TestABranchThatDecidesTheAddressInOneArmIsRefused(t *testing.T) {
 	}
 }
 
-// An HTMX trigger takes the events a component listens for, and refuses at
-// render time a value that would open a filter -- the part of a trigger HTMX
+// A YPY trigger takes the events a component listens for, and refuses at
+// render time a value that would open a filter -- the part of a trigger YPY
 // evaluates as a script.
 func TestATriggerRefusesAFilterAtRenderTime(t *testing.T) {
 	root := t.TempDir()
@@ -184,7 +188,7 @@ package views
 type D struct{ Q string }
 @endgo
 
-<div hx-trigger="{{ .Q }}"></div>
+<div ypy-trigger="{{ .Q }}"></div>
 `)
 	writeFile(t, filepath.Join(root, "main.go"), `package main
 
@@ -209,9 +213,9 @@ func main() {
 	got := runModule(t, root)
 	// A page that fails is discarded whole by the renderer, so what matters is
 	// the error and that the value was never written.
-	want := `"<div hx-trigger=\"input changed delay:300ms, search\"></div>" false` + "\n" +
-		`"<div hx-trigger=\"" true` + "\n" +
-		`"<div hx-trigger=\"" true` + "\n"
+	want := `"<div ypy-trigger=\"input changed delay:300ms, search\"></div>" false` + "\n" +
+		`"<div ypy-trigger=\"" true` + "\n" +
+		`"<div ypy-trigger=\"" true` + "\n"
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}

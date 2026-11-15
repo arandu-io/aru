@@ -1304,7 +1304,7 @@ func TestTheListingTableIsDrawnFromTheResult(t *testing.T) {
 		"PO-0011",
 		"Page 2 of 4",
 		"sort=total",
-		"hx-push-url=\"true\"",
+		"ypy-push-url=\"true\"",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the table does not contain %q:\n%s", want, body)

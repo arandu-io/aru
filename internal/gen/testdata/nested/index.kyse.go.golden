@@ -40,8 +40,9 @@ type PurchaseOrdersIndexData struct {
 var _ view.Layout = PurchaseOrdersIndexData{}
 
 // PurchaseOrdersTableID is the id of the element the table is drawn into. A control
-// of the table names it as the htmx target, and PurchaseOrderController.Index reads it
-// from HX-Target to answer the table alone instead of the whole page.
+// of the table names it as the YPY target, and PurchaseOrderController.Index asks the
+// request for it (ctx.Targets reads the id out of the YPY-Target header, which
+// holds tag#id) to answer the table alone instead of the whole page.
 const PurchaseOrdersTableID = "purchase-orders-table"
 
 // PurchaseOrderRow is one record, formatted by the controller: what the listing

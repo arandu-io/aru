@@ -165,7 +165,7 @@ func TestDecimalKeepsItsDigits(t *testing.T) {
 
 // TestNoGeneratedFileWritesAnAddress: the controller redirected to
 // "/purchase-orders/"+id and the four views wrote the same prefix into every
-// href, form action and hx- attribute. Both compile, both render, and both keep
+// href, form action and ypy- attribute. Both compile, both render, and both keep
 // pointing at the old address the moment the route moves -- there is no build
 // failure and no error at request time, so the first report is somebody
 // clicking a link that 404s.

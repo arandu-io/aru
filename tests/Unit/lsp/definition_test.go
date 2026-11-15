@@ -651,9 +651,9 @@ func TestDefinitionAnswersNothingRatherThanGuessing(t *testing.T) {
 			why:    "a view name is a path under resources/views and never above it",
 		},
 		{
-			name:   "an HTMX attribute, which is markup and not a symbol",
-			text:   strings.Replace(homeView, `<p>components.Button`, `<p hx-get="/rows">components.Button`, 1),
-			needle: "hx-get",
+			name:   "a YPY attribute, which is markup and not a symbol",
+			text:   strings.Replace(homeView, `<p>components.Button`, `<p ypy-get="/rows">components.Button`, 1),
+			needle: "ypy-get",
 			offset: 2,
 			why:    "an attribute name is not declared anywhere this server can open",
 		},

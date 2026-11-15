@@ -22,7 +22,7 @@ const (
 
 import "embed"
 
-//go:embed assets/app.css assets/htmx.min.js assets/ui.js
+//go:embed assets/app.css assets/ypy.min.js assets/ui.js
 
 var files embed.FS
 
@@ -68,7 +68,7 @@ require example.test/Kyse v1.2.3
 		filepath.Join(view, "assets.go"):                                                     frameworkAssets,
 		filepath.Join(view, "assets", "app.css"):                                             "body{}",
 		filepath.Join(view, "assets", "app.src.css"):                                         "@source '.';",
-		filepath.Join(view, "assets", "htmx.min.js"):                                         "//",
+		filepath.Join(view, "assets", "ypy.min.js"):                                          "//",
 		filepath.Join(view, "assets", "ui.js"):                                               "//",
 		filepath.Join(cache, "example.test", "!kyse@v1.2.3", "components", "button.go"):      buttonGenerated,
 		filepath.Join(cache, "example.test", "!kyse@v1.2.3", "components", "button.kyse.go"): buttonSource,
@@ -109,7 +109,7 @@ func TestCompletionOffersTheAssetNamesViewURLWillAccept(t *testing.T) {
 	items := completionIn(t, root, assetView, line, character+len(`view.Asset("`))
 
 	got := labelsOf(items)
-	want := []string{"app.css", "custom.js", "htmx.min.js", "ui.js"}
+	want := []string{"app.css", "custom.js", "ui.js", "ypy.min.js"}
 	slices.Sort(got)
 	if !slices.Equal(got, want) {
 		t.Errorf("asset completion = %v, want %v", got, want)

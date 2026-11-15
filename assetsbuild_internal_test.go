@@ -152,10 +152,10 @@ func TestAssetBuildUsesConsumerNativeVersionAndGeneratedGoCompiles(t *testing.T)
 	assetFixture(t, root, "go.mod", "module example.test/app\n\ngo 1.26\n\nrequire github.com/arandu-io/hesape v0.0.0\nreplace github.com/arandu-io/hesape => "+filepath.ToSlash(native)+"\n")
 	assetFixture(t, native, "go.mod", "module github.com/arandu-io/hesape\n\ngo 1.26\n")
 	assetFixture(t, native, "view/view.go", "package view\nfunc RegisterAsset(name, kind string, body []byte) {}\n")
-	assetFixture(t, native, "view/assets/htmx.min.js", "var htmx = {version: 'consumer-version'};")
-	assetFixture(t, native, "view/assets/ui.js", "window.sequence = window.htmx.version;")
+	assetFixture(t, native, "view/assets/ypy.min.js", "var ypy = {version: 'consumer-version'};")
+	assetFixture(t, native, "view/assets/ui.js", "window.sequence = window.ypy.version;")
 	assetFixture(t, native, "view/assets/basecoat.bundle.js", "/* Copyright Fixture, MIT */\nwindow.fixture = true;")
-	assetFixture(t, root, "resources/js/app.js", "import 'arandu:htmx.min.js'; import 'arandu:ui.js'; import 'arandu:basecoat.bundle.js';")
+	assetFixture(t, root, "resources/js/app.js", "import 'arandu:ypy.min.js'; import 'arandu:ui.js'; import 'arandu:basecoat.bundle.js';")
 	if err := buildScripts(root, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
@@ -164,12 +164,12 @@ func TestAssetBuildUsesConsumerNativeVersionAndGeneratedGoCompiles(t *testing.T)
 		t.Fatal(err)
 	}
 	code := string(generated)
-	for _, want := range []string{"consumer-version", "window.htmx=", "Copyright Fixture, MIT"} {
+	for _, want := range []string{"consumer-version", "window.ypy=", "Copyright Fixture, MIT"} {
 		if !strings.Contains(code, want) {
 			t.Errorf("lost native contract %s", want)
 		}
 	}
-	if strings.Index(code, "window.htmx=") > strings.Index(code, "window.sequence=") {
+	if strings.Index(code, "window.ypy=") > strings.Index(code, "window.sequence=") {
 		t.Fatal("native dependency executed after its consumer")
 	}
 	// -trimpath keeps the temporary directory out of the build cache key, so

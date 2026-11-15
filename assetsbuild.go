@@ -111,7 +111,7 @@ func localAssetPlugin(root string) api.Plugin {
 			if strings.HasPrefix(args.Path, "arandu:") {
 				name := strings.TrimPrefix(args.Path, "arandu:")
 				switch name {
-				case "htmx.min.js", "ui.js", "basecoat.bundle.js", "theme.js":
+				case "ypy.min.js", "ui.js", "basecoat.bundle.js", "theme.js":
 				default:
 					return api.OnResolveResult{}, fmt.Errorf("unknown native asset %q", args.Path)
 				}
@@ -157,10 +157,10 @@ func localAssetPlugin(root string) api.Plugin {
 			contents := string(body)
 			if args.Namespace == "arandu-native" {
 				switch filepath.Base(args.Path) {
-				case "htmx.min.js":
+				case "ypy.min.js":
 					// The vendored browser distribution declares a script global.
 					// Modules need to publish that value explicitly after bundling.
-					contents += "\nwindow.htmx = htmx;\n"
+					contents += "\nwindow.ypy = ypy;\n"
 				case "basecoat.bundle.js":
 					// Preserve the upstream notice from the resolved version,
 					// including distributions whose leading comment lacks '!'.

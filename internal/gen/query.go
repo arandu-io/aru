@@ -25,8 +25,8 @@ const QueryListingRelease = "v0.86.0"
 // a pagination.ListingResult. `aru make:module` writes a listing drawn with both,
 // and refuses a project pinned below either.
 const (
-	ListingRelease     = "v0.88.0"
-	ListingKyseRelease = "v0.45.0"
+	ListingRelease     = "v0.107.0"
+	ListingKyseRelease = "v0.53.0"
 )
 
 // HesapeRelease is the hesape release a new project requires, which is the one
@@ -43,7 +43,7 @@ const (
 // may stay on without being refused, and a project that has to move anyway
 // should move to the release the generated code was last compiled with rather
 // than to the first one that would have compiled it.
-const HesapeRelease = "v0.88.0"
+const HesapeRelease = "v0.107.0"
 
 // QueryHeaderPrefix opens every file `aru model:build` writes beside an entity.
 //

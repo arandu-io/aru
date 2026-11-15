@@ -33,9 +33,9 @@ import (
 // The cost is that these three lines go stale the day the skeleton moves, and
 // that is what TestThePinnedTagsMatchTheSkeleton answers.
 var published = map[string]string{
-	"github.com/arandu-io/framework": "v0.67.0",
-	"github.com/arandu-io/hesape":    "v0.88.0",
-	"github.com/arandu-io/kyse":      "v0.45.0",
+	"github.com/arandu-io/framework": "v0.69.0",
+	"github.com/arandu-io/hesape":    "v0.107.0",
+	"github.com/arandu-io/kyse":      "v0.53.0",
 }
 
 // generatedModulePath is the module path the fixtures already generate imports
@@ -54,7 +54,7 @@ const publishedSkeletonModule = "github.com/arandu-io/arandu@v0.43.2"
 // skeleton release that takes it. Set it to false in the same change that moves
 // publishedSkeletonModule to the skeleton requiring these tags, and the equality
 // is required again.
-const harnessLeadsSkeleton = false
+const harnessLeadsSkeleton = true
 
 // TestTheGeneratedModuleCompiles hands every generator's output to the Go
 // compiler.

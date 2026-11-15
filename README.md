@@ -34,8 +34,8 @@ compiled against is still the one it is running.
 
 | group | commands |
 |---|---|
-| run the project | `serve` `dev` `test` `build` `new` `doctor` `trace` `generate` `schema` |
-| generate a module | `make:module` `make:model` `make:service` `make:resource` `make:notification` `make:client` `make:mcp-tool` `make:mcp-resource` `make:mcp-prompt` `make:migration` `make:controller` `make:middleware` `make:request` `make:factory` `make:seeder` `make:job` `make:mail` `make:command` `make:listener` `make:event` `make:enum` `make:policy` `make:test` |
+| run the project | `serve` `dev` `test` `e2e:record` `e2e:explain` `e2e:install-browsers` `build` `new` `doctor` `trace` `generate` `schema` |
+| generate a module | `make:module` `make:model` `make:service` `make:resource` `make:notification` `make:client` `make:mcp-tool` `make:mcp-resource` `make:mcp-prompt` `make:migration` `make:controller` `make:middleware` `make:request` `make:factory` `make:seeder` `make:job` `make:mail` `make:command` `make:listener` `make:event` `make:enum` `make:policy` `make:test` `make:e2e` `make:contract` |
 | migrations | `migrate` `migrate:rollback` `migrate:status` `migrate:fresh` |
 | queues | `queue:work` `queue:listen` `queue:restart` `queue:pause` `queue:resume` `queue:clear` `queue:monitor` `queue:failed` `queue:retry` `queue:forget` `queue:flush` `queue:prune-failed` `queue:retry-batch` `queue:prune-batches` |
 | fonts | `font:add` `font:search` `font:info` `font:list` `font:remove` |
@@ -43,10 +43,16 @@ compiled against is still the one it is running.
 | modules, editor, assistant and inspection | `vendor:publish` `openapi:check` `skills:sync` `lsp` `mcp` `action:list` `imports:catalog` `about` |
 | everything else | `key:generate` `schedule:list` `schedule:run` `route:list` `db:seed` `model:build` `view:build` |
 
-plus `help` and `version`. The native and inspection commands, in the words of `aru help`:
+plus `help` and `version`. The testing, native and inspection commands, in the words of `aru help`:
 
 | command | what it does |
 |---|---|
+| `test` | run the project's tests with go test, or with `--e2e` the journeys in tests/E2E, or list them with `--list`; `--smoke` runs the journeys a pull request runs, `--shard=i/n` shares a suite between machines and `--driver` and `--browser` choose the driver and its engine |
+| `e2e:record` | record a journey in Chrome and write it as a test in tests/E2E |
+| `e2e:explain` | read a failed journey's trace and say what most probably broke it |
+| `e2e:install-browsers` | install what the project's browser drivers need, or name the browser the native one uses |
+| `make:e2e` | generate an end-to-end journey in tests/E2E, behind the e2e tag |
+| `make:contract` | generate the contract test of one operation of the exported OpenAPI document, in tests/Contract |
 | `native:run` | build the native application and open its window |
 | `native:dev` | rebuild the native application and reopen it on every change |
 | `native:build` | compile the native application for one platform |
@@ -174,8 +180,9 @@ disagree, the doc comment sits next to the code and is the one to trust.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Before opening a pull request, the three
-commands that file lists have to pass. CI runs them, and then four more: a
-dependency budget, the build, a linter and govulncheck.
+commands that file lists have to pass. CI runs them, and then five more: a
+guard on the layout of the test tree, a dependency budget, the build, a linter
+and govulncheck.
 
 ## Security Vulnerabilities
 

@@ -65,7 +65,7 @@ line:
   necessity. A view source opens with `//go:build kyse` and continues in a
   syntax that is not Go; `gofmt` is the only tool in this chain that ignores a
   build constraint, so it parses the file the compiler skips and fails on the
-  `@` a directive begins with. All five `.kyse.go` files in this repository sit
+  `@` a directive begins with. All six `.kyse.go` files in this repository sit
   inside `testdata/`, so the first filter already covers them — which is why the
   measurement below shows this one alone is not enough, and why removing it
   would still be wrong: it is the line every repository in the project runs, and

@@ -52,8 +52,8 @@ retract (
 
 require (
 	github.com/akavel/rsrc v0.10.2
-	github.com/arandu-io/framework v0.70.0
-	github.com/arandu-io/hesape v0.108.0
+	github.com/arandu-io/framework v0.71.0
+	github.com/arandu-io/hesape v0.109.0
 	github.com/arandu-io/mcp v0.5.0
 	github.com/evanw/esbuild v0.28.2
 	golang.org/x/image v0.46.0
